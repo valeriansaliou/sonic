@@ -27,4 +27,15 @@ pub struct ConfigChannel {
 
     #[serde(default = "defaults::channel_tcp_timeout")]
     pub tcp_timeout: u64,
+
+    pub search: ConfigChannelSearch,
+}
+
+#[derive(Deserialize)]
+pub struct ConfigChannelSearch {
+    #[serde(default = "defaults::channel_search_query_limit_default")]
+    pub query_limit_default: u16,
+
+    #[serde(default = "defaults::channel_search_query_limit_maximum")]
+    pub query_limit_maximum: u16,
 }

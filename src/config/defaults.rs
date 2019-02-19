@@ -17,3 +17,11 @@ pub fn channel_inet() -> SocketAddr {
 pub fn channel_tcp_timeout() -> u64 {
     300
 }
+
+pub fn channel_search_query_limit_default() -> u16 {
+    10
+}
+
+pub fn channel_search_query_limit_maximum() -> u16 {
+    100
+}

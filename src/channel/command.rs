@@ -9,10 +9,15 @@ use rand::{thread_rng, Rng};
 use std::str::SplitWhitespace;
 use std::vec::Vec;
 
+use crate::APP_CONF;
+
 #[derive(PartialEq)]
 pub enum ChannelCommandError {
     UnknownCommand,
+    PolicyReject(&'static str),
     InvalidFormat(&'static str),
+    InvalidMetaKey((String, String)),
+    InvalidMetaValue((String, String)),
 }
 
 #[derive(PartialEq)]
@@ -33,13 +38,23 @@ pub struct ChannelCommandIngest;
 
 pub const SEARCH_QUERY_ID_SIZE: usize = 8;
 
+const META_PART_GROUP_OPEN: char = '(';
+const META_PART_GROUP_CLOSE: char = ')';
+
 type ChannelResult = Result<ChannelCommandResponse, ChannelCommandError>;
 
 impl ChannelCommandError {
     pub fn to_string(&self) -> String {
         match *self {
             ChannelCommandError::UnknownCommand => String::from("unknown_command"),
+            ChannelCommandError::PolicyReject(reason) => format!("policy_reject({})", reason),
             ChannelCommandError::InvalidFormat(format) => format!("invalid_format({})", format),
+            ChannelCommandError::InvalidMetaKey(ref data) => {
+                format!("invalid_meta_key({}[{}])", data.0, data.1)
+            }
+            ChannelCommandError::InvalidMetaValue(ref data) => {
+                format!("invalid_meta_value({}[{}])", data.0, data.1)
+            }
         }
     }
 }
@@ -65,22 +80,24 @@ impl ChannelCommandBase {
     pub fn dispatch_ping(mut parts: SplitWhitespace) -> ChannelResult {
         match parts.next() {
             None => Ok(ChannelCommandResponse::Pong),
-            _ => Err(ChannelCommandError::InvalidFormat("PING"))
+            _ => Err(ChannelCommandError::InvalidFormat("PING")),
         }
     }
 
     pub fn dispatch_quit(mut parts: SplitWhitespace) -> ChannelResult {
         match parts.next() {
             None => Ok(ChannelCommandResponse::Ended("quit")),
-            _ => Err(ChannelCommandError::InvalidFormat("QUIT"))
+            _ => Err(ChannelCommandError::InvalidFormat("QUIT")),
         }
     }
 }
 
 impl ChannelCommandSearch {
     pub fn dispatch_query(mut parts: SplitWhitespace) -> ChannelResult {
-        match (parts.next(), parts.next(), parts.next(), parts.next(), parts.next()) {
-            (Some(collection), Some(bucket), Some(terms), meta_part, None) => {
+        match (parts.next(), parts.next(), parts.next()) {
+            (Some(collection), Some(bucket), Some(terms)) => {
+                // TODO: support search terms with spaces (ie. between quotes)
+
                 // Generate command identifier
                 let query_id = Self::generate_identifier();
 
@@ -89,19 +106,70 @@ impl ChannelCommandSearch {
                     query_id, collection, bucket, terms
                 );
 
-                // TODO: dispatch async query
-                // TODO: for now, block thread and dispatch async result immediately after writing the \
-                //   "pending" section, and mark a TODO for later to make things really async and multi-\
-                //   threaded.
+                // Define query parameters
+                let mut query_limit = APP_CONF.channel.search.query_limit_default;
 
-                // Append command meta?
-                if let Some(meta) = meta_part {
-                    debug!("got meta on search query #{}: {}", query_id, meta);
+                // Parse command meta
+                let mut last_err = None;
 
-                    // TODO: parse 'meta' using a common parser that is capable of splitting X(Y)
+                while let Some(meta_result) = Self::parse_meta_parts(&mut parts) {
+                    match meta_result {
+                        Ok((meta_key, meta_value)) => {
+                            debug!(
+                                "got meta on search query #{}: {} = {}",
+                                query_id, meta_key, meta_value
+                            );
+
+                            match meta_key {
+                                "LIMIT" => {
+                                    if let Ok(query_limit_parsed) = meta_value.parse::<u16>() {
+                                        query_limit = query_limit_parsed;
+                                    } else {
+                                        last_err = Some(ChannelCommandError::InvalidMetaValue((
+                                            meta_key.to_owned(),
+                                            meta_value.to_owned(),
+                                        )));
+                                    }
+                                }
+                                _ => {
+                                    last_err = Some(ChannelCommandError::InvalidMetaKey((
+                                        meta_key.to_owned(),
+                                        meta_value.to_owned(),
+                                    )));
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            last_err = Some(ChannelCommandError::InvalidMetaKey((
+                                err.0.to_owned(),
+                                err.1.to_owned(),
+                            )));
+                        }
+                    }
                 }
 
-                Ok(ChannelCommandResponse::Pending(query_id))
+                if let Some(err) = last_err {
+                    Err(err)
+                } else if query_limit < 1
+                    || query_limit > APP_CONF.channel.search.query_limit_maximum
+                {
+                    Err(ChannelCommandError::PolicyReject(
+                        "LIMIT out of max/min bounds",
+                    ))
+                } else {
+                    debug!(
+                        "will search for #{} with text: {} and limit: {}",
+                        query_id, terms, query_limit
+                    );
+
+                    // TODO: dispatch async query
+                    // TODO: use 'query_limit' parameter
+                    // TODO: for now, block thread and dispatch async result immediately after writing the \
+                    //   "pending" section, and mark a TODO for later to make things really async and multi-\
+                    //   threaded.
+
+                    Ok(ChannelCommandResponse::Pending(query_id))
+                }
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "QUERY <collection> <bucket> <terms> [LIMIT(<count>)]?",
@@ -115,13 +183,64 @@ impl ChannelCommandSearch {
             .take(SEARCH_QUERY_ID_SIZE)
             .collect()
     }
+
+    fn parse_meta_parts<'a>(
+        parts: &'a mut SplitWhitespace,
+    ) -> Option<Result<(&'a str, &'a str), (&'a str, &'a str)>> {
+        if let Some(part) = parts.next() {
+            // Parse meta (with format: 'KEY(VALUE)'; no '(' or ')' is allowed in KEY and VALUE)
+            if part.is_empty() == false {
+                if let Some(index_open) = part.find(META_PART_GROUP_OPEN) {
+                    let (key_bound_start, key_bound_end) = (0, index_open);
+                    let (value_bound_start, value_bound_end) = (index_open + 1, part.len() - 1);
+
+                    if part.as_bytes()[value_bound_end] as char == META_PART_GROUP_CLOSE {
+                        let (key, value) = (
+                            &part[key_bound_start..key_bound_end],
+                            &part[value_bound_start..value_bound_end],
+                        );
+
+                        // Ensure final key and value do not contain reserved syntax characters
+                        return if key.contains(META_PART_GROUP_OPEN) == false
+                            && key.contains(META_PART_GROUP_CLOSE) == false
+                            && value.contains(META_PART_GROUP_OPEN) == false
+                            && value.contains(META_PART_GROUP_CLOSE) == false
+                        {
+                            debug!("parsed meta part as: {} = {}", key, value);
+
+                            Some(Ok((key, value)))
+                        } else {
+                            info!(
+                                "parsed meta part, but it contains reserved characters: {} = {}",
+                                key, value
+                            );
+
+                            Some(Err((key, value)))
+                        };
+                    }
+                }
+            }
+
+            info!("could not parse meta part: {}", part);
+
+            Some(Err(("?", part)))
+        } else {
+            None
+        }
+    }
 }
 
 impl ChannelCommandIngest {
     pub fn dispatch_push(mut parts: SplitWhitespace) -> ChannelResult {
         // TODO: support for text data with spaces (recursive scan of parts?)
 
-        match (parts.next(), parts.next(), parts.next(), parts.next(), parts.next()) {
+        match (
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+        ) {
             (Some(collection), Some(bucket), Some(object), Some(text), None) => {
                 debug!(
                     "dispatching ingest push in collection: {}, bucket: {} and object: {}",
@@ -167,7 +286,8 @@ impl ChannelCommandIngest {
                 let count = 0;
 
                 debug!(
-                    "dispatching ingest count in collection: {}, bucket: {}", collection, bucket
+                    "dispatching ingest count in collection: {}, bucket: {}",
+                    collection, bucket
                 );
 
                 // Count in object?
@@ -193,14 +313,17 @@ impl ChannelCommandIngest {
             (Some(collection), None) => {
                 let count = 0;
 
-                debug!("dispatching ingest flush collection in collection: {}", collection);
+                debug!(
+                    "dispatching ingest flush collection in collection: {}",
+                    collection
+                );
 
                 // TODO: validate parts
                 // TODO: count op
 
                 Ok(ChannelCommandResponse::Result(count.to_string()))
             }
-            _ => Err(ChannelCommandError::InvalidFormat("FLUSHC <collection>"))
+            _ => Err(ChannelCommandError::InvalidFormat("FLUSHC <collection>")),
         }
     }
 
@@ -219,7 +342,9 @@ impl ChannelCommandIngest {
 
                 Ok(ChannelCommandResponse::Result(count.to_string()))
             }
-            _ => Err(ChannelCommandError::InvalidFormat("FLUSHB <collection> <bucket>"))
+            _ => Err(ChannelCommandError::InvalidFormat(
+                "FLUSHB <collection> <bucket>",
+            )),
         }
     }
 }
