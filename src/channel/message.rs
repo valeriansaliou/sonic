@@ -25,7 +25,7 @@ pub enum ChannelMessageResult {
 }
 
 pub trait ChannelMessageMode {
-    fn handle(message: &str) -> Result<ChannelCommandResponse, ChannelCommandError>;
+    fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError>;
 }
 
 impl ChannelMessage {
@@ -40,40 +40,45 @@ impl ChannelMessage {
         let mut result = ChannelMessageResult::Continue;
 
         // Handle response arguments to issued command
-        let response_args = match M::handle(&message) {
-            Ok(resp) => match resp {
-                ChannelCommandResponse::Ok
-                | ChannelCommandResponse::Pong
-                | ChannelCommandResponse::Pending(_)
-                | ChannelCommandResponse::Result(_)
-                | ChannelCommandResponse::Nil
-                | ChannelCommandResponse::Void => resp.to_args(),
-                ChannelCommandResponse::Ended(_) => {
-                    result = ChannelMessageResult::Close;
-                    resp.to_args()
-                }
-                ChannelCommandResponse::Err(reason) => {
-                    ChannelCommandResponse::Err(reason).to_args()
-                }
-            },
-            Err(reason) => ChannelCommandResponse::Err(reason).to_args(),
+        let response_args_groups = match M::handle(&message) {
+            Ok(resp_groups) => resp_groups
+                .iter()
+                .map(|resp| match resp {
+                    ChannelCommandResponse::Ok
+                    | ChannelCommandResponse::Pong
+                    | ChannelCommandResponse::Pending(_)
+                    | ChannelCommandResponse::Result(_)
+                    | ChannelCommandResponse::Event(_, _, _)
+                    | ChannelCommandResponse::Nil
+                    | ChannelCommandResponse::Void
+                    | ChannelCommandResponse::Err(_) => resp.to_args(),
+                    ChannelCommandResponse::Ended(_) => {
+                        result = ChannelMessageResult::Close;
+                        resp.to_args()
+                    }
+                })
+                .collect(),
+            Err(reason) => vec![ChannelCommandResponse::Err(reason).to_args()],
         };
 
-        if response_args.0.is_empty() == false {
-            if let Some(ref values) = response_args.1 {
-                let values_string = values.join(" ");
+        // Serve response messages on socket
+        for response_args in response_args_groups {
+            if response_args.0.is_empty() == false {
+                if let Some(ref values) = response_args.1 {
+                    let values_string = values.join(" ");
 
-                write!(stream, "{} {}{}", response_args.0, values_string, LINE_FEED)
-                    .expect("write failed");
+                    write!(stream, "{} {}{}", response_args.0, values_string, LINE_FEED)
+                        .expect("write failed");
 
-                debug!(
-                    "wrote response with values: {} ({})",
-                    response_args.0, values_string
-                );
-            } else {
-                write!(stream, "{}{}", response_args.0, LINE_FEED).expect("write failed");
+                    debug!(
+                        "wrote response with values: {} ({})",
+                        response_args.0, values_string
+                    );
+                } else {
+                    write!(stream, "{}{}", response_args.0, LINE_FEED).expect("write failed");
 
-                debug!("wrote response with no values: {}", response_args.0);
+                    debug!("wrote response with no values: {}", response_args.0);
+                }
             }
         }
 
@@ -92,27 +97,27 @@ impl ChannelMessage {
 }
 
 impl ChannelMessageMode for ChannelMessageModeSearch {
-    fn handle(message: &str) -> Result<ChannelCommandResponse, ChannelCommandError> {
+    fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
         let (command, parts) = ChannelMessage::extract(message);
 
         match command.to_uppercase().as_str() {
-            "" => Ok(ChannelCommandResponse::Void),
+            "" => Ok(vec![ChannelCommandResponse::Void]),
             "QUERY" => ChannelCommandSearch::dispatch_query(parts),
             "PING" => ChannelCommandBase::dispatch_ping(parts),
             "QUIT" => ChannelCommandBase::dispatch_quit(parts),
-            _ => Ok(ChannelCommandResponse::Err(
+            _ => Ok(vec![ChannelCommandResponse::Err(
                 ChannelCommandError::UnknownCommand,
-            )),
+            )]),
         }
     }
 }
 
 impl ChannelMessageMode for ChannelMessageModeIngest {
-    fn handle(message: &str) -> Result<ChannelCommandResponse, ChannelCommandError> {
+    fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
         let (command, parts) = ChannelMessage::extract(message);
 
         match command.to_uppercase().as_str() {
-            "" => Ok(ChannelCommandResponse::Void),
+            "" => Ok(vec![ChannelCommandResponse::Void]),
             "PUSH" => ChannelCommandIngest::dispatch_push(parts),
             "POP" => ChannelCommandIngest::dispatch_pop(parts),
             "COUNT" => ChannelCommandIngest::dispatch_count(parts),
@@ -120,9 +125,9 @@ impl ChannelMessageMode for ChannelMessageModeIngest {
             "FLUSHB" => ChannelCommandIngest::dispatch_flushb(parts),
             "PING" => ChannelCommandBase::dispatch_ping(parts),
             "QUIT" => ChannelCommandBase::dispatch_quit(parts),
-            _ => Ok(ChannelCommandResponse::Err(
+            _ => Ok(vec![ChannelCommandResponse::Err(
                 ChannelCommandError::UnknownCommand,
-            )),
+            )]),
         }
     }
 }

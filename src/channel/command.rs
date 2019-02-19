@@ -28,6 +28,7 @@ pub enum ChannelCommandResponse {
     Pong,
     Pending(String),
     Result(String),
+    Event(&'static str, String, String),
     Ended(&'static str),
     Err(ChannelCommandError),
 }
@@ -41,7 +42,7 @@ pub const SEARCH_QUERY_ID_SIZE: usize = 8;
 const META_PART_GROUP_OPEN: char = '(';
 const META_PART_GROUP_CLOSE: char = ')';
 
-type ChannelResult = Result<ChannelCommandResponse, ChannelCommandError>;
+type ChannelResult = Result<Vec<ChannelCommandResponse>, ChannelCommandError>;
 
 impl ChannelCommandError {
     pub fn to_string(&self) -> String {
@@ -70,6 +71,10 @@ impl ChannelCommandResponse {
             ChannelCommandResponse::Pong => ("PONG", None),
             ChannelCommandResponse::Pending(ref id) => ("PENDING", Some(vec![id.to_owned()])),
             ChannelCommandResponse::Result(ref id) => ("RESULT", Some(vec![id.to_owned()])),
+            ChannelCommandResponse::Event(ref query, ref id, ref payload) => (
+                "EVENT",
+                Some(vec![query.to_string(), id.to_owned(), payload.to_owned()]),
+            ),
             ChannelCommandResponse::Ended(reason) => ("ENDED", Some(vec![reason.to_owned()])),
             ChannelCommandResponse::Err(ref reason) => ("ERR", Some(vec![reason.to_string()])),
         }
@@ -79,14 +84,14 @@ impl ChannelCommandResponse {
 impl ChannelCommandBase {
     pub fn dispatch_ping(mut parts: SplitWhitespace) -> ChannelResult {
         match parts.next() {
-            None => Ok(ChannelCommandResponse::Pong),
+            None => Ok(vec![ChannelCommandResponse::Pong]),
             _ => Err(ChannelCommandError::InvalidFormat("PING")),
         }
     }
 
     pub fn dispatch_quit(mut parts: SplitWhitespace) -> ChannelResult {
         match parts.next() {
-            None => Ok(ChannelCommandResponse::Ended("quit")),
+            None => Ok(vec![ChannelCommandResponse::Ended("quit")]),
             _ => Err(ChannelCommandError::InvalidFormat("QUIT")),
         }
     }
@@ -168,7 +173,21 @@ impl ChannelCommandSearch {
                     //   "pending" section, and mark a TODO for later to make things really async and multi-\
                     //   threaded.
 
-                    Ok(ChannelCommandResponse::Pending(query_id))
+                    // TODO: mocked result ids
+                    let result_object_ids = vec![
+                        "session_71f3d63b-57c4-40fb-8557-e11309170edd",
+                        "session_6501e83a-b778-474f-b60c-7bcad54d755f",
+                        "session_8ab1dcdd-eb53-4294-a7d1-080a7245622d",
+                    ];
+
+                    Ok(vec![
+                        ChannelCommandResponse::Pending(query_id.to_owned()),
+                        ChannelCommandResponse::Event(
+                            "QUERY",
+                            query_id.to_owned(),
+                            result_object_ids.join(" "),
+                        ),
+                    ])
                 }
             }
             _ => Err(ChannelCommandError::InvalidFormat(
@@ -251,7 +270,7 @@ impl ChannelCommandIngest {
                 // TODO: validate push parts
                 // TODO: push op
 
-                Ok(ChannelCommandResponse::Ok)
+                Ok(vec![ChannelCommandResponse::Ok])
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "PUSH <collection> <bucket> <object> <text>",
@@ -272,7 +291,7 @@ impl ChannelCommandIngest {
                 // TODO: validate pop parts
                 // TODO: pop op
 
-                Ok(ChannelCommandResponse::Result(count.to_string()))
+                Ok(vec![ChannelCommandResponse::Result(count.to_string())])
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "POP <collection> <bucket> <object>",
@@ -300,7 +319,7 @@ impl ChannelCommandIngest {
                 // TODO: validate count parts
                 // TODO: count op
 
-                Ok(ChannelCommandResponse::Result(count.to_string()))
+                Ok(vec![ChannelCommandResponse::Result(count.to_string())])
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "COUNT <collection> <bucket> [<object>]?",
@@ -321,7 +340,7 @@ impl ChannelCommandIngest {
                 // TODO: validate parts
                 // TODO: count op
 
-                Ok(ChannelCommandResponse::Result(count.to_string()))
+                Ok(vec![ChannelCommandResponse::Result(count.to_string())])
             }
             _ => Err(ChannelCommandError::InvalidFormat("FLUSHC <collection>")),
         }
@@ -340,7 +359,7 @@ impl ChannelCommandIngest {
                 // TODO: validate parts
                 // TODO: count op
 
-                Ok(ChannelCommandResponse::Result(count.to_string()))
+                Ok(vec![ChannelCommandResponse::Result(count.to_string())])
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "FLUSHB <collection> <bucket>",
@@ -355,10 +374,15 @@ mod tests {
 
     #[test]
     fn it_matches_command_response_string() {
-        assert_eq!(ChannelCommandResponse::Nil.to_str(), "NIL");
-        assert_eq!(ChannelCommandResponse::Ok.to_str(), "OK");
-        assert_eq!(ChannelCommandResponse::Pong.to_str(), "PONG");
-        assert_eq!(ChannelCommandResponse::Ended.to_str(), "ENDED");
-        assert_eq!(ChannelCommandResponse::Err.to_str(), "ERR");
+        assert_eq!(ChannelCommandResponse::Nil.to_args().0, "NIL");
+        assert_eq!(ChannelCommandResponse::Ok.to_args().0, "OK");
+        assert_eq!(ChannelCommandResponse::Pong.to_args().0, "PONG");
+        assert_eq!(ChannelCommandResponse::Ended("").to_args().0, "ENDED");
+        assert_eq!(
+            ChannelCommandResponse::Err(ChannelCommandError::UnknownCommand)
+                .to_args()
+                .0,
+            "ERR"
+        );
     }
 }
