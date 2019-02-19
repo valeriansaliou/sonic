@@ -4,15 +4,16 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::result::Result;
 use std::str;
 use std::time::Duration;
 
-use super::command::ChannelCommand;
-use super::command::ChannelCommandResponse;
-use super::command::COMMAND_SIZE;
+use super::message::{
+    ChannelMessage, ChannelMessageModeIngest, ChannelMessageModeSearch, ChannelMessageResult,
+};
+use super::mode::ChannelMode;
 use crate::APP_CONF;
 use crate::LINE_FEED;
 
@@ -20,6 +21,7 @@ pub struct ChannelHandle;
 
 enum ChannelHandleError {
     Closed,
+    InvalidMode,
     NotRecognized,
     TimedOut,
     ConnectionAborted,
@@ -27,22 +29,14 @@ enum ChannelHandleError {
     Unknown,
 }
 
-#[derive(PartialEq)]
-enum ChannelHandleMessageResult {
-    Continue,
-    Close,
-}
-
 const LINE_END_GAP: usize = 1;
-const MAX_LINE_SIZE: usize = COMMAND_SIZE + LINE_END_GAP + 1;
-const HASH_VALUE_SIZE: usize = 10;
-const HASH_RESULT_SIZE: usize = 7 + LINE_END_GAP + 1;
-const SHARD_DEFAULT: ChannelShard = 0;
-const TCP_TIMEOUT_NON_ESTABLISHED: u64 = 20;
+const MODE_SIZE: usize = 6;
+const BUFFER_SIZE: usize = 20000;
+const MAX_LINE_SIZE: usize = BUFFER_SIZE + LINE_END_GAP + 1;
+const MODE_RESULT_SIZE: usize = 4 + MODE_SIZE + LINE_END_GAP + 1;
+const TCP_TIMEOUT_NON_ESTABLISHED: u64 = 10;
 
 static BUFFER_LINE_SEPARATOR: u8 = '\n' as u8;
-
-pub type ChannelShard = u8;
 
 lazy_static! {
     static ref CONNECTED_BANNER: String = format!(
@@ -56,6 +50,7 @@ impl ChannelHandleError {
     pub fn to_str(&self) -> &'static str {
         match *self {
             ChannelHandleError::Closed => "closed",
+            ChannelHandleError::InvalidMode => "invalid_mode",
             ChannelHandleError::NotRecognized => "not_recognized",
             ChannelHandleError::TimedOut => "timed_out",
             ChannelHandleError::ConnectionAborted => "connection_aborted",
@@ -68,67 +63,77 @@ impl ChannelHandleError {
 impl ChannelHandle {
     pub fn client(mut stream: TcpStream) {
         // Configure stream (non-established)
-        // TODO: no need for such a split
         ChannelHandle::configure_stream(&stream, false);
 
         // Send connected banner
         write!(stream, "{}{}", *CONNECTED_BANNER, LINE_FEED).expect("write failed");
 
-        // Configure stream (established)
-        // TODO: no need for such a split
-        ChannelHandle::configure_stream(&stream, true);
+        // Ensure channel mode is set
+        match Self::ensure_mode(&stream) {
+            Ok(mode) => {
+                // Configure stream (established)
+                ChannelHandle::configure_stream(&stream, true);
 
-        // Send started acknowledgement
-        write!(stream, "STARTED{}", LINE_FEED).expect("write failed");
+                // Send started acknowledgement
+                write!(stream, "STARTED {}{}", mode.to_str(), LINE_FEED).expect("write failed");
 
-        // Select default shard
-        let mut shard = SHARD_DEFAULT;
+                // Initialize packet buffer
+                let mut buffer = Vec::new();
 
-        // Initialize packet buffer
-        let mut buffer = Vec::new();
+                // Wait for incoming messages
+                'handler: loop {
+                    let mut read = [0; MAX_LINE_SIZE];
 
-        // Wait for incoming messages
-        'handler: loop {
-            let mut read = [0; MAX_LINE_SIZE];
+                    match stream.read(&mut read) {
+                        Ok(n) => {
+                            // Should close?
+                            if n == 0 {
+                                break;
+                            }
 
-            match stream.read(&mut read) {
-                Ok(n) => {
-                    // Should close?
-                    if n == 0 {
-                        break;
-                    }
+                            // Buffer chunk
+                            buffer.extend_from_slice(&read[0..n]);
 
-                    // Buffer chunk
-                    buffer.extend_from_slice(&read[0..n]);
+                            // Should handle this chunk? (terminated)
+                            if buffer[buffer.len() - 1] == BUFFER_LINE_SEPARATOR {
+                                {
+                                    // Handle all buffered chunks as lines
+                                    let buffer_split =
+                                        buffer.split(|value| value == &BUFFER_LINE_SEPARATOR);
 
-                    // Should handle this chunk? (terminated)
-                    if buffer[buffer.len() - 1] == BUFFER_LINE_SEPARATOR {
-                        {
-                            // Handle all buffered chunks as lines
-                            let buffer_split =
-                                buffer.split(|value| value == &BUFFER_LINE_SEPARATOR);
-
-                            for line in buffer_split {
-                                if line.is_empty() == false {
-                                    if Self::on_message(&mut shard, &stream, line)
-                                        == ChannelHandleMessageResult::Close
-                                    {
-                                        // Should close?
-                                        break 'handler;
+                                    for line in buffer_split {
+                                        if line.is_empty() == false {
+                                            if Self::on_message(&mode, &stream, line)
+                                                == ChannelMessageResult::Close
+                                            {
+                                                // Should close?
+                                                break 'handler;
+                                            }
+                                        }
                                     }
                                 }
+
+                                // Reset buffer
+                                buffer.clear();
+                            } else {
+                                // This buffer does not end with a line separator; it likely \
+                                //   contains data that is way too long, and thus it should be \
+                                //   aborted to avoid stacking up too much data in a row.
+                                info!("closing channel thread because of buffer overflow");
+
+                                panic!("buffer overflow");
                             }
                         }
+                        Err(err) => {
+                            info!("closing channel thread with traceback: {}", err);
 
-                        // Reset buffer
-                        buffer.clear();
+                            panic!("closing channel");
+                        }
                     }
                 }
-                Err(err) => {
-                    info!("closing channel thread with traceback: {}", err);
-
-                    panic!("closing channel channel");
-                }
+            }
+            Err(err) => {
+                write!(stream, "ENDED {}{}", err.to_str(), LINE_FEED).expect("write failed");
             }
         }
     }
@@ -150,60 +155,59 @@ impl ChannelHandle {
             .is_ok());
     }
 
-    fn on_message(
-        shard: &mut ChannelShard,
-        mut stream: &TcpStream,
-        message_slice: &[u8],
-    ) -> ChannelHandleMessageResult {
-        let message = str::from_utf8(message_slice).unwrap_or("");
+    fn ensure_mode(mut stream: &TcpStream) -> Result<ChannelMode, ChannelHandleError> {
+        loop {
+            let mut read = [0; MODE_RESULT_SIZE];
 
-        debug!("got channel message on shard {}: {}", shard, message);
-
-        let mut result = ChannelHandleMessageResult::Continue;
-
-        let response = match Self::handle_message(shard, &message) {
-            Ok(resp) => match resp {
-                ChannelCommandResponse::Ok
-                | ChannelCommandResponse::Pong
-                | ChannelCommandResponse::Ended
-                | ChannelCommandResponse::Nil
-                | ChannelCommandResponse::Void => {
-                    if resp == ChannelCommandResponse::Ended {
-                        result = ChannelHandleMessageResult::Close;
+            match stream.read(&mut read) {
+                Ok(n) => {
+                    if n == 0 {
+                        return Err(ChannelHandleError::Closed);
                     }
-                    resp.to_str()
+
+                    let mut parts = str::from_utf8(&read[0..n]).unwrap_or("").split_whitespace();
+
+                    if parts.next().unwrap_or("").to_uppercase().as_str() == "START" {
+                        let res_mode = parts.next().unwrap_or("");
+
+                        debug!("got mode response: {}", res_mode);
+
+                        // Extract mode
+                        if let Ok(mode) = ChannelMode::from_str(res_mode) {
+                            return Ok(mode);
+                        }
+
+                        return Err(ChannelHandleError::InvalidMode);
+                    }
+
+                    return Err(ChannelHandleError::NotRecognized);
                 }
-                _ => ChannelCommandResponse::Err.to_str(),
-            },
-            _ => ChannelCommandResponse::Err.to_str(),
-        };
+                Err(err) => {
+                    let err_reason = match err.kind() {
+                        ErrorKind::TimedOut => ChannelHandleError::TimedOut,
+                        ErrorKind::ConnectionAborted => ChannelHandleError::ConnectionAborted,
+                        ErrorKind::Interrupted => ChannelHandleError::Interrupted,
+                        _ => ChannelHandleError::Unknown,
+                    };
 
-        if response.is_empty() == false {
-            write!(stream, "{}{}", response, LINE_FEED).expect("write failed");
-
-            debug!("wrote response: {}", response);
+                    return Err(err_reason);
+                }
+            }
         }
-
-        return result;
     }
 
-    fn handle_message(
-        shard: &mut ChannelShard,
-        message: &str,
-    ) -> Result<ChannelCommandResponse, Option<()>> {
-        let mut parts = message.split_whitespace();
-        let command = parts.next().unwrap_or("");
-
-        debug!("will dispatch command: {}", command);
-
-        match command {
-            "" => Ok(ChannelCommandResponse::Void),
-            "FLUSHB" => ChannelCommand::dispatch_flush_bucket(shard, parts),
-            "FLUSHA" => ChannelCommand::dispatch_flush_auth(shard, parts),
-            "PING" => ChannelCommand::dispatch_ping(),
-            "SHARD" => ChannelCommand::dispatch_shard(shard, parts),
-            "QUIT" => ChannelCommand::dispatch_quit(),
-            _ => Ok(ChannelCommandResponse::Nil),
+    fn on_message(
+        mode: &ChannelMode,
+        stream: &TcpStream,
+        message_slice: &[u8],
+    ) -> ChannelMessageResult {
+        match mode {
+            ChannelMode::Search => {
+                ChannelMessage::on::<ChannelMessageModeSearch>(stream, message_slice)
+            }
+            ChannelMode::Ingest => {
+                ChannelMessage::on::<ChannelMessageModeIngest>(stream, message_slice)
+            }
         }
     }
 }

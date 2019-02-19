@@ -12,13 +12,19 @@ extern crate clap;
 extern crate lazy_static;
 #[macro_use]
 extern crate serde_derive;
+extern crate rand;
 extern crate toml;
 
 mod channel;
 mod config;
+mod database;
+mod indexer;
+mod lexer;
+mod query;
 
 use std::ops::Deref;
 use std::str::FromStr;
+use std::thread;
 
 use clap::{App, Arg};
 use log::LevelFilter;
@@ -80,6 +86,9 @@ fn main() {
 
     // Run channel interface (in its own thread)
     ChannelListenBuilder::new().run();
+
+    // TODO: block thread for dev purposes
+    thread::park();
 
     error!("could not start");
 }
