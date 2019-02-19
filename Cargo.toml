@@ -1,0 +1,40 @@
+[package]
+name = "sonic-server"
+version = "1.0.0"
+description = "Fast, lightweight and schema-less search backend."
+readme = "README.md"
+license = "MPL-2.0"
+edition = "2018"
+homepage = "https://github.com/valeriansaliou/sonic"
+repository = "https://github.com/valeriansaliou/sonic.git"
+keywords = ["search", "query", "server", "index"]
+categories = ["database-implementations", "web-programming"]
+authors = ["Valerian Saliou <valerian@valeriansaliou.name>", "Baptiste Jamin <baptistejamin@gmail.com>"]
+
+[badges]
+travis-ci = { repository = "valeriansaliou/sonic", branch = "master" }
+coveralls = { repository = "valeriansaliou/sonic", branch = "master", service = "github" }
+
+[[bin]]
+name = "sonic"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+log = "0.4"
+toml = "0.4"
+clap = { version = "2.32", default-features = false }
+lazy_static = "1.2"
+serde = "1.0"
+serde_derive = "1.0"
+
+[profile.dev]
+opt-level = 0
+debug = true
+debug-assertions = true
+
+[profile.release]
+opt-level = "s"
+lto = true
+debug = false
+debug-assertions = false

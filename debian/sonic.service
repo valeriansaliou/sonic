@@ -1,0 +1,13 @@
+[Unit]
+Description=Sonic fast, lightweight and schema-less search backend
+After=network.target
+
+[Service]
+Type=simple
+User=sonic
+Group=sonic
+ExecStart=/usr/bin/sonic -c /etc/sonic.cfg
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

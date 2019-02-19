@@ -1,0 +1,13 @@
+Source: sonic
+Section: net
+Priority: ext
+Maintainer: Valerian Saliou <valerian@valeriansaliou.name>
+Standards-Version: 3.9.4
+Build-Depends: wget, ca-certificates
+Homepage: https://github.com/valeriansaliou/sonic
+
+Package: sonic
+Architecture: any
+Depends: adduser
+Provides: sonic-server
+Description: Fast, lightweight and schema-less search backend.
