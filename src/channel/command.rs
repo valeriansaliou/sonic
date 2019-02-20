@@ -167,6 +167,7 @@ impl ChannelCommandBase {
             let text_part_bytes = text_part.as_bytes();
             let text_part_bound = text_part_bytes.len();
 
+            // TODO: technically, it is possible to escape the boundaries in some cases, fix this
             if text_raw.len() > 1
                 && text_part_bytes[text_part_bound - 1] as char == TEXT_PART_BOUNDARY
                 && (text_part_bound <= 1
