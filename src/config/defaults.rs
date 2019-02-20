@@ -11,7 +11,7 @@ pub fn server_log_level() -> String {
 }
 
 pub fn channel_inet() -> SocketAddr {
-    "[::1]:8811".parse().unwrap()
+    "[::1]:1491".parse().unwrap()
 }
 
 pub fn channel_tcp_timeout() -> u64 {
