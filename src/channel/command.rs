@@ -138,7 +138,7 @@ impl ChannelCommandBase {
                 if next_part.is_none() == true {
                     if let Some(manual_data) = manuals.get(manual_key) {
                         Ok(vec![ChannelCommandResponse::Result(format!(
-                            "manual_{}({})",
+                            "{}({})",
                             manual_key,
                             manual_data.join(", ")
                         ))])
