@@ -20,13 +20,17 @@ TODO
 - [x] beautify query meta value parser (commonize w/ generics)
 - [x] support for quoted <terms> + quoted <text> args (both in search + ingest commands)
 - [x] ensure metas still work with quote support
-- [ ] write base NodeJS library and make it work with dummy operations
-- [ ] write base NodeJS library README
-- [ ] build base database managers (graph + key-value)
-- [ ] setup base indexer
+- [x] write base NodeJS library and make it work with dummy operations
+- [x] write base NodeJS library README
 
 # 21st February 2019
 
+- [ ] Library: build automated tests (search + ingest)
+- [ ] Library: finish 100% README
+- [ ] re-write un-escaping of text (restrict to \n and " unescapes)
+- [ ] fix text parser in all contexts (polish its edge cases)
+- [ ] build base database managers (graph + key-value)
+- [ ] setup base indexer
 - [ ] setup base query system
 
 # 22nd February 2019
