@@ -14,7 +14,12 @@ TODO
 
 # 20th February 2019
 
-- [ ] write the README explanations + install + protocol + etc
+- [x] write the README explanations + install + protocol + etc
+- [x] help command to list available commands (`HELP [<manual>]?`)
+- [ ] support for OFFSET in search results (after LIMIT argument)
+- [ ] support for quoted <terms> + quoted <text> args
+- [ ] write base NodeJS library and make it work with dummy operations
+- [ ] write base NodeJS library README
 - [ ] build base database managers (graph + key-value)
 - [ ] setup base indexer
 
@@ -25,8 +30,3 @@ TODO
 # 22nd February 2019
 
 - [ ] setup base lexer
-
-# 23rd February 2019
-
-- [ ] write base NodeJS library and make it work with dummy operations
-- [ ] write base NodeJS library README
