@@ -301,19 +301,23 @@ impl ChannelCommandIngest {
 
     pub fn dispatch_count(mut parts: SplitWhitespace) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next(), parts.next()) {
-            (Some(collection), Some(bucket), object_part, None) => {
+            (Some(collection), bucket_part, object_part, None) => {
                 let count = 0;
 
-                debug!(
-                    "dispatching ingest count in collection: {}, bucket: {}",
-                    collection, bucket
-                );
+                debug!("dispatching ingest count in collection: {}", collection);
 
-                // Count in object?
-                if let Some(object) = object_part {
-                    debug!("got ingest count object: {}", object);
+                // Count in bucket?
+                if let Some(bucket) = bucket_part {
+                    debug!("got ingest count bucket: {}", bucket);
 
                     // TODO
+
+                    // Count in object?
+                    if let Some(object) = object_part {
+                        debug!("got ingest count object: {}", object);
+
+                        // TODO
+                    }
                 }
 
                 // TODO: validate count parts
@@ -322,7 +326,7 @@ impl ChannelCommandIngest {
                 Ok(vec![ChannelCommandResponse::Result(count.to_string())])
             }
             _ => Err(ChannelCommandError::InvalidFormat(
-                "COUNT <collection> <bucket> [<object>]?",
+                "COUNT <collection> [<bucket> [<object>]?]?",
             )),
         }
     }
@@ -363,6 +367,27 @@ impl ChannelCommandIngest {
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "FLUSHB <collection> <bucket>",
+            )),
+        }
+    }
+
+    pub fn dispatch_flusho(mut parts: SplitWhitespace) -> ChannelResult {
+        match (parts.next(), parts.next(), parts.next(), parts.next()) {
+            (Some(collection), Some(bucket), Some(object), None) => {
+                let count = 0;
+
+                debug!(
+                    "dispatching ingest flush object in collection: {}, bucket: {}, object: {}",
+                    collection, bucket, object
+                );
+
+                // TODO: validate parts
+                // TODO: count op
+
+                Ok(vec![ChannelCommandResponse::Result(count.to_string())])
+            }
+            _ => Err(ChannelCommandError::InvalidFormat(
+                "FLUSHO <collection> <bucket> <object>",
             )),
         }
     }

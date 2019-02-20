@@ -123,6 +123,7 @@ impl ChannelMessageMode for ChannelMessageModeIngest {
             "COUNT" => ChannelCommandIngest::dispatch_count(parts),
             "FLUSHC" => ChannelCommandIngest::dispatch_flushc(parts),
             "FLUSHB" => ChannelCommandIngest::dispatch_flushb(parts),
+            "FLUSHO" => ChannelCommandIngest::dispatch_flusho(parts),
             "PING" => ChannelCommandBase::dispatch_ping(parts),
             "QUIT" => ChannelCommandBase::dispatch_quit(parts),
             _ => Ok(vec![ChannelCommandResponse::Err(
