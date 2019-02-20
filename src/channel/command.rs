@@ -6,6 +6,7 @@
 
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
+use std::collections::HashMap;
 use std::str::SplitWhitespace;
 use std::vec::Vec;
 
@@ -14,6 +15,8 @@ use crate::APP_CONF;
 #[derive(PartialEq)]
 pub enum ChannelCommandError {
     UnknownCommand,
+    NotFound,
+    InternalError,
     PolicyReject(&'static str),
     InvalidFormat(&'static str),
     InvalidMetaKey((String, String)),
@@ -37,17 +40,35 @@ pub struct ChannelCommandBase;
 pub struct ChannelCommandSearch;
 pub struct ChannelCommandIngest;
 
+type ChannelResult = Result<Vec<ChannelCommandResponse>, ChannelCommandError>;
+
 pub const SEARCH_QUERY_ID_SIZE: usize = 8;
 
 const META_PART_GROUP_OPEN: char = '(';
 const META_PART_GROUP_CLOSE: char = ')';
 
-type ChannelResult = Result<Vec<ChannelCommandResponse>, ChannelCommandError>;
+lazy_static! {
+    pub static ref COMMANDS_MODE_SEARCH: Vec<&'static str> = vec!["QUERY", "PING", "HELP", "QUIT"];
+    pub static ref COMMANDS_MODE_INGEST: Vec<&'static str> =
+        vec!["PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT"];
+    static ref MANUAL_MODE_SEARCH: HashMap<&'static str, &'static Vec<&'static str>> =
+        [("commands", &*COMMANDS_MODE_SEARCH)]
+            .iter()
+            .cloned()
+            .collect();
+    static ref MANUAL_MODE_INGEST: HashMap<&'static str, &'static Vec<&'static str>> =
+        [("commands", &*COMMANDS_MODE_INGEST)]
+            .iter()
+            .cloned()
+            .collect();
+}
 
 impl ChannelCommandError {
     pub fn to_string(&self) -> String {
         match *self {
             ChannelCommandError::UnknownCommand => String::from("unknown_command"),
+            ChannelCommandError::NotFound => String::from("not_found"),
+            ChannelCommandError::InternalError => String::from("internal_error"),
             ChannelCommandError::PolicyReject(reason) => format!("policy_reject({})", reason),
             ChannelCommandError::InvalidFormat(format) => format!("invalid_format({})", format),
             ChannelCommandError::InvalidMetaKey(ref data) => {
@@ -93,6 +114,37 @@ impl ChannelCommandBase {
         match parts.next() {
             None => Ok(vec![ChannelCommandResponse::Ended("quit")]),
             _ => Err(ChannelCommandError::InvalidFormat("QUIT")),
+        }
+    }
+
+    pub fn generic_dispatch_help(
+        mut parts: SplitWhitespace,
+        manuals: &HashMap<&str, &Vec<&str>>,
+    ) -> ChannelResult {
+        match (parts.next(), parts.next()) {
+            (None, _) => {
+                let manual_list = manuals.keys().map(|k| k.to_owned()).collect::<Vec<&str>>();
+
+                Ok(vec![ChannelCommandResponse::Result(format!(
+                    "manuals({})",
+                    manual_list.join(", ")
+                ))])
+            }
+            (Some(manual_key), next_part) => {
+                if next_part.is_none() == true {
+                    if let Some(manual_data) = manuals.get(manual_key) {
+                        Ok(vec![ChannelCommandResponse::Result(format!(
+                            "manual_{}({})",
+                            manual_key,
+                            manual_data.join(", ")
+                        ))])
+                    } else {
+                        Err(ChannelCommandError::NotFound)
+                    }
+                } else {
+                    Err(ChannelCommandError::InvalidFormat("HELP [<manual>]?"))
+                }
+            }
         }
     }
 }
@@ -191,9 +243,13 @@ impl ChannelCommandSearch {
                 }
             }
             _ => Err(ChannelCommandError::InvalidFormat(
-                "QUERY <collection> <bucket> <terms> [LIMIT(<count>)]?",
+                "QUERY <collection> <bucket> \"<terms>\" [LIMIT(<count>)]?",
             )),
         }
+    }
+
+    pub fn dispatch_help(parts: SplitWhitespace) -> ChannelResult {
+        ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_SEARCH)
     }
 
     fn generate_identifier() -> String {
@@ -273,7 +329,7 @@ impl ChannelCommandIngest {
                 Ok(vec![ChannelCommandResponse::Ok])
             }
             _ => Err(ChannelCommandError::InvalidFormat(
-                "PUSH <collection> <bucket> <object> <text>",
+                "PUSH <collection> <bucket> <object> \"<text>\"",
             )),
         }
     }
@@ -390,6 +446,10 @@ impl ChannelCommandIngest {
                 "FLUSHO <collection> <bucket> <object>",
             )),
         }
+    }
+
+    pub fn dispatch_help(parts: SplitWhitespace) -> ChannelResult {
+        ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_INGEST)
     }
 }
 

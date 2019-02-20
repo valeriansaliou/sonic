@@ -10,7 +10,7 @@ use std::str::{self, SplitWhitespace};
 
 use super::command::{
     ChannelCommandBase, ChannelCommandError, ChannelCommandIngest, ChannelCommandResponse,
-    ChannelCommandSearch,
+    ChannelCommandSearch, COMMANDS_MODE_INGEST, COMMANDS_MODE_SEARCH,
 };
 use crate::LINE_FEED;
 
@@ -85,10 +85,10 @@ impl ChannelMessage {
         return result;
     }
 
-    fn extract<'a>(message: &'a str) -> (&'a str, SplitWhitespace) {
+    fn extract<'a>(message: &'a str) -> (String, SplitWhitespace) {
         // Extract command name and arguments
         let mut parts = message.split_whitespace();
-        let command = parts.next().unwrap_or("");
+        let command = parts.next().unwrap_or("").to_uppercase();
 
         debug!("will dispatch search command: {}", command);
 
@@ -100,14 +100,21 @@ impl ChannelMessageMode for ChannelMessageModeSearch {
     fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
         let (command, parts) = ChannelMessage::extract(message);
 
-        match command.to_uppercase().as_str() {
-            "" => Ok(vec![ChannelCommandResponse::Void]),
-            "QUERY" => ChannelCommandSearch::dispatch_query(parts),
-            "PING" => ChannelCommandBase::dispatch_ping(parts),
-            "QUIT" => ChannelCommandBase::dispatch_quit(parts),
-            _ => Ok(vec![ChannelCommandResponse::Err(
+        if command.is_empty() == true || COMMANDS_MODE_SEARCH.contains(&command.as_str()) == true {
+            match command.as_str() {
+                "" => Ok(vec![ChannelCommandResponse::Void]),
+                "QUERY" => ChannelCommandSearch::dispatch_query(parts),
+                "PING" => ChannelCommandBase::dispatch_ping(parts),
+                "HELP" => ChannelCommandSearch::dispatch_help(parts),
+                "QUIT" => ChannelCommandBase::dispatch_quit(parts),
+                _ => Ok(vec![ChannelCommandResponse::Err(
+                    ChannelCommandError::InternalError,
+                )]),
+            }
+        } else {
+            Ok(vec![ChannelCommandResponse::Err(
                 ChannelCommandError::UnknownCommand,
-            )]),
+            )])
         }
     }
 }
@@ -116,19 +123,26 @@ impl ChannelMessageMode for ChannelMessageModeIngest {
     fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
         let (command, parts) = ChannelMessage::extract(message);
 
-        match command.to_uppercase().as_str() {
-            "" => Ok(vec![ChannelCommandResponse::Void]),
-            "PUSH" => ChannelCommandIngest::dispatch_push(parts),
-            "POP" => ChannelCommandIngest::dispatch_pop(parts),
-            "COUNT" => ChannelCommandIngest::dispatch_count(parts),
-            "FLUSHC" => ChannelCommandIngest::dispatch_flushc(parts),
-            "FLUSHB" => ChannelCommandIngest::dispatch_flushb(parts),
-            "FLUSHO" => ChannelCommandIngest::dispatch_flusho(parts),
-            "PING" => ChannelCommandBase::dispatch_ping(parts),
-            "QUIT" => ChannelCommandBase::dispatch_quit(parts),
-            _ => Ok(vec![ChannelCommandResponse::Err(
+        if command.is_empty() == true || COMMANDS_MODE_INGEST.contains(&command.as_str()) == true {
+            match command.as_str() {
+                "" => Ok(vec![ChannelCommandResponse::Void]),
+                "PUSH" => ChannelCommandIngest::dispatch_push(parts),
+                "POP" => ChannelCommandIngest::dispatch_pop(parts),
+                "COUNT" => ChannelCommandIngest::dispatch_count(parts),
+                "FLUSHC" => ChannelCommandIngest::dispatch_flushc(parts),
+                "FLUSHB" => ChannelCommandIngest::dispatch_flushb(parts),
+                "FLUSHO" => ChannelCommandIngest::dispatch_flusho(parts),
+                "PING" => ChannelCommandBase::dispatch_ping(parts),
+                "HELP" => ChannelCommandIngest::dispatch_help(parts),
+                "QUIT" => ChannelCommandBase::dispatch_quit(parts),
+                _ => Ok(vec![ChannelCommandResponse::Err(
+                    ChannelCommandError::InternalError,
+                )]),
+            }
+        } else {
+            Ok(vec![ChannelCommandResponse::Err(
                 ChannelCommandError::UnknownCommand,
-            )]),
+            )])
         }
     }
 }
