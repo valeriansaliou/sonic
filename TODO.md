@@ -16,8 +16,10 @@ TODO
 
 - [x] write the README explanations + install + protocol + etc
 - [x] help command to list available commands (`HELP [<manual>]?`)
-- [ ] support for OFFSET in search results (after LIMIT argument)
-- [ ] support for quoted <terms> + quoted <text> args
+- [x] support for OFFSET in search results (after LIMIT argument)
+- [x] beautify query meta value parser (commonize w/ generics)
+- [x] support for quoted <terms> + quoted <text> args (both in search + ingest commands)
+- [x] ensure metas still work with quote support
 - [ ] write base NodeJS library and make it work with dummy operations
 - [ ] write base NodeJS library README
 - [ ] build base database managers (graph + key-value)

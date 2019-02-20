@@ -14,6 +14,7 @@ extern crate lazy_static;
 extern crate serde_derive;
 extern crate rand;
 extern crate toml;
+extern crate unescape;
 
 mod channel;
 mod config;

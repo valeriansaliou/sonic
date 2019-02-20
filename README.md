@@ -133,7 +133,7 @@ _The Sonic Channel Search mode is used for querying the search index. Once in th
 
 **➡️ Available commands:**
 
-* `QUERY`: query database (syntax: `QUERY <collection> <bucket> "<terms>" [LIMIT(<count>)]?`)
+* `QUERY`: query database (syntax: `QUERY <collection> <bucket> "<terms>" [LIMIT(<count>)]? [OFFSET(<count>)]?`)
 * `PING`: ping server (syntax: `PING`)
 * `HELP`: show help (syntax: `HELP [<manual>]?`)
 * `QUIT`: stop connection (syntax: `QUIT`)
@@ -163,7 +163,7 @@ T9: PENDING Bt2m2gYa
 T10: EVENT QUERY Bt2m2gYa conversation:71f3d63b conversation:6501e83a
 T11: QUERY helpdesk user:0dcde3a6 "gdpr" LIMIT(50)
 T12: PENDING y57KaB2d
-T13: QUERY helpdesk user:0dcde3a6 "law" LIMIT(50)
+T13: QUERY helpdesk user:0dcde3a6 "law" LIMIT(50) OFFSET(200)
 T14: PENDING CjPvE5t9
 T15: PING
 T16: PONG
