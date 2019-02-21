@@ -26,7 +26,7 @@ TODO
 # 21st February 2019
 
 - [x] Library: build automated tests (search + ingest)
-- [ ] Library: finish 100% README
+- [x] Library: finish 100% README
 
 - [ ] re-write un-escaping of text (restrict to \n and " unescapes)
 - [ ] fix text parser in all contexts (polish its edge cases)
