@@ -25,10 +25,12 @@ TODO
 
 # 21st February 2019
 
-- [ ] Library: build automated tests (search + ingest)
+- [x] Library: build automated tests (search + ingest)
 - [ ] Library: finish 100% README
+
 - [ ] re-write un-escaping of text (restrict to \n and " unescapes)
 - [ ] fix text parser in all contexts (polish its edge cases)
+
 - [ ] build base database managers (graph + key-value)
 - [ ] setup base indexer
 - [ ] setup base query system
