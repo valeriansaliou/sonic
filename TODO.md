@@ -28,7 +28,7 @@ TODO
 - [x] Library: build automated tests (search + ingest)
 - [x] Library: finish 100% README
 - [x] re-write unescaping of text (restrict to \n and " unescapes)
-- [ ] fix text parser in all contexts (polish its edge cases)
+- [x] fix text parser in all contexts (polish its edge cases)
 
 # 22nd February 2019
 

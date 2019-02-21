@@ -167,14 +167,27 @@ impl ChannelCommandBase {
             let text_part_bytes = text_part.as_bytes();
             let text_part_bound = text_part_bytes.len();
 
-            // TODO: technically, it is possible to escape the boundaries in some cases, fix this
-            // TODO: scan whole string for first " character, and stop there. Do not wait for EOS
             if text_raw.len() > 1
                 && text_part_bytes[text_part_bound - 1] as char == TEXT_PART_BOUNDARY
-                && (text_part_bound <= 1
-                    || text_part_bytes[text_part_bound - 2] as char != TEXT_PART_ESCAPE)
             {
-                break;
+                // Count the total amount of escape characters before escape (check if escape \
+                //   characters are also being escaped, or not)
+                let mut count_escapes = 0;
+
+                if text_part_bound > 1 {
+                    for index in (0..text_part_bound - 1).rev() {
+                        if text_part_bytes[index] as char != TEXT_PART_ESCAPE {
+                            break
+                        }
+
+                        count_escapes += 1
+                    }
+                }
+
+                // Boundary is not escaped, we can stop there.
+                if count_escapes == 0 || (count_escapes % 2 == 0) {
+                    break;
+                }
             }
         }
 
