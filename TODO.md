@@ -27,14 +27,15 @@ TODO
 
 - [x] Library: build automated tests (search + ingest)
 - [x] Library: finish 100% README
-
-- [ ] re-write un-escaping of text (restrict to \n and " unescapes)
+- [x] re-write unescaping of text (restrict to \n and " unescapes)
 - [ ] fix text parser in all contexts (polish its edge cases)
-
-- [ ] build base database managers (graph + key-value)
-- [ ] setup base indexer
-- [ ] setup base query system
 
 # 22nd February 2019
 
+- [ ] setup base indexer
+- [ ] setup base query system
 - [ ] setup base lexer
+
+# 25th February 2019
+
+- [ ] build base database managers (graph + key-value)

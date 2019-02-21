@@ -9,8 +9,8 @@ use rand::{thread_rng, Rng};
 use std::collections::HashMap;
 use std::str::{self, SplitWhitespace};
 use std::vec::Vec;
-use unescape::unescape;
 
+use super::format::unescape;
 use crate::APP_CONF;
 
 #[derive(PartialEq)]
@@ -168,6 +168,7 @@ impl ChannelCommandBase {
             let text_part_bound = text_part_bytes.len();
 
             // TODO: technically, it is possible to escape the boundaries in some cases, fix this
+            // TODO: scan whole string for first " character, and stop there. Do not wait for EOS
             if text_raw.len() > 1
                 && text_part_bytes[text_part_bound - 1] as char == TEXT_PART_BOUNDARY
                 && (text_part_bound <= 1
@@ -198,15 +199,13 @@ impl ChannelCommandBase {
             // Return inner text (without boundary characters)
             match str::from_utf8(&text_bytes[1..text_bytes_len - 1]) {
                 Ok(text_inner) => {
-                    if let Some(text_inner_string) = unescape(text_inner.trim()) {
-                        debug!("parsed text parts (post-processed): {}", text_inner_string);
+                    let text_inner_string = unescape(text_inner.trim());
 
-                        // Text must not be empty
-                        if text_inner_string.is_empty() == false {
-                            Some(text_inner_string)
-                        } else {
-                            None
-                        }
+                    debug!("parsed text parts (post-processed): {}", text_inner_string);
+
+                    // Text must not be empty
+                    if text_inner_string.is_empty() == false {
+                        Some(text_inner_string)
                     } else {
                         None
                     }
