@@ -12,15 +12,16 @@ extern crate clap;
 extern crate lazy_static;
 #[macro_use]
 extern crate serde_derive;
+extern crate iso639_2;
 extern crate rand;
 extern crate toml;
+extern crate unicode_segmentation;
 
 mod channel;
 mod config;
-mod database;
-mod indexer;
 mod lexer;
 mod query;
+mod store;
 
 use std::ops::Deref;
 use std::str::FromStr;

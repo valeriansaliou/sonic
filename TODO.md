@@ -32,7 +32,6 @@ TODO
 
 # 25th February 2019
 
-- [ ] setup base indexer
-- [ ] setup base query system
-- [ ] setup base lexer
-- [ ] build base database managers (graph + key-value)
+- [x] setup base query builder (query type to build from channel and pass to db manager)
+- [x] setup base lexer (using a LexedString string container type)
+- [ ] build base store (abstracts both: graph + key-value databases)

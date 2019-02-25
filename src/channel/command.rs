@@ -11,12 +11,16 @@ use std::str::{self, SplitWhitespace};
 use std::vec::Vec;
 
 use super::format::unescape;
+use crate::query::builder::{QueryBuilder, QueryBuilderResult};
+use crate::query::types::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
+use crate::store::operation::StoreOperationDispatch;
 use crate::APP_CONF;
 
 #[derive(PartialEq)]
 pub enum ChannelCommandError {
     UnknownCommand,
     NotFound,
+    QueryError,
     InternalError,
     PolicyReject(&'static str),
     InvalidFormat(&'static str),
@@ -51,7 +55,8 @@ const META_PART_GROUP_OPEN: char = '(';
 const META_PART_GROUP_CLOSE: char = ')';
 
 lazy_static! {
-    pub static ref COMMANDS_MODE_SEARCH: Vec<&'static str> = vec!["QUERY", "PING", "HELP", "QUIT"];
+    pub static ref COMMANDS_MODE_SEARCH: Vec<&'static str> =
+        vec!["QUERY", "SUGGEST", "PING", "HELP", "QUIT"];
     pub static ref COMMANDS_MODE_INGEST: Vec<&'static str> =
         vec!["PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT"];
     static ref MANUAL_MODE_SEARCH: HashMap<&'static str, &'static Vec<&'static str>> =
@@ -71,6 +76,7 @@ impl ChannelCommandError {
         match *self {
             ChannelCommandError::UnknownCommand => String::from("unknown_command"),
             ChannelCommandError::NotFound => String::from("not_found"),
+            ChannelCommandError::QueryError => String::from("query_error"),
             ChannelCommandError::InternalError => String::from("internal_error"),
             ChannelCommandError::PolicyReject(reason) => format!("policy_reject({})", reason),
             ChannelCommandError::InvalidFormat(format) => format!("invalid_format({})", format),
@@ -175,7 +181,7 @@ impl ChannelCommandBase {
                 if text_part_bound > 1 {
                     for index in (0..text_part_bound - 1).rev() {
                         if text_part_bytes[index] as char != TEXT_PART_ESCAPE {
-                            break
+                            break;
                         }
 
                         count_escapes += 1
@@ -297,6 +303,48 @@ impl ChannelCommandBase {
             meta_value.to_owned(),
         )))
     }
+
+    pub fn commit_ok_operation<'a>(query_builder: QueryBuilderResult<'a>) -> ChannelResult {
+        query_builder
+            .and_then(|query| StoreOperationDispatch::dispatch(query))
+            .and_then(|_| Ok(vec![ChannelCommandResponse::Ok]))
+            .or(Err(ChannelCommandError::QueryError))
+    }
+
+    pub fn commit_result_operation<'a>(query_builder: QueryBuilderResult<'a>) -> ChannelResult {
+        query_builder
+            .and_then(|query| StoreOperationDispatch::dispatch(query))
+            .or(Err(ChannelCommandError::QueryError))
+            .and_then(|result| {
+                if let Some(result_inner) = result {
+                    Ok(vec![ChannelCommandResponse::Result(result_inner)])
+                } else {
+                    Err(ChannelCommandError::InternalError)
+                }
+            })
+    }
+
+    pub fn commit_pending_operation<'a>(
+        query_type: &'static str,
+        query_id: &str,
+        query_builder: QueryBuilderResult<'a>,
+    ) -> ChannelResult {
+        // TODO: dispatch async query (do not block thread waiting for EVENT)
+
+        query_builder
+            .and_then(|query| StoreOperationDispatch::dispatch(query))
+            .and_then(|results| {
+                Ok(vec![
+                    ChannelCommandResponse::Pending(query_id.to_string()),
+                    ChannelCommandResponse::Event(
+                        query_type,
+                        query_id.to_string(),
+                        results.unwrap_or(String::new()),
+                    ),
+                ])
+            })
+            .or(Err(ChannelCommandError::QueryError))
+    }
 }
 
 impl ChannelCommandSearch {
@@ -348,27 +396,19 @@ impl ChannelCommandSearch {
                         query_id, text, query_limit, query_offset
                     );
 
-                    // TODO: dispatch async query
-                    // TODO: use 'query_limit' + 'query_offset' parameters
-                    // TODO: for now, block thread and dispatch async result immediately after writing the \
-                    //   "pending" section, and mark a TODO for later to make things really async and multi-\
-                    //   threaded.
-
-                    // TODO: mocked result ids
-                    let result_object_ids = vec![
-                        "session_71f3d63b-57c4-40fb-8557-e11309170edd",
-                        "session_6501e83a-b778-474f-b60c-7bcad54d755f",
-                        "session_8ab1dcdd-eb53-4294-a7d1-080a7245622d",
-                    ];
-
-                    Ok(vec![
-                        ChannelCommandResponse::Pending(query_id.to_owned()),
-                        ChannelCommandResponse::Event(
-                            "QUERY",
+                    // Commit 'search' query
+                    ChannelCommandBase::commit_pending_operation(
+                        "QUERY",
+                        &query_id,
+                        QueryBuilder::search(
                             query_id.to_owned(),
-                            result_object_ids.join(" "),
+                            collection,
+                            bucket,
+                            &text,
+                            query_limit,
+                            query_offset,
                         ),
-                    ])
+                    )
                 }
             }
             _ => Err(ChannelCommandError::InvalidFormat(
@@ -377,11 +417,39 @@ impl ChannelCommandSearch {
         }
     }
 
+    pub fn dispatch_suggest(mut parts: SplitWhitespace) -> ChannelResult {
+        match (
+            parts.next(),
+            parts.next(),
+            ChannelCommandBase::parse_text_parts(&mut parts),
+        ) {
+            (Some(collection), Some(bucket), Some(text)) => {
+                // Generate command identifier
+                let query_id = Self::generate_query_identifier();
+
+                debug!(
+                    "dispatching search suggest #{} on collection: {} and bucket: {}",
+                    query_id, collection, bucket
+                );
+
+                // Commit 'suggest' query
+                ChannelCommandBase::commit_pending_operation(
+                    "SUGGEST",
+                    &query_id,
+                    QueryBuilder::suggest(query_id.to_owned(), collection, bucket, &text),
+                )
+            }
+            _ => Err(ChannelCommandError::InvalidFormat(
+                "SUGGEST <collection> <bucket> \"<sentence>\"",
+            )),
+        }
+    }
+
     pub fn dispatch_help(parts: SplitWhitespace) -> ChannelResult {
         ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_SEARCH)
     }
 
-    fn generate_query_identifier() -> String {
+    fn generate_query_identifier() -> QuerySearchID {
         thread_rng()
             .sample_iter(&Alphanumeric)
             .take(SEARCH_QUERY_ID_SIZE)
@@ -390,7 +458,11 @@ impl ChannelCommandSearch {
 
     fn handle_query_meta(
         meta_result: MetaPartsResult,
-    ) -> (Option<u16>, Option<u32>, Option<ChannelCommandError>) {
+    ) -> (
+        Option<QuerySearchLimit>,
+        Option<QuerySearchOffset>,
+        Option<ChannelCommandError>,
+    ) {
         match meta_result {
             Ok((meta_key, meta_value)) => {
                 debug!("handle query meta: {} = {}", meta_key, meta_value);
@@ -398,7 +470,7 @@ impl ChannelCommandSearch {
                 match meta_key {
                     "LIMIT" => {
                         // 'LIMIT(<count>)' where 0 <= <count> < 2^16
-                        if let Ok(query_limit_parsed) = meta_value.parse::<u16>() {
+                        if let Ok(query_limit_parsed) = meta_value.parse::<QuerySearchLimit>() {
                             (Some(query_limit_parsed), None, None)
                         } else {
                             (
@@ -413,7 +485,7 @@ impl ChannelCommandSearch {
                     }
                     "OFFSET" => {
                         // 'OFFSET(<count>)' where 0 <= <count> < 2^32
-                        if let Ok(query_offset_parsed) = meta_value.parse::<u32>() {
+                        if let Ok(query_offset_parsed) = meta_value.parse::<QuerySearchOffset>() {
                             (None, Some(query_offset_parsed), None)
                         } else {
                             (
@@ -458,10 +530,10 @@ impl ChannelCommandIngest {
                 );
                 debug!("ingest has text: {}", text);
 
-                // TODO: validate push parts
-                // TODO: push op
-
-                Ok(vec![ChannelCommandResponse::Ok])
+                // Commit 'push' query
+                ChannelCommandBase::commit_ok_operation(QueryBuilder::push(
+                    collection, bucket, object, &text,
+                ))
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "PUSH <collection> <bucket> <object> \"<text>\"",
@@ -472,17 +544,15 @@ impl ChannelCommandIngest {
     pub fn dispatch_pop(mut parts: SplitWhitespace) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next(), parts.next()) {
             (Some(collection), Some(bucket), Some(object), None) => {
-                let count = 0;
-
                 debug!(
                     "dispatching ingest pop in collection: {}, bucket: {} and object: {}",
                     collection, bucket, object
                 );
 
-                // TODO: validate pop parts
-                // TODO: pop op
-
-                Ok(vec![ChannelCommandResponse::Result(count.to_string())])
+                // Make 'pop' query
+                ChannelCommandBase::commit_result_operation(QueryBuilder::pop(
+                    collection, bucket, object,
+                ))
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "POP <collection> <bucket> <object>",
@@ -493,28 +563,14 @@ impl ChannelCommandIngest {
     pub fn dispatch_count(mut parts: SplitWhitespace) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next(), parts.next()) {
             (Some(collection), bucket_part, object_part, None) => {
-                let count = 0;
-
                 debug!("dispatching ingest count in collection: {}", collection);
 
-                // Count in bucket?
-                if let Some(bucket) = bucket_part {
-                    debug!("got ingest count bucket: {}", bucket);
-
-                    // TODO
-
-                    // Count in object?
-                    if let Some(object) = object_part {
-                        debug!("got ingest count object: {}", object);
-
-                        // TODO
-                    }
-                }
-
-                // TODO: validate count parts
-                // TODO: count op
-
-                Ok(vec![ChannelCommandResponse::Result(count.to_string())])
+                // Make 'count' query
+                ChannelCommandBase::commit_result_operation(QueryBuilder::count(
+                    collection,
+                    bucket_part,
+                    object_part,
+                ))
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "COUNT <collection> [<bucket> [<object>]?]?",
@@ -525,17 +581,13 @@ impl ChannelCommandIngest {
     pub fn dispatch_flushc(mut parts: SplitWhitespace) -> ChannelResult {
         match (parts.next(), parts.next()) {
             (Some(collection), None) => {
-                let count = 0;
-
                 debug!(
                     "dispatching ingest flush collection in collection: {}",
                     collection
                 );
 
-                // TODO: validate parts
-                // TODO: count op
-
-                Ok(vec![ChannelCommandResponse::Result(count.to_string())])
+                // Make 'flushc' query
+                ChannelCommandBase::commit_result_operation(QueryBuilder::flushc(collection))
             }
             _ => Err(ChannelCommandError::InvalidFormat("FLUSHC <collection>")),
         }
@@ -544,17 +596,15 @@ impl ChannelCommandIngest {
     pub fn dispatch_flushb(mut parts: SplitWhitespace) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next()) {
             (Some(collection), Some(bucket), None) => {
-                let count = 0;
-
                 debug!(
                     "dispatching ingest flush bucket in collection: {}, bucket: {}",
                     collection, bucket
                 );
 
-                // TODO: validate parts
-                // TODO: count op
-
-                Ok(vec![ChannelCommandResponse::Result(count.to_string())])
+                // Make 'flushb' query
+                ChannelCommandBase::commit_result_operation(QueryBuilder::flushb(
+                    collection, bucket,
+                ))
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "FLUSHB <collection> <bucket>",
@@ -565,17 +615,15 @@ impl ChannelCommandIngest {
     pub fn dispatch_flusho(mut parts: SplitWhitespace) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next(), parts.next()) {
             (Some(collection), Some(bucket), Some(object), None) => {
-                let count = 0;
-
                 debug!(
                     "dispatching ingest flush object in collection: {}, bucket: {}, object: {}",
                     collection, bucket, object
                 );
 
-                // TODO: validate parts
-                // TODO: count op
-
-                Ok(vec![ChannelCommandResponse::Result(count.to_string())])
+                // Make 'flusho' query
+                ChannelCommandBase::commit_result_operation(QueryBuilder::flusho(
+                    collection, bucket, object,
+                ))
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "FLUSHO <collection> <bucket> <object>",
@@ -594,7 +642,6 @@ mod tests {
 
     #[test]
     fn it_matches_command_response_string() {
-        assert_eq!(ChannelCommandResponse::Nil.to_args().0, "NIL");
         assert_eq!(ChannelCommandResponse::Ok.to_args().0, "OK");
         assert_eq!(ChannelCommandResponse::Pong.to_args().0, "PONG");
         assert_eq!(ChannelCommandResponse::Ended("").to_args().0, "ENDED");
