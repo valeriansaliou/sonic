@@ -27,7 +27,6 @@ pub enum ChannelCommandError {
 #[derive(PartialEq)]
 pub enum ChannelCommandResponse {
     Void,
-    Nil,
     Ok,
     Pong,
     Pending(String),
@@ -91,7 +90,6 @@ impl ChannelCommandResponse {
         //   or 'RESPONSE <value:1> <value:2> <..>' whether there are values or not.
         match *self {
             ChannelCommandResponse::Void => ("", None),
-            ChannelCommandResponse::Nil => ("NIL", None),
             ChannelCommandResponse::Ok => ("OK", None),
             ChannelCommandResponse::Pong => ("PONG", None),
             ChannelCommandResponse::Pending(ref id) => ("PENDING", Some(vec![id.to_owned()])),

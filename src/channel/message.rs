@@ -49,7 +49,6 @@ impl ChannelMessage {
                     | ChannelCommandResponse::Pending(_)
                     | ChannelCommandResponse::Result(_)
                     | ChannelCommandResponse::Event(_, _, _)
-                    | ChannelCommandResponse::Nil
                     | ChannelCommandResponse::Void
                     | ChannelCommandResponse::Err(_) => resp.to_args(),
                     ChannelCommandResponse::Ended(_) => {
