@@ -24,7 +24,7 @@ impl StoreOperationDispatch {
             }
             Query::Suggest(_, _, _) => {
                 // TODO
-                Ok(Some("\"valerian saliou\"".to_string()))
+                Ok(Some("valerian saliou".to_string()))
             }
             Query::Push(_, _) => {
                 // TODO

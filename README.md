@@ -172,7 +172,7 @@ T17: EVENT QUERY CjPvE5t9
 T18: EVENT QUERY y57KaB2d article:28d79959
 T19: SUGGEST messages user:0dcde3a6 "valerian"
 T20: PENDING z98uDE0f
-T21: EVENT SUGGEST z98uDE0f "valerian saliou"
+T21: EVENT SUGGEST z98uDE0f valerian saliou
 T22: QUIT
 T23: ENDED quit
 T24: Connection closed by foreign host.
