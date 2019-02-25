@@ -30,12 +30,9 @@ TODO
 - [x] re-write unescaping of text (restrict to \n and " unescapes)
 - [x] fix text parser in all contexts (polish its edge cases)
 
-# 22nd February 2019
+# 25th February 2019
 
 - [ ] setup base indexer
 - [ ] setup base query system
 - [ ] setup base lexer
-
-# 25th February 2019
-
 - [ ] build base database managers (graph + key-value)
