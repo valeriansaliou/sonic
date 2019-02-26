@@ -30,6 +30,7 @@ serde_derive = "1.0"
 rand = "0.6"
 iso639_2 = "0.1"
 unicode-segmentation = "1.2"
+rocksdb = { version = "0.11", default-features = false }
 
 [profile.dev]
 opt-level = 0

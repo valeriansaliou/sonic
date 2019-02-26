@@ -5,6 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 
 use super::defaults;
 
@@ -12,6 +13,7 @@ use super::defaults;
 pub struct Config {
     pub server: ConfigServer,
     pub channel: ConfigChannel,
+    pub store: ConfigStore,
 }
 
 #[derive(Deserialize)]
@@ -38,4 +40,22 @@ pub struct ConfigChannelSearch {
 
     #[serde(default = "defaults::channel_search_query_limit_maximum")]
     pub query_limit_maximum: u16,
+}
+
+#[derive(Deserialize)]
+pub struct ConfigStore {
+    pub kv: ConfigStoreKV,
+    pub fst: ConfigStoreFST,
+}
+
+#[derive(Deserialize)]
+pub struct ConfigStoreKV {
+    #[serde(default = "defaults::store_kv_path")]
+    pub path: PathBuf,
+}
+
+#[derive(Deserialize)]
+pub struct ConfigStoreFST {
+    #[serde(default = "defaults::store_fst_path")]
+    pub path: PathBuf,
 }

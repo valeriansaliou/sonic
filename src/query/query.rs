@@ -5,19 +5,19 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use super::types::*;
-use crate::lexer::token::LexedTokens;
+use crate::lexer::token::TokenLexer;
 use crate::store::item::StoreItem;
 
 pub enum Query<'a> {
     Search(
         StoreItem<'a>,
         QuerySearchID,
-        LexedTokens,
+        TokenLexer<'a>,
         QuerySearchLimit,
         QuerySearchOffset,
     ),
-    Suggest(StoreItem<'a>, QuerySearchID, LexedTokens),
-    Push(StoreItem<'a>, LexedTokens),
+    Suggest(StoreItem<'a>, QuerySearchID, TokenLexer<'a>),
+    Push(StoreItem<'a>, TokenLexer<'a>),
     Pop(StoreItem<'a>),
     Count(StoreItem<'a>),
     FlushC(StoreItem<'a>),

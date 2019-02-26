@@ -5,7 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use super::query::Query;
-use crate::lexer::token::LexedTokensBuilder;
+use crate::lexer::token::TokenLexerBuilder;
 use crate::store::item::StoreItemBuilder;
 
 pub struct QueryBuilder;
@@ -23,7 +23,7 @@ impl QueryBuilder {
     ) -> QueryBuilderResult<'a> {
         match (
             StoreItemBuilder::from_depth_2(collection, bucket),
-            LexedTokensBuilder::from(terms),
+            TokenLexerBuilder::from(terms),
         ) {
             (Ok(store), Ok(text_lexed)) => {
                 Ok(Query::Search(store, query_id, text_lexed, limit, offset))
@@ -40,7 +40,7 @@ impl QueryBuilder {
     ) -> QueryBuilderResult<'a> {
         match (
             StoreItemBuilder::from_depth_2(collection, bucket),
-            LexedTokensBuilder::from(terms),
+            TokenLexerBuilder::from(terms),
         ) {
             (Ok(store), Ok(text_lexed)) => Ok(Query::Suggest(store, query_id, text_lexed)),
             _ => Err(()),
@@ -55,7 +55,7 @@ impl QueryBuilder {
     ) -> QueryBuilderResult<'a> {
         match (
             StoreItemBuilder::from_depth_3(collection, bucket, object),
-            LexedTokensBuilder::from(text),
+            TokenLexerBuilder::from(text),
         ) {
             (Ok(store), Ok(text_lexed)) => Ok(Query::Push(store, text_lexed)),
             _ => Err(()),

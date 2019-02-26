@@ -4,7 +4,4 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-pub mod item;
-pub mod operation;
-pub mod kv;
-pub mod fst;
+use rocksdb::DB;

@@ -9,10 +9,10 @@ use std::process;
 use std::thread;
 
 use super::handle::ChannelHandle;
-use crate::{APP_CONF, THREAD_NAME_CHANNEL_CLIENT, THREAD_NAME_CHANNEL_MASTER};
+use crate::{APP_CONF, THREAD_NAME_CHANNEL_CLIENT};
 
-pub struct ChannelListenBuilder;
-pub struct ChannelListen;
+struct ChannelListenBuilder;
+struct ChannelListen;
 
 impl ChannelListenBuilder {
     pub fn new() -> ChannelListen {
@@ -22,42 +22,41 @@ impl ChannelListenBuilder {
 
 impl ChannelListen {
     pub fn run(&self) {
-        thread::Builder::new()
-            .name(THREAD_NAME_CHANNEL_MASTER.to_string())
-            .spawn(move || {
-                match TcpListener::bind(APP_CONF.channel.inet) {
-                    Ok(listener) => {
-                        for stream in listener.incoming() {
-                            match stream {
-                                Ok(stream) => {
-                                    thread::Builder::new()
-                                        .name(THREAD_NAME_CHANNEL_CLIENT.to_string())
-                                        .spawn(move || {
-                                            if let Ok(peer_addr) = stream.peer_addr() {
-                                                debug!("channel client connecting: {}", peer_addr);
-                                            }
+        match TcpListener::bind(APP_CONF.channel.inet) {
+            Ok(listener) => {
+                for stream in listener.incoming() {
+                    match stream {
+                        Ok(stream) => {
+                            thread::Builder::new()
+                                .name(THREAD_NAME_CHANNEL_CLIENT.to_string())
+                                .spawn(move || {
+                                    if let Ok(peer_addr) = stream.peer_addr() {
+                                        debug!("channel client connecting: {}", peer_addr);
+                                    }
 
-                                            // Create client
-                                            ChannelHandle::client(stream);
-                                        })
-                                        .ok();
-                                }
-                                Err(err) => {
-                                    warn!("error handling stream: {}", err);
-                                }
-                            }
+                                    // Create client
+                                    ChannelHandle::client(stream);
+                                })
+                                .ok();
                         }
-
-                        info!("listening on tcp://{}", APP_CONF.channel.inet);
-                    }
-                    Err(err) => {
-                        error!("error binding channel listener: {}", err);
-
-                        // Exit Sonic
-                        process::exit(1);
+                        Err(err) => {
+                            warn!("error handling stream: {}", err);
+                        }
                     }
                 }
-            })
-            .ok();
+
+                info!("listening on tcp://{}", APP_CONF.channel.inet);
+            }
+            Err(err) => {
+                error!("error binding channel listener: {}", err);
+
+                // Exit Sonic
+                process::exit(1);
+            }
+        }
     }
+}
+
+pub fn make() {
+    ChannelListenBuilder::new().run()
 }

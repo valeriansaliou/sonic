@@ -7,88 +7,39 @@
 use iso639_2::Iso639_2;
 use unicode_segmentation::{UnicodeSegmentation, UnicodeWords};
 
-pub struct LexedTokens(TokenLexer, Option<Iso639_2>);
-pub struct LexedTokensBuilder;
+pub struct TokenLexerBuilder;
 
-struct TokenCleaner<'a> {
+pub struct TokenLexer<'a> {
+    locale: Option<Iso639_2>,
     words: UnicodeWords<'a>,
 }
 
-pub struct TokenLexer {
-    // TODO: this is shit
-    words: String,
+impl TokenLexerBuilder {
+    pub fn from(text: &str) -> Result<TokenLexer, ()> {
+        // Detect text language
+        // TODO: from 'text' w/ 'ngram'
+        let locale = None;
+
+        // Build final token builder iterator
+        Ok(TokenLexer::new(text, locale))
+    }
 }
 
-pub enum LexedTokensError {
-    Void,
-}
-
-impl<'a> TokenCleaner<'a> {
-    fn new(text: &'a str) -> TokenCleaner<'a> {
-        TokenCleaner {
+impl<'a> TokenLexer<'a> {
+    fn new(text: &'a str, locale: Option<Iso639_2>) -> TokenLexer<'a> {
+        TokenLexer {
+            locale: locale,
             words: text.unicode_words(),
         }
     }
 }
 
-impl<'a> TokenLexer {
-    fn new(words: String) -> TokenLexer {
-        TokenLexer { words: words }
-    }
-}
-
-impl LexedTokensBuilder {
-    pub fn from(text: &str) -> Result<LexedTokens, LexedTokensError> {
-        // TODO: investigate [https://crates.io/crates/natural]
-
-        // TODO: this is shit.
-        // let mut entry_token: Option<Token> = None;
-        // let mut last_token: Option<Token> = None;
-
-        // 1. Clean text
-        let token_cleaner = TokenCleaner::new(text);
-
-        // 2. Detect text language
-        // TODO
-
-        // 3. Nuke stop-words
-        // TODO
-
-        // while let Some(text_part) = parts.next() {
-        //     let token = Token{
-        //         word: text_part,
-        //         next: None,
-        //     };
-
-        //     // Store entry point?
-        //     if entry_token.is_none() == true {
-        //         entry_token = Some(token);
-        //     }
-
-        //     if let Some(last_token_inner) = last_token {
-        //         last_token_inner.next = Some(Box::new(token));
-        //     }
-
-        //     last_token = Some(token);
-        // }
-
-        // TODO
-        // 4. Detect locale (ngram)
-        // 5. Nuke stopwords using detected locale (rebuild iterator)
-        // 6. Rebuld LexedTokens<> (freeze chained tokens object)
-        // 7. Validate LexedTokens<> chain is not empty
-
-        // TODO: pass cleaner iterator
-        // TODO: return detected language
-        Ok(LexedTokens(TokenLexer::new(String::new()), None))
-    }
-}
-
-impl<'a> Iterator for TokenCleaner<'a> {
+impl<'a> Iterator for TokenLexer<'a> {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
         // TODO: nuke non-words + gibberish
+        // TODO: nuke stop-words
         if let Some(word) = self.words.next() {
             // Lower-case word
             // Notice: unfortunately, as Rust is unicode-aware, we need to convert the str slice \
@@ -108,7 +59,7 @@ mod tests {
 
     #[test]
     fn it_cleans_token() {
-        let mut token_cleaner = TokenCleaner::new("The quick brown fox!");
+        let mut token_cleaner = TokenLexer::new("The quick brown fox!");
 
         assert_eq!(token_cleaner.next(), Some("the".to_string()));
         assert_eq!(token_cleaner.next(), Some("quick".to_string()));
