@@ -52,6 +52,26 @@ pub struct ConfigStore {
 pub struct ConfigStoreKV {
     #[serde(default = "defaults::store_kv_path")]
     pub path: PathBuf,
+
+    pub database: ConfigStoreKVDatabase,
+}
+
+#[derive(Deserialize)]
+pub struct ConfigStoreKVDatabase {
+    #[serde(default = "defaults::store_kv_database_compress")]
+    pub compress: bool,
+
+    #[serde(default = "defaults::store_kv_database_parallelism")]
+    pub parallelism: u16,
+
+    #[serde(default = "defaults::store_kv_database_max_files")]
+    pub max_files: u16,
+
+    #[serde(default = "defaults::store_kv_database_max_compactions")]
+    pub max_compactions: u16,
+
+    #[serde(default = "defaults::store_kv_database_max_flushes")]
+    pub max_flushes: u16,
 }
 
 #[derive(Deserialize)]

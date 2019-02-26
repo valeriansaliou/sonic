@@ -47,7 +47,7 @@ pub struct ChannelCommandIngest;
 type ChannelResult = Result<Vec<ChannelCommandResponse>, ChannelCommandError>;
 type MetaPartsResult<'a> = Result<(&'a str, &'a str), (&'a str, &'a str)>;
 
-pub const SEARCH_QUERY_ID_SIZE: usize = 8;
+pub const EVENT_ID_SIZE: usize = 8;
 
 const TEXT_PART_BOUNDARY: char = '"';
 const TEXT_PART_ESCAPE: char = '\\';
@@ -345,6 +345,13 @@ impl ChannelCommandBase {
             })
             .or(Err(ChannelCommandError::QueryError))
     }
+
+    pub fn generate_event_id() -> QuerySearchID {
+        thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(EVENT_ID_SIZE)
+            .collect()
+    }
 }
 
 impl ChannelCommandSearch {
@@ -356,11 +363,11 @@ impl ChannelCommandSearch {
         ) {
             (Some(collection), Some(bucket), Some(text)) => {
                 // Generate command identifier
-                let query_id = Self::generate_query_identifier();
+                let event_id = ChannelCommandBase::generate_event_id();
 
                 debug!(
                     "dispatching search query #{} on collection: {} and bucket: {}",
-                    query_id, collection, bucket
+                    event_id, collection, bucket
                 );
 
                 // Define query parameters
@@ -393,15 +400,15 @@ impl ChannelCommandSearch {
                 } else {
                     debug!(
                         "will search for #{} with text: {}, limit: {}, offset: {}",
-                        query_id, text, query_limit, query_offset
+                        event_id, text, query_limit, query_offset
                     );
 
                     // Commit 'search' query
                     ChannelCommandBase::commit_pending_operation(
                         "QUERY",
-                        &query_id,
+                        &event_id,
                         QueryBuilder::search(
-                            query_id.to_owned(),
+                            event_id.to_owned(),
                             collection,
                             bucket,
                             &text,
@@ -425,18 +432,18 @@ impl ChannelCommandSearch {
         ) {
             (Some(collection), Some(bucket), Some(text)) => {
                 // Generate command identifier
-                let query_id = Self::generate_query_identifier();
+                let event_id = ChannelCommandBase::generate_event_id();
 
                 debug!(
                     "dispatching search suggest #{} on collection: {} and bucket: {}",
-                    query_id, collection, bucket
+                    event_id, collection, bucket
                 );
 
                 // Commit 'suggest' query
                 ChannelCommandBase::commit_pending_operation(
                     "SUGGEST",
-                    &query_id,
-                    QueryBuilder::suggest(query_id.to_owned(), collection, bucket, &text),
+                    &event_id,
+                    QueryBuilder::suggest(event_id.to_owned(), collection, bucket, &text),
                 )
             }
             _ => Err(ChannelCommandError::InvalidFormat(
@@ -447,13 +454,6 @@ impl ChannelCommandSearch {
 
     pub fn dispatch_help(parts: SplitWhitespace) -> ChannelResult {
         ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_SEARCH)
-    }
-
-    fn generate_query_identifier() -> QuerySearchID {
-        thread_rng()
-            .sample_iter(&Alphanumeric)
-            .take(SEARCH_QUERY_ID_SIZE)
-            .collect()
     }
 
     fn handle_query_meta(

@@ -115,6 +115,14 @@ Use the sample [config.cfg](https://github.com/valeriansaliou/sonic/blob/master/
 
 * `path` (type: _string_, allowed: UNIX path, default: `./data/store/kv/`) — Path to the Key-Value database store
 
+**[store.kv.database]**
+
+* `compress` (type: _boolean_, allowed: `true`, `false`, default: `true`) — Whether to compress database or not (uses LZ4)
+* `parallelism` (type: _integer_, allowed: numbers, default: `2`) — Limit on the number of compaction and flush threads that can run at the same time
+* `max_files` (type: _integer_, allowed: numbers, default: `1000`) — Maximum number of database files kept open at the same time (this should be balanced)
+* `max_compactions` (type: _integer_, allowed: numbers, default: `1`) — Limit on the number of concurrent database compaction jobs
+* `max_flushes` (type: _integer_, allowed: numbers, default: `1`) — Limit on the number of concurrent database flush jobs
+
 **[store.fst]**
 
 * `path` (type: _string_, allowed: UNIX path, default: `./data/store/fst/`) — Path to the Finite-State Transducer database store

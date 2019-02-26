@@ -34,3 +34,23 @@ pub fn store_kv_path() -> PathBuf {
 pub fn store_fst_path() -> PathBuf {
     PathBuf::from("./data/store/fst/")
 }
+
+pub fn store_kv_database_compress() -> bool {
+    true
+}
+
+pub fn store_kv_database_parallelism() -> u16 {
+    2
+}
+
+pub fn store_kv_database_max_files() -> u16 {
+    1000
+}
+
+pub fn store_kv_database_max_compactions() -> u16 {
+    1
+}
+
+pub fn store_kv_database_max_flushes() -> u16 {
+    1
+}

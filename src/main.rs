@@ -14,9 +14,9 @@ extern crate lazy_static;
 extern crate serde_derive;
 extern crate iso639_2;
 extern crate rand;
+extern crate rocksdb;
 extern crate toml;
 extern crate unicode_segmentation;
-extern crate rocksdb;
 
 mod channel;
 mod config;
@@ -26,16 +26,19 @@ mod store;
 
 use std::ops::Deref;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
 use clap::{App, Arg};
 use log::LevelFilter;
 
-use channel::listen::{make as make_channel};
+use channel::listen::ChannelListenBuilder;
 use config::config::Config;
 use config::logger::ConfigLogger;
 use config::reader::ConfigReader;
+use store::fst::StoreFSTBuilder;
+use store::kv::StoreKVBuilder;
 
 struct AppArgs {
     config: String,
@@ -46,41 +49,10 @@ pub static LINE_FEED: &'static str = "\r\n";
 pub static THREAD_NAME_CHANNEL_MASTER: &'static str = "sonic-channel-master";
 pub static THREAD_NAME_CHANNEL_CLIENT: &'static str = "sonic-channel-client";
 
-macro_rules! gen_spawn_managed {
-    ($name:expr, $method:ident, $thread_name:ident, $managed_fn:ident) => {
-        fn $method() {
-            debug!("spawn managed thread: {}", $name);
-
-            let worker = thread::Builder::new()
-                .name($thread_name.to_string())
-                .spawn($managed_fn);
-
-            // Block on worker thread (join it)
-            let has_error = if let Ok(worker_thread) = worker {
-                worker_thread.join().is_err()
-            } else {
-                true
-            };
-
-            // Worker thread crashed?
-            if has_error == true {
-                error!("managed thread crashed ({}), setting it up again", $name);
-
-                // Prevents thread start loop floods
-                thread::sleep(Duration::from_secs(1));
-
-                $method();
-            }
-        }
-    };
-}
-
 lazy_static! {
     static ref APP_ARGS: AppArgs = make_app_args();
     static ref APP_CONF: Config = ConfigReader::make();
 }
-
-gen_spawn_managed!("channel", spawn_channel, THREAD_NAME_CHANNEL_MASTER, make_channel);
 
 fn make_app_args() -> AppArgs {
     let matches = App::new(crate_name!())
@@ -118,10 +90,15 @@ fn main() {
     // Ensure all states are bound
     ensure_states();
 
-    // TODO: spawn database threads
-
     // Spawn channel (foreground thread)
-    spawn_channel();
+    // Notice: this requires databases to be connected first
+    match (StoreKVBuilder::new(), StoreFSTBuilder::new()) {
+        (Ok(kv_store), Ok(fst_store)) => {
+            ChannelListenBuilder::new().run(Arc::new(kv_store), Arc::new(fst_store))
+        }
+        (Err(err), _) => panic!("could not open key-value database: {}", err),
+        (_, Err(err)) => panic!("could not open graph database: {}", err),
+    }
 
-    error!("could not start");
+    error!("failed to start");
 }
