@@ -9,7 +9,7 @@ Sonic can be used as a simple alternative to super-heavy and full-featured searc
 
 **🇫🇷 Crafted in Nantes, France.**
 
-TODO: link to journal (below)
+TODO: write journal article (link below)
 
 **:newspaper: The Sonic project was initially announced in [a post on my personal journal](https://journal.valeriansaliou.name/TODO/).**
 
