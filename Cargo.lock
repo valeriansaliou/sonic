@@ -516,7 +516,7 @@ dependencies = [
 
 [[package]]
 name = "sonic-server"
-version = "1.0.0"
+version = "0.0.1"
 dependencies = [
  "clap 2.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "iso639_2 0.1.13 (registry+https://github.com/rust-lang/crates.io-index)",
