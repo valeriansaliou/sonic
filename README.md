@@ -103,6 +103,7 @@ Use the sample [config.cfg](https://github.com/valeriansaliou/sonic/blob/master/
 
 * `inet` (type: _string_, allowed: IPv4 / IPv6 + port, default: `[::1]:1491`) — Host and TCP port Sonic Channel should listen on
 * `tcp_timeout` (type: _integer_, allowed: seconds, default: `300`) — Timeout of idle/dead client connections to Sonic Channel
+* `auth_password` (type: _string_, allowed: password values, default: none) — Authentication password required to connect to the channel (optional but recommended)
 
 **[channel.search]**
 

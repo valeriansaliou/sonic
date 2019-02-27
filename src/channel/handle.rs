@@ -25,6 +25,8 @@ pub struct ChannelHandle;
 enum ChannelHandleError {
     Closed,
     InvalidMode,
+    AuthenticationRequired,
+    AuthenticationFailed,
     NotRecognized,
     TimedOut,
     ConnectionAborted,
@@ -33,10 +35,8 @@ enum ChannelHandleError {
 }
 
 const LINE_END_GAP: usize = 1;
-const MODE_SIZE: usize = 6;
 const BUFFER_SIZE: usize = 20000;
 const MAX_LINE_SIZE: usize = BUFFER_SIZE + LINE_END_GAP + 1;
-const MODE_RESULT_SIZE: usize = 4 + MODE_SIZE + LINE_END_GAP + 1;
 const TCP_TIMEOUT_NON_ESTABLISHED: u64 = 10;
 
 static BUFFER_LINE_SEPARATOR: u8 = '\n' as u8;
@@ -54,6 +54,8 @@ impl ChannelHandleError {
         match *self {
             ChannelHandleError::Closed => "closed",
             ChannelHandleError::InvalidMode => "invalid_mode",
+            ChannelHandleError::AuthenticationRequired => "authentication_required",
+            ChannelHandleError::AuthenticationFailed => "authentication_failed",
             ChannelHandleError::NotRecognized => "not_recognized",
             ChannelHandleError::TimedOut => "timed_out",
             ChannelHandleError::ConnectionAborted => "connection_aborted",
@@ -72,7 +74,7 @@ impl ChannelHandle {
         write!(stream, "{}{}", *CONNECTED_BANNER, LINE_FEED).expect("write failed");
 
         // Ensure channel mode is set
-        match Self::ensure_mode(&stream) {
+        match Self::ensure_start(&stream) {
             Ok(mode) => {
                 // Configure stream (established)
                 ChannelHandle::configure_stream(&stream, true);
@@ -158,9 +160,9 @@ impl ChannelHandle {
             .is_ok());
     }
 
-    fn ensure_mode(mut stream: &TcpStream) -> Result<ChannelMode, ChannelHandleError> {
+    fn ensure_start(mut stream: &TcpStream) -> Result<ChannelMode, ChannelHandleError> {
         loop {
-            let mut read = [0; MODE_RESULT_SIZE];
+            let mut read = [0; MAX_LINE_SIZE];
 
             match stream.read(&mut read) {
                 Ok(n) => {
@@ -171,13 +173,26 @@ impl ChannelHandle {
                     let mut parts = str::from_utf8(&read[0..n]).unwrap_or("").split_whitespace();
 
                     if parts.next().unwrap_or("").to_uppercase().as_str() == "START" {
-                        let res_mode = parts.next().unwrap_or("");
+                        if let Some(res_mode) = parts.next() {
+                            debug!("got mode response: {}", res_mode);
 
-                        debug!("got mode response: {}", res_mode);
+                            // Extract mode
+                            if let Ok(mode) = ChannelMode::from_str(res_mode) {
+                                // Check if authenticated?
+                                if let Some(ref auth_password) = APP_CONF.channel.auth_password {
+                                    if let Some(provided_auth) = parts.next() {
+                                        // Compare provided password with configured password
+                                        if provided_auth != auth_password {
+                                            return Err(ChannelHandleError::AuthenticationFailed);
+                                        }
+                                    } else {
+                                        // No password was provided, but we require one
+                                        return Err(ChannelHandleError::AuthenticationRequired);
+                                    }
+                                }
 
-                        // Extract mode
-                        if let Ok(mode) = ChannelMode::from_str(res_mode) {
-                            return Ok(mode);
+                                return Ok(mode);
+                            }
                         }
 
                         return Err(ChannelHandleError::InvalidMode);

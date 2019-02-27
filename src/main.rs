@@ -37,8 +37,8 @@ use channel::listen::ChannelListenBuilder;
 use config::config::Config;
 use config::logger::ConfigLogger;
 use config::reader::ConfigReader;
-use store::fst::StoreFSTBuilder;
-use store::kv::StoreKVBuilder;
+use store::fst::{StoreFST, StoreFSTBuilder};
+use store::kv::{StoreKV, StoreKVBuilder};
 
 struct AppArgs {
     config: String,
@@ -52,6 +52,31 @@ pub static THREAD_NAME_CHANNEL_CLIENT: &'static str = "sonic-channel-client";
 lazy_static! {
     static ref APP_ARGS: AppArgs = make_app_args();
     static ref APP_CONF: Config = ConfigReader::make();
+}
+
+fn spawn_channel(kv_store: Arc<StoreKV>, fst_store: Arc<StoreFST>) {
+    let (kv_store_wrap, fst_store_wrap) = (kv_store.clone(), fst_store.clone());
+
+    let channel = thread::Builder::new()
+        .name(THREAD_NAME_CHANNEL_MASTER.to_string())
+        .spawn(move || ChannelListenBuilder::new().run(kv_store_wrap, fst_store_wrap));
+
+    // Block on channel thread (join it)
+    let has_error = if let Ok(channel_thread) = channel {
+        channel_thread.join().is_err()
+    } else {
+        true
+    };
+
+    // Channel thread crashed?
+    if has_error == true {
+        error!("channel thread crashed, setting it up again");
+
+        // Prevents thread start loop floods
+        thread::sleep(Duration::from_secs(1));
+
+        spawn_channel(kv_store, fst_store);
+    }
 }
 
 fn make_app_args() -> AppArgs {
@@ -93,9 +118,7 @@ fn main() {
     // Spawn channel (foreground thread)
     // Notice: this requires databases to be connected first
     match (StoreKVBuilder::new(), StoreFSTBuilder::new()) {
-        (Ok(kv_store), Ok(fst_store)) => {
-            ChannelListenBuilder::new().run(Arc::new(kv_store), Arc::new(fst_store))
-        }
+        (Ok(kv_store), Ok(fst_store)) => spawn_channel(Arc::new(kv_store), Arc::new(fst_store)),
         (Err(err), _) => panic!("could not open key-value database: {}", err),
         (_, Err(err)) => panic!("could not open graph database: {}", err),
     }

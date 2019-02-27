@@ -30,6 +30,7 @@ pub struct ConfigChannel {
     #[serde(default = "defaults::channel_tcp_timeout")]
     pub tcp_timeout: u64,
 
+    pub auth_password: Option<String>,
     pub search: ConfigChannelSearch,
 }
 

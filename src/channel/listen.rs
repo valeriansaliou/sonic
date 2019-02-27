@@ -25,49 +25,44 @@ impl ChannelListenBuilder {
 
 impl ChannelListen {
     pub fn run(&self, kv_store: Arc<StoreKV>, fst_store: Arc<StoreFST>) {
-        thread::Builder::new()
-            .name(THREAD_NAME_CHANNEL_MASTER.to_string())
-            .spawn(move || {
-                match TcpListener::bind(APP_CONF.channel.inet) {
-                    Ok(listener) => {
-                        for stream in listener.incoming() {
-                            match stream {
-                                Ok(stream) => {
-                                    let (kv_store_client, fst_store_client) =
-                                        (kv_store.clone(), fst_store.clone());
+        match TcpListener::bind(APP_CONF.channel.inet) {
+            Ok(listener) => {
+                info!("listening on tcp://{}", APP_CONF.channel.inet);
 
-                                    thread::Builder::new()
-                                        .name(THREAD_NAME_CHANNEL_CLIENT.to_string())
-                                        .spawn(move || {
-                                            if let Ok(peer_addr) = stream.peer_addr() {
-                                                debug!("channel client connecting: {}", peer_addr);
-                                            }
+                for stream in listener.incoming() {
+                    match stream {
+                        Ok(stream) => {
+                            let (kv_store_client, fst_store_client) =
+                                (kv_store.clone(), fst_store.clone());
 
-                                            // Create client
-                                            ChannelHandle::client(
-                                                stream,
-                                                kv_store_client,
-                                                fst_store_client,
-                                            );
-                                        })
-                                        .ok();
-                                }
-                                Err(err) => {
-                                    warn!("error handling stream: {}", err);
-                                }
-                            }
+                            thread::Builder::new()
+                                .name(THREAD_NAME_CHANNEL_CLIENT.to_string())
+                                .spawn(move || {
+                                    if let Ok(peer_addr) = stream.peer_addr() {
+                                        debug!("channel client connecting: {}", peer_addr);
+                                    }
+
+                                    // Create client
+                                    ChannelHandle::client(
+                                        stream,
+                                        kv_store_client,
+                                        fst_store_client,
+                                    );
+                                })
+                                .ok();
                         }
-
-                        info!("listening on tcp://{}", APP_CONF.channel.inet);
-                    }
-                    Err(err) => {
-                        error!("error binding channel listener: {}", err);
-
-                        // Exit Sonic
-                        process::exit(1);
+                        Err(err) => {
+                            warn!("error handling stream: {}", err);
+                        }
                     }
                 }
-            })
-            .ok();
+            }
+            Err(err) => {
+                error!("error binding channel listener: {}", err);
+
+                // Exit Sonic
+                process::exit(1);
+            }
+        }
     }
 }
