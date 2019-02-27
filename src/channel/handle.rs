@@ -183,9 +183,13 @@ impl ChannelHandle {
                                     if let Some(provided_auth) = parts.next() {
                                         // Compare provided password with configured password
                                         if provided_auth != auth_password {
+                                            info!("password provided, but does not match");
+
                                             return Err(ChannelHandleError::AuthenticationFailed);
                                         }
                                     } else {
+                                        info!("no password provided, but one required");
+
                                         // No password was provided, but we require one
                                         return Err(ChannelHandleError::AuthenticationRequired);
                                     }
