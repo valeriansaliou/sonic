@@ -153,7 +153,6 @@ _The Sonic Channel Search mode is used for querying the search index. Once in th
 **➡️ Available commands:**
 
 * `QUERY`: query database (syntax: `QUERY <collection> <bucket> "<terms>" [LIMIT(<count>)]? [OFFSET(<count>)]?`)
-* `SUGGEST`: auto-completes sentence (syntax: `SUGGEST <collection> <bucket> "<sentence>"`)
 * `PING`: ping server (syntax: `PING`)
 * `HELP`: show help (syntax: `HELP [<manual>]?`)
 * `QUIT`: stop connection (syntax: `QUIT`)
@@ -189,12 +188,9 @@ T15: PING
 T16: PONG
 T17: EVENT QUERY CjPvE5t9
 T18: EVENT QUERY y57KaB2d article:28d79959
-T19: SUGGEST messages user:0dcde3a6 "valerian"
-T20: PENDING z98uDE0f
-T21: EVENT SUGGEST z98uDE0f valerian saliou
-T22: QUIT
-T23: ENDED quit
-T24: Connection closed by foreign host.
+T19: QUIT
+T20: ENDED quit
+T21: Connection closed by foreign host.
 ```
 
 _Notes on what happens:_

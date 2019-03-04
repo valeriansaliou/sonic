@@ -75,10 +75,7 @@ impl StoreKV {
         Err(())
     }
 
-    pub fn delete_object_id_association(
-        iid: &StoreObjectIID,
-        eid: StoreObjectEID,
-    ) -> Result<(), ()> {
+    pub fn delete_object_id_association(iid: &StoreObjectIID) -> Result<(), ()> {
         // TODO
         Err(())
     }

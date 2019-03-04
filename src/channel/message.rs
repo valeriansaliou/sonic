@@ -103,7 +103,6 @@ impl ChannelMessageMode for ChannelMessageModeSearch {
             match command.as_str() {
                 "" => Ok(vec![ChannelCommandResponse::Void]),
                 "QUERY" => ChannelCommandSearch::dispatch_query(parts),
-                "SUGGEST" => ChannelCommandSearch::dispatch_suggest(parts),
                 "PING" => ChannelCommandBase::dispatch_ping(parts),
                 "HELP" => ChannelCommandSearch::dispatch_help(parts),
                 "QUIT" => ChannelCommandBase::dispatch_quit(parts),

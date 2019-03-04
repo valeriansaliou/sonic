@@ -12,7 +12,7 @@ use std::thread;
 use super::handle::ChannelHandle;
 use crate::store::fst::StoreFST;
 use crate::store::kv::StoreKV;
-use crate::{APP_CONF, THREAD_NAME_CHANNEL_CLIENT, THREAD_NAME_CHANNEL_MASTER};
+use crate::{APP_CONF, THREAD_NAME_CHANNEL_CLIENT};
 
 pub struct ChannelListenBuilder;
 pub struct ChannelListen;
