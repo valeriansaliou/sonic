@@ -18,13 +18,13 @@ script:
   - git clone https://github.com/packpack/packpack.git packpack
   - packpack/packpack
 
-deploy:
-  provider: packagecloud
-  username: ${PACKAGECLOUD_USER}
-  repository: ${PACKAGECLOUD_REPO}
-  token: ${PACKAGECLOUD_TOKEN}
-  dist: ${OS}/${DIST}
-  package_glob: build/*.{deb,rpm}
-  skip_cleanup: true
-  on:
-    tags: true
+# deploy:
+#   provider: packagecloud
+#   username: ${PACKAGECLOUD_USER}
+#   repository: ${PACKAGECLOUD_REPO}
+#   token: ${PACKAGECLOUD_TOKEN}
+#   dist: ${OS}/${DIST}
+#   package_glob: build/*.{deb,rpm}
+#   skip_cleanup: true
+#   on:
+#     tags: true
