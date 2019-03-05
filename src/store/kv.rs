@@ -88,25 +88,72 @@ impl StoreKVActionBuilder {
 }
 
 impl<'a> StoreKVAction<'a> {
+    /// Meta-to-Value mapper
+    ///
+    /// [IDX=0] ((meta)) ~> ((value))
+    pub fn get_meta_to_value(&self, meta: StoreMetaKey) -> Option<StoreMetaValue> {
+        let store_key = StoreKeyerBuilder::meta_to_value(self.bucket.as_str(), &meta).to_string();
+
+        debug!("store get meta-to-value: {}", store_key);
+
+        match self.store.database.get(store_key.as_bytes()) {
+            Ok(Some(value)) => {
+                if let Some(value) = value.to_utf8() {
+                    match meta {
+                        StoreMetaKey::IIDIncr => value
+                            .parse::<StoreObjectIID>()
+                            .ok()
+                            .map(|value| StoreMetaValue::IIDIncr(value))
+                            .or(None),
+                    }
+                } else {
+                    None
+                }
+            }
+            Ok(None) | Err(_) => None,
+        }
+    }
+
+    pub fn set_meta_to_value(&self, meta: StoreMetaKey, value: StoreMetaValue) -> Result<(), ()> {
+        let store_key = StoreKeyerBuilder::meta_to_value(self.bucket.as_str(), &meta).to_string();
+
+        debug!("store set meta-to-value: {}", store_key);
+
+        let value_string = match value {
+            StoreMetaValue::IIDIncr(iid_incr) => iid_incr.to_string(),
+        };
+
+        self.store
+            .database
+            .put(store_key.as_bytes(), value_string.as_bytes())
+            .or(Err(()))
+    }
+
     /// Term-to-IIDs mapper
     ///
-    /// [IDX=0] ((term)) ~> [((iid))]
+    /// [IDX=1] ((term)) ~> [((iid))]
     pub fn get_term_to_iids(&self, term: &str) -> Option<Vec<StoreObjectIID>> {
-        let keyer = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term);
+        let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term).to_string();
+
+        debug!("store get term-to-iids: {}", store_key);
 
         // TODO
         None
     }
 
-    pub fn set_term_to_iids(&self, term: &str, iids: Vec<StoreObjectIID>) -> Result<(), ()> {
-        let keyer = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term);
+    pub fn set_term_to_iids(&self, term: &str, iids: &[StoreObjectIID]) -> Result<(), ()> {
+        let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term).to_string();
+
+        debug!("store set term-to-iids: {}", store_key);
 
         // TODO
         Err(())
     }
 
     pub fn delete_term_to_iids(&self, term: &str) -> Result<(), ()> {
-        let keyer = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term);
+        let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term).to_string();
+
+        debug!("store delete term-to-iids: {}", store_key);
 
         // TODO
         Err(())
@@ -114,23 +161,29 @@ impl<'a> StoreKVAction<'a> {
 
     /// OID-to-IID mapper
     ///
-    /// [IDX=1] ((oid)) ~> ((iid))
-    pub fn get_oid_to_iid(&self, oid: StoreObjectOID) -> Option<StoreObjectIID> {
-        let keyer = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
+    /// [IDX=2] ((oid)) ~> ((iid))
+    pub fn get_oid_to_iid(&self, oid: &StoreObjectOID) -> Option<StoreObjectIID> {
+        let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid).to_string();
+
+        debug!("store get oid-to-iid: {}", store_key);
 
         // TODO
         None
     }
 
-    pub fn set_oid_to_iid(&self, oid: StoreObjectOID, iid: StoreObjectIID) -> Result<(), ()> {
-        let keyer = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
+    pub fn set_oid_to_iid(&self, oid: &StoreObjectOID, iid: StoreObjectIID) -> Result<(), ()> {
+        let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid).to_string();
+
+        debug!("store set oid-to-iid: {}", store_key);
 
         // TODO
         Err(())
     }
 
-    pub fn delete_oid_to_iid(&self, oid: StoreObjectOID) -> Result<(), ()> {
-        let keyer = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
+    pub fn delete_oid_to_iid(&self, oid: &StoreObjectOID) -> Result<(), ()> {
+        let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid).to_string();
+
+        debug!("store delete oid-to-iid: {}", store_key);
 
         // TODO
         Err(())
@@ -138,23 +191,29 @@ impl<'a> StoreKVAction<'a> {
 
     /// IID-to-OID mapper
     ///
-    /// [IDX=2] ((iid)) ~> ((oid))
+    /// [IDX=3] ((iid)) ~> ((oid))
     pub fn get_iid_to_oid(&self, iid: StoreObjectIID) -> Option<StoreObjectOID> {
-        let keyer = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
+        let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid).to_string();
+
+        debug!("store get iid-to-oid: {}", store_key);
 
         // TODO
         None
     }
 
-    pub fn set_iid_to_oid(&self, iid: StoreObjectIID, oid: StoreObjectOID) -> Result<(), ()> {
-        let keyer = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
+    pub fn set_iid_to_oid(&self, iid: StoreObjectIID, oid: &StoreObjectOID) -> Result<(), ()> {
+        let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid).to_string();
+
+        debug!("store set iid-to-oid: {}", store_key);
 
         // TODO
         Err(())
     }
 
     pub fn delete_iid_to_oid(&self, iid: StoreObjectIID) -> Result<(), ()> {
-        let keyer = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
+        let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid).to_string();
+
+        debug!("store delete iid-to-oid: {}", store_key);
 
         // TODO
         Err(())
@@ -162,23 +221,29 @@ impl<'a> StoreKVAction<'a> {
 
     /// IID-to-Terms mapper
     ///
-    /// [IDX=3] ((iid)) ~> [((term))]
+    /// [IDX=4] ((iid)) ~> [((term))]
     pub fn get_iid_to_terms(&self, iid: StoreObjectIID) -> Option<Vec<String>> {
-        let keyer = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
+        let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid).to_string();
+
+        debug!("store get iid-to-terms: {}", store_key);
 
         // TODO
         None
     }
 
-    pub fn set_iid_to_terms(&self, iid: StoreObjectIID, terms: &[&'a str]) -> Result<(), ()> {
-        let keyer = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
+    pub fn set_iid_to_terms(&self, iid: StoreObjectIID, terms: &[String]) -> Result<(), ()> {
+        let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid).to_string();
+
+        debug!("store set iid-to-terms: {}", store_key);
 
         // TODO
         Err(())
     }
 
     pub fn delete_iid_to_terms(&self, iid: StoreObjectIID) -> Result<(), ()> {
-        let keyer = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
+        let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid).to_string();
+
+        debug!("store delete iid-to-terms: {}", store_key);
 
         // TODO
         Err(())

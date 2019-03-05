@@ -6,3 +6,19 @@
 
 pub type StoreObjectIID = u64;
 pub type StoreObjectOID = String;
+
+pub enum StoreMetaKey {
+    IIDIncr,
+}
+
+pub enum StoreMetaValue {
+    IIDIncr(StoreObjectIID),
+}
+
+impl StoreMetaKey {
+    pub fn as_u64(&self) -> u64 {
+        match self {
+            StoreMetaKey::IIDIncr => 0,
+        }
+    }
+}

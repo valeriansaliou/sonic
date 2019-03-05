@@ -18,8 +18,9 @@ pub struct StoreKeyer<'a> {
 }
 
 enum StoreKeyerIdx<'a> {
+    MetaToValue(&'a StoreMetaKey),
     TermToIIDs(&'a str),
-    OIDToIID(StoreObjectOID),
+    OIDToIID(&'a StoreObjectOID),
     IIDToOID(StoreObjectIID),
     IIDToTerms(StoreObjectIID),
 }
@@ -34,15 +35,23 @@ const STORE_KEYER_ROUTE_COMPACT_BASE: u32 = 36;
 impl<'a> StoreKeyerIdx<'a> {
     pub fn to_index(&self) -> u8 {
         match self {
-            StoreKeyerIdx::TermToIIDs(_) => 0,
-            StoreKeyerIdx::OIDToIID(_) => 1,
-            StoreKeyerIdx::IIDToOID(_) => 2,
-            StoreKeyerIdx::IIDToTerms(_) => 3,
+            StoreKeyerIdx::MetaToValue(_) => 0,
+            StoreKeyerIdx::TermToIIDs(_) => 1,
+            StoreKeyerIdx::OIDToIID(_) => 2,
+            StoreKeyerIdx::IIDToOID(_) => 3,
+            StoreKeyerIdx::IIDToTerms(_) => 4,
         }
     }
 }
 
 impl StoreKeyerBuilder {
+    pub fn meta_to_value<'a>(bucket: &'a str, meta: &'a StoreMetaKey) -> StoreKeyer<'a> {
+        StoreKeyer {
+            idx: StoreKeyerIdx::MetaToValue(meta),
+            bucket: bucket,
+        }
+    }
+
     pub fn term_to_iids<'a>(bucket: &'a str, term: &'a str) -> StoreKeyer<'a> {
         StoreKeyer {
             idx: StoreKeyerIdx::TermToIIDs(term),
@@ -50,7 +59,7 @@ impl StoreKeyerBuilder {
         }
     }
 
-    pub fn oid_to_iid<'a>(bucket: &'a str, oid: StoreObjectOID) -> StoreKeyer<'a> {
+    pub fn oid_to_iid<'a>(bucket: &'a str, oid: &'a StoreObjectOID) -> StoreKeyer<'a> {
         StoreKeyer {
             idx: StoreKeyerIdx::OIDToIID(oid),
             bucket: bucket,
@@ -92,6 +101,7 @@ impl<'a> StoreKeyer<'a> {
 
     pub fn route_to_compact(&self) -> StoreKeyerRouteCompacted {
         let value = match &self.idx {
+            StoreKeyerIdx::MetaToValue(route) => route.as_u64(),
             StoreKeyerIdx::TermToIIDs(route) => Self::hash_route_text(route),
             StoreKeyerIdx::OIDToIID(route) => Self::hash_route_text(route),
             StoreKeyerIdx::IIDToOID(route) => *route,
@@ -114,23 +124,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn it_keys_meta_to_value() {
+        assert_eq!(
+            StoreKeyerBuilder::meta_to_value("user:0dcde3a6", &StoreMetaKey::IIDIncr).to_string(),
+            "0:vngsgj:0"
+        );
+    }
+
+    #[test]
     fn it_keys_term_to_iids() {
         assert_eq!(
             StoreKeyerBuilder::term_to_iids("user:0dcde3a6", "hello").to_string(),
-            "0:vngsgj:l8a8u0vgmher"
+            "1:vngsgj:l8a8u0vgmher"
         );
         assert_eq!(
             StoreKeyerBuilder::term_to_iids("default", "yes").to_string(),
-            "0:tlegv5:8hzoehaig16x"
+            "1:tlegv5:8hzoehaig16x"
         );
     }
 
     #[test]
     fn it_keys_oid_to_iid() {
         assert_eq!(
-            StoreKeyerBuilder::oid_to_iid("user:0dcde3a6", "conversation:6501e83a".to_string())
+            StoreKeyerBuilder::oid_to_iid("user:0dcde3a6", &"conversation:6501e83a".to_string())
                 .to_string(),
-            "1:vngsgj:330ky6g2kd34c"
+            "2:vngsgj:330ky6g2kd34c"
         );
     }
 
@@ -138,7 +156,7 @@ mod tests {
     fn it_keys_iid_to_oid() {
         assert_eq!(
             StoreKeyerBuilder::iid_to_oid("user:0dcde3a6", 10292198).to_string(),
-            "2:vngsgj:64lie"
+            "3:vngsgj:64lie"
         );
     }
 
@@ -146,11 +164,11 @@ mod tests {
     fn it_keys_iid_to_terms() {
         assert_eq!(
             StoreKeyerBuilder::iid_to_terms("user:0dcde3a6", 1).to_string(),
-            "3:vngsgj:1"
+            "4:vngsgj:1"
         );
         assert_eq!(
             StoreKeyerBuilder::iid_to_terms("user:0dcde3a6", 20).to_string(),
-            "3:vngsgj:k"
+            "4:vngsgj:k"
         );
     }
 }
