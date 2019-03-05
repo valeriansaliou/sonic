@@ -14,10 +14,10 @@ env:
   matrix:
     - OS=debian DIST=jessie ARCH=x86_64
 
-script:
-  - git clone https://github.com/packpack/packpack.git packpack
-  - packpack/packpack
-
+# script:
+#   - git clone https://github.com/packpack/packpack.git packpack
+#   - packpack/packpack
+#
 # deploy:
 #   provider: packagecloud
 #   username: ${PACKAGECLOUD_USER}
