@@ -6,12 +6,9 @@
 
 use std::net::TcpListener;
 use std::process;
-use std::sync::Arc;
 use std::thread;
 
 use super::handle::ChannelHandle;
-use crate::store::fst::StoreFST;
-use crate::store::kv::StoreKV;
 use crate::{APP_CONF, THREAD_NAME_CHANNEL_CLIENT};
 
 pub struct ChannelListenBuilder;
@@ -24,7 +21,7 @@ impl ChannelListenBuilder {
 }
 
 impl ChannelListen {
-    pub fn run(&self, kv_store: Arc<StoreKV>, fst_store: Arc<StoreFST>) {
+    pub fn run(&self) {
         match TcpListener::bind(APP_CONF.channel.inet) {
             Ok(listener) => {
                 info!("listening on tcp://{}", APP_CONF.channel.inet);
@@ -32,9 +29,6 @@ impl ChannelListen {
                 for stream in listener.incoming() {
                     match stream {
                         Ok(stream) => {
-                            let (kv_store_client, fst_store_client) =
-                                (kv_store.clone(), fst_store.clone());
-
                             thread::Builder::new()
                                 .name(THREAD_NAME_CHANNEL_CLIENT.to_string())
                                 .spawn(move || {
@@ -43,11 +37,7 @@ impl ChannelListen {
                                     }
 
                                     // Create client
-                                    ChannelHandle::client(
-                                        stream,
-                                        kv_store_client,
-                                        fst_store_client,
-                                    );
+                                    ChannelHandle::client(stream);
                                 })
                                 .ok();
                         }

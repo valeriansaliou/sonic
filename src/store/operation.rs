@@ -4,47 +4,48 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use crate::executor::count::ExecutorCount;
+use crate::executor::flushb::ExecutorFlushB;
+use crate::executor::flushc::ExecutorFlushC;
+use crate::executor::flusho::ExecutorFlushO;
+use crate::executor::pop::ExecutorPop;
+use crate::executor::push::ExecutorPush;
+use crate::executor::search::ExecutorSearch;
 use crate::query::query::Query;
 
 pub struct StoreOperationDispatch;
 
 impl StoreOperationDispatch {
     pub fn dispatch(query: Query) -> Result<Option<String>, ()> {
+        // Dispatch de-constructed query to its target executor
         match query {
-            Query::Search(_, _, _, _, _) => {
-                // TODO
-                Ok(Some(
-                    vec![
-                        "session_71f3d63b-57c4-40fb-8557-e11309170edd",
-                        "session_6501e83a-b778-474f-b60c-7bcad54d755f",
-                        "session_8ab1dcdd-eb53-4294-a7d1-080a7245622d",
-                    ]
-                    .join(" "),
-                ))
+            Query::Search(store, query_id, lexer, limit, offset) => {
+                // TODO: return OK or ERR from execute()
+                Ok(
+                    ExecutorSearch::execute(store, query_id, lexer, limit, offset)
+                        .map(|results| results.join(" ")),
+                )
             }
-            Query::Push(_, _) => {
-                // TODO
-                Ok(None)
+            Query::Push(store, lexer) => ExecutorPush::execute(store, lexer).map(|_| None),
+            Query::Pop(store) => {
+                // TODO: return OK or ERR from execute()
+                Ok(Some(ExecutorPop::execute(store).to_string()))
             }
-            Query::Pop(_) => {
-                // TODO
-                Ok(Some("0".to_string()))
+            Query::Count(store) => {
+                // TODO: return OK or ERR from execute()
+                Ok(Some(ExecutorCount::execute(store).to_string()))
             }
-            Query::Count(_) => {
-                // TODO
-                Ok(Some("0".to_string()))
+            Query::FlushC(store) => {
+                // TODO: return OK or ERR from execute()
+                Ok(Some(ExecutorFlushC::execute(store).to_string()))
             }
-            Query::FlushC(_) => {
-                // TODO
-                Ok(Some("0".to_string()))
+            Query::FlushB(store) => {
+                // TODO: return OK or ERR from execute()
+                Ok(Some(ExecutorFlushB::execute(store).to_string()))
             }
-            Query::FlushB(_) => {
-                // TODO
-                Ok(Some("0".to_string()))
-            }
-            Query::FlushO(_) => {
-                // TODO
-                Ok(Some("0".to_string()))
+            Query::FlushO(store) => {
+                // TODO: return OK or ERR from execute()
+                Ok(Some(ExecutorFlushO::execute(store).to_string()))
             }
         }
     }

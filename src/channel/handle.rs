@@ -8,15 +8,12 @@ use std::io::{ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::result::Result;
 use std::str;
-use std::sync::Arc;
 use std::time::Duration;
 
 use super::message::{
     ChannelMessage, ChannelMessageModeIngest, ChannelMessageModeSearch, ChannelMessageResult,
 };
 use super::mode::ChannelMode;
-use crate::store::fst::StoreFST;
-use crate::store::kv::StoreKV;
 use crate::APP_CONF;
 use crate::LINE_FEED;
 
@@ -66,7 +63,7 @@ impl ChannelHandleError {
 }
 
 impl ChannelHandle {
-    pub fn client(mut stream: TcpStream, kv_store: Arc<StoreKV>, fst_store: Arc<StoreFST>) {
+    pub fn client(mut stream: TcpStream) {
         // Configure stream (non-established)
         ChannelHandle::configure_stream(&stream, false);
 

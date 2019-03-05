@@ -6,12 +6,12 @@
 
 pub struct StoreItemBuilder;
 pub struct StoreItem<'a>(
-    StoreItemPart<'a>,
-    Option<StoreItemPart<'a>>,
-    Option<StoreItemPart<'a>>,
+    pub StoreItemPart<'a>,
+    pub Option<StoreItemPart<'a>>,
+    pub Option<StoreItemPart<'a>>,
 );
 
-struct StoreItemPart<'a>(&'a str);
+pub struct StoreItemPart<'a>(&'a str);
 
 pub enum StoreItemError {
     InvalidCollection,
@@ -33,6 +33,10 @@ impl<'a> StoreItemPart<'a> {
         }
 
         return Err(());
+    }
+
+    pub fn as_str(&self) -> &'a str {
+        self.0
     }
 }
 

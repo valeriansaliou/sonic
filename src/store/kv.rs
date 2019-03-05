@@ -9,10 +9,26 @@ use rocksdb::{DBCompactionStyle, DBCompressionType, Error as DBError, Options as
 use super::identifiers::*;
 use crate::APP_CONF;
 
+pub struct StoreKVPool;
 pub struct StoreKVBuilder;
 
 pub struct StoreKV {
     database: DB,
+}
+
+pub struct StoreKVActionBuilder;
+
+pub struct StoreKVAction<'a> {
+    store: StoreKV,
+    bucket: &'a str
+}
+
+impl StoreKVPool {
+    pub fn acquire(target: &str) -> Result<StoreKV, DBError> {
+        // TODO: pool and auto-close or auto-open if needed
+        // TODO: keep it in a LAZY_STATIC global object
+        StoreKVBuilder::new()
+    }
 }
 
 impl StoreKVBuilder {
@@ -60,29 +76,84 @@ impl StoreKVBuilder {
     }
 }
 
-impl StoreKV {
-    /// Per-bucket mappings
+impl StoreKVActionBuilder {
+    pub fn new<'a>(bucket: &'a str, store: StoreKV) -> StoreKVAction<'a> {
+        StoreKVAction {
+            store: store,
+            bucket: bucket
+        }
+    }
+}
+
+impl<'a> StoreKVAction<'a> {
+    /// Term-to-IIDs mapper
     ///
-    /// [IDX=0]  ((term))  ~>  [((iid))]
-    /// [IDX=1]  ((oid))   ~>  ((iid))
-    /// [IDX=2]  ((iid))   ~>  ((oid))
-    /// [IDX=3]  ((iid))   ~>  [((term))]
-    pub fn get_object_iid_to_oid(iid: &StoreObjectIID) -> Option<StoreObjectOID> {
+    /// [IDX=0] ((term)) ~> [((iid))]
+    pub fn get_term_to_iids(&self, term: &str) -> Option<Vec<StoreObjectIID>> {
         // TODO
         None
     }
 
-    pub fn get_object_oid_to_iid(oid: StoreObjectOID) -> Option<StoreObjectIID> {
-        // TODO
-        None
-    }
-
-    pub fn set_object_id_association(iid: &StoreObjectIID, oid: StoreObjectOID) -> Result<(), ()> {
+    pub fn set_term_to_iids(&self, term: &str, iids: Vec<StoreObjectIID>) -> Result<(), ()> {
         // TODO
         Err(())
     }
 
-    pub fn delete_object_id_association(iid: &StoreObjectIID) -> Result<(), ()> {
+    pub fn delete_term_to_iids(&self, term: &str) -> Result<(), ()> {
+        // TODO
+        Err(())
+    }
+
+    /// OID-to-IID mapper
+    ///
+    /// [IDX=1] ((oid)) ~> ((iid))
+    pub fn get_oid_to_iid(&self, oid: StoreObjectOID) -> Option<StoreObjectIID> {
+        // TODO
+        None
+    }
+
+    pub fn set_oid_to_iid(&self, oid: StoreObjectOID, iid: StoreObjectIID) -> Result<(), ()> {
+        // TODO
+        Err(())
+    }
+
+    pub fn delete_oid_to_iid(&self, oid: StoreObjectOID) -> Result<(), ()> {
+        // TODO
+        Err(())
+    }
+
+    /// IID-to-OID mapper
+    ///
+    /// [IDX=2] ((iid)) ~> ((oid))
+    pub fn get_iid_to_oid(&self, iid: StoreObjectIID) -> Option<StoreObjectOID> {
+        // TODO
+        None
+    }
+
+    pub fn set_iid_to_oid(&self, iid: StoreObjectIID, oid: StoreObjectOID) -> Result<(), ()> {
+        // TODO
+        Err(())
+    }
+
+    pub fn delete_iid_to_oid(&self, iid: StoreObjectIID) -> Result<(), ()> {
+        // TODO
+        Err(())
+    }
+
+    /// IID-to-Terms mapper
+    ///
+    /// [IDX=3] ((iid)) ~> [((term))]
+    pub fn get_iid_to_terms(&self, iid: StoreObjectIID) -> Option<Vec<String>> {
+        // TODO
+        None
+    }
+
+    pub fn set_iid_to_terms(&self, iid: StoreObjectIID, terms: &[&'a str]) -> Result<(), ()> {
+        // TODO
+        Err(())
+    }
+
+    pub fn delete_iid_to_terms(&self, iid: StoreObjectIID) -> Result<(), ()> {
         // TODO
         Err(())
     }

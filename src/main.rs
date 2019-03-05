@@ -14,22 +14,22 @@ extern crate lazy_static;
 extern crate serde_derive;
 extern crate fst;
 extern crate iso639_2;
+extern crate radix_fmt;
 extern crate rand;
 extern crate rocksdb;
 extern crate toml;
-extern crate unicode_segmentation;
 extern crate twox_hash;
-extern crate radix_fmt;
+extern crate unicode_segmentation;
 
 mod channel;
 mod config;
+mod executor;
 mod lexer;
 mod query;
 mod store;
 
 use std::ops::Deref;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -40,8 +40,6 @@ use channel::listen::ChannelListenBuilder;
 use config::config::Config;
 use config::logger::ConfigLogger;
 use config::reader::ConfigReader;
-use store::fst::{StoreFST, StoreFSTBuilder};
-use store::kv::{StoreKV, StoreKVBuilder};
 
 struct AppArgs {
     config: String,
@@ -57,12 +55,10 @@ lazy_static! {
     static ref APP_CONF: Config = ConfigReader::make();
 }
 
-fn spawn_channel(kv_store: Arc<StoreKV>, fst_store: Arc<StoreFST>) {
-    let (kv_store_wrap, fst_store_wrap) = (kv_store.clone(), fst_store.clone());
-
+fn spawn_channel() {
     let channel = thread::Builder::new()
         .name(THREAD_NAME_CHANNEL_MASTER.to_string())
-        .spawn(move || ChannelListenBuilder::new().run(kv_store_wrap, fst_store_wrap));
+        .spawn(move || ChannelListenBuilder::new().run());
 
     // Block on channel thread (join it)
     let has_error = if let Ok(channel_thread) = channel {
@@ -78,7 +74,7 @@ fn spawn_channel(kv_store: Arc<StoreKV>, fst_store: Arc<StoreFST>) {
         // Prevents thread start loop floods
         thread::sleep(Duration::from_secs(1));
 
-        spawn_channel(kv_store, fst_store);
+        spawn_channel();
     }
 }
 
@@ -119,12 +115,7 @@ fn main() {
     ensure_states();
 
     // Spawn channel (foreground thread)
-    // Notice: this requires databases to be connected first
-    match (StoreKVBuilder::new(), StoreFSTBuilder::new()) {
-        (Ok(kv_store), Ok(fst_store)) => spawn_channel(Arc::new(kv_store), Arc::new(fst_store)),
-        (Err(err), _) => panic!("could not open key-value database: {}", err),
-        (_, Err(err)) => panic!("could not open graph database: {}", err),
-    }
+    spawn_channel();
 
     error!("failed to start");
 }
