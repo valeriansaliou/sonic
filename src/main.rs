@@ -12,11 +12,14 @@ extern crate clap;
 extern crate lazy_static;
 #[macro_use]
 extern crate serde_derive;
+extern crate fst;
 extern crate iso639_2;
 extern crate rand;
 extern crate rocksdb;
 extern crate toml;
 extern crate unicode_segmentation;
+extern crate twox_hash;
+extern crate radix_fmt;
 
 mod channel;
 mod config;

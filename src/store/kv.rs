@@ -27,8 +27,9 @@ impl StoreKVBuilder {
         let db_options = Self::configure();
 
         // Acquire path to database
-        // TODO: 1 database per classifier
-        let db_path = APP_CONF.store.kv.path.join("./default");
+        // TODO: 1 database per collection
+        // TODO: auto-close file descriptor if not used in a while, and re-open whenever needed
+        let db_path = APP_CONF.store.kv.path.join("./collection");
 
         DB::open(&db_options, db_path)
     }
@@ -60,17 +61,23 @@ impl StoreKVBuilder {
 }
 
 impl StoreKV {
-    pub fn get_object_iid_to_eid(iid: &StoreObjectIID) -> Option<StoreObjectEID> {
+    /// Per-bucket mappings
+    ///
+    /// [IDX=0]  ((term))  ~>  [((iid))]
+    /// [IDX=1]  ((oid))   ~>  ((iid))
+    /// [IDX=2]  ((iid))   ~>  ((oid))
+    /// [IDX=3]  ((iid))   ~>  [((term))]
+    pub fn get_object_iid_to_oid(iid: &StoreObjectIID) -> Option<StoreObjectOID> {
         // TODO
         None
     }
 
-    pub fn get_object_eid_to_iid(eid: StoreObjectEID) -> Option<StoreObjectIID> {
+    pub fn get_object_oid_to_iid(oid: StoreObjectOID) -> Option<StoreObjectIID> {
         // TODO
         None
     }
 
-    pub fn set_object_id_association(iid: &StoreObjectIID, eid: StoreObjectEID) -> Result<(), ()> {
+    pub fn set_object_id_association(iid: &StoreObjectIID, oid: StoreObjectOID) -> Result<(), ()> {
         // TODO
         Err(())
     }

@@ -31,6 +31,9 @@ rand = "0.6"
 iso639_2 = "0.1"
 unicode-segmentation = "1.2"
 rocksdb = { version = "0.11", features = ["lz4"] }
+fst = "0.3"
+twox-hash = "1.1"
+radix_fmt = "0.1"
 
 [profile.dev]
 opt-level = 0

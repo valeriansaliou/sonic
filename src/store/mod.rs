@@ -5,6 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 mod identifiers;
+mod keyer;
 
 pub mod fst;
 pub mod item;
