@@ -6,7 +6,7 @@
 
 use crate::lexer::token::TokenLexer;
 use crate::store::item::StoreItem;
-use crate::store::kv::StoreKVPool;
+use crate::store::kv::{StoreKVActionBuilder, StoreKVPool};
 
 pub struct ExecutorPush;
 
@@ -14,6 +14,8 @@ impl ExecutorPush {
     pub fn execute<'a>(store: StoreItem<'a>, lexer: TokenLexer<'a>) -> Result<(), ()> {
         if let StoreItem(collection, Some(bucket), Some(object)) = store {
             if let Ok(kv_store) = StoreKVPool::acquire(collection.as_str()) {
+                let action = StoreKVActionBuilder::new(bucket, kv_store);
+
                 // Try to resolve existing OID to IID, otherwise initialize IID (store \
                 //   the bi-directional relationship)
                 // TODO

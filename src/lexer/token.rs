@@ -59,7 +59,7 @@ mod tests {
 
     #[test]
     fn it_cleans_token() {
-        let mut token_cleaner = TokenLexer::new("The quick brown fox!");
+        let mut token_cleaner = TokenLexer::new("The quick brown fox!", Some(Iso639_2::Eng));
 
         assert_eq!(token_cleaner.next(), Some("the".to_string()));
         assert_eq!(token_cleaner.next(), Some("quick".to_string()));

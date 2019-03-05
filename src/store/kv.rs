@@ -7,6 +7,8 @@
 use rocksdb::{DBCompactionStyle, DBCompressionType, Error as DBError, Options as DBOptions, DB};
 
 use super::identifiers::*;
+use super::item::StoreItemPart;
+use super::keyer::StoreKeyerBuilder;
 use crate::APP_CONF;
 
 pub struct StoreKVPool;
@@ -20,7 +22,7 @@ pub struct StoreKVActionBuilder;
 
 pub struct StoreKVAction<'a> {
     store: StoreKV,
-    bucket: &'a str
+    bucket: StoreItemPart<'a>,
 }
 
 impl StoreKVPool {
@@ -77,10 +79,10 @@ impl StoreKVBuilder {
 }
 
 impl StoreKVActionBuilder {
-    pub fn new<'a>(bucket: &'a str, store: StoreKV) -> StoreKVAction<'a> {
+    pub fn new<'a>(bucket: StoreItemPart<'a>, store: StoreKV) -> StoreKVAction<'a> {
         StoreKVAction {
             store: store,
-            bucket: bucket
+            bucket: bucket,
         }
     }
 }
@@ -90,16 +92,22 @@ impl<'a> StoreKVAction<'a> {
     ///
     /// [IDX=0] ((term)) ~> [((iid))]
     pub fn get_term_to_iids(&self, term: &str) -> Option<Vec<StoreObjectIID>> {
+        let keyer = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term);
+
         // TODO
         None
     }
 
     pub fn set_term_to_iids(&self, term: &str, iids: Vec<StoreObjectIID>) -> Result<(), ()> {
+        let keyer = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term);
+
         // TODO
         Err(())
     }
 
     pub fn delete_term_to_iids(&self, term: &str) -> Result<(), ()> {
+        let keyer = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term);
+
         // TODO
         Err(())
     }
@@ -108,16 +116,22 @@ impl<'a> StoreKVAction<'a> {
     ///
     /// [IDX=1] ((oid)) ~> ((iid))
     pub fn get_oid_to_iid(&self, oid: StoreObjectOID) -> Option<StoreObjectIID> {
+        let keyer = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
+
         // TODO
         None
     }
 
     pub fn set_oid_to_iid(&self, oid: StoreObjectOID, iid: StoreObjectIID) -> Result<(), ()> {
+        let keyer = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
+
         // TODO
         Err(())
     }
 
     pub fn delete_oid_to_iid(&self, oid: StoreObjectOID) -> Result<(), ()> {
+        let keyer = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
+
         // TODO
         Err(())
     }
@@ -126,16 +140,22 @@ impl<'a> StoreKVAction<'a> {
     ///
     /// [IDX=2] ((iid)) ~> ((oid))
     pub fn get_iid_to_oid(&self, iid: StoreObjectIID) -> Option<StoreObjectOID> {
+        let keyer = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
+
         // TODO
         None
     }
 
     pub fn set_iid_to_oid(&self, iid: StoreObjectIID, oid: StoreObjectOID) -> Result<(), ()> {
+        let keyer = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
+
         // TODO
         Err(())
     }
 
     pub fn delete_iid_to_oid(&self, iid: StoreObjectIID) -> Result<(), ()> {
+        let keyer = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
+
         // TODO
         Err(())
     }
@@ -144,16 +164,22 @@ impl<'a> StoreKVAction<'a> {
     ///
     /// [IDX=3] ((iid)) ~> [((term))]
     pub fn get_iid_to_terms(&self, iid: StoreObjectIID) -> Option<Vec<String>> {
+        let keyer = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
+
         // TODO
         None
     }
 
     pub fn set_iid_to_terms(&self, iid: StoreObjectIID, terms: &[&'a str]) -> Result<(), ()> {
+        let keyer = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
+
         // TODO
         Err(())
     }
 
     pub fn delete_iid_to_terms(&self, iid: StoreObjectIID) -> Result<(), ()> {
+        let keyer = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
+
         // TODO
         Err(())
     }
