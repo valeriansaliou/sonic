@@ -34,6 +34,7 @@ rocksdb = { version = "0.11", features = ["lz4"] }
 fst = "0.3"
 twox-hash = "1.1"
 radix_fmt = "0.1"
+byteorder = "1.3"
 
 [profile.dev]
 opt-level = 0

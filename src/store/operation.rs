@@ -20,11 +20,8 @@ impl StoreOperationDispatch {
         // Dispatch de-constructed query to its target executor
         match query {
             Query::Search(store, query_id, lexer, limit, offset) => {
-                // TODO: return OK or ERR from execute()
-                Ok(
-                    ExecutorSearch::execute(store, query_id, lexer, limit, offset)
-                        .map(|results| results.join(" ")),
-                )
+                ExecutorSearch::execute(store, query_id, lexer, limit, offset)
+                    .map(|results| results.map(|results| results.join(" ")))
             }
             Query::Push(store, lexer) => ExecutorPush::execute(store, lexer).map(|_| None),
             Query::Pop(store) => {

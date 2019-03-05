@@ -4,6 +4,8 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+#![feature(vec_remove_item)]
+
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -12,6 +14,7 @@ extern crate clap;
 extern crate lazy_static;
 #[macro_use]
 extern crate serde_derive;
+extern crate byteorder;
 extern crate fst;
 extern crate iso639_2;
 extern crate radix_fmt;

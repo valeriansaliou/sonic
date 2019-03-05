@@ -26,11 +26,8 @@ enum StoreKeyerIdx<'a> {
 }
 
 type StoreKeyerBucket<'a> = &'a str;
-type StoreKeyerBucketCompacted = Radix<u64>;
-type StoreKeyerRouteCompacted = Radix<u64>;
 
-const STORE_KEYER_BUCKET_COMPACT_BASE: u32 = 36;
-const STORE_KEYER_ROUTE_COMPACT_BASE: u32 = 36;
+const STORE_KEYER_COMPACT_BASE: u32 = 36;
 
 impl<'a> StoreKeyerIdx<'a> {
     pub fn to_index(&self) -> u8 {
@@ -83,38 +80,35 @@ impl StoreKeyerBuilder {
 
 impl<'a> StoreKeyer<'a> {
     pub fn to_string(&self) -> String {
+        let compact_bucket = radix(
+            Self::hash_compact(self.bucket.as_bytes()),
+            STORE_KEYER_COMPACT_BASE,
+        );
+
         format!(
             "{}:{}:{}",
             self.idx.to_index(),
-            self.bucket_to_compact(),
-            self.route_to_compact()
+            compact_bucket,
+            self.route_to_compact(),
         )
     }
 
-    pub fn bucket_to_compact(&self) -> StoreKeyerBucketCompacted {
-        let mut hasher = XxHash32::with_seed(0);
-
-        hasher.write(self.bucket.as_bytes());
-
-        radix(hasher.finish(), STORE_KEYER_BUCKET_COMPACT_BASE)
-    }
-
-    pub fn route_to_compact(&self) -> StoreKeyerRouteCompacted {
+    pub fn route_to_compact(&self) -> Radix<u64> {
         let value = match &self.idx {
             StoreKeyerIdx::MetaToValue(route) => route.as_u64(),
-            StoreKeyerIdx::TermToIIDs(route) => Self::hash_route_text(route),
-            StoreKeyerIdx::OIDToIID(route) => Self::hash_route_text(route),
+            StoreKeyerIdx::TermToIIDs(route) => Self::hash_compact(route.as_bytes()),
+            StoreKeyerIdx::OIDToIID(route) => Self::hash_compact(route.as_bytes()),
             StoreKeyerIdx::IIDToOID(route) => *route,
             StoreKeyerIdx::IIDToTerms(route) => *route,
         };
 
-        radix(value, STORE_KEYER_ROUTE_COMPACT_BASE)
+        radix(value, STORE_KEYER_COMPACT_BASE)
     }
 
-    fn hash_route_text(text: &str) -> u64 {
-        let mut hasher = XxHash::with_seed(0);
+    fn hash_compact(part: &[u8]) -> u64 {
+        let mut hasher = XxHash32::with_seed(0);
 
-        hasher.write(text.as_bytes());
+        hasher.write(part);
         hasher.finish()
     }
 }
@@ -135,11 +129,11 @@ mod tests {
     fn it_keys_term_to_iids() {
         assert_eq!(
             StoreKeyerBuilder::term_to_iids("user:0dcde3a6", "hello").to_string(),
-            "1:vngsgj:l8a8u0vgmher"
+            "1:vngsgj:1xn6qrd"
         );
         assert_eq!(
             StoreKeyerBuilder::term_to_iids("default", "yes").to_string(),
-            "1:tlegv5:8hzoehaig16x"
+            "1:tlegv5:1cieqaj"
         );
     }
 
@@ -148,7 +142,7 @@ mod tests {
         assert_eq!(
             StoreKeyerBuilder::oid_to_iid("user:0dcde3a6", &"conversation:6501e83a".to_string())
                 .to_string(),
-            "2:vngsgj:330ky6g2kd34c"
+            "2:vngsgj:1n884db"
         );
     }
 
