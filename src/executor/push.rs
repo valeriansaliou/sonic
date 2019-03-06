@@ -4,7 +4,7 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use std::collections::HashSet;
+use linked_hash_set::LinkedHashSet;
 use std::iter::FromIterator;
 
 use crate::lexer::token::TokenLexer;
@@ -19,8 +19,6 @@ impl ExecutorPush {
         if let StoreItem(collection, Some(bucket), Some(object)) = store {
             if let Ok(kv_store) = StoreKVPool::acquire(collection) {
                 let action = StoreKVActionBuilder::write(bucket, kv_store);
-
-                let push_result: Result<(), ()>;
 
                 // TODO: when pushing anything to a list, prevent DOS by limiting the list length
                 // TODO: when poping items to prevent DOS, also nuke IID from term-to-IIDs mapping
@@ -71,7 +69,7 @@ impl ExecutorPush {
                     let mut has_commits = false;
 
                     // Acquire list of terms for IID
-                    let mut iid_terms: HashSet<String> = HashSet::from_iter(
+                    let mut iid_terms: LinkedHashSet<String> = LinkedHashSet::from_iter(
                         action
                             .get_iid_to_terms(iid)
                             .unwrap_or(None)
@@ -117,12 +115,8 @@ impl ExecutorPush {
                         action.set_iid_to_terms(iid, &collected_iids).ok();
                     }
 
-                    push_result = Ok(());
-                } else {
-                    push_result = Err(());
+                    return Ok(());
                 }
-
-                return push_result;
             }
         }
 

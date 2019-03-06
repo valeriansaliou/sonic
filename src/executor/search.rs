@@ -4,7 +4,7 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use std::collections::HashSet;
+use linked_hash_set::LinkedHashSet;
 use std::iter::FromIterator;
 
 use crate::lexer::token::TokenLexer;
@@ -20,20 +20,17 @@ impl ExecutorSearch {
         store: StoreItem<'a>,
         _event_id: QuerySearchID,
         mut lexer: TokenLexer<'a>,
-        _limit: QuerySearchLimit,
-        _offset: QuerySearchOffset,
+        limit: QuerySearchLimit,
+        offset: QuerySearchOffset,
     ) -> Result<Option<Vec<String>>, ()> {
         if let StoreItem(collection, Some(bucket), None) = store {
             if let Ok(kv_store) = StoreKVPool::acquire(collection) {
                 let action = StoreKVActionBuilder::read(bucket, kv_store);
 
-                // TODO: support for LIMIT + OFFSET
-
                 // Try to resolve existing search terms to IIDs, and perform an algebraic AND on \
                 //   all resulting IIDs for each given term.
-                let mut found_iids: HashSet<StoreObjectIID> = HashSet::new();
+                let mut found_iids: LinkedHashSet<StoreObjectIID> = LinkedHashSet::new();
 
-                // TODO: support for multiple terms?
                 while let Some(term) = lexer.next() {
                     if let Ok(iids_inner) = action.get_term_to_iids(&term) {
                         let iids = iids_inner.unwrap_or(Vec::new());
@@ -41,8 +38,8 @@ impl ExecutorSearch {
                         debug!("got search executor iids: {:?} for term: {}", iids, term);
 
                         // Intersect found IIDs with previous batch
-                        let iids_set: HashSet<StoreObjectIID> =
-                            HashSet::from_iter(iids.iter().map(|value| *value));
+                        let iids_set: LinkedHashSet<StoreObjectIID> =
+                            LinkedHashSet::from_iter(iids.iter().map(|value| *value));
 
                         if found_iids.is_empty() == true {
                             found_iids = iids_set;
@@ -71,10 +68,18 @@ impl ExecutorSearch {
                 }
 
                 // Resolve OIDs from IIDs
+                // Notice: we also proceed paging from there
                 let mut result_oids = Vec::new();
+                let (limit_usize, offset_usize) = (limit as usize, offset as usize);
 
-                for found_iid in found_iids {
-                    if let Ok(Some(oid)) = action.get_iid_to_oid(found_iid) {
+                for (index, found_iid) in found_iids.iter().skip(offset_usize).enumerate() {
+                    // Stop there?
+                    if index >= limit_usize {
+                        break;
+                    }
+
+                    // Read IID-to-OID for this found IID
+                    if let Ok(Some(oid)) = action.get_iid_to_oid(*found_iid) {
                         result_oids.push(oid);
                     }
                 }

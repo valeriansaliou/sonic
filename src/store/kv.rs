@@ -410,6 +410,49 @@ impl<'a> StoreKVAction<'a> {
         self.store.delete(&store_key).or(Err(()))
     }
 
+    pub fn batch_flush_bucket(
+        &self,
+        iid: StoreObjectIID,
+        oid: &StoreObjectOID,
+        iid_terms: &Vec<String>,
+    ) -> Result<u64, ()> {
+        let mut count = 0;
+
+        debug!(
+            "store batch flush bucket: {} with terms: {:?}",
+            iid, iid_terms
+        );
+
+        // Delete OID <> IID association
+        match (
+            self.delete_oid_to_iid(&oid),
+            self.delete_iid_to_oid(iid),
+            self.delete_iid_to_terms(iid),
+        ) {
+            (Ok(_), Ok(_), Ok(_)) => {
+                // Delete IID from each associated term
+                for iid_term in iid_terms {
+                    if let Ok(Some(mut iid_term_iids)) = self.get_term_to_iids(&iid_term) {
+                        if iid_term_iids.contains(&iid) == true {
+                            count += 1;
+
+                            iid_term_iids.remove_item(&iid);
+                        }
+
+                        if iid_term_iids.is_empty() == true {
+                            self.delete_term_to_iids(&iid_term).ok();
+                        } else {
+                            self.set_term_to_iids(&iid_term, &iid_term_iids).ok();
+                        }
+                    }
+                }
+
+                Ok(count)
+            }
+            _ => Err(()),
+        }
+    }
+
     fn encode_u64(decoded: u64) -> [u8; 8] {
         let mut encoded = [0; 8];
 

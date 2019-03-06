@@ -17,6 +17,7 @@ extern crate serde_derive;
 extern crate byteorder;
 extern crate fst;
 extern crate iso639_2;
+extern crate linked_hash_set;
 extern crate radix_fmt;
 extern crate rand;
 extern crate rocksdb;
