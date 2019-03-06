@@ -18,7 +18,9 @@ impl ExecutorPush {
     pub fn execute<'a>(store: StoreItem<'a>, mut lexer: TokenLexer<'a>) -> Result<(), ()> {
         if let StoreItem(collection, Some(bucket), Some(object)) = store {
             if let Ok(kv_store) = StoreKVPool::acquire(collection) {
-                let action = StoreKVActionBuilder::new(bucket, kv_store);
+                let action = StoreKVActionBuilder::write(bucket, kv_store);
+
+                let push_result: Result<(), ()>;
 
                 // TODO: when pushing anything to a list, prevent DOS by limiting the list length
                 // TODO: when poping items to prevent DOS, also nuke IID from term-to-IIDs mapping
@@ -115,8 +117,12 @@ impl ExecutorPush {
                         action.set_iid_to_terms(iid, &collected_iids).ok();
                     }
 
-                    return Ok(());
+                    push_result = Ok(());
+                } else {
+                    push_result = Err(());
                 }
+
+                return push_result;
             }
         }
 

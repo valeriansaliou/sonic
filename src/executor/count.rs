@@ -13,7 +13,9 @@ impl ExecutorCount {
     pub fn execute<'a>(store: StoreItem<'a>) -> Result<u64, ()> {
         if let StoreItem(collection, bucket_value, object_value) = store {
             if let Ok(kv_store) = StoreKVPool::acquire(collection) {
-                // let action = StoreKVActionBuilder::new(bucket, kv_store);
+                // let action = StoreKVActionBuilder::read(bucket, kv_store);
+
+                // TODO
 
                 // TODO
                 return Ok(0);

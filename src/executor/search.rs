@@ -25,7 +25,7 @@ impl ExecutorSearch {
     ) -> Result<Option<Vec<String>>, ()> {
         if let StoreItem(collection, Some(bucket), None) = store {
             if let Ok(kv_store) = StoreKVPool::acquire(collection) {
-                let action = StoreKVActionBuilder::new(bucket, kv_store);
+                let action = StoreKVActionBuilder::read(bucket, kv_store);
 
                 // TODO: support for LIMIT + OFFSET
 

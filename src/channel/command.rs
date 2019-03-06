@@ -499,7 +499,7 @@ impl ChannelCommandIngest {
                     "dispatching ingest push in collection: {}, bucket: {} and object: {}",
                     collection, bucket, object
                 );
-                debug!("ingest has text: {}", text);
+                debug!("ingest push has text: {}", text);
 
                 // Commit 'push' query
                 ChannelCommandBase::commit_ok_operation(QueryBuilder::push(
@@ -513,20 +513,27 @@ impl ChannelCommandIngest {
     }
 
     pub fn dispatch_pop(mut parts: SplitWhitespace) -> ChannelResult {
-        match (parts.next(), parts.next(), parts.next(), parts.next()) {
-            (Some(collection), Some(bucket), Some(object), None) => {
+        match (
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            ChannelCommandBase::parse_text_parts(&mut parts),
+            parts.next(),
+        ) {
+            (Some(collection), Some(bucket), Some(object), Some(text), None) => {
                 debug!(
                     "dispatching ingest pop in collection: {}, bucket: {} and object: {}",
                     collection, bucket, object
                 );
+                debug!("ingest pop has text: {}", text);
 
                 // Make 'pop' query
                 ChannelCommandBase::commit_result_operation(QueryBuilder::pop(
-                    collection, bucket, object,
+                    collection, bucket, object, &text,
                 ))
             }
             _ => Err(ChannelCommandError::InvalidFormat(
-                "POP <collection> <bucket> <object>",
+                "POP <collection> <bucket> <object> \"<text>\"",
             )),
         }
     }

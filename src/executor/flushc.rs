@@ -13,7 +13,7 @@ impl ExecutorFlushC {
     pub fn execute<'a>(store: StoreItem<'a>) -> Result<u64, ()> {
         if let StoreItem(collection, None, None) = store {
             if let Ok(kv_store) = StoreKVPool::acquire(collection) {
-                // let action = StoreKVActionBuilder::new(bucket, kv_store);
+                // let action = StoreKVActionBuilder::write(bucket, kv_store);
 
                 // TODO: begin database lock (mutex on collection database acquire fn)
                 // TODO: force a rocksdb database fd close

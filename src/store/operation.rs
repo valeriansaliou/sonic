@@ -24,7 +24,9 @@ impl StoreOperationDispatch {
                     .map(|results| results.map(|results| results.join(" ")))
             }
             Query::Push(store, lexer) => ExecutorPush::execute(store, lexer).map(|_| None),
-            Query::Pop(store) => ExecutorPop::execute(store).map(|count| Some(count.to_string())),
+            Query::Pop(store, lexer) => {
+                ExecutorPop::execute(store, lexer).map(|count| Some(count.to_string()))
+            }
             Query::Count(store) => {
                 ExecutorCount::execute(store).map(|count| Some(count.to_string()))
             }

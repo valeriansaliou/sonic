@@ -51,9 +51,13 @@ impl QueryBuilder {
         collection: &'a str,
         bucket: &'a str,
         object: &'a str,
+        text: &'a str,
     ) -> QueryBuilderResult<'a> {
-        match StoreItemBuilder::from_depth_3(collection, bucket, object) {
-            Ok(store) => Ok(Query::Pop(store)),
+        match (
+            StoreItemBuilder::from_depth_3(collection, bucket, object),
+            TokenLexerBuilder::from(text),
+        ) {
+            (Ok(store), Ok(text_lexed)) => Ok(Query::Pop(store, text_lexed)),
             _ => Err(()),
         }
     }

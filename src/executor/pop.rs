@@ -4,23 +4,28 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use crate::lexer::token::TokenLexer;
 use crate::store::item::StoreItem;
 use crate::store::kv::{StoreKVActionBuilder, StoreKVPool};
 
 pub struct ExecutorPop;
 
 impl ExecutorPop {
-    pub fn execute<'a>(store: StoreItem<'a>) -> Result<u64, ()> {
+    pub fn execute<'a>(store: StoreItem<'a>, mut lexer: TokenLexer<'a>) -> Result<u64, ()> {
+        // TODO: only pop token lexer terms
+
         if let StoreItem(collection, Some(bucket), Some(object)) = store {
             if let Ok(kv_store) = StoreKVPool::acquire(collection) {
-                let action = StoreKVActionBuilder::new(bucket, kv_store);
+                let action = StoreKVActionBuilder::write(bucket, kv_store);
+
+                let pop_result: Result<u64, ()>;
 
                 // Try to resolve existing OID to IID (if it does not exist, there is nothing to \
                 //   be flushed)
                 let oid = object.as_str().to_owned();
 
                 if let Ok(iid_value) = action.get_oid_to_iid(&oid) {
-                    let mut count_flushed = 0;
+                    let mut count_popped = 0;
 
                     if let Some(iid) = iid_value {
                         // Resolve terms associated to IID
@@ -40,7 +45,7 @@ impl ExecutorPop {
                             if let Ok(Some(mut iid_term_iids)) = action.get_term_to_iids(&iid_term)
                             {
                                 if iid_term_iids.contains(&iid) == true {
-                                    count_flushed += 1;
+                                    count_popped += 1;
 
                                     iid_term_iids.remove_item(&iid);
                                 }
@@ -54,8 +59,12 @@ impl ExecutorPop {
                         }
                     }
 
-                    return Ok(count_flushed);
+                    pop_result = Ok(count_popped);
+                } else {
+                    pop_result = Err(());
                 }
+
+                return pop_result;
             }
         }
 

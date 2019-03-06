@@ -103,7 +103,35 @@ impl StoreKV {
 }
 
 impl StoreKVActionBuilder {
-    pub fn new<'a>(bucket: StoreItemPart<'a>, store: StoreKV) -> StoreKVAction<'a> {
+    pub fn read<'a>(bucket: StoreItemPart<'a>, store: StoreKV) -> StoreKVAction<'a> {
+        let action = Self::build(bucket, store);
+
+        debug!("begin action read block");
+
+        // TODO: handle the rwlock things on (collection, bucket) tuple (unpack bucket store \
+        //   and return it); read lock; return a lock guard to ensure it auto-unlocks when caller \
+        //   goes out of scope.
+
+        debug!("began action read block");
+
+        action
+    }
+
+    pub fn write<'a>(bucket: StoreItemPart<'a>, store: StoreKV) -> StoreKVAction<'a> {
+        let action = Self::build(bucket, store);
+
+        debug!("begin action write block");
+
+        // TODO: handle the rwlock things on (collection, bucket) tuple (unpack bucket store \
+        //   and return it); write lock; return a lock guard to ensure it auto-unlocks when caller \
+        //   goes out of scope.
+
+        debug!("began action write block");
+
+        action
+    }
+
+    pub fn build<'a>(bucket: StoreItemPart<'a>, store: StoreKV) -> StoreKVAction<'a> {
         StoreKVAction {
             store: store,
             bucket: bucket,

@@ -209,7 +209,7 @@ _The Sonic Channel Ingest mode is used for altering the search index (push, pop 
 **➡️ Available commands:**
 
 * `PUSH`: Push search data in the index (syntax: `PUSH <collection> <bucket> <object> "<text>"`)
-* `POP`: Pop search data from the index (syntax: `POP <collection> <bucket> <object>`)
+* `POP`: Pop search data from the index (syntax: `POP <collection> <bucket> <object> "<text>"`)
 * `COUNT`: Count indexed search data (syntax: `COUNT <collection> [<bucket> [<object>]?]?`)
 * `FLUSHC`: Flush all indexed data from a collection (syntax: `FLUSHC <collection>`)
 * `FLUSHB`: Flush all indexed data from a bucket in a collection (syntax: `FLUSHB <collection> <bucket>`)
@@ -246,7 +246,7 @@ T12: COUNT messages user:0dcde3a6
 T13: RESULT 43
 T14: COUNT messages user:0dcde3a6 conversation:71f3d63b
 T15: RESULT 1
-T16: POP messages user:0dcde3a6 conversation:71f3d63b
+T16: FLUSHO messages user:0dcde3a6 conversation:71f3d63b
 T17: RESULT 1
 T18: FLUSHB messages user:0dcde3a6
 T19: RESULT 42
