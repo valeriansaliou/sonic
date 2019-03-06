@@ -8,7 +8,7 @@ use linked_hash_set::LinkedHashSet;
 use std::iter::FromIterator;
 
 use crate::lexer::token::TokenLexer;
-use crate::store::identifiers::StoreObjectIID;
+use crate::store::identifiers::{StoreObjectIID, StoreTermHash, StoreTermHashed};
 use crate::store::item::StoreItem;
 use crate::store::kv::{StoreKVActionBuilder, StoreKVPool};
 
@@ -30,25 +30,34 @@ impl ExecutorPop {
                     if let Some(iid) = iid_value {
                         // Try to resolve existing search terms from IID, and perform an algebraic \
                         //   AND on all popped terms to generate a list of terms to be cleaned up.
-                        if let Ok(Some(iid_terms_vec)) = action.get_iid_to_terms(iid) {
-                            info!("got pop executor stored iid-to-terms: {:?}", iid_terms_vec);
+                        if let Ok(Some(iid_terms_hashed_vec)) = action.get_iid_to_terms(iid) {
+                            info!(
+                                "got pop executor stored iid-to-terms: {:?}",
+                                iid_terms_hashed_vec
+                            );
 
                             let terms: Vec<String> = lexer.collect();
 
-                            let iid_terms: LinkedHashSet<&String> =
-                                LinkedHashSet::from_iter(iid_terms_vec.iter());
-                            let pop_terms: LinkedHashSet<&String> =
-                                LinkedHashSet::from_iter(terms.iter());
+                            let iid_terms_hashed: LinkedHashSet<StoreTermHashed> =
+                                LinkedHashSet::from_iter(
+                                    iid_terms_hashed_vec.iter().map(|value| *value),
+                                );
+                            let pop_terms_hashed: LinkedHashSet<StoreTermHashed> =
+                                LinkedHashSet::from_iter(
+                                    terms.iter().map(|term| StoreTermHash::from(term)),
+                                );
 
-                            let remaining_terms: LinkedHashSet<&&String> =
-                                iid_terms.difference(&pop_terms).collect();
+                            let remaining_terms: LinkedHashSet<StoreTermHashed> = iid_terms_hashed
+                                .difference(&pop_terms_hashed)
+                                .map(|value| *value)
+                                .collect();
 
                             debug!(
                                 "got pop executor terms remaining terms: {:?} for iid: {}",
                                 remaining_terms, iid
                             );
 
-                            count_popped = (iid_terms.len() - remaining_terms.len()) as u64;
+                            count_popped = (iid_terms_hashed.len() - remaining_terms.len()) as u64;
 
                             if count_popped > 0 {
                                 if remaining_terms.len() == 0 {
@@ -56,25 +65,32 @@ impl ExecutorPop {
 
                                     // Flush bucket (batch operation, as it is shared w/ other \
                                     //   executors)
-                                    action.batch_flush_bucket(iid, &oid, &iid_terms_vec).ok();
+                                    action
+                                        .batch_flush_bucket(iid, &oid, &iid_terms_hashed_vec)
+                                        .ok();
                                 } else {
                                     info!("nuke only certain terms for pop executor");
 
                                     // Nuke IID in Term-to-IIDs list
-                                    for pop_term in &pop_terms {
-                                        if iid_terms.contains(pop_term) == true {
+                                    for pop_term_hashed in &pop_terms_hashed {
+                                        if iid_terms_hashed.contains(pop_term_hashed) == true {
                                             if let Ok(Some(mut pop_term_iids)) =
-                                                action.get_term_to_iids(pop_term)
+                                                action.get_term_to_iids(*pop_term_hashed)
                                             {
                                                 pop_term_iids.remove_item(&iid);
 
                                                 if pop_term_iids.is_empty() == true {
                                                     // IIDs list was empty, delete whole key
-                                                    action.delete_term_to_iids(pop_term).ok();
+                                                    action
+                                                        .delete_term_to_iids(*pop_term_hashed)
+                                                        .ok();
                                                 } else {
                                                     // Re-build IIDs list w/o current IID
                                                     action
-                                                        .set_term_to_iids(pop_term, &pop_term_iids)
+                                                        .set_term_to_iids(
+                                                            *pop_term_hashed,
+                                                            &pop_term_iids,
+                                                        )
                                                         .ok();
                                                 }
                                             }
@@ -82,9 +98,8 @@ impl ExecutorPop {
                                     }
 
                                     // Bump IID-to-Terms list
-                                    let remaining_terms_vec: Vec<String> = Vec::from_iter(
-                                        remaining_terms.into_iter().map(|value| value.to_string()),
-                                    );
+                                    let remaining_terms_vec: Vec<StoreTermHashed> =
+                                        Vec::from_iter(remaining_terms.into_iter());
 
                                     action.set_iid_to_terms(iid, &remaining_terms_vec).ok();
                                 }

@@ -9,7 +9,7 @@ use std::iter::FromIterator;
 
 use crate::lexer::token::TokenLexer;
 use crate::query::types::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
-use crate::store::identifiers::StoreObjectIID;
+use crate::store::identifiers::{StoreObjectIID, StoreTermHash};
 use crate::store::item::StoreItem;
 use crate::store::kv::{StoreKVActionBuilder, StoreKVPool};
 
@@ -32,7 +32,9 @@ impl ExecutorSearch {
                 let mut found_iids: LinkedHashSet<StoreObjectIID> = LinkedHashSet::new();
 
                 while let Some(term) = lexer.next() {
-                    if let Ok(iids_inner) = action.get_term_to_iids(&term) {
+                    let term_hashed = StoreTermHash::from(&term);
+
+                    if let Ok(iids_inner) = action.get_term_to_iids(term_hashed) {
                         let iids = iids_inner.unwrap_or(Vec::new());
 
                         debug!("got search executor iids: {:?} for term: {}", iids, term);

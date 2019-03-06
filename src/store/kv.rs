@@ -190,11 +190,14 @@ impl StoreKV {
         self.database.delete(key.as_bytes())
     }
 
-    // TODO: need to provide options + path (on unopened database)
-    // TODO: need to close any previous collection database before proceeding destroy
-    // pub fn destroy(&self) -> Result<(), DBError> {
-    //     self.database.destroy()
-    // }
+    pub fn erase(&self) -> Result<(), ()> {
+        // TODO: 0. set a global database lock
+        // TODO: 1. close database
+        // TODO: 2. remove from fs
+        // TODO: 3. release global database lock
+
+        Err(())
+    }
 }
 
 impl StoreKVActionBuilder {
@@ -292,8 +295,12 @@ impl<'a> StoreKVAction<'a> {
     /// Term-to-IIDs mapper
     ///
     /// [IDX=1] ((term)) ~> [((iid))]
-    pub fn get_term_to_iids(&self, term: &str) -> Result<Option<Vec<StoreObjectIID>>, ()> {
-        let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term).to_string();
+    pub fn get_term_to_iids(
+        &self,
+        term_hashed: StoreTermHashed,
+    ) -> Result<Option<Vec<StoreObjectIID>>, ()> {
+        let store_key =
+            StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed).to_string();
 
         debug!("store get term-to-iids: {}", store_key);
 
@@ -331,8 +338,13 @@ impl<'a> StoreKVAction<'a> {
         }
     }
 
-    pub fn set_term_to_iids(&self, term: &str, iids: &[StoreObjectIID]) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term).to_string();
+    pub fn set_term_to_iids(
+        &self,
+        term_hashed: StoreTermHashed,
+        iids: &[StoreObjectIID],
+    ) -> Result<(), ()> {
+        let store_key =
+            StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed).to_string();
 
         debug!("store set term-to-iids: {}", store_key);
 
@@ -347,8 +359,9 @@ impl<'a> StoreKVAction<'a> {
         self.store.put(&store_key, &iids_encoded).or(Err(()))
     }
 
-    pub fn delete_term_to_iids(&self, term: &str) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term).to_string();
+    pub fn delete_term_to_iids(&self, term_hashed: StoreTermHashed) -> Result<(), ()> {
+        let store_key =
+            StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed).to_string();
 
         debug!("store delete term-to-iids: {}", store_key);
 
@@ -453,48 +466,61 @@ impl<'a> StoreKVAction<'a> {
     /// IID-to-Terms mapper
     ///
     /// [IDX=4] ((iid)) ~> [((term))]
-    pub fn get_iid_to_terms(&self, iid: StoreObjectIID) -> Result<Option<Vec<String>>, ()> {
+    pub fn get_iid_to_terms(
+        &self,
+        iid: StoreObjectIID,
+    ) -> Result<Option<Vec<StoreTermHashed>>, ()> {
         let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid).to_string();
 
         debug!("store get iid-to-terms: {}", store_key);
 
         match self.store.get(&store_key) {
-            Ok(Some(value)) => Ok(if let Some(encoded) = value.to_utf8() {
+            Ok(Some(value)) => {
                 debug!(
                     "got iid-to-terms: {} with encoded value: {:?}",
-                    store_key, encoded
+                    store_key, &*value
                 );
 
-                let decoded: Vec<String> =
-                    encoded.split(" ").into_iter().map(String::from).collect();
+                Self::decode_u32_list(&*value)
+                    .or(Err(()))
+                    .map(|value_decoded| {
+                        debug!(
+                            "got iid-to-terms: {} with decoded value: {:?}",
+                            store_key, &value_decoded
+                        );
 
-                debug!(
-                    "got iid-to-terms: {} with decoded value: {:?}",
-                    store_key, decoded
-                );
-
-                if decoded.is_empty() == false {
-                    Some(decoded)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }),
+                        if value_decoded.is_empty() == false {
+                            Some(value_decoded)
+                        } else {
+                            None
+                        }
+                    })
+            }
             Ok(None) => Ok(None),
             Err(_) => Err(()),
         }
     }
 
-    pub fn set_iid_to_terms(&self, iid: StoreObjectIID, terms: &[String]) -> Result<(), ()> {
+    pub fn set_iid_to_terms(
+        &self,
+        iid: StoreObjectIID,
+        terms_hashed: &[StoreTermHashed],
+    ) -> Result<(), ()> {
         let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid).to_string();
 
         debug!("store set iid-to-terms: {}", store_key);
 
-        // Encode terms (as 'space' is a special character, its safe to join them based on a space)
-        let encoded = terms.join(" ");
+        // Encode term list into storage serialized format
+        let terms_hashed_encoded = Self::encode_u32_list(terms_hashed);
 
-        self.store.put(&store_key, encoded.as_bytes()).or(Err(()))
+        debug!(
+            "store set iid-to-terms: {} with encoded value: {:?}",
+            store_key, terms_hashed_encoded
+        );
+
+        self.store
+            .put(&store_key, &terms_hashed_encoded)
+            .or(Err(()))
     }
 
     pub fn delete_iid_to_terms(&self, iid: StoreObjectIID) -> Result<(), ()> {
@@ -509,13 +535,13 @@ impl<'a> StoreKVAction<'a> {
         &self,
         iid: StoreObjectIID,
         oid: &StoreObjectOID,
-        iid_terms: &Vec<String>,
+        iid_terms_hashed: &Vec<StoreTermHashed>,
     ) -> Result<u64, ()> {
         let mut count = 0;
 
         debug!(
-            "store batch flush bucket: {} with terms: {:?}",
-            iid, iid_terms
+            "store batch flush bucket: {} with hashed terms: {:?}",
+            iid, iid_terms_hashed
         );
 
         // Delete OID <> IID association
@@ -526,8 +552,8 @@ impl<'a> StoreKVAction<'a> {
         ) {
             (Ok(_), Ok(_), Ok(_)) => {
                 // Delete IID from each associated term
-                for iid_term in iid_terms {
-                    if let Ok(Some(mut iid_term_iids)) = self.get_term_to_iids(&iid_term) {
+                for iid_term in iid_terms_hashed {
+                    if let Ok(Some(mut iid_term_iids)) = self.get_term_to_iids(*iid_term) {
                         if iid_term_iids.contains(&iid) == true {
                             count += 1;
 
@@ -535,9 +561,9 @@ impl<'a> StoreKVAction<'a> {
                         }
 
                         if iid_term_iids.is_empty() == true {
-                            self.delete_term_to_iids(&iid_term).ok();
+                            self.delete_term_to_iids(*iid_term).ok();
                         } else {
-                            self.set_term_to_iids(&iid_term, &iid_term_iids).ok();
+                            self.set_term_to_iids(*iid_term, &iid_term_iids).ok();
                         }
                     }
                 }
@@ -546,6 +572,18 @@ impl<'a> StoreKVAction<'a> {
             }
             _ => Err(()),
         }
+    }
+
+    fn encode_u32(decoded: u32) -> [u8; 4] {
+        let mut encoded = [0; 4];
+
+        NativeEndian::write_u32(&mut encoded, decoded);
+
+        encoded
+    }
+
+    fn decode_u32(encoded: &[u8]) -> Result<u32, ()> {
+        Cursor::new(encoded).read_u32::<NativeEndian>().or(Err(()))
     }
 
     fn encode_u64(decoded: u64) -> [u8; 8] {
@@ -575,6 +613,30 @@ impl<'a> StoreKVAction<'a> {
 
         for encoded_chunk in encoded.chunks(8) {
             if let Ok(decoded_chunk) = Self::decode_u64(encoded_chunk) {
+                decoded.push(decoded_chunk);
+            } else {
+                return Err(());
+            }
+        }
+
+        Ok(decoded)
+    }
+
+    fn encode_u32_list(decoded: &[u32]) -> Vec<u8> {
+        let mut encoded = Vec::new();
+
+        for decoded_item in decoded {
+            encoded.extend(&Self::encode_u32(*decoded_item))
+        }
+
+        encoded
+    }
+
+    fn decode_u32_list(encoded: &[u8]) -> Result<Vec<u32>, ()> {
+        let mut decoded = Vec::new();
+
+        for encoded_chunk in encoded.chunks(4) {
+            if let Ok(decoded_chunk) = Self::decode_u32(encoded_chunk) {
                 decoded.push(decoded_chunk);
             } else {
                 return Err(());

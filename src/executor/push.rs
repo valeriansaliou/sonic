@@ -8,7 +8,7 @@ use linked_hash_set::LinkedHashSet;
 use std::iter::FromIterator;
 
 use crate::lexer::token::TokenLexer;
-use crate::store::identifiers::{StoreMetaKey, StoreMetaValue};
+use crate::store::identifiers::{StoreMetaKey, StoreMetaValue, StoreTermHash, StoreTermHashed};
 use crate::store::item::StoreItem;
 use crate::store::kv::{StoreKVActionBuilder, StoreKVPool};
 
@@ -69,19 +69,25 @@ impl ExecutorPush {
                     let mut has_commits = false;
 
                     // Acquire list of terms for IID
-                    let mut iid_terms: LinkedHashSet<String> = LinkedHashSet::from_iter(
-                        action
-                            .get_iid_to_terms(iid)
-                            .unwrap_or(None)
-                            .unwrap_or(Vec::new()),
+                    let mut iid_terms_hashed: LinkedHashSet<StoreTermHashed> =
+                        LinkedHashSet::from_iter(
+                            action
+                                .get_iid_to_terms(iid)
+                                .unwrap_or(None)
+                                .unwrap_or(Vec::new()),
+                        );
+
+                    info!(
+                        "got push executor stored iid-to-terms: {:?}",
+                        iid_terms_hashed
                     );
 
-                    info!("got push executor stored iid-to-terms: {:?}", iid_terms);
-
                     while let Some(term) = lexer.next() {
+                        let term_hashed = StoreTermHash::from(&term);
+
                         // Check that term is not already linked to IID
-                        if iid_terms.contains(&term) == false {
-                            if let Ok(term_iids) = action.get_term_to_iids(&term) {
+                        if iid_terms_hashed.contains(&term_hashed) == false {
+                            if let Ok(term_iids) = action.get_term_to_iids(term_hashed) {
                                 has_commits = true;
 
                                 // Add IID in first position in list for terms
@@ -95,17 +101,18 @@ impl ExecutorPush {
 
                                 term_iids.insert(0, iid);
 
-                                action.set_term_to_iids(&term, &term_iids).ok();
+                                action.set_term_to_iids(term_hashed, &term_iids).ok();
 
                                 // Insert term into IID to terms map
-                                iid_terms.insert(term);
+                                iid_terms_hashed.insert(term_hashed);
                             }
                         }
                     }
 
                     // Commit updated list of terms for IID? (if any commit made)
                     if has_commits == true {
-                        let collected_iids: Vec<String> = iid_terms.into_iter().collect();
+                        let collected_iids: Vec<StoreTermHashed> =
+                            iid_terms_hashed.into_iter().collect();
 
                         info!(
                             "has push executor iid-to-terms commits: {:?}",
