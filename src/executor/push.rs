@@ -17,8 +17,13 @@ pub struct ExecutorPush;
 impl ExecutorPush {
     pub fn execute<'a>(store: StoreItem<'a>, mut lexer: TokenLexer<'a>) -> Result<(), ()> {
         if let StoreItem(collection, Some(bucket), Some(object)) = store {
-            if let Ok(kv_store) = StoreKVPool::acquire(collection.as_str()) {
+            if let Ok(kv_store) = StoreKVPool::acquire(collection) {
                 let action = StoreKVActionBuilder::new(bucket, kv_store);
+
+                // TODO: when pushing anything to a list, prevent DOS by limiting the list length
+                // TODO: when poping items to prevent DOS, also nuke IID from term-to-IIDs mapping
+                // TODO: handle errors on all action.set() method and return a general ERR if one \
+                //   fails (with a proper error log).
 
                 // Try to resolve existing OID to IID, otherwise initialize IID (store the \
                 //   bi-directional relationship)

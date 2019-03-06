@@ -24,8 +24,10 @@ impl ExecutorSearch {
         _offset: QuerySearchOffset,
     ) -> Result<Option<Vec<String>>, ()> {
         if let StoreItem(collection, Some(bucket), None) = store {
-            if let Ok(kv_store) = StoreKVPool::acquire(collection.as_str()) {
+            if let Ok(kv_store) = StoreKVPool::acquire(collection) {
                 let action = StoreKVActionBuilder::new(bucket, kv_store);
+
+                // TODO: support for LIMIT + OFFSET
 
                 // Try to resolve existing search terms to IIDs, and perform an algebraic AND on \
                 //   all resulting IIDs for each given term.
@@ -36,9 +38,7 @@ impl ExecutorSearch {
                     if let Ok(iids_inner) = action.get_term_to_iids(&term) {
                         let iids = iids_inner.unwrap_or(Vec::new());
 
-                        debug!(
-                            "got search executor iids: {:?} for term: {}", iids, term
-                        );
+                        debug!("got search executor iids: {:?} for term: {}", iids, term);
 
                         // Intersect found IIDs with previous batch
                         let iids_set: HashSet<StoreObjectIID> =

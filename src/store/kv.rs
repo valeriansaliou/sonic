@@ -5,7 +5,9 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use byteorder::{ByteOrder, NativeEndian, ReadBytesExt};
-use rocksdb::{DBCompactionStyle, DBCompressionType, Error as DBError, Options as DBOptions, DB};
+use rocksdb::{
+    DBCompactionStyle, DBCompressionType, DBVector, Error as DBError, Options as DBOptions, DB,
+};
 use std::io::Cursor;
 
 use super::identifiers::*;
@@ -28,19 +30,19 @@ pub struct StoreKVAction<'a> {
 }
 
 impl StoreKVPool {
-    pub fn acquire(_target: &str) -> Result<StoreKV, DBError> {
+    pub fn acquire<'a, T: Into<&'a str>>(collection: T) -> Result<StoreKV, DBError> {
         // TODO: pool and auto-close or auto-open if needed
         // TODO: keep it in a LAZY_STATIC global object
-        StoreKVBuilder::new()
+        StoreKVBuilder::new(collection.into())
     }
 }
 
 impl StoreKVBuilder {
-    pub fn new() -> Result<StoreKV, DBError> {
-        Self::open().map(|db| StoreKV { database: db })
+    pub fn new(collection: &str) -> Result<StoreKV, DBError> {
+        Self::open(collection).map(|db| StoreKV { database: db })
     }
 
-    fn open() -> Result<DB, DBError> {
+    fn open(collection: &str) -> Result<DB, DBError> {
         debug!("opening key-value database");
 
         // Configure database options
@@ -49,7 +51,7 @@ impl StoreKVBuilder {
         // Acquire path to database
         // TODO: 1 database per collection
         // TODO: auto-close file descriptor if not used in a while, and re-open whenever needed
-        let db_path = APP_CONF.store.kv.path.join("./collection");
+        let db_path = APP_CONF.store.kv.path.join(collection);
 
         DB::open(&db_options, db_path)
     }
@@ -80,6 +82,26 @@ impl StoreKVBuilder {
     }
 }
 
+impl StoreKV {
+    pub fn get(&self, key: &str) -> Result<Option<DBVector>, DBError> {
+        self.database.get(key.as_bytes())
+    }
+
+    pub fn put(&self, key: &str, data: &[u8]) -> Result<(), DBError> {
+        self.database.put(key.as_bytes(), data)
+    }
+
+    pub fn delete(&self, key: &str) -> Result<(), DBError> {
+        self.database.delete(key.as_bytes())
+    }
+
+    // TODO: need to provide options + path (on unopened database)
+    // TODO: need to close any previous collection database before proceeding destroy
+    // pub fn destroy(&self) -> Result<(), DBError> {
+    //     self.database.destroy()
+    // }
+}
+
 impl StoreKVActionBuilder {
     pub fn new<'a>(bucket: StoreItemPart<'a>, store: StoreKV) -> StoreKVAction<'a> {
         StoreKVAction {
@@ -98,7 +120,7 @@ impl<'a> StoreKVAction<'a> {
 
         debug!("store get meta-to-value: {}", store_key);
 
-        match self.store.database.get(store_key.as_bytes()) {
+        match self.store.get(&store_key) {
             Ok(Some(value)) => {
                 debug!("got meta-to-value: {}", store_key);
 
@@ -140,8 +162,7 @@ impl<'a> StoreKVAction<'a> {
         };
 
         self.store
-            .database
-            .put(store_key.as_bytes(), value_string.as_bytes())
+            .put(&store_key, value_string.as_bytes())
             .or(Err(()))
     }
 
@@ -153,7 +174,7 @@ impl<'a> StoreKVAction<'a> {
 
         debug!("store get term-to-iids: {}", store_key);
 
-        match self.store.database.get(store_key.as_bytes()) {
+        match self.store.get(&store_key) {
             Ok(Some(value)) => {
                 debug!(
                     "got term-to-iids: {} with encoded value: {:?}",
@@ -200,10 +221,15 @@ impl<'a> StoreKVAction<'a> {
             store_key, iids_encoded
         );
 
-        self.store
-            .database
-            .put(store_key.as_bytes(), &iids_encoded)
-            .or(Err(()))
+        self.store.put(&store_key, &iids_encoded).or(Err(()))
+    }
+
+    pub fn delete_term_to_iids(&self, term: &str) -> Result<(), ()> {
+        let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term).to_string();
+
+        debug!("store delete term-to-iids: {}", store_key);
+
+        self.store.delete(&store_key).or(Err(()))
     }
 
     /// OID-to-IID mapper
@@ -214,7 +240,7 @@ impl<'a> StoreKVAction<'a> {
 
         debug!("store get oid-to-iid: {}", store_key);
 
-        match self.store.database.get(store_key.as_bytes()) {
+        match self.store.get(&store_key) {
             Ok(Some(value)) => {
                 debug!(
                     "got oid-to-iid: {} with encoded value: {:?}",
@@ -259,10 +285,15 @@ impl<'a> StoreKVAction<'a> {
             store_key, iid_encoded
         );
 
-        self.store
-            .database
-            .put(store_key.as_bytes(), &iid_encoded)
-            .or(Err(()))
+        self.store.put(&store_key, &iid_encoded).or(Err(()))
+    }
+
+    pub fn delete_oid_to_iid(&self, oid: &StoreObjectOID) -> Result<(), ()> {
+        let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid).to_string();
+
+        debug!("store delete oid-to-iid: {}", store_key);
+
+        self.store.delete(&store_key).or(Err(()))
     }
 
     /// IID-to-OID mapper
@@ -273,7 +304,7 @@ impl<'a> StoreKVAction<'a> {
 
         debug!("store get iid-to-oid: {}", store_key);
 
-        match self.store.database.get(store_key.as_bytes()) {
+        match self.store.get(&store_key) {
             Ok(Some(value)) => Ok(value.to_utf8().map(|value| value.to_string())),
             Ok(None) => Ok(None),
             Err(_) => Err(()),
@@ -285,10 +316,15 @@ impl<'a> StoreKVAction<'a> {
 
         debug!("store set iid-to-oid: {}", store_key);
 
-        self.store
-            .database
-            .put(store_key.as_bytes(), oid.as_bytes())
-            .or(Err(()))
+        self.store.put(&store_key, oid.as_bytes()).or(Err(()))
+    }
+
+    pub fn delete_iid_to_oid(&self, iid: StoreObjectIID) -> Result<(), ()> {
+        let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid).to_string();
+
+        debug!("store delete iid-to-oid: {}", store_key);
+
+        self.store.delete(&store_key).or(Err(()))
     }
 
     /// IID-to-Terms mapper
@@ -299,7 +335,7 @@ impl<'a> StoreKVAction<'a> {
 
         debug!("store get iid-to-terms: {}", store_key);
 
-        match self.store.database.get(store_key.as_bytes()) {
+        match self.store.get(&store_key) {
             Ok(Some(value)) => Ok(if let Some(encoded) = value.to_utf8() {
                 debug!(
                     "got iid-to-terms: {} with encoded value: {:?}",
@@ -335,10 +371,15 @@ impl<'a> StoreKVAction<'a> {
         // Encode terms (as 'space' is a special character, its safe to join them based on a space)
         let encoded = terms.join(" ");
 
-        self.store
-            .database
-            .put(store_key.as_bytes(), encoded.as_bytes())
-            .or(Err(()))
+        self.store.put(&store_key, encoded.as_bytes()).or(Err(()))
+    }
+
+    pub fn delete_iid_to_terms(&self, iid: StoreObjectIID) -> Result<(), ()> {
+        let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid).to_string();
+
+        debug!("store delete iid-to-terms: {}", store_key);
+
+        self.store.delete(&store_key).or(Err(()))
     }
 
     fn encode_u64(decoded: u64) -> [u8; 8] {

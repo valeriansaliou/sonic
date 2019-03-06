@@ -5,12 +5,26 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::store::item::StoreItem;
+use crate::store::kv::{StoreKVActionBuilder, StoreKVPool};
 
 pub struct ExecutorFlushB;
 
 impl ExecutorFlushB {
-    pub fn execute<'a>(_store: StoreItem<'a>) -> u64 {
-        // TODO
-        0
+    pub fn execute<'a>(store: StoreItem<'a>) -> Result<u64, ()> {
+        if let StoreItem(collection, Some(bucket), None) = store {
+            if let Ok(kv_store) = StoreKVPool::acquire(collection) {
+                let action = StoreKVActionBuilder::new(bucket, kv_store);
+
+                // TODO: begin database lock (mutex on collection database acquire fn)
+                // TODO: force a rocksdb database fd close
+                // TODO: remove whole database from file system
+                // TODO: end database lock (mutex on collection database acquire fn)
+
+                // TODO
+                return Ok(0);
+            }
+        }
+
+        Err(())
     }
 }

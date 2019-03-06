@@ -24,25 +24,18 @@ impl StoreOperationDispatch {
                     .map(|results| results.map(|results| results.join(" ")))
             }
             Query::Push(store, lexer) => ExecutorPush::execute(store, lexer).map(|_| None),
-            Query::Pop(store) => {
-                // TODO: return OK or ERR from execute()
-                Ok(Some(ExecutorPop::execute(store).to_string()))
-            }
+            Query::Pop(store) => ExecutorPop::execute(store).map(|count| Some(count.to_string())),
             Query::Count(store) => {
-                // TODO: return OK or ERR from execute()
-                Ok(Some(ExecutorCount::execute(store).to_string()))
+                ExecutorCount::execute(store).map(|count| Some(count.to_string()))
             }
             Query::FlushC(store) => {
-                // TODO: return OK or ERR from execute()
-                Ok(Some(ExecutorFlushC::execute(store).to_string()))
+                ExecutorFlushC::execute(store).map(|count| Some(count.to_string()))
             }
             Query::FlushB(store) => {
-                // TODO: return OK or ERR from execute()
-                Ok(Some(ExecutorFlushB::execute(store).to_string()))
+                ExecutorFlushB::execute(store).map(|count| Some(count.to_string()))
             }
             Query::FlushO(store) => {
-                // TODO: return OK or ERR from execute()
-                Ok(Some(ExecutorFlushO::execute(store).to_string()))
+                ExecutorFlushO::execute(store).map(|count| Some(count.to_string()))
             }
         }
     }
