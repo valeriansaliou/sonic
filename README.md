@@ -116,6 +116,10 @@ Use the sample [config.cfg](https://github.com/valeriansaliou/sonic/blob/master/
 
 * `path` (type: _string_, allowed: UNIX path, default: `./data/store/kv/`) — Path to the Key-Value database store
 
+**[store.kv.pool]**
+
+* `inactive_after` (type: _integer_, allowed: seconds, default: `1800`) — Time after which a cached database is considered inactive and can be closed (if it is not used, ie. re-activated)
+
 **[store.kv.database]**
 
 * `compress` (type: _boolean_, allowed: `true`, `false`, default: `true`) — Whether to compress database or not (uses LZ4)

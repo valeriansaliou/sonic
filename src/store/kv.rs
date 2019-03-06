@@ -8,7 +8,11 @@ use byteorder::{ByteOrder, NativeEndian, ReadBytesExt};
 use rocksdb::{
     DBCompactionStyle, DBCompressionType, DBVector, Error as DBError, Options as DBOptions, DB,
 };
+use std::collections::HashMap;
 use std::io::Cursor;
+use std::mem;
+use std::sync::{Arc, RwLock};
+use std::time::SystemTime;
 
 use super::identifiers::*;
 use super::item::StoreItemPart;
@@ -20,26 +24,119 @@ pub struct StoreKVBuilder;
 
 pub struct StoreKV {
     database: DB,
+    last_used: Arc<RwLock<SystemTime>>,
 }
 
 pub struct StoreKVActionBuilder;
 
 pub struct StoreKVAction<'a> {
-    store: StoreKV,
+    store: StoreKVBox,
     bucket: StoreItemPart<'a>,
 }
 
+type StoreKVBox = Arc<StoreKV>;
+
+lazy_static! {
+    static ref STORE_POOL: Arc<RwLock<HashMap<String, StoreKVBox>>> =
+        Arc::new(RwLock::new(HashMap::new()));
+}
+
 impl StoreKVPool {
-    pub fn acquire<'a, T: Into<&'a str>>(collection: T) -> Result<StoreKV, DBError> {
-        // TODO: pool and auto-close or auto-open if needed
-        // TODO: keep it in a LAZY_STATIC global object
-        StoreKVBuilder::new(collection.into())
+    pub fn acquire<'a, T: Into<&'a str>>(collection: T) -> Result<StoreKVBox, DBError> {
+        let collection_str = collection.into();
+
+        // Acquire a thread-safe store pool reference in read mode
+        let store_pool_read = STORE_POOL.read().unwrap();
+
+        if let Some(mut store_kv) = store_pool_read.get(collection_str) {
+            debug!(
+                "kv store acquired from pool for collection: {}",
+                collection_str
+            );
+
+            // Bump store last used date (avoids early janitor eviction)
+            let mut last_used_value = store_kv.last_used.write().unwrap();
+
+            mem::replace(&mut *last_used_value, SystemTime::now());
+
+            // Perform an early drop of the lock (frees up write lock early)
+            drop(last_used_value);
+
+            Ok(store_kv.clone())
+        } else {
+            info!(
+                "kv store not in pool for collection: {}, opening it",
+                collection_str
+            );
+
+            match StoreKVBuilder::new(collection_str) {
+                Ok(store_kv) => {
+                    // Important: we need to drop the read reference first, to avoid dead-locking \
+                    //   when acquiring the RWLock in write mode in this block.
+                    drop(store_pool_read);
+
+                    // Acquire a thread-safe store pool reference in write mode
+                    let mut store_pool_write = STORE_POOL.write().unwrap();
+                    let store_kv_box = Arc::new(store_kv);
+
+                    store_pool_write.insert(collection_str.to_string(), store_kv_box.clone());
+
+                    debug!(
+                        "opened and cached store in pool for collection: {}",
+                        collection_str
+                    );
+
+                    Ok(store_kv_box)
+                }
+                Err(err) => {
+                    error!(
+                        "failed opening store for collection: {} because: {}",
+                        collection_str, err
+                    );
+
+                    Err(err)
+                }
+            }
+        }
+    }
+
+    pub fn janitor() {
+        debug!("scanning for kv store pool items to janitor");
+
+        let mut store_pool_write = STORE_POOL.write().unwrap();
+        let mut removal_register: Vec<String> = Vec::new();
+
+        for (collection, store_kv) in store_pool_write.iter() {
+            let last_used = store_kv.last_used.read().unwrap();
+
+            if last_used.elapsed().unwrap().as_secs() >= APP_CONF.store.kv.pool.inactive_after {
+                debug!(
+                    "found expired kv store pool item: {} with last used time: {:?}",
+                    &collection, last_used
+                );
+
+                removal_register.push(collection.to_owned());
+            }
+        }
+
+        for collection in &removal_register {
+            store_pool_write.remove(collection.as_str());
+        }
+
+        info!(
+            "done scanning for kv store pool items to janitor, expired {} items, now has {} items",
+            removal_register.len(),
+            store_pool_write.len()
+        );
     }
 }
 
 impl StoreKVBuilder {
     pub fn new(collection: &str) -> Result<StoreKV, DBError> {
-        Self::open(collection).map(|db| StoreKV { database: db })
+        Self::open(collection).map(|db| StoreKV {
+            database: db,
+            last_used: Arc::new(RwLock::new(SystemTime::now())),
+        })
     }
 
     fn open(collection: &str) -> Result<DB, DBError> {
@@ -49,8 +146,6 @@ impl StoreKVBuilder {
         let db_options = Self::configure();
 
         // Acquire path to database
-        // TODO: 1 database per collection
-        // TODO: auto-close file descriptor if not used in a while, and re-open whenever needed
         let db_path = APP_CONF.store.kv.path.join(collection);
 
         DB::open(&db_options, db_path)
@@ -103,7 +198,7 @@ impl StoreKV {
 }
 
 impl StoreKVActionBuilder {
-    pub fn read<'a>(bucket: StoreItemPart<'a>, store: StoreKV) -> StoreKVAction<'a> {
+    pub fn read<'a>(bucket: StoreItemPart<'a>, store: StoreKVBox) -> StoreKVAction<'a> {
         let action = Self::build(bucket, store);
 
         debug!("begin action read block");
@@ -117,7 +212,7 @@ impl StoreKVActionBuilder {
         action
     }
 
-    pub fn write<'a>(bucket: StoreItemPart<'a>, store: StoreKV) -> StoreKVAction<'a> {
+    pub fn write<'a>(bucket: StoreItemPart<'a>, store: StoreKVBox) -> StoreKVAction<'a> {
         let action = Self::build(bucket, store);
 
         debug!("begin action write block");
@@ -131,7 +226,7 @@ impl StoreKVActionBuilder {
         action
     }
 
-    pub fn build<'a>(bucket: StoreItemPart<'a>, store: StoreKV) -> StoreKVAction<'a> {
+    pub fn build<'a>(bucket: StoreItemPart<'a>, store: StoreKVBox) -> StoreKVAction<'a> {
         StoreKVAction {
             store: store,
             bucket: bucket,

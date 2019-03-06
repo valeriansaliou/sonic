@@ -54,7 +54,14 @@ pub struct ConfigStoreKV {
     #[serde(default = "defaults::store_kv_path")]
     pub path: PathBuf,
 
+    pub pool: ConfigStoreKVPool,
     pub database: ConfigStoreKVDatabase,
+}
+
+#[derive(Deserialize)]
+pub struct ConfigStoreKVPool {
+    #[serde(default = "defaults::store_kv_pool_inactive_after")]
+    pub inactive_after: u64,
 }
 
 #[derive(Deserialize)]

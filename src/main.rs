@@ -28,6 +28,7 @@ extern crate unicode_segmentation;
 mod channel;
 mod config;
 mod executor;
+mod janitor;
 mod lexer;
 mod query;
 mod store;
@@ -44,6 +45,7 @@ use channel::listen::ChannelListenBuilder;
 use config::config::Config;
 use config::logger::ConfigLogger;
 use config::reader::ConfigReader;
+use janitor::runtime::JanitorBuilder;
 
 struct AppArgs {
     config: String,
@@ -53,34 +55,54 @@ pub static LINE_FEED: &'static str = "\r\n";
 
 pub static THREAD_NAME_CHANNEL_MASTER: &'static str = "sonic-channel-master";
 pub static THREAD_NAME_CHANNEL_CLIENT: &'static str = "sonic-channel-client";
+pub static THREAD_NAME_JANITOR: &'static str = "sonic-janitor";
+
+macro_rules! gen_spawn_managed {
+    ($name:expr, $method:ident, $thread_name:ident, $managed_fn:ident) => {
+        fn $method() {
+            debug!("spawn managed thread: {}", $name);
+
+            let worker = thread::Builder::new()
+                .name($thread_name.to_string())
+                .spawn(|| $managed_fn::new().run());
+
+            // Block on worker thread (join it)
+            let has_error = if let Ok(worker_thread) = worker {
+                worker_thread.join().is_err()
+            } else {
+                true
+            };
+
+            // Worker thread crashed?
+            if has_error == true {
+                error!("managed thread crashed ({}), setting it up again", $name);
+
+                // Prevents thread start loop floods
+                thread::sleep(Duration::from_secs(1));
+
+                $method();
+            }
+        }
+    };
+}
 
 lazy_static! {
     static ref APP_ARGS: AppArgs = make_app_args();
     static ref APP_CONF: Config = ConfigReader::make();
 }
 
-fn spawn_channel() {
-    let channel = thread::Builder::new()
-        .name(THREAD_NAME_CHANNEL_MASTER.to_string())
-        .spawn(move || ChannelListenBuilder::new().run());
-
-    // Block on channel thread (join it)
-    let has_error = if let Ok(channel_thread) = channel {
-        channel_thread.join().is_err()
-    } else {
-        true
-    };
-
-    // Channel thread crashed?
-    if has_error == true {
-        error!("channel thread crashed, setting it up again");
-
-        // Prevents thread start loop floods
-        thread::sleep(Duration::from_secs(1));
-
-        spawn_channel();
-    }
-}
+gen_spawn_managed!(
+    "channel",
+    spawn_channel,
+    THREAD_NAME_CHANNEL_MASTER,
+    ChannelListenBuilder
+);
+gen_spawn_managed!(
+    "janitor",
+    spawn_janitor,
+    THREAD_NAME_JANITOR,
+    JanitorBuilder
+);
 
 fn make_app_args() -> AppArgs {
     let matches = App::new(crate_name!())
@@ -117,6 +139,9 @@ fn main() {
 
     // Ensure all states are bound
     ensure_states();
+
+    // Spawn janitor (background thread)
+    thread::spawn(spawn_janitor);
 
     // Spawn channel (foreground thread)
     spawn_channel();
