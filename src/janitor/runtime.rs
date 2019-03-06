@@ -12,7 +12,7 @@ use crate::store::kv::StoreKVPool;
 pub struct JanitorBuilder;
 pub struct Janitor;
 
-const JANITOR_TICK_INTERVAL: Duration = Duration::from_secs(5);
+const JANITOR_TICK_INTERVAL: Duration = Duration::from_secs(30);
 
 impl JanitorBuilder {
     pub fn new() -> Janitor {
