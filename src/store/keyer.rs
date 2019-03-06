@@ -128,12 +128,12 @@ mod tests {
     #[test]
     fn it_keys_term_to_iids() {
         assert_eq!(
-            StoreKeyerBuilder::term_to_iids("user:0dcde3a6", "hello").to_string(),
-            "1:vngsgj:1xn6qrd"
+            StoreKeyerBuilder::term_to_iids("user:0dcde3a6", 772137347).to_string(),
+            "1:vngsgj:crpkzn"
         );
         assert_eq!(
-            StoreKeyerBuilder::term_to_iids("default", "yes").to_string(),
-            "1:tlegv5:1cieqaj"
+            StoreKeyerBuilder::term_to_iids("default", 3582484684).to_string(),
+            "1:tlegv5:1n8x2vg"
         );
     }
 
