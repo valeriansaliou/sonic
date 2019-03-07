@@ -26,7 +26,6 @@ pub struct StoreKVBuilder;
 
 pub struct StoreKV {
     database: DB,
-    collection: String,
     last_used: Arc<RwLock<SystemTime>>,
 }
 
@@ -145,7 +144,6 @@ impl StoreKVBuilder {
     pub fn new(collection: &str) -> Result<StoreKV, DBError> {
         Self::open(collection).map(|db| StoreKV {
             database: db,
-            collection: collection.to_string(),
             last_used: Arc::new(RwLock::new(SystemTime::now())),
         })
     }
