@@ -9,9 +9,11 @@ use rocksdb::{
     DBCompactionStyle, DBCompressionType, DBVector, Error as DBError, Options as DBOptions, DB,
 };
 use std::collections::HashMap;
+use std::fs;
 use std::io::Cursor;
 use std::mem;
-use std::sync::{Arc, RwLock};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::SystemTime;
 
 use super::identifiers::*;
@@ -24,6 +26,7 @@ pub struct StoreKVBuilder;
 
 pub struct StoreKV {
     database: DB,
+    collection: String,
     last_used: Arc<RwLock<SystemTime>>,
 }
 
@@ -37,6 +40,8 @@ pub struct StoreKVAction<'a> {
 type StoreKVBox = Arc<StoreKV>;
 
 lazy_static! {
+    pub static ref STORE_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
+    static ref STORE_WRITE_LOCK: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     static ref STORE_POOL: Arc<RwLock<HashMap<String, StoreKVBox>>> =
         Arc::new(RwLock::new(HashMap::new()));
 }
@@ -45,10 +50,15 @@ impl StoreKVPool {
     pub fn acquire<'a, T: Into<&'a str>>(collection: T) -> Result<StoreKVBox, DBError> {
         let collection_str = collection.into();
 
+        // Acquire general lock, and reference it in context
+        // Notice: this prevents database to be opened while also erased; or 2 databases on the \
+        //   same collection to be opened at the same time.
+        let _write = STORE_WRITE_LOCK.lock().unwrap();
+
         // Acquire a thread-safe store pool reference in read mode
         let store_pool_read = STORE_POOL.read().unwrap();
 
-        if let Some(mut store_kv) = store_pool_read.get(collection_str) {
+        if let Some(store_kv) = store_pool_read.get(collection_str) {
             debug!(
                 "kv store acquired from pool for collection: {}",
                 collection_str
@@ -135,6 +145,7 @@ impl StoreKVBuilder {
     pub fn new(collection: &str) -> Result<StoreKV, DBError> {
         Self::open(collection).map(|db| StoreKV {
             database: db,
+            collection: collection.to_string(),
             last_used: Arc::new(RwLock::new(SystemTime::now())),
         })
     }
@@ -145,10 +156,12 @@ impl StoreKVBuilder {
         // Configure database options
         let db_options = Self::configure();
 
-        // Acquire path to database
-        let db_path = APP_CONF.store.kv.path.join(collection);
+        // Open database at path for collection
+        DB::open(&db_options, Self::path(collection))
+    }
 
-        DB::open(&db_options, db_path)
+    fn path(collection: &str) -> PathBuf {
+        APP_CONF.store.kv.path.join(collection)
     }
 
     fn configure() -> DBOptions {
@@ -189,15 +202,6 @@ impl StoreKV {
     pub fn delete(&self, key: &str) -> Result<(), DBError> {
         self.database.delete(key.as_bytes())
     }
-
-    pub fn erase(&self) -> Result<(), ()> {
-        // TODO: 0. set a global database lock
-        // TODO: 1. close database
-        // TODO: 2. remove from fs
-        // TODO: 3. release global database lock
-
-        Err(())
-    }
 }
 
 impl StoreKVActionBuilder {
@@ -229,7 +233,55 @@ impl StoreKVActionBuilder {
         action
     }
 
-    pub fn build<'a>(bucket: StoreItemPart<'a>, store: StoreKVBox) -> StoreKVAction<'a> {
+    pub fn erase(store: StoreKVBox) -> Result<u64, ()> {
+        let collection = &store.collection;
+
+        info!("erase requested on collection: {}", collection);
+
+        // Acquire write + access locks, and reference it in context
+        // Notice: write lock prevents database to be acquired from any context; while access lock \
+        //   lets the erasure process wait that any thread using the database is done with work.
+        let (_access, _write) = (
+            STORE_ACCESS_LOCK.write().unwrap(),
+            STORE_WRITE_LOCK.lock().unwrap(),
+        );
+
+        // Check if database storage directory exists
+        let collection_path = StoreKVBuilder::path(collection);
+
+        // TODO: the path always exists on MacOS, is this a Rust bug?
+        // @see: https://github.com/rust-lang/rust/issues/58989
+        if collection_path.exists() == true {
+            debug!(
+                "collection store exists, erasing collection: {} at path: {:?}",
+                collection, collection_path
+            );
+
+            // Force a RocksDB database close
+            STORE_POOL.write().unwrap().remove(collection);
+            drop(store);
+
+            // Remove database storage from filesystem
+            let erase_result = fs::remove_dir_all(collection_path);
+
+            if erase_result.is_ok() == true {
+                debug!("done with collection erasure");
+
+                Ok(1)
+            } else {
+                Err(())
+            }
+        } else {
+            debug!(
+                "collection store does not exist, consider already erased: {} at path: {:?}",
+                collection, collection_path
+            );
+
+            Ok(0)
+        }
+    }
+
+    fn build<'a>(bucket: StoreItemPart<'a>, store: StoreKVBox) -> StoreKVAction<'a> {
         StoreKVAction {
             store: store,
             bucket: bucket,

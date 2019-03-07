@@ -6,7 +6,7 @@
 
 use radix_fmt::{radix, Radix};
 use std::hash::Hasher;
-use twox_hash::{XxHash, XxHash32};
+use twox_hash::XxHash32;
 
 use super::identifiers::*;
 

@@ -10,13 +10,17 @@ use std::iter::FromIterator;
 use crate::lexer::token::TokenLexer;
 use crate::store::identifiers::{StoreMetaKey, StoreMetaValue, StoreTermHash, StoreTermHashed};
 use crate::store::item::StoreItem;
-use crate::store::kv::{StoreKVActionBuilder, StoreKVPool};
+use crate::store::kv::{StoreKVActionBuilder, StoreKVPool, STORE_ACCESS_LOCK};
 
 pub struct ExecutorPush;
 
 impl ExecutorPush {
     pub fn execute<'a>(store: StoreItem<'a>, mut lexer: TokenLexer<'a>) -> Result<(), ()> {
         if let StoreItem(collection, Some(bucket), Some(object)) = store {
+            // Important: acquire database access read lock, and reference it in context. This \
+            //   prevents the database from being erased while using it in this block.
+            let _access = STORE_ACCESS_LOCK.read().unwrap();
+
             if let Ok(kv_store) = StoreKVPool::acquire(collection) {
                 let action = StoreKVActionBuilder::write(bucket, kv_store);
 

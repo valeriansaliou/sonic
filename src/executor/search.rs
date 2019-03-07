@@ -11,7 +11,7 @@ use crate::lexer::token::TokenLexer;
 use crate::query::types::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
 use crate::store::identifiers::{StoreObjectIID, StoreTermHash};
 use crate::store::item::StoreItem;
-use crate::store::kv::{StoreKVActionBuilder, StoreKVPool};
+use crate::store::kv::{StoreKVActionBuilder, StoreKVPool, STORE_ACCESS_LOCK};
 
 pub struct ExecutorSearch;
 
@@ -24,6 +24,10 @@ impl ExecutorSearch {
         offset: QuerySearchOffset,
     ) -> Result<Option<Vec<String>>, ()> {
         if let StoreItem(collection, Some(bucket), None) = store {
+            // Important: acquire database access read lock, and reference it in context. This \
+            //   prevents the database from being erased while using it in this block.
+            let _access = STORE_ACCESS_LOCK.read().unwrap();
+
             if let Ok(kv_store) = StoreKVPool::acquire(collection) {
                 let action = StoreKVActionBuilder::read(bucket, kv_store);
 
