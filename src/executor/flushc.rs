@@ -11,12 +11,13 @@ pub struct ExecutorFlushC;
 
 impl ExecutorFlushC {
     pub fn execute<'a>(store: StoreItem<'a>) -> Result<u64, ()> {
+        // Important: do not acquire the store from there, as otherwise it will remain open \
+        //   even if dropped in the inner function, as this caller would still own a reference to \
+        //   it.
         if let StoreItem(collection, None, None) = store {
-            if let Ok(kv_store) = StoreKVPool::acquire(collection) {
-                return StoreKVActionBuilder::erase(kv_store);
-            }
+            StoreKVActionBuilder::erase(collection)
+        } else {
+            Err(())
         }
-
-        Err(())
     }
 }

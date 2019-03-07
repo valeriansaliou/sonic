@@ -233,10 +233,10 @@ impl StoreKVActionBuilder {
         action
     }
 
-    pub fn erase(store: StoreKVBox) -> Result<u64, ()> {
-        let collection = &store.collection;
+    pub fn erase<'a, T: Into<&'a str>>(collection: T) -> Result<u64, ()> {
+        let collection_str = collection.into();
 
-        info!("erase requested on collection: {}", collection);
+        info!("erase requested on collection: {}", collection_str);
 
         // Acquire write + access locks, and reference it in context
         // Notice: write lock prevents database to be acquired from any context; while access lock \
@@ -247,22 +247,21 @@ impl StoreKVActionBuilder {
         );
 
         // Check if database storage directory exists
-        let collection_path = StoreKVBuilder::path(collection);
+        let collection_path = StoreKVBuilder::path(collection_str);
 
-        // TODO: the path always exists on MacOS, is this a Rust bug?
-        // @see: https://github.com/rust-lang/rust/issues/58989
         if collection_path.exists() == true {
             debug!(
                 "collection store exists, erasing collection: {} at path: {:?}",
-                collection, collection_path
+                collection_str, &collection_path
             );
 
             // Force a RocksDB database close
-            STORE_POOL.write().unwrap().remove(collection);
-            drop(store);
+            {
+                STORE_POOL.write().unwrap().remove(collection_str);
+            }
 
             // Remove database storage from filesystem
-            let erase_result = fs::remove_dir_all(collection_path);
+            let erase_result = fs::remove_dir_all(&collection_path);
 
             if erase_result.is_ok() == true {
                 debug!("done with collection erasure");
@@ -274,7 +273,7 @@ impl StoreKVActionBuilder {
         } else {
             debug!(
                 "collection store does not exist, consider already erased: {} at path: {:?}",
-                collection, collection_path
+                collection_str, &collection_path
             );
 
             Ok(0)
