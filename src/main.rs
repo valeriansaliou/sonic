@@ -16,7 +16,6 @@ extern crate lazy_static;
 extern crate serde_derive;
 extern crate byteorder;
 extern crate fst;
-extern crate iso639_2;
 extern crate linked_hash_set;
 extern crate radix_fmt;
 extern crate rand;
@@ -24,6 +23,7 @@ extern crate rocksdb;
 extern crate toml;
 extern crate twox_hash;
 extern crate unicode_segmentation;
+extern crate whatlang;
 
 mod channel;
 mod config;
@@ -31,6 +31,7 @@ mod executor;
 mod janitor;
 mod lexer;
 mod query;
+mod stopwords;
 mod store;
 
 use std::ops::Deref;

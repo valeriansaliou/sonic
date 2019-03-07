@@ -4,6 +4,5 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-mod stopwords;
-
-pub mod token;
+// Notice: we do not have stopwords for this language yet.
+pub static STOPWORDS_BHO: &[&'static str] = &[];
