@@ -113,12 +113,18 @@ mod tests {
             TokenLexerBuilder::from("The quick brown fox jumps over the lazy dog!").unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Eng));
-        assert_eq!(token_cleaner.next(), Some("quick".to_string()));
-        assert_eq!(token_cleaner.next(), Some("brown".to_string()));
-        assert_eq!(token_cleaner.next(), Some("fox".to_string()));
-        assert_eq!(token_cleaner.next(), Some("jumps".to_string()));
-        assert_eq!(token_cleaner.next(), Some("lazy".to_string()));
-        assert_eq!(token_cleaner.next(), Some("dog".to_string()));
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("quick".to_string(), 4179131656))
+        );
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("brown".to_string(), 1268820067))
+        );
+        assert_eq!(token_cleaner.next(), Some(("fox".to_string(), 667256324)));
+        assert_eq!(token_cleaner.next(), Some(("jumps".to_string(), 633865164)));
+        assert_eq!(token_cleaner.next(), Some(("lazy".to_string(), 4130433347)));
+        assert_eq!(token_cleaner.next(), Some(("dog".to_string(), 2044924251)));
         assert_eq!(token_cleaner.next(), None);
     }
 
@@ -129,11 +135,23 @@ mod tests {
                 .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Fra));
-        assert_eq!(token_cleaner.next(), Some("renard".to_string()));
-        assert_eq!(token_cleaner.next(), Some("brun".to_string()));
-        assert_eq!(token_cleaner.next(), Some("saute".to_string()));
-        assert_eq!(token_cleaner.next(), Some("chien".to_string()));
-        assert_eq!(token_cleaner.next(), Some("paresseux".to_string()));
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("renard".to_string(), 1635186311))
+        );
+        assert_eq!(token_cleaner.next(), Some(("brun".to_string(), 2763604928)));
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("saute".to_string(), 1918158211))
+        );
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("chien".to_string(), 2177818351))
+        );
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("paresseux".to_string(), 1678693110))
+        );
         assert_eq!(token_cleaner.next(), None);
     }
 
@@ -142,11 +160,11 @@ mod tests {
         let mut token_cleaner = TokenLexerBuilder::from("快狐跨懒狗").unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Cmn));
-        assert_eq!(token_cleaner.next(), Some("快".to_string()));
-        assert_eq!(token_cleaner.next(), Some("狐".to_string()));
-        assert_eq!(token_cleaner.next(), Some("跨".to_string()));
-        assert_eq!(token_cleaner.next(), Some("懒".to_string()));
-        assert_eq!(token_cleaner.next(), Some("狗".to_string()));
+        assert_eq!(token_cleaner.next(), Some(("快".to_string(), 126546256)));
+        assert_eq!(token_cleaner.next(), Some(("狐".to_string(), 2879689662)));
+        assert_eq!(token_cleaner.next(), Some(("跨".to_string(), 2913342670)));
+        assert_eq!(token_cleaner.next(), Some(("懒".to_string(), 3199935961)));
+        assert_eq!(token_cleaner.next(), Some(("狗".to_string(), 3360772096)));
         assert_eq!(token_cleaner.next(), None);
     }
 
