@@ -144,13 +144,13 @@ Both searches and object management (ie. data ingestion) is handled via the Soni
 
 Sonic Channel can be accessed via the `telnet` utility from your computer. The very same system is also used by all Sonic Channel libraries (eg. NodeJS).
 
-## Sonic Channel (uninitialized)
+### Sonic Channel (uninitialized)
 
 * `START <mode>`: select mode to use for connection (either: `search` or `ingest`)
 
 _Issuing any other command — eg. `QUIT` — in this mode will abort the TCP connection, effectively resulting in a `QUIT` with the `ENDED not_recognized` response._
 
-## Sonic Channel (Search mode)
+### Sonic Channel (Search mode)
 
 _The Sonic Channel Search mode is used for querying the search index. Once in this mode, you cannot switch to other modes or gain access to commands from other modes._
 
@@ -206,7 +206,7 @@ _Notes on what happens:_
 * **T11 + T13:** we query collection `helpdesk` twice (in the example, this one is heavy, so processing of results takes more time);
 * **T17 + T18:** we receive search results for search queries of T11 + T13 (this took a while!);
 
-## Sonic Channel (Ingest mode)
+### Sonic Channel (Ingest mode)
 
 _The Sonic Channel Ingest mode is used for altering the search index (push, pop and flush). Once in this mode, you cannot switch to other modes or gain access to commands from other modes._
 
@@ -278,6 +278,64 @@ _Notes on what happens:_
 * **NodeJS**: **[node-sonic-channel](https://www.npmjs.com/package/sonic-channel)**
 
 👉 Cannot find the library for your programming language? Build your own and be referenced here! ([contact me](https://valeriansaliou.name/))
+
+## Which languages are supported?
+
+Sonic supports a wide range of languages in its lexing system. If a language is not in this list, you will still be able to push this language to the search index, but stop-words will not be eluded, which could lead to lower-quality search results.
+
+**The languages supported by the lexing system are:**
+
+* 🇿🇦 Afrikaans
+* 🇸🇦 Arabic
+* 🇦🇿 Azerbaijani
+* 🇧🇩 Bengali
+* 🇧🇬 Bulgarian
+* 🇲🇲 Burmese
+* 🇨🇳 Chinese (Mandarin)
+* 🇭🇷 Croatian
+* 🇨🇿 Czech
+* 🇩🇰 Danish
+* 🇳🇱 Dutch
+* 🇺🇸 English
+* 🏳 Esperanto
+* 🇪🇪 Estonian
+* 🇫🇮 Finnish
+* 🇫🇷 French
+* 🇩🇪 German
+* 🇬🇷 Greek
+* 🇳🇬 Hausa
+* 🇮🇱 Hebrew
+* 🇮🇳 Hindi
+* 🇭🇺 Hungarian
+* 🇮🇩 Indonesian
+* 🇮🇹 Italian
+* 🇯🇵 Japanese
+* 🇰🇭 Khmer
+* 🇰🇷 Korean
+* 🏳 Kurdish
+* 🇱🇻 Latvian
+* 🇱🇹 Lithuanian
+* 🇮🇳 Marathi
+* 🇳🇵 Nepali
+* 🇮🇷 Persian
+* 🇵🇱 Polish
+* 🇵🇹 Portuguese
+* 🇮🇳 Punjabi
+* 🇷🇺 Russian
+* 🇸🇮 Slovene
+* 🇸🇴 Somali
+* 🇪🇸 Spanish
+* 🇸🇪 Swedish
+* 🇵🇭 Tagalog
+* 🇮🇳 Tamil
+* 🇹🇭 Thai
+* 🇹🇷 Turkish
+* 🇺🇦 Ukrainian
+* 🇵🇰 Urdu
+* 🇻🇳 Vietnamese
+* 🇮🇱 Yiddish
+* 🇳🇬 Yoruba
+* 🇿🇦 Zulu
 
 ## How fast & lightweight is it?
 
