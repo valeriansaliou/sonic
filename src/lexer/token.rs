@@ -87,12 +87,17 @@ mod tests {
 
     #[test]
     fn it_cleans_token() {
-        let mut token_cleaner = TokenLexer::new("The quick brown fox!", Some(Lang::Eng));
+        let mut token_cleaner = TokenLexer::new(
+            "The quick brown fox jumps over the lazy dog!",
+            Some(Lang::Eng),
+        );
 
-        assert_eq!(token_cleaner.next(), Some("the".to_string()));
         assert_eq!(token_cleaner.next(), Some("quick".to_string()));
         assert_eq!(token_cleaner.next(), Some("brown".to_string()));
         assert_eq!(token_cleaner.next(), Some("fox".to_string()));
+        assert_eq!(token_cleaner.next(), Some("jumps".to_string()));
+        assert_eq!(token_cleaner.next(), Some("lazy".to_string()));
+        assert_eq!(token_cleaner.next(), Some("dog".to_string()));
         assert_eq!(token_cleaner.next(), None);
     }
 }
