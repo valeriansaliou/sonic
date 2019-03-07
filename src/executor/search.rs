@@ -43,7 +43,7 @@ impl ExecutorSearch {
 
                         // Intersect found IIDs with previous batch
                         let iids_set: LinkedHashSet<StoreObjectIID> =
-                            LinkedHashSet::from_iter(iids.iter().map(|value| *value));
+                            LinkedHashSet::from_iter(iids.into_iter());
 
                         if found_iids.is_empty() == true {
                             found_iids = iids_set;

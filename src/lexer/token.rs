@@ -86,10 +86,16 @@ impl<'a> Iterator for TokenLexer<'a> {
 
                     return Some((word, term_hash));
                 } else {
-                    debug!("lexer did not yield word: {} because: word already yielded", word);
+                    debug!(
+                        "lexer did not yield word: {} because: word already yielded",
+                        word
+                    );
                 }
             } else {
-                debug!("lexer did not yield word: {} because: word is a stop-word", word);
+                debug!(
+                    "lexer did not yield word: {} because: word is a stop-word",
+                    word
+                );
             }
         }
 
