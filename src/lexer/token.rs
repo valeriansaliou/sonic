@@ -4,16 +4,19 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use std::collections::HashSet;
 use unicode_segmentation::{UnicodeSegmentation, UnicodeWords};
 use whatlang::{detect as lang_detect, Lang};
 
 use super::stopwords::LexerStopWord;
+use crate::store::identifiers::{StoreTermHash, StoreTermHashed};
 
 pub struct TokenLexerBuilder;
 
 pub struct TokenLexer<'a> {
     locale: Option<Lang>,
     words: UnicodeWords<'a>,
+    yields: HashSet<StoreTermHashed>,
 }
 
 impl TokenLexerBuilder {
@@ -48,12 +51,13 @@ impl<'a> TokenLexer<'a> {
         TokenLexer {
             locale: locale,
             words: text.unicode_words(),
+            yields: HashSet::new(),
         }
     }
 }
 
 impl<'a> Iterator for TokenLexer<'a> {
-    type Item = String;
+    type Item = (String, StoreTermHashed);
 
     // Guarantees provided by the lexer on the output: \
     //   - Text is split per-word in a script-aware way \
@@ -69,12 +73,24 @@ impl<'a> Iterator for TokenLexer<'a> {
 
             // Check if normalized word is a stop-word?
             if LexerStopWord::is(&word, self.locale) == false {
-                debug!("lexer yielded word: {}", word);
+                // Hash the term (this is used by all iterator consumers, as well as internally \
+                //   in the iterator to keep track of already-yielded words in a space-optimized \
+                //   manner, ie. by using 32-bit unsigned integer hashes)
+                let term_hash = StoreTermHash::from(&word);
 
-                return Some(word);
+                // Check if word was not already yielded? (we return unique words)
+                if self.yields.contains(&term_hash) == false {
+                    debug!("lexer yielded word: {}", word);
+
+                    self.yields.insert(term_hash);
+
+                    return Some((word, term_hash));
+                } else {
+                    debug!("lexer did not yield word: {} because: word already yielded", word);
+                }
+            } else {
+                debug!("lexer did not yield word: {} because: word is a stop-word", word);
             }
-
-            debug!("lexer did not yield word: {}", word);
         }
 
         None

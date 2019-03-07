@@ -8,7 +8,7 @@ use linked_hash_set::LinkedHashSet;
 use std::iter::FromIterator;
 
 use crate::lexer::token::TokenLexer;
-use crate::store::identifiers::{StoreMetaKey, StoreMetaValue, StoreTermHash, StoreTermHashed};
+use crate::store::identifiers::{StoreMetaKey, StoreMetaValue, StoreTermHashed};
 use crate::store::item::StoreItem;
 use crate::store::kv::{StoreKVActionBuilder, StoreKVPool, STORE_ACCESS_LOCK};
 
@@ -86,9 +86,7 @@ impl ExecutorPush {
                         iid_terms_hashed
                     );
 
-                    while let Some(term) = lexer.next() {
-                        let term_hashed = StoreTermHash::from(&term);
-
+                    while let Some((_, term_hashed)) = lexer.next() {
                         // Check that term is not already linked to IID
                         if iid_terms_hashed.contains(&term_hashed) == false {
                             if let Ok(term_iids) = action.get_term_to_iids(term_hashed) {

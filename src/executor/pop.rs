@@ -8,7 +8,7 @@ use linked_hash_set::LinkedHashSet;
 use std::iter::FromIterator;
 
 use crate::lexer::token::TokenLexer;
-use crate::store::identifiers::{StoreTermHash, StoreTermHashed};
+use crate::store::identifiers::StoreTermHashed;
 use crate::store::item::StoreItem;
 use crate::store::kv::{StoreKVActionBuilder, StoreKVPool, STORE_ACCESS_LOCK};
 
@@ -40,16 +40,12 @@ impl ExecutorPop {
                                 iid_terms_hashed_vec
                             );
 
-                            let terms: Vec<String> = lexer.collect();
-
                             let iid_terms_hashed: LinkedHashSet<StoreTermHashed> =
                                 LinkedHashSet::from_iter(
                                     iid_terms_hashed_vec.iter().map(|value| *value),
                                 );
                             let pop_terms_hashed: LinkedHashSet<StoreTermHashed> =
-                                LinkedHashSet::from_iter(
-                                    terms.iter().map(|term| StoreTermHash::from(term)),
-                                );
+                                LinkedHashSet::from_iter(lexer.map(|item| item.1));
 
                             let remaining_terms: LinkedHashSet<StoreTermHashed> = iid_terms_hashed
                                 .difference(&pop_terms_hashed)
