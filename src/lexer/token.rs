@@ -86,18 +86,54 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_cleans_token() {
-        let mut token_cleaner = TokenLexer::new(
-            "The quick brown fox jumps over the lazy dog!",
-            Some(Lang::Eng),
-        );
+    fn it_cleans_token_english() {
+        let mut token_cleaner =
+            TokenLexerBuilder::from("The quick brown fox jumps over the lazy dog!").unwrap();
 
+        assert_eq!(token_cleaner.locale, Some(Lang::Eng));
         assert_eq!(token_cleaner.next(), Some("quick".to_string()));
         assert_eq!(token_cleaner.next(), Some("brown".to_string()));
         assert_eq!(token_cleaner.next(), Some("fox".to_string()));
         assert_eq!(token_cleaner.next(), Some("jumps".to_string()));
         assert_eq!(token_cleaner.next(), Some("lazy".to_string()));
         assert_eq!(token_cleaner.next(), Some("dog".to_string()));
+        assert_eq!(token_cleaner.next(), None);
+    }
+
+    #[test]
+    fn it_cleans_token_french() {
+        let mut token_cleaner =
+            TokenLexerBuilder::from("Le vif renard brun saute par dessus le chien paresseux.")
+                .unwrap();
+
+        assert_eq!(token_cleaner.locale, Some(Lang::Fra));
+        assert_eq!(token_cleaner.next(), Some("renard".to_string()));
+        assert_eq!(token_cleaner.next(), Some("brun".to_string()));
+        assert_eq!(token_cleaner.next(), Some("saute".to_string()));
+        assert_eq!(token_cleaner.next(), Some("chien".to_string()));
+        assert_eq!(token_cleaner.next(), Some("paresseux".to_string()));
+        assert_eq!(token_cleaner.next(), None);
+    }
+
+    #[test]
+    fn it_cleans_token_mandarin() {
+        let mut token_cleaner = TokenLexerBuilder::from("快狐跨懒狗").unwrap();
+
+        assert_eq!(token_cleaner.locale, Some(Lang::Cmn));
+        assert_eq!(token_cleaner.next(), Some("快".to_string()));
+        assert_eq!(token_cleaner.next(), Some("狐".to_string()));
+        assert_eq!(token_cleaner.next(), Some("跨".to_string()));
+        assert_eq!(token_cleaner.next(), Some("懒".to_string()));
+        assert_eq!(token_cleaner.next(), Some("狗".to_string()));
+        assert_eq!(token_cleaner.next(), None);
+    }
+
+    #[test]
+    fn it_cleans_token_emojis() {
+        let mut token_cleaner =
+            TokenLexerBuilder::from("🚀 🙋‍♂️🙋‍♂️🙋‍♂️").unwrap();
+
+        assert_eq!(token_cleaner.locale, None);
         assert_eq!(token_cleaner.next(), None);
     }
 }
