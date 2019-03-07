@@ -55,8 +55,12 @@ impl<'a> TokenLexer<'a> {
 impl<'a> Iterator for TokenLexer<'a> {
     type Item = String;
 
+    // Guarantees provided by the lexer on the output: \
+    //   - Text is split per-word in a script-aware way \
+    //   - Words are normalized (ie. lower-case) \
+    //   - Gibberish words are removed (ie. words that may just be junk) \
+    //   - Stop-words are removed
     fn next(&mut self) -> Option<Self::Item> {
-        // TODO: nuke non-words + gibberish
         while let Some(word) = self.words.next() {
             // Lower-case word
             // Notice: unfortunately, as Rust is unicode-aware, we need to convert the str slice \
