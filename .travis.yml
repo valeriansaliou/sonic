@@ -6,9 +6,7 @@ language: rust
 rust:
   - nightly
 
-cache:
-  directories:
-    - $HOME/.cache
+cache: cargo
 
 env:
   matrix:
