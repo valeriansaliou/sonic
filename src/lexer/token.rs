@@ -4,7 +4,7 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use std::collections::HashSet;
+use hashbrown::HashSet;
 use unicode_segmentation::{UnicodeSegmentation, UnicodeWords};
 use whatlang::{detect as lang_detect, Lang};
 

@@ -5,10 +5,10 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use byteorder::{ByteOrder, NativeEndian, ReadBytesExt};
+use hashbrown::HashMap;
 use rocksdb::{
     DBCompactionStyle, DBCompressionType, DBVector, Error as DBError, Options as DBOptions, DB,
 };
-use std::collections::HashMap;
 use std::fs;
 use std::io::Cursor;
 use std::mem;
