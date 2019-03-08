@@ -24,6 +24,9 @@ extern crate twox_hash;
 extern crate unicode_segmentation;
 extern crate whatlang;
 
+#[cfg(feature = "alloc-jemalloc")]
+extern crate jemallocator;
+
 mod channel;
 mod config;
 mod executor;
@@ -50,6 +53,10 @@ use janitor::runtime::JanitorBuilder;
 struct AppArgs {
     config: String,
 }
+
+#[cfg(feature = "alloc-jemalloc")]
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 pub static LINE_FEED: &'static str = "\r\n";
 

@@ -21,6 +21,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
+jemallocator = { version = "0.1", optional = true }
 log = "0.4"
 toml = "0.4"
 clap = { version = "2.32", default-features = false }
@@ -37,6 +38,10 @@ byteorder = "1.3"
 hashbrown = "0.1"
 linked_hash_set = "0.1"
 whatlang = "0.7"
+
+[features]
+default = ["alloc-jemalloc"]
+alloc-jemalloc = ["jemallocator"]
 
 [profile.dev]
 opt-level = 0
