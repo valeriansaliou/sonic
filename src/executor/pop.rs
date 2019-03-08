@@ -77,7 +77,8 @@ impl ExecutorPop {
                                             if let Ok(Some(mut pop_term_iids)) =
                                                 action.get_term_to_iids(*pop_term_hashed)
                                             {
-                                                pop_term_iids.remove_item(&iid);
+                                                // Remove IID from list of IIDs to be popped
+                                                pop_term_iids.retain(|cur_iid| cur_iid != &iid);
 
                                                 if pop_term_iids.is_empty() == true {
                                                     // IIDs list was empty, delete whole key

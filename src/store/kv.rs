@@ -606,7 +606,8 @@ impl<'a> StoreKVAction<'a> {
                         if iid_term_iids.contains(&iid) == true {
                             count += 1;
 
-                            iid_term_iids.remove_item(&iid);
+                            // Remove IID from list of IIDs
+                            iid_term_iids.retain(|cur_iid| cur_iid != &iid);
                         }
 
                         if iid_term_iids.is_empty() == true {

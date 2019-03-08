@@ -95,8 +95,10 @@ impl ExecutorPush {
                                 // Add IID in first position in list for terms
                                 let mut term_iids = term_iids.unwrap_or(Vec::new());
 
+                                // Remove IID from list of IIDs to be popped before inserting in \
+                                //   first position?
                                 if term_iids.contains(&iid) == true {
-                                    term_iids.remove_item(&iid);
+                                    term_iids.retain(|cur_iid| cur_iid != &iid);
                                 }
 
                                 info!("has push executor term-to-iids: {}", iid);
