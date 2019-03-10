@@ -11,3 +11,4 @@ pub mod flusho;
 pub mod pop;
 pub mod push;
 pub mod search;
+pub mod suggest;

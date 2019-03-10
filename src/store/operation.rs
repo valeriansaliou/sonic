@@ -11,6 +11,7 @@ use crate::executor::flusho::ExecutorFlushO;
 use crate::executor::pop::ExecutorPop;
 use crate::executor::push::ExecutorPush;
 use crate::executor::search::ExecutorSearch;
+use crate::executor::suggest::ExecutorSuggest;
 use crate::query::query::Query;
 
 pub struct StoreOperationDispatch;
@@ -21,6 +22,10 @@ impl StoreOperationDispatch {
         match query {
             Query::Search(store, query_id, lexer, limit, offset) => {
                 ExecutorSearch::execute(store, query_id, lexer, limit, offset)
+                    .map(|results| results.map(|results| results.join(" ")))
+            }
+            Query::Suggest(store, query_id, lexer) => {
+                ExecutorSuggest::execute(store, query_id, lexer)
                     .map(|results| results.map(|results| results.join(" ")))
             }
             Query::Push(store, lexer) => ExecutorPush::execute(store, lexer).map(|_| None),

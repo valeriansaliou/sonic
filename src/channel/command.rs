@@ -55,7 +55,8 @@ const META_PART_GROUP_OPEN: char = '(';
 const META_PART_GROUP_CLOSE: char = ')';
 
 lazy_static! {
-    pub static ref COMMANDS_MODE_SEARCH: Vec<&'static str> = vec!["QUERY", "PING", "HELP", "QUIT"];
+    pub static ref COMMANDS_MODE_SEARCH: Vec<&'static str> =
+        vec!["QUERY", "SUGGEST", "PING", "HELP", "QUIT"];
     pub static ref COMMANDS_MODE_INGEST: Vec<&'static str> =
         vec!["PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT"];
     static ref MANUAL_MODE_SEARCH: HashMap<&'static str, &'static Vec<&'static str>> =
@@ -419,6 +420,34 @@ impl ChannelCommandSearch {
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "QUERY <collection> <bucket> \"<terms>\" [LIMIT(<count>)]? [OFFSET(<count>)]?",
+            )),
+        }
+    }
+
+    pub fn dispatch_suggest(mut parts: SplitWhitespace) -> ChannelResult {
+        match (
+            parts.next(),
+            parts.next(),
+            ChannelCommandBase::parse_text_parts(&mut parts),
+        ) {
+            (Some(collection), Some(bucket), Some(text)) => {
+                // Generate command identifier
+                let event_id = ChannelCommandBase::generate_event_id();
+
+                debug!(
+                    "dispatching search suggest #{} on collection: {} and bucket: {}",
+                    event_id, collection, bucket
+                );
+
+                // Commit 'suggest' query
+                ChannelCommandBase::commit_pending_operation(
+                    "SUGGEST",
+                    &event_id,
+                    QueryBuilder::suggest(event_id.to_owned(), collection, bucket, &text),
+                )
+            }
+            _ => Err(ChannelCommandError::InvalidFormat(
+                "SUGGEST <collection> <bucket> \"<sentence>\"",
             )),
         }
     }

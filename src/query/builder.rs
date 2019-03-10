@@ -32,6 +32,21 @@ impl QueryBuilder {
         }
     }
 
+    pub fn suggest<'a>(
+        query_id: String,
+        collection: &'a str,
+        bucket: &'a str,
+        terms: &'a str,
+    ) -> QueryBuilderResult<'a> {
+        match (
+            StoreItemBuilder::from_depth_2(collection, bucket),
+            TokenLexerBuilder::from(terms),
+        ) {
+            (Ok(store), Ok(text_lexed)) => Ok(Query::Suggest(store, query_id, text_lexed)),
+            _ => Err(()),
+        }
+    }
+
     pub fn push<'a>(
         collection: &'a str,
         bucket: &'a str,
