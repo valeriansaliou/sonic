@@ -30,7 +30,7 @@ serde = "1.0"
 serde_derive = "1.0"
 rand = "0.6"
 unicode-segmentation = "1.2"
-rocksdb = { version = "0.11", features = ["lz4"] }
+rocksdb = { version = "0.12", features = ["lz4"] }
 fst = "0.3"
 twox-hash = "1.1"
 radix_fmt = "0.1"
