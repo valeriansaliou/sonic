@@ -16,7 +16,6 @@ extern crate byteorder;
 extern crate fst;
 extern crate hashbrown;
 extern crate linked_hash_set;
-extern crate radix_fmt;
 extern crate rand;
 extern crate rocksdb;
 extern crate toml;

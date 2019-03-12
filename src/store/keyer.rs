@@ -4,17 +4,18 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use radix_fmt::{radix, Radix};
+use byteorder::{ByteOrder, NativeEndian, ReadBytesExt};
+use std::fmt;
 use std::hash::Hasher;
+use std::io::Cursor;
 use twox_hash::XxHash32;
 
 use super::identifiers::*;
 
 pub struct StoreKeyerBuilder;
 
-pub struct StoreKeyer<'a> {
-    idx: StoreKeyerIdx<'a>,
-    bucket: StoreKeyerBucket<'a>,
+pub struct StoreKeyer {
+    key: StoreKeyerKey,
 }
 
 enum StoreKeyerIdx<'a> {
@@ -25,9 +26,7 @@ enum StoreKeyerIdx<'a> {
     IIDToTerms(StoreObjectIID),
 }
 
-type StoreKeyerBucket<'a> = &'a str;
-
-const STORE_KEYER_COMPACT_BASE: u32 = 36;
+type StoreKeyerKey = [u8; 9];
 
 impl<'a> StoreKeyerIdx<'a> {
     pub fn to_index(&self) -> u8 {
@@ -42,74 +41,99 @@ impl<'a> StoreKeyerIdx<'a> {
 }
 
 impl StoreKeyerBuilder {
-    pub fn meta_to_value<'a>(bucket: &'a str, meta: &'a StoreMetaKey) -> StoreKeyer<'a> {
+    pub fn meta_to_value<'a>(bucket: &'a str, meta: &'a StoreMetaKey) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::MetaToValue(meta), bucket)
+    }
+
+    pub fn term_to_iids<'a>(bucket: &'a str, term_hash: StoreTermHashed) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::TermToIIDs(term_hash), bucket)
+    }
+
+    pub fn oid_to_iid<'a>(bucket: &'a str, oid: &'a StoreObjectOID) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::OIDToIID(oid), bucket)
+    }
+
+    pub fn iid_to_oid<'a>(bucket: &'a str, iid: StoreObjectIID) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::IIDToOID(iid), bucket)
+    }
+
+    pub fn iid_to_terms<'a>(bucket: &'a str, iid: StoreObjectIID) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::IIDToTerms(iid), bucket)
+    }
+
+    fn make<'a>(idx: StoreKeyerIdx<'a>, bucket: &'a str) -> StoreKeyer {
         StoreKeyer {
-            idx: StoreKeyerIdx::MetaToValue(meta),
-            bucket: bucket,
+            key: Self::build_key(idx, bucket),
         }
     }
 
-    pub fn term_to_iids<'a>(bucket: &'a str, term_hash: StoreTermHashed) -> StoreKeyer<'a> {
-        StoreKeyer {
-            idx: StoreKeyerIdx::TermToIIDs(term_hash),
-            bucket: bucket,
+    fn build_key<'a>(idx: StoreKeyerIdx<'a>, bucket: &'a str) -> StoreKeyerKey {
+        // Key format: [idx<1B> | bucket<4B> | route<4B>]
+
+        // Encode key bucket + key route from u32 to array of u8 (ie. binary)
+        let (mut bucket_encoded, mut route_encoded) = ([0; 4], [0; 4]);
+
+        NativeEndian::write_u32(&mut bucket_encoded, Self::hash_compact(bucket));
+        NativeEndian::write_u32(&mut route_encoded, Self::route_to_compact(&idx));
+
+        // Generate final binary key
+        [
+            // [idx<1B>]
+            idx.to_index(),
+            // [bucket<4B>]
+            bucket_encoded[0],
+            bucket_encoded[1],
+            bucket_encoded[2],
+            bucket_encoded[3],
+            // [route<4B>]
+            route_encoded[0],
+            route_encoded[1],
+            route_encoded[2],
+            route_encoded[3],
+        ]
+    }
+
+    fn route_to_compact<'a>(idx: &StoreKeyerIdx<'a>) -> u32 {
+        match idx {
+            StoreKeyerIdx::MetaToValue(route) => route.as_u32(),
+            StoreKeyerIdx::TermToIIDs(route) => *route,
+            StoreKeyerIdx::OIDToIID(route) => Self::hash_compact(route),
+            StoreKeyerIdx::IIDToOID(route) => *route,
+            StoreKeyerIdx::IIDToTerms(route) => *route,
         }
     }
 
-    pub fn oid_to_iid<'a>(bucket: &'a str, oid: &'a StoreObjectOID) -> StoreKeyer<'a> {
-        StoreKeyer {
-            idx: StoreKeyerIdx::OIDToIID(oid),
-            bucket: bucket,
-        }
-    }
+    fn hash_compact(part: &str) -> u32 {
+        let mut hasher = XxHash32::with_seed(0);
 
-    pub fn iid_to_oid<'a>(bucket: &'a str, iid: StoreObjectIID) -> StoreKeyer<'a> {
-        StoreKeyer {
-            idx: StoreKeyerIdx::IIDToOID(iid),
-            bucket: bucket,
-        }
-    }
-
-    pub fn iid_to_terms<'a>(bucket: &'a str, iid: StoreObjectIID) -> StoreKeyer<'a> {
-        StoreKeyer {
-            idx: StoreKeyerIdx::IIDToTerms(iid),
-            bucket: bucket,
-        }
+        hasher.write(part.as_bytes());
+        hasher.finish() as u32
     }
 }
 
-impl<'a> StoreKeyer<'a> {
-    pub fn to_string(&self) -> String {
-        let compact_bucket = radix(
-            Self::hash_compact(self.bucket.as_bytes()),
-            STORE_KEYER_COMPACT_BASE,
+impl StoreKeyer {
+    pub fn as_bytes(&self) -> StoreKeyerKey {
+        self.key
+    }
+}
+
+impl fmt::Display for StoreKeyer {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // Convert to number
+        let (key_bucket, key_route) = (
+            Cursor::new(&self.key[1..5])
+                .read_u32::<NativeEndian>()
+                .unwrap_or(0),
+            Cursor::new(&self.key[5..9])
+                .read_u32::<NativeEndian>()
+                .unwrap_or(0),
         );
 
-        format!(
-            "{}:{}:{}",
-            self.idx.to_index(),
-            compact_bucket,
-            self.route_to_compact(),
+        write!(
+            f,
+            "'{}:{:x?}:{:x?}' {:?}",
+            self.key[0], key_bucket, key_route, self.key
         )
-    }
-
-    pub fn route_to_compact(&self) -> Radix<u32> {
-        let value = match &self.idx {
-            StoreKeyerIdx::MetaToValue(route) => route.as_u32(),
-            StoreKeyerIdx::TermToIIDs(route) => *route,
-            StoreKeyerIdx::OIDToIID(route) => Self::hash_compact(route.as_bytes()) as u32,
-            StoreKeyerIdx::IIDToOID(route) => *route,
-            StoreKeyerIdx::IIDToTerms(route) => *route,
-        };
-
-        radix(value, STORE_KEYER_COMPACT_BASE)
-    }
-
-    fn hash_compact(part: &[u8]) -> u64 {
-        let mut hasher = XxHash32::with_seed(0);
-
-        hasher.write(part);
-        hasher.finish()
     }
 }
 

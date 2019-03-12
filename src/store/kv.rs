@@ -189,16 +189,16 @@ impl StoreKVBuilder {
 }
 
 impl StoreKV {
-    pub fn get(&self, key: &str) -> Result<Option<DBVector>, DBError> {
-        self.database.get(key.as_bytes())
+    pub fn get(&self, key: &[u8]) -> Result<Option<DBVector>, DBError> {
+        self.database.get(key)
     }
 
-    pub fn put(&self, key: &str, data: &[u8]) -> Result<(), DBError> {
-        self.database.put(key.as_bytes(), data)
+    pub fn put(&self, key: &[u8], data: &[u8]) -> Result<(), DBError> {
+        self.database.put(key, data)
     }
 
-    pub fn delete(&self, key: &str) -> Result<(), DBError> {
-        self.database.delete(key.as_bytes())
+    pub fn delete(&self, key: &[u8]) -> Result<(), DBError> {
+        self.database.delete(key)
     }
 }
 
@@ -291,11 +291,11 @@ impl<'a> StoreKVAction<'a> {
     ///
     /// [IDX=0] ((meta)) ~> ((value))
     pub fn get_meta_to_value(&self, meta: StoreMetaKey) -> Result<Option<StoreMetaValue>, ()> {
-        let store_key = StoreKeyerBuilder::meta_to_value(self.bucket.as_str(), &meta).to_string();
+        let store_key = StoreKeyerBuilder::meta_to_value(self.bucket.as_str(), &meta);
 
         debug!("store get meta-to-value: {}", store_key);
 
-        match self.store.get(&store_key) {
+        match self.store.get(&store_key.as_bytes()) {
             Ok(Some(value)) => {
                 debug!("got meta-to-value: {}", store_key);
 
@@ -328,7 +328,7 @@ impl<'a> StoreKVAction<'a> {
     }
 
     pub fn set_meta_to_value(&self, meta: StoreMetaKey, value: StoreMetaValue) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::meta_to_value(self.bucket.as_str(), &meta).to_string();
+        let store_key = StoreKeyerBuilder::meta_to_value(self.bucket.as_str(), &meta);
 
         debug!("store set meta-to-value: {}", store_key);
 
@@ -337,7 +337,7 @@ impl<'a> StoreKVAction<'a> {
         };
 
         self.store
-            .put(&store_key, value_string.as_bytes())
+            .put(&store_key.as_bytes(), value_string.as_bytes())
             .or(Err(()))
     }
 
@@ -348,12 +348,11 @@ impl<'a> StoreKVAction<'a> {
         &self,
         term_hashed: StoreTermHashed,
     ) -> Result<Option<Vec<StoreObjectIID>>, ()> {
-        let store_key =
-            StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed).to_string();
+        let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed);
 
         debug!("store get term-to-iids: {}", store_key);
 
-        match self.store.get(&store_key) {
+        match self.store.get(&store_key.as_bytes()) {
             Ok(Some(value)) => {
                 debug!(
                     "got term-to-iids: {} with encoded value: {:?}",
@@ -392,8 +391,7 @@ impl<'a> StoreKVAction<'a> {
         term_hashed: StoreTermHashed,
         iids: &[StoreObjectIID],
     ) -> Result<(), ()> {
-        let store_key =
-            StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed).to_string();
+        let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed);
 
         debug!("store set term-to-iids: {}", store_key);
 
@@ -405,27 +403,28 @@ impl<'a> StoreKVAction<'a> {
             store_key, iids_encoded
         );
 
-        self.store.put(&store_key, &iids_encoded).or(Err(()))
+        self.store
+            .put(&store_key.as_bytes(), &iids_encoded)
+            .or(Err(()))
     }
 
     pub fn delete_term_to_iids(&self, term_hashed: StoreTermHashed) -> Result<(), ()> {
-        let store_key =
-            StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed).to_string();
+        let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed);
 
         debug!("store delete term-to-iids: {}", store_key);
 
-        self.store.delete(&store_key).or(Err(()))
+        self.store.delete(&store_key.as_bytes()).or(Err(()))
     }
 
     /// OID-to-IID mapper
     ///
     /// [IDX=2] ((oid)) ~> ((iid))
     pub fn get_oid_to_iid(&self, oid: &StoreObjectOID) -> Result<Option<StoreObjectIID>, ()> {
-        let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid).to_string();
+        let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
 
         debug!("store get oid-to-iid: {}", store_key);
 
-        match self.store.get(&store_key) {
+        match self.store.get(&store_key.as_bytes()) {
             Ok(Some(value)) => {
                 debug!(
                     "got oid-to-iid: {} with encoded value: {:?}",
@@ -458,7 +457,7 @@ impl<'a> StoreKVAction<'a> {
     }
 
     pub fn set_oid_to_iid(&self, oid: &StoreObjectOID, iid: StoreObjectIID) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid).to_string();
+        let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
 
         debug!("store set oid-to-iid: {}", store_key);
 
@@ -470,26 +469,28 @@ impl<'a> StoreKVAction<'a> {
             store_key, iid_encoded
         );
 
-        self.store.put(&store_key, &iid_encoded).or(Err(()))
+        self.store
+            .put(&store_key.as_bytes(), &iid_encoded)
+            .or(Err(()))
     }
 
     pub fn delete_oid_to_iid(&self, oid: &StoreObjectOID) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid).to_string();
+        let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
 
         debug!("store delete oid-to-iid: {}", store_key);
 
-        self.store.delete(&store_key).or(Err(()))
+        self.store.delete(&store_key.as_bytes()).or(Err(()))
     }
 
     /// IID-to-OID mapper
     ///
     /// [IDX=3] ((iid)) ~> ((oid))
     pub fn get_iid_to_oid(&self, iid: StoreObjectIID) -> Result<Option<StoreObjectOID>, ()> {
-        let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid).to_string();
+        let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
 
         debug!("store get iid-to-oid: {}", store_key);
 
-        match self.store.get(&store_key) {
+        match self.store.get(&store_key.as_bytes()) {
             Ok(Some(value)) => Ok(value.to_utf8().map(|value| value.to_string())),
             Ok(None) => Ok(None),
             Err(_) => Err(()),
@@ -497,19 +498,21 @@ impl<'a> StoreKVAction<'a> {
     }
 
     pub fn set_iid_to_oid(&self, iid: StoreObjectIID, oid: &StoreObjectOID) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid).to_string();
+        let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
 
         debug!("store set iid-to-oid: {}", store_key);
 
-        self.store.put(&store_key, oid.as_bytes()).or(Err(()))
+        self.store
+            .put(&store_key.as_bytes(), oid.as_bytes())
+            .or(Err(()))
     }
 
     pub fn delete_iid_to_oid(&self, iid: StoreObjectIID) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid).to_string();
+        let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
 
         debug!("store delete iid-to-oid: {}", store_key);
 
-        self.store.delete(&store_key).or(Err(()))
+        self.store.delete(&store_key.as_bytes()).or(Err(()))
     }
 
     /// IID-to-Terms mapper
@@ -519,11 +522,11 @@ impl<'a> StoreKVAction<'a> {
         &self,
         iid: StoreObjectIID,
     ) -> Result<Option<Vec<StoreTermHashed>>, ()> {
-        let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid).to_string();
+        let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
 
         debug!("store get iid-to-terms: {}", store_key);
 
-        match self.store.get(&store_key) {
+        match self.store.get(&store_key.as_bytes()) {
             Ok(Some(value)) => {
                 debug!(
                     "got iid-to-terms: {} with encoded value: {:?}",
@@ -555,7 +558,7 @@ impl<'a> StoreKVAction<'a> {
         iid: StoreObjectIID,
         terms_hashed: &[StoreTermHashed],
     ) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid).to_string();
+        let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
 
         debug!("store set iid-to-terms: {}", store_key);
 
@@ -568,16 +571,16 @@ impl<'a> StoreKVAction<'a> {
         );
 
         self.store
-            .put(&store_key, &terms_hashed_encoded)
+            .put(&store_key.as_bytes(), &terms_hashed_encoded)
             .or(Err(()))
     }
 
     pub fn delete_iid_to_terms(&self, iid: StoreObjectIID) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid).to_string();
+        let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
 
         debug!("store delete iid-to-terms: {}", store_key);
 
-        self.store.delete(&store_key).or(Err(()))
+        self.store.delete(&store_key.as_bytes()).or(Err(()))
     }
 
     pub fn batch_flush_bucket(
