@@ -329,8 +329,6 @@ impl ChannelCommandBase {
         query_id: &str,
         query_builder: QueryBuilderResult<'a>,
     ) -> ChannelResult {
-        // TODO: dispatch async query (do not block thread waiting for EVENT)
-
         query_builder
             .and_then(|query| StoreOperationDispatch::dispatch(query))
             .and_then(|results| {
