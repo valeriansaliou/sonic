@@ -7,7 +7,7 @@
 use std::hash::Hasher;
 use twox_hash::XxHash32;
 
-pub type StoreObjectIID = u64;
+pub type StoreObjectIID = u32;
 pub type StoreObjectOID = String;
 pub type StoreTermHashed = u32;
 
@@ -22,7 +22,7 @@ pub enum StoreMetaValue {
 }
 
 impl StoreMetaKey {
-    pub fn as_u64(&self) -> u64 {
+    pub fn as_u32(&self) -> u32 {
         match self {
             StoreMetaKey::IIDIncr => 0,
         }

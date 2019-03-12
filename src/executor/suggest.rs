@@ -15,7 +15,7 @@ impl ExecutorSuggest {
     pub fn execute<'a>(
         store: StoreItem<'a>,
         _event_id: QuerySearchID,
-        mut lexer: TokenLexer<'a>,
+        _lexer: TokenLexer<'a>,
     ) -> Result<Option<Vec<String>>, ()> {
         if let StoreItem(collection, Some(bucket), None) = store {
             // Important: acquire database access read lock, and reference it in context. This \
@@ -23,7 +23,7 @@ impl ExecutorSuggest {
             let _access = STORE_ACCESS_LOCK.read().unwrap();
 
             if let Ok(kv_store) = StoreKVPool::acquire(collection) {
-                let action = StoreKVActionBuilder::read(bucket, kv_store);
+                let _action = StoreKVActionBuilder::read(bucket, kv_store);
 
                 // TODO
             }

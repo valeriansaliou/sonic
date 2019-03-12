@@ -10,7 +10,7 @@ use crate::store::kv::{StoreKVActionBuilder, StoreKVPool, STORE_ACCESS_LOCK};
 pub struct ExecutorFlushB;
 
 impl ExecutorFlushB {
-    pub fn execute<'a>(store: StoreItem<'a>) -> Result<u64, ()> {
+    pub fn execute<'a>(store: StoreItem<'a>) -> Result<u32, ()> {
         if let StoreItem(collection, Some(bucket), None) = store {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.

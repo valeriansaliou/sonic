@@ -15,7 +15,7 @@ use crate::store::kv::{StoreKVActionBuilder, StoreKVPool, STORE_ACCESS_LOCK};
 pub struct ExecutorPop;
 
 impl ExecutorPop {
-    pub fn execute<'a>(store: StoreItem<'a>, lexer: TokenLexer<'a>) -> Result<u64, ()> {
+    pub fn execute<'a>(store: StoreItem<'a>, lexer: TokenLexer<'a>) -> Result<u32, ()> {
         if let StoreItem(collection, Some(bucket), Some(object)) = store {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
@@ -57,7 +57,7 @@ impl ExecutorPop {
                                 remaining_terms, iid
                             );
 
-                            count_popped = (iid_terms_hashed.len() - remaining_terms.len()) as u64;
+                            count_popped = (iid_terms_hashed.len() - remaining_terms.len()) as u32;
 
                             if count_popped > 0 {
                                 if remaining_terms.len() == 0 {

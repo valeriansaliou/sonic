@@ -231,7 +231,7 @@ impl StoreKVActionBuilder {
         action
     }
 
-    pub fn erase<'a, T: Into<&'a str>>(collection: T) -> Result<u64, ()> {
+    pub fn erase<'a, T: Into<&'a str>>(collection: T) -> Result<u32, ()> {
         let collection_str = collection.into();
 
         info!("erase requested on collection: {}", collection_str);
@@ -360,7 +360,7 @@ impl<'a> StoreKVAction<'a> {
                     store_key, &*value
                 );
 
-                Self::decode_u64_list(&*value)
+                Self::decode_u32_list(&*value)
                     .or(Err(()))
                     .map(|value_decoded| {
                         debug!(
@@ -398,7 +398,7 @@ impl<'a> StoreKVAction<'a> {
         debug!("store set term-to-iids: {}", store_key);
 
         // Encode IID list into storage serialized format
-        let iids_encoded = Self::encode_u64_list(iids);
+        let iids_encoded = Self::encode_u32_list(iids);
 
         debug!(
             "store set term-to-iids: {} with encoded value: {:?}",
@@ -432,7 +432,7 @@ impl<'a> StoreKVAction<'a> {
                     store_key, &*value
                 );
 
-                Self::decode_u64(&*value).or(Err(())).map(|value_decoded| {
+                Self::decode_u32(&*value).or(Err(())).map(|value_decoded| {
                     debug!(
                         "got oid-to-iid: {} with decoded value: {:?}",
                         store_key, &value_decoded
@@ -463,7 +463,7 @@ impl<'a> StoreKVAction<'a> {
         debug!("store set oid-to-iid: {}", store_key);
 
         // Encode IID
-        let iid_encoded = Self::encode_u64(iid);
+        let iid_encoded = Self::encode_u32(iid);
 
         debug!(
             "store set oid-to-iid: {} with encoded value: {:?}",
@@ -585,7 +585,7 @@ impl<'a> StoreKVAction<'a> {
         iid: StoreObjectIID,
         oid: &StoreObjectOID,
         iid_terms_hashed: &Vec<StoreTermHashed>,
-    ) -> Result<u64, ()> {
+    ) -> Result<u32, ()> {
         let mut count = 0;
 
         debug!(
@@ -634,42 +634,6 @@ impl<'a> StoreKVAction<'a> {
 
     fn decode_u32(encoded: &[u8]) -> Result<u32, ()> {
         Cursor::new(encoded).read_u32::<NativeEndian>().or(Err(()))
-    }
-
-    fn encode_u64(decoded: u64) -> [u8; 8] {
-        let mut encoded = [0; 8];
-
-        NativeEndian::write_u64(&mut encoded, decoded);
-
-        encoded
-    }
-
-    fn decode_u64(encoded: &[u8]) -> Result<u64, ()> {
-        Cursor::new(encoded).read_u64::<NativeEndian>().or(Err(()))
-    }
-
-    fn encode_u64_list(decoded: &[u64]) -> Vec<u8> {
-        let mut encoded = Vec::new();
-
-        for decoded_item in decoded {
-            encoded.extend(&Self::encode_u64(*decoded_item))
-        }
-
-        encoded
-    }
-
-    fn decode_u64_list(encoded: &[u8]) -> Result<Vec<u64>, ()> {
-        let mut decoded = Vec::new();
-
-        for encoded_chunk in encoded.chunks(8) {
-            if let Ok(decoded_chunk) = Self::decode_u64(encoded_chunk) {
-                decoded.push(decoded_chunk);
-            } else {
-                return Err(());
-            }
-        }
-
-        Ok(decoded)
     }
 
     fn encode_u32_list(decoded: &[u32]) -> Vec<u8> {

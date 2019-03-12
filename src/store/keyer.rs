@@ -93,11 +93,11 @@ impl<'a> StoreKeyer<'a> {
         )
     }
 
-    pub fn route_to_compact(&self) -> Radix<u64> {
+    pub fn route_to_compact(&self) -> Radix<u32> {
         let value = match &self.idx {
-            StoreKeyerIdx::MetaToValue(route) => route.as_u64(),
-            StoreKeyerIdx::TermToIIDs(route) => *route as u64,
-            StoreKeyerIdx::OIDToIID(route) => Self::hash_compact(route.as_bytes()),
+            StoreKeyerIdx::MetaToValue(route) => route.as_u32(),
+            StoreKeyerIdx::TermToIIDs(route) => *route,
+            StoreKeyerIdx::OIDToIID(route) => Self::hash_compact(route.as_bytes()) as u32,
             StoreKeyerIdx::IIDToOID(route) => *route,
             StoreKeyerIdx::IIDToTerms(route) => *route,
         };
