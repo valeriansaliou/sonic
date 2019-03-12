@@ -5,6 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use hashbrown::HashSet;
+use std::time::Instant;
 use unicode_segmentation::{UnicodeSegmentation, UnicodeWords};
 use whatlang::{detect as lang_detect, Lang};
 
@@ -21,18 +22,53 @@ pub struct TokenLexer<'a> {
 
 impl TokenLexerBuilder {
     pub fn from(text: &str) -> Result<TokenLexer, ()> {
+        let ngram_start = Instant::now();
+
         // Detect text language
+        // TODO: this takes a mean of 10ms to perform the ngram, this is not optimal at all and \
+        //   may cause maximum RPS per thread issues.
         let locale = match lang_detect(text) {
             Some(detector) => {
+                let mut locale = detector.lang();
+
+                let ngram_took = ngram_start.elapsed();
+
                 info!(
-                    "locale detected from lexer text: {} (locale: {}, script: {}, confidence: {})",
+                    "locale detected from lexer text: {} ({} from {} at {}/1 in {}s + {}ms)",
                     text,
-                    detector.lang(),
+                    locale,
                     detector.script(),
-                    detector.confidence()
+                    detector.confidence(),
+                    ngram_took.as_secs(),
+                    ngram_took.subsec_millis()
                 );
 
-                Some(detector.lang())
+                // Confidence is low, try to detect locale from stop-words.
+                if detector.is_reliable() == false {
+                    debug!(
+                        "trying to detect locale from stopwords, as locale is marked as unreliable"
+                    );
+
+                    let stopwords_start = Instant::now();
+
+                    // Better alternate locale found?
+                    if let Some(alternate_locale) =
+                        LexerStopWord::guess_lang(text, detector.script())
+                    {
+                        let stopwords_took = stopwords_start.elapsed();
+
+                        info!(
+                            "detected more accurate locale from stopwords: {} (took: {}s + {}ms)",
+                            alternate_locale,
+                            stopwords_took.as_secs(),
+                            stopwords_took.subsec_millis()
+                        );
+
+                        locale = alternate_locale;
+                    }
+                }
+
+                Some(locale)
             }
             None => {
                 info!("no locale could be detected from lexer text: {}", text);

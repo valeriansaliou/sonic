@@ -5,7 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use hashbrown::HashSet;
-use whatlang::Lang;
+use whatlang::{Lang, Script};
 
 use crate::stopwords::*;
 
@@ -138,100 +138,233 @@ fn make<'a>(words: &[&'a str]) -> HashSet<&'a str> {
 impl LexerStopWord {
     pub fn is(word: &str, locale: Option<Lang>) -> bool {
         if let Some(locale) = locale {
-            let stopwords = match locale {
-                Lang::Epo => &*STOPWORDS_EPO,
-                Lang::Eng => &*STOPWORDS_ENG,
-                Lang::Rus => &*STOPWORDS_RUS,
-                Lang::Cmn => &*STOPWORDS_CMN,
-                Lang::Spa => &*STOPWORDS_SPA,
-                Lang::Por => &*STOPWORDS_POR,
-                Lang::Ita => &*STOPWORDS_ITA,
-                Lang::Ben => &*STOPWORDS_BEN,
-                Lang::Fra => &*STOPWORDS_FRA,
-                Lang::Deu => &*STOPWORDS_DEU,
-                Lang::Ukr => &*STOPWORDS_UKR,
-                Lang::Kat => &*STOPWORDS_KAT,
-                Lang::Arb => &*STOPWORDS_ARB,
-                Lang::Hin => &*STOPWORDS_HIN,
-                Lang::Jpn => &*STOPWORDS_JPN,
-                Lang::Heb => &*STOPWORDS_HEB,
-                Lang::Ydd => &*STOPWORDS_YDD,
-                Lang::Pol => &*STOPWORDS_POL,
-                Lang::Amh => &*STOPWORDS_AMH,
-                Lang::Tir => &*STOPWORDS_TIR,
-                Lang::Jav => &*STOPWORDS_JAV,
-                Lang::Kor => &*STOPWORDS_KOR,
-                Lang::Nob => &*STOPWORDS_NOB,
-                Lang::Nno => &*STOPWORDS_NNO,
-                Lang::Dan => &*STOPWORDS_DAN,
-                Lang::Swe => &*STOPWORDS_SWE,
-                Lang::Fin => &*STOPWORDS_FIN,
-                Lang::Tur => &*STOPWORDS_TUR,
-                Lang::Nld => &*STOPWORDS_NLD,
-                Lang::Hun => &*STOPWORDS_HUN,
-                Lang::Ces => &*STOPWORDS_CES,
-                Lang::Ell => &*STOPWORDS_ELL,
-                Lang::Bul => &*STOPWORDS_BUL,
-                Lang::Bel => &*STOPWORDS_BEL,
-                Lang::Mar => &*STOPWORDS_MAR,
-                Lang::Kan => &*STOPWORDS_KAN,
-                Lang::Ron => &*STOPWORDS_RON,
-                Lang::Slv => &*STOPWORDS_SLV,
-                Lang::Hrv => &*STOPWORDS_HRV,
-                Lang::Srp => &*STOPWORDS_SRP,
-                Lang::Mkd => &*STOPWORDS_MKD,
-                Lang::Lit => &*STOPWORDS_LIT,
-                Lang::Lav => &*STOPWORDS_LAV,
-                Lang::Est => &*STOPWORDS_EST,
-                Lang::Tam => &*STOPWORDS_TAM,
-                Lang::Vie => &*STOPWORDS_VIE,
-                Lang::Urd => &*STOPWORDS_URD,
-                Lang::Tha => &*STOPWORDS_THA,
-                Lang::Guj => &*STOPWORDS_GUJ,
-                Lang::Uzb => &*STOPWORDS_UZB,
-                Lang::Pan => &*STOPWORDS_PAN,
-                Lang::Azj => &*STOPWORDS_AZJ,
-                Lang::Ind => &*STOPWORDS_IND,
-                Lang::Tel => &*STOPWORDS_TEL,
-                Lang::Pes => &*STOPWORDS_PES,
-                Lang::Mal => &*STOPWORDS_MAL,
-                Lang::Hau => &*STOPWORDS_HAU,
-                Lang::Ori => &*STOPWORDS_ORI,
-                Lang::Mya => &*STOPWORDS_MYA,
-                Lang::Bho => &*STOPWORDS_BHO,
-                Lang::Tgl => &*STOPWORDS_TGL,
-                Lang::Yor => &*STOPWORDS_YOR,
-                Lang::Mai => &*STOPWORDS_MAI,
-                Lang::Orm => &*STOPWORDS_ORM,
-                Lang::Ibo => &*STOPWORDS_IBO,
-                Lang::Ceb => &*STOPWORDS_CEB,
-                Lang::Kur => &*STOPWORDS_KUR,
-                Lang::Mlg => &*STOPWORDS_MLG,
-                Lang::Skr => &*STOPWORDS_SKR,
-                Lang::Nep => &*STOPWORDS_NEP,
-                Lang::Sin => &*STOPWORDS_SIN,
-                Lang::Khm => &*STOPWORDS_KHM,
-                Lang::Tuk => &*STOPWORDS_TUK,
-                Lang::Som => &*STOPWORDS_SOM,
-                Lang::Nya => &*STOPWORDS_NYA,
-                Lang::Aka => &*STOPWORDS_AKA,
-                Lang::Zul => &*STOPWORDS_ZUL,
-                Lang::Kin => &*STOPWORDS_KIN,
-                Lang::Hat => &*STOPWORDS_HAT,
-                Lang::Ilo => &*STOPWORDS_ILO,
-                Lang::Run => &*STOPWORDS_RUN,
-                Lang::Sna => &*STOPWORDS_SNA,
-                Lang::Uig => &*STOPWORDS_UIG,
-                Lang::Afr => &*STOPWORDS_AFR,
-            };
-
             // Word is a stopword (given locale)
-            if stopwords.contains(word) == true {
+            if Self::lang_stopwords(locale).contains(word) == true {
                 return true;
             }
         }
 
         // Not a stopword, or may not be (default)
         false
+    }
+
+    pub fn guess_lang(text: &str, script: Script) -> Option<Lang> {
+        debug!(
+            "guessing locale from stopwords for script: {} and text: {}",
+            script, text
+        );
+
+        let script_langs = Self::script_langs(script);
+
+        // Count found stop-words in text for each language
+        let (mut likely_count, mut likely_lang) = (0, None);
+
+        for script_lang in script_langs {
+            let lang_stopwords = Self::lang_stopwords(*script_lang);
+
+            if lang_stopwords.len() > 0 {
+                let mut lang_count = 0;
+
+                // This is a simple split, that does not take into account uppercase letters and \
+                //   punctuation, as to prevent memory allocations and other heavy operations. \
+                //   Trade-offs are made as this is a best-effort last-resort check.
+                for word in text.split_whitespace() {
+                    if lang_stopwords.contains(word) == true {
+                        lang_count += 1;
+                    }
+                }
+
+                // Found stopwords for this locale in text?
+                if lang_count > 0 {
+                    debug!(
+                        "got {} common stopwords in guess for locale: {}",
+                        lang_count, script_lang
+                    );
+
+                    if lang_count > likely_count {
+                        likely_count = lang_count;
+                        likely_lang = Some(*script_lang);
+                    }
+                }
+            }
+        }
+
+        // Return most likely locale (if any)
+        likely_lang
+    }
+
+    fn lang_stopwords(lang: Lang) -> &'static HashSet<&'static str> {
+        match lang {
+            Lang::Epo => &*STOPWORDS_EPO,
+            Lang::Eng => &*STOPWORDS_ENG,
+            Lang::Rus => &*STOPWORDS_RUS,
+            Lang::Cmn => &*STOPWORDS_CMN,
+            Lang::Spa => &*STOPWORDS_SPA,
+            Lang::Por => &*STOPWORDS_POR,
+            Lang::Ita => &*STOPWORDS_ITA,
+            Lang::Ben => &*STOPWORDS_BEN,
+            Lang::Fra => &*STOPWORDS_FRA,
+            Lang::Deu => &*STOPWORDS_DEU,
+            Lang::Ukr => &*STOPWORDS_UKR,
+            Lang::Kat => &*STOPWORDS_KAT,
+            Lang::Arb => &*STOPWORDS_ARB,
+            Lang::Hin => &*STOPWORDS_HIN,
+            Lang::Jpn => &*STOPWORDS_JPN,
+            Lang::Heb => &*STOPWORDS_HEB,
+            Lang::Ydd => &*STOPWORDS_YDD,
+            Lang::Pol => &*STOPWORDS_POL,
+            Lang::Amh => &*STOPWORDS_AMH,
+            Lang::Tir => &*STOPWORDS_TIR,
+            Lang::Jav => &*STOPWORDS_JAV,
+            Lang::Kor => &*STOPWORDS_KOR,
+            Lang::Nob => &*STOPWORDS_NOB,
+            Lang::Nno => &*STOPWORDS_NNO,
+            Lang::Dan => &*STOPWORDS_DAN,
+            Lang::Swe => &*STOPWORDS_SWE,
+            Lang::Fin => &*STOPWORDS_FIN,
+            Lang::Tur => &*STOPWORDS_TUR,
+            Lang::Nld => &*STOPWORDS_NLD,
+            Lang::Hun => &*STOPWORDS_HUN,
+            Lang::Ces => &*STOPWORDS_CES,
+            Lang::Ell => &*STOPWORDS_ELL,
+            Lang::Bul => &*STOPWORDS_BUL,
+            Lang::Bel => &*STOPWORDS_BEL,
+            Lang::Mar => &*STOPWORDS_MAR,
+            Lang::Kan => &*STOPWORDS_KAN,
+            Lang::Ron => &*STOPWORDS_RON,
+            Lang::Slv => &*STOPWORDS_SLV,
+            Lang::Hrv => &*STOPWORDS_HRV,
+            Lang::Srp => &*STOPWORDS_SRP,
+            Lang::Mkd => &*STOPWORDS_MKD,
+            Lang::Lit => &*STOPWORDS_LIT,
+            Lang::Lav => &*STOPWORDS_LAV,
+            Lang::Est => &*STOPWORDS_EST,
+            Lang::Tam => &*STOPWORDS_TAM,
+            Lang::Vie => &*STOPWORDS_VIE,
+            Lang::Urd => &*STOPWORDS_URD,
+            Lang::Tha => &*STOPWORDS_THA,
+            Lang::Guj => &*STOPWORDS_GUJ,
+            Lang::Uzb => &*STOPWORDS_UZB,
+            Lang::Pan => &*STOPWORDS_PAN,
+            Lang::Azj => &*STOPWORDS_AZJ,
+            Lang::Ind => &*STOPWORDS_IND,
+            Lang::Tel => &*STOPWORDS_TEL,
+            Lang::Pes => &*STOPWORDS_PES,
+            Lang::Mal => &*STOPWORDS_MAL,
+            Lang::Hau => &*STOPWORDS_HAU,
+            Lang::Ori => &*STOPWORDS_ORI,
+            Lang::Mya => &*STOPWORDS_MYA,
+            Lang::Bho => &*STOPWORDS_BHO,
+            Lang::Tgl => &*STOPWORDS_TGL,
+            Lang::Yor => &*STOPWORDS_YOR,
+            Lang::Mai => &*STOPWORDS_MAI,
+            Lang::Orm => &*STOPWORDS_ORM,
+            Lang::Ibo => &*STOPWORDS_IBO,
+            Lang::Ceb => &*STOPWORDS_CEB,
+            Lang::Kur => &*STOPWORDS_KUR,
+            Lang::Mlg => &*STOPWORDS_MLG,
+            Lang::Skr => &*STOPWORDS_SKR,
+            Lang::Nep => &*STOPWORDS_NEP,
+            Lang::Sin => &*STOPWORDS_SIN,
+            Lang::Khm => &*STOPWORDS_KHM,
+            Lang::Tuk => &*STOPWORDS_TUK,
+            Lang::Som => &*STOPWORDS_SOM,
+            Lang::Nya => &*STOPWORDS_NYA,
+            Lang::Aka => &*STOPWORDS_AKA,
+            Lang::Zul => &*STOPWORDS_ZUL,
+            Lang::Kin => &*STOPWORDS_KIN,
+            Lang::Hat => &*STOPWORDS_HAT,
+            Lang::Ilo => &*STOPWORDS_ILO,
+            Lang::Run => &*STOPWORDS_RUN,
+            Lang::Sna => &*STOPWORDS_SNA,
+            Lang::Uig => &*STOPWORDS_UIG,
+            Lang::Afr => &*STOPWORDS_AFR,
+        }
+    }
+
+    fn script_langs(script: Script) -> &'static [Lang] {
+        match script {
+            Script::Latin => &[
+                Lang::Spa,
+                Lang::Eng,
+                Lang::Por,
+                Lang::Ind,
+                Lang::Fra,
+                Lang::Deu,
+                Lang::Jav,
+                Lang::Vie,
+                Lang::Ita,
+                Lang::Tur,
+                Lang::Pol,
+                Lang::Orm,
+                Lang::Ron,
+                Lang::Hau,
+                Lang::Hrv,
+                Lang::Nld,
+                Lang::Kur,
+                Lang::Yor,
+                Lang::Uzb,
+                Lang::Ibo,
+                Lang::Ceb,
+                Lang::Tgl,
+                Lang::Hun,
+                Lang::Azj,
+                Lang::Ces,
+                Lang::Mlg,
+                Lang::Nya,
+                Lang::Kin,
+                Lang::Zul,
+                Lang::Swe,
+                Lang::Som,
+                Lang::Ilo,
+                Lang::Uig,
+                Lang::Hat,
+                Lang::Aka,
+                Lang::Sna,
+                Lang::Afr,
+                Lang::Fin,
+                Lang::Run,
+                Lang::Tuk,
+                Lang::Dan,
+                Lang::Nob,
+                Lang::Nno,
+                Lang::Lit,
+                Lang::Slv,
+                Lang::Epo,
+                Lang::Lav,
+                Lang::Est,
+            ],
+            Script::Cyrillic => &[
+                Lang::Rus,
+                Lang::Ukr,
+                Lang::Srp,
+                Lang::Azj,
+                Lang::Bel,
+                Lang::Bul,
+                Lang::Tuk,
+                Lang::Mkd,
+            ],
+            Script::Arabic => &[Lang::Arb, Lang::Urd, Lang::Skr, Lang::Uig, Lang::Pes],
+            Script::Devanagari => &[Lang::Hin, Lang::Mar, Lang::Mai, Lang::Bho, Lang::Nep],
+            Script::Ethiopic => &[Lang::Amh, Lang::Tir],
+            Script::Hebrew => &[Lang::Heb, Lang::Ydd],
+            Script::Mandarin => &[Lang::Cmn],
+            Script::Bengali => &[Lang::Ben],
+            Script::Hangul => &[Lang::Kor],
+            Script::Georgian => &[Lang::Kat],
+            Script::Greek => &[Lang::Ell],
+            Script::Kannada => &[Lang::Kan],
+            Script::Tamil => &[Lang::Tam],
+            Script::Thai => &[Lang::Tha],
+            Script::Gujarati => &[Lang::Guj],
+            Script::Gurmukhi => &[Lang::Pan],
+            Script::Telugu => &[Lang::Tel],
+            Script::Malayalam => &[Lang::Mal],
+            Script::Oriya => &[Lang::Ori],
+            Script::Myanmar => &[Lang::Mya],
+            Script::Sinhala => &[Lang::Sin],
+            Script::Khmer => &[Lang::Khm],
+            Script::Katakana | Script::Hiragana => &[Lang::Jpn],
+        }
     }
 }
