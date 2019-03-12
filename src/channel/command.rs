@@ -329,6 +329,15 @@ impl ChannelCommandBase {
         query_id: &str,
         query_builder: QueryBuilderResult<'a>,
     ) -> ChannelResult {
+        // Idea: this could be made asynchronous in the future, if there are some latency issues \
+        //   on large Sonic deployments. The idea would be to have a number of worker threads for \
+        //   the whole running daemon, and channel threads dispatching work to those threads. This \
+        //   way Sonic can be up-scaled to N CPUs instead of 1 CPU per channel connection. Now on, \
+        //   the only way to scale Sonic executors to multiple CPUs is opening multiple parallel \
+        //   Sonic Channel connections and dispatching work evenly to each connection. It does not \
+        //   prevent scaling Sonic vertically, but could be made simpler for the Sonic Channel \
+        //   consumer via a worker thread pool.
+
         query_builder
             .and_then(|query| StoreOperationDispatch::dispatch(query))
             .and_then(|results| {
