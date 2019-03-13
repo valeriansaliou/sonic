@@ -6,8 +6,10 @@
 
 use fst::{Error as FSTError, Set as FSTSet, SetBuilder as FSTSetBuilder, Streamer};
 use hashbrown::{HashMap, HashSet};
+use std::collections::VecDeque;
 use std::fs::{self, File};
 use std::io::BufWriter;
+use std::iter::FromIterator;
 use std::mem;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
@@ -254,12 +256,53 @@ impl StoreFSTPool {
 
                         // Create a builder that can be used to insert new key-value pairs.
                         if let Ok(mut tmp_fst_builder) = FSTSetBuilder::new(tmp_fst_writer) {
+                            // Convert push keys to an ordered vector
+                            // Notice: we must go from a Vec to a VecDeque as to sort values, \
+                            //   which is a requirement for FST insertions.
+                            let mut ordered_push_vec: Vec<&[u8]> =
+                                Vec::from_iter(pending_push_write.iter().map(|item| item.as_ref()));
+
+                            ordered_push_vec.sort();
+
+                            let mut ordered_push: VecDeque<&[u8]> =
+                                VecDeque::from_iter(ordered_push_vec);
+
                             // Append words not in pop list to new FST (ie. old words minus pop words)
                             let mut old_fst_stream = old_fst.stream();
 
                             while let Some(old_fst_word) = old_fst_stream.next() {
+                                // Append new words from front? (ie. push words)
+                                // Notice: as an FST is ordered, inserts would fail if they are \
+                                //   commited out-of-order. Thus, the only way to check for \
+                                //   order is there.
+                                while let Some(push_front_ref) = ordered_push.front() {
+                                    if *push_front_ref <= old_fst_word {
+                                        // Pop front item and consume it
+                                        if let Some(push_front) = ordered_push.pop_front() {
+                                            if let Err(err) = tmp_fst_builder.insert(push_front) {
+                                                error!(
+                                                    "failed inserting new word from old in fst: {}",
+                                                    err
+                                                );
+                                            }
+
+                                            count_pushed += 1;
+
+                                            // Continue scanning next word (may also come before \
+                                            //   this FST word in order)
+                                            continue;
+                                        }
+                                    }
+
+                                    // Important: stop loop on next front item (always the same)
+                                    break;
+                                }
+
+                                // Restore old word (if not popped)
                                 if pending_pop_write.contains(old_fst_word) == false {
-                                    tmp_fst_builder.insert(old_fst_word).ok();
+                                    if let Err(err) = tmp_fst_builder.insert(old_fst_word) {
+                                        error!("failed inserting old word in fst: {}", err);
+                                    }
 
                                     count_moved += 1;
                                 } else {
@@ -267,9 +310,16 @@ impl StoreFSTPool {
                                 }
                             }
 
-                            // Append pushed words to new FST (ie. push words)
-                            for push_word in &*pending_push_write {
-                                tmp_fst_builder.insert(push_word).ok();
+                            // Complete FST with last pushed items
+                            // Notice: this is necessary if the FST was empty, or if we have push \
+                            //   items that come after the last ordered word of the FST.
+                            while let Some(push_front) = ordered_push.pop_front() {
+                                if let Err(err) = tmp_fst_builder.insert(push_front) {
+                                    error!(
+                                        "failed inserting new word from complete in fst: {}",
+                                        err
+                                    );
+                                }
 
                                 count_pushed += 1;
                             }

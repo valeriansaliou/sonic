@@ -38,9 +38,9 @@ impl Tasker {
             let tick_took = tick_start.elapsed();
 
             info!(
-                "ran tasker tick (took {}s + {}ns)",
+                "ran tasker tick (took {}s + {}ms)",
                 tick_took.as_secs(),
-                tick_took.subsec_nanos()
+                tick_took.subsec_millis()
             );
         }
     }
