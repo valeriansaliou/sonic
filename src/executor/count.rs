@@ -11,18 +11,20 @@ pub struct ExecutorCount;
 
 impl ExecutorCount {
     pub fn execute<'a>(store: StoreItem<'a>) -> Result<u32, ()> {
-        if let StoreItem(collection, _bucket_value, _object_value) = store {
-            // Important: acquire database access read lock, and reference it in context. This \
-            //   prevents the database from being erased while using it in this block.
-            let _kv_access = STORE_ACCESS_LOCK.read().unwrap();
+        match store {
+            StoreItem(collection, _bucket_value, _object_value) => {
+                // Important: acquire database access read lock, and reference it in context. This \
+                //   prevents the database from being erased while using it in this block.
+                let _kv_access = STORE_ACCESS_LOCK.read().unwrap();
 
-            if let Ok(_kv_store) = StoreKVPool::acquire(collection) {
-                // let kv_action = StoreKVActionBuilder::read(bucket, kv_store);
+                if let Ok(_kv_store) = StoreKVPool::acquire(collection) {
+                    // let kv_action = StoreKVActionBuilder::read(bucket, kv_store);
 
-                // TODO
+                    // TODO
 
-                // TODO
-                return Ok(0);
+                    // TODO
+                    return Ok(0);
+                }
             }
         }
 

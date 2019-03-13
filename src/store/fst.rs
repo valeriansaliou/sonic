@@ -245,6 +245,10 @@ impl StoreFSTPool {
                 let bucket_tmp_path_parent = bucket_tmp_path.parent().unwrap();
 
                 if fs::create_dir_all(&bucket_tmp_path_parent).is_ok() == true {
+                    // Erase any previously-existing temporary FST (eg. process stopped while \
+                    //   writing the temporary FST); there is no guarantee this succeeds.
+                    fs::remove_file(&bucket_tmp_path).ok();
+
                     if let Ok(tmp_fst_file) = File::create(&bucket_tmp_path) {
                         let tmp_fst_writer = BufWriter::new(tmp_fst_file);
 
@@ -284,11 +288,15 @@ impl StoreFSTPool {
                                     Some(&store.target.1),
                                 );
 
-                                if std::fs::rename(&bucket_tmp_path, &bucket_final_path).is_ok() == true
+                                if std::fs::rename(&bucket_tmp_path, &bucket_final_path).is_ok()
+                                    == true
                                 {
                                     info!("done consolidate fst at path: {:?}", bucket_final_path);
                                 } else {
-                                    error!("error consolidating fst at path: {:?}", bucket_final_path);
+                                    error!(
+                                        "error consolidating fst at path: {:?}",
+                                        bucket_final_path
+                                    );
                                 }
                             } else {
                                 error!(
