@@ -31,6 +31,9 @@ impl ExecutorSearch {
             if let Ok(kv_store) = StoreKVPool::acquire(collection) {
                 let kv_action = StoreKVActionBuilder::read(bucket, kv_store);
 
+                // TODO: auto-correct invalid words from FST w/ auto-complete + typo-correct \
+                //   via levenshtein distances.
+
                 // Try to resolve existing search terms to IIDs, and perform an algebraic AND on \
                 //   all resulting IIDs for each given term.
                 let mut found_iids: LinkedHashSet<StoreObjectIID> = LinkedHashSet::new();
