@@ -11,6 +11,7 @@ pub struct StoreItem<'a>(
     pub Option<StoreItemPart<'a>>,
 );
 
+#[derive(Copy, Clone)]
 pub struct StoreItemPart<'a>(&'a str);
 
 pub enum StoreItemError {

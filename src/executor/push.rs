@@ -8,6 +8,7 @@ use linked_hash_set::LinkedHashSet;
 use std::iter::FromIterator;
 
 use crate::lexer::token::TokenLexer;
+use crate::store::fst::{StoreFSTActionBuilder, StoreFSTPool, GRAPH_ACCESS_LOCK};
 use crate::store::identifiers::{StoreMetaKey, StoreMetaValue, StoreTermHashed};
 use crate::store::item::StoreItem;
 use crate::store::kv::{StoreKVActionBuilder, StoreKVPool, STORE_ACCESS_LOCK};
@@ -19,10 +20,19 @@ impl ExecutorPush {
         if let StoreItem(collection, Some(bucket), Some(object)) = store {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
-            let _access = STORE_ACCESS_LOCK.read().unwrap();
+            let (_kv_access, _fst_access) = (
+                STORE_ACCESS_LOCK.read().unwrap(),
+                GRAPH_ACCESS_LOCK.read().unwrap(),
+            );
 
-            if let Ok(kv_store) = StoreKVPool::acquire(collection) {
-                let action = StoreKVActionBuilder::write(bucket, kv_store);
+            if let (Ok(kv_store), Ok(fst_store)) = (
+                StoreKVPool::acquire(collection),
+                StoreFSTPool::acquire(collection, bucket),
+            ) {
+                let (kv_action, fst_action) = (
+                    StoreKVActionBuilder::write(bucket, kv_store),
+                    StoreFSTActionBuilder::write(fst_store),
+                );
 
                 // TODO: when pushing anything to a list, prevent DOS by limiting the list length
                 // TODO: when poping items to prevent DOS, also nuke IID from term-to-IIDs mapping
@@ -32,13 +42,13 @@ impl ExecutorPush {
                 // Try to resolve existing OID to IID, otherwise initialize IID (store the \
                 //   bi-directional relationship)
                 let oid = object.as_str().to_owned();
-                let iid = action.get_oid_to_iid(&oid).unwrap_or(None).or_else(|| {
+                let iid = kv_action.get_oid_to_iid(&oid).unwrap_or(None).or_else(|| {
                     // TODO: for initializer, must implement a per-bucket mutex as multiple \
                     //   channel threads pushing at the same time may conflict.
 
                     info!("must initialize push executor oid-to-iid and iid-to-oid");
 
-                    if let Ok(iid_incr) = action.get_meta_to_value(StoreMetaKey::IIDIncr) {
+                    if let Ok(iid_incr) = kv_action.get_meta_to_value(StoreMetaKey::IIDIncr) {
                         let iid_incr = if let Some(iid_incr) = iid_incr {
                             match iid_incr {
                                 StoreMetaValue::IIDIncr(iid_incr) => iid_incr + 1,
@@ -48,7 +58,7 @@ impl ExecutorPush {
                         };
 
                         // Bump last stored increment
-                        if action
+                        if kv_action
                             .set_meta_to_value(
                                 StoreMetaKey::IIDIncr,
                                 StoreMetaValue::IIDIncr(iid_incr),
@@ -57,8 +67,8 @@ impl ExecutorPush {
                             == true
                         {
                             // Associate OID <> IID (bidirectional)
-                            action.set_oid_to_iid(&oid, iid_incr).ok();
-                            action.set_iid_to_oid(iid_incr, &oid).ok();
+                            kv_action.set_oid_to_iid(&oid, iid_incr).ok();
+                            kv_action.set_iid_to_oid(iid_incr, &oid).ok();
 
                             Some(iid_incr)
                         } else {
@@ -75,7 +85,7 @@ impl ExecutorPush {
                     // Acquire list of terms for IID
                     let mut iid_terms_hashed: LinkedHashSet<StoreTermHashed> =
                         LinkedHashSet::from_iter(
-                            action
+                            kv_action
                                 .get_iid_to_terms(iid)
                                 .unwrap_or(None)
                                 .unwrap_or(Vec::new()),
@@ -86,10 +96,10 @@ impl ExecutorPush {
                         iid_terms_hashed
                     );
 
-                    while let Some((_, term_hashed)) = lexer.next() {
+                    while let Some((term, term_hashed)) = lexer.next() {
                         // Check that term is not already linked to IID
                         if iid_terms_hashed.contains(&term_hashed) == false {
-                            if let Ok(term_iids) = action.get_term_to_iids(term_hashed) {
+                            if let Ok(term_iids) = kv_action.get_term_to_iids(term_hashed) {
                                 has_commits = true;
 
                                 // Add IID in first position in list for terms
@@ -105,11 +115,19 @@ impl ExecutorPush {
 
                                 term_iids.insert(0, iid);
 
-                                action.set_term_to_iids(term_hashed, &term_iids).ok();
+                                kv_action.set_term_to_iids(term_hashed, &term_iids).ok();
 
                                 // Insert term into IID to terms map
                                 iid_terms_hashed.insert(term_hashed);
                             }
+                        }
+
+                        // Push to FST graph? (this consumes the term; to avoid sub-clones)
+                        if fst_action.push_word(term) == true {
+                            debug!(
+                                "push term commited to graph with term hash: {}",
+                                term_hashed
+                            );
                         }
                     }
 
@@ -123,7 +141,7 @@ impl ExecutorPush {
                             collected_iids
                         );
 
-                        action.set_iid_to_terms(iid, &collected_iids).ok();
+                        kv_action.set_iid_to_terms(iid, &collected_iids).ok();
                     }
 
                     return Ok(());

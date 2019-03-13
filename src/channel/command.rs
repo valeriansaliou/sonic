@@ -454,7 +454,7 @@ impl ChannelCommandSearch {
                 )
             }
             _ => Err(ChannelCommandError::InvalidFormat(
-                "SUGGEST <collection> <bucket> \"<sentence>\"",
+                "SUGGEST <collection> <bucket> \"<word>\"",
             )),
         }
     }

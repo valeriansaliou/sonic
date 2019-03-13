@@ -26,17 +26,17 @@ impl ExecutorSearch {
         if let StoreItem(collection, Some(bucket), None) = store {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
-            let _access = STORE_ACCESS_LOCK.read().unwrap();
+            let _kv_access = STORE_ACCESS_LOCK.read().unwrap();
 
             if let Ok(kv_store) = StoreKVPool::acquire(collection) {
-                let action = StoreKVActionBuilder::read(bucket, kv_store);
+                let kv_action = StoreKVActionBuilder::read(bucket, kv_store);
 
                 // Try to resolve existing search terms to IIDs, and perform an algebraic AND on \
                 //   all resulting IIDs for each given term.
                 let mut found_iids: LinkedHashSet<StoreObjectIID> = LinkedHashSet::new();
 
                 while let Some((term, term_hashed)) = lexer.next() {
-                    if let Ok(iids_inner) = action.get_term_to_iids(term_hashed) {
+                    if let Ok(iids_inner) = kv_action.get_term_to_iids(term_hashed) {
                         let iids = iids_inner.unwrap_or(Vec::new());
 
                         debug!("got search executor iids: {:?} for term: {}", iids, term);
@@ -83,7 +83,7 @@ impl ExecutorSearch {
                     }
 
                     // Read IID-to-OID for this found IID
-                    if let Ok(Some(oid)) = action.get_iid_to_oid(*found_iid) {
+                    if let Ok(Some(oid)) = kv_action.get_iid_to_oid(*found_iid) {
                         result_oids.push(oid);
                     }
                 }

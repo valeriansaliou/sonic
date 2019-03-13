@@ -29,11 +29,11 @@ extern crate jemallocator;
 mod channel;
 mod config;
 mod executor;
-mod janitor;
 mod lexer;
 mod query;
 mod stopwords;
 mod store;
+mod tasker;
 
 use std::ops::Deref;
 use std::str::FromStr;
@@ -47,7 +47,7 @@ use channel::listen::ChannelListenBuilder;
 use config::config::Config;
 use config::logger::ConfigLogger;
 use config::reader::ConfigReader;
-use janitor::runtime::JanitorBuilder;
+use tasker::runtime::TaskerBuilder;
 
 struct AppArgs {
     config: String,
@@ -61,7 +61,7 @@ pub static LINE_FEED: &'static str = "\r\n";
 
 pub static THREAD_NAME_CHANNEL_MASTER: &'static str = "sonic-channel-master";
 pub static THREAD_NAME_CHANNEL_CLIENT: &'static str = "sonic-channel-client";
-pub static THREAD_NAME_JANITOR: &'static str = "sonic-janitor";
+pub static THREAD_NAME_TASKER: &'static str = "sonic-tasker";
 
 macro_rules! gen_spawn_managed {
     ($name:expr, $method:ident, $thread_name:ident, $managed_fn:ident) => {
@@ -103,12 +103,7 @@ gen_spawn_managed!(
     THREAD_NAME_CHANNEL_MASTER,
     ChannelListenBuilder
 );
-gen_spawn_managed!(
-    "janitor",
-    spawn_janitor,
-    THREAD_NAME_JANITOR,
-    JanitorBuilder
-);
+gen_spawn_managed!("tasker", spawn_tasker, THREAD_NAME_TASKER, TaskerBuilder);
 
 fn make_app_args() -> AppArgs {
     let matches = App::new(crate_name!())
@@ -146,8 +141,8 @@ fn main() {
     // Ensure all states are bound
     ensure_states();
 
-    // Spawn janitor (background thread)
-    thread::spawn(spawn_janitor);
+    // Spawn tasker (background thread)
+    thread::spawn(spawn_tasker);
 
     // Spawn channel (foreground thread)
     spawn_channel();

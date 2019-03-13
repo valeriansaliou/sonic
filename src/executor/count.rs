@@ -14,10 +14,10 @@ impl ExecutorCount {
         if let StoreItem(collection, _bucket_value, _object_value) = store {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
-            let _access = STORE_ACCESS_LOCK.read().unwrap();
+            let _kv_access = STORE_ACCESS_LOCK.read().unwrap();
 
             if let Ok(_kv_store) = StoreKVPool::acquire(collection) {
-                // let action = StoreKVActionBuilder::read(bucket, kv_store);
+                // let kv_action = StoreKVActionBuilder::read(bucket, kv_store);
 
                 // TODO
 

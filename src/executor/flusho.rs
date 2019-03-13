@@ -14,28 +14,29 @@ impl ExecutorFlushO {
         if let StoreItem(collection, Some(bucket), Some(object)) = store {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
-            let _access = STORE_ACCESS_LOCK.read().unwrap();
+            let _kv_access = STORE_ACCESS_LOCK.read().unwrap();
 
             if let Ok(kv_store) = StoreKVPool::acquire(collection) {
-                let action = StoreKVActionBuilder::write(bucket, kv_store);
+                let kv_action = StoreKVActionBuilder::write(bucket, kv_store);
 
                 // Try to resolve existing OID to IID (if it does not exist, there is nothing to \
                 //   be flushed)
                 let oid = object.as_str().to_owned();
 
-                if let Ok(iid_value) = action.get_oid_to_iid(&oid) {
+                if let Ok(iid_value) = kv_action.get_oid_to_iid(&oid) {
                     let mut count_flushed = 0;
 
                     if let Some(iid) = iid_value {
                         // Resolve terms associated to IID
-                        let iid_terms = action
+                        let iid_terms = kv_action
                             .get_iid_to_terms(iid)
                             .ok()
                             .unwrap_or(None)
                             .unwrap_or(Vec::new());
 
                         // Flush bucket (batch operation, as it is shared w/ other executors)
-                        if let Ok(batch_count) = action.batch_flush_bucket(iid, &oid, &iid_terms) {
+                        if let Ok(batch_count) = kv_action.batch_flush_bucket(iid, &oid, &iid_terms)
+                        {
                             count_flushed += batch_count;
                         }
                     }

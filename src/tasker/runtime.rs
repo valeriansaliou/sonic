@@ -7,29 +7,29 @@
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::store::kv::StoreKVPool;
 use crate::store::fst::StoreFSTPool;
+use crate::store::kv::StoreKVPool;
 
-pub struct JanitorBuilder;
-pub struct Janitor;
+pub struct TaskerBuilder;
+pub struct Tasker;
 
-const JANITOR_TICK_INTERVAL: Duration = Duration::from_secs(30);
+const TASKER_TICK_INTERVAL: Duration = Duration::from_secs(30);
 
-impl JanitorBuilder {
-    pub fn new() -> Janitor {
-        Janitor {}
+impl TaskerBuilder {
+    pub fn new() -> Tasker {
+        Tasker {}
     }
 }
 
-impl Janitor {
+impl Tasker {
     pub fn run(&self) {
-        info!("janitor is now active");
+        info!("tasker is now active");
 
         loop {
             // Hold for next aggregate run
-            thread::sleep(JANITOR_TICK_INTERVAL);
+            thread::sleep(TASKER_TICK_INTERVAL);
 
-            debug!("running a janitor tick...");
+            debug!("running a tasker tick...");
 
             let tick_start = Instant::now();
 
@@ -38,7 +38,7 @@ impl Janitor {
             let tick_took = tick_start.elapsed();
 
             info!(
-                "ran janitor tick (took {}s + {}ns)",
+                "ran tasker tick (took {}s + {}ns)",
                 tick_took.as_secs(),
                 tick_took.subsec_nanos()
             );
@@ -47,7 +47,12 @@ impl Janitor {
 
     fn tick() {
         // Proceed all tick actions
+
+        // #1: Janitors
         StoreKVPool::janitor();
         StoreFSTPool::janitor();
+
+        // #2: Others
+        StoreFSTPool::consolidate();
     }
 }

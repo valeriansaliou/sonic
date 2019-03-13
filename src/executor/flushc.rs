@@ -4,6 +4,7 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::item::StoreItem;
 use crate::store::kv::StoreKVActionBuilder;
 
@@ -15,9 +16,11 @@ impl ExecutorFlushC {
         //   even if dropped in the inner function, as this caller would still own a reference to \
         //   it.
         if let StoreItem(collection, None, None) = store {
-            StoreKVActionBuilder::erase(collection)
-        } else {
-            Err(())
+            if StoreFSTActionBuilder::erase(collection, None).is_ok() == true {
+                return StoreKVActionBuilder::erase(collection);
+            }
         }
+
+        Err(())
     }
 }
