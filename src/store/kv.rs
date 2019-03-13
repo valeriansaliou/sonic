@@ -124,6 +124,7 @@ impl StoreKVPool {
                     &collection, last_used
                 );
 
+                // TODO: isnt it dirty to clone value there?
                 removal_register.push(collection.to_owned());
             }
         }
@@ -149,7 +150,7 @@ impl StoreKVBuilder {
     }
 
     fn open(collection: &str) -> Result<DB, DBError> {
-        debug!("opening key-value database");
+        debug!("opening key-value database for collection: {}", collection);
 
         // Configure database options
         let db_options = Self::configure();

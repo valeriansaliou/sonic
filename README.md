@@ -138,6 +138,10 @@ Use the sample [config.cfg](https://github.com/valeriansaliou/sonic/blob/master/
 
 * `path` (type: _string_, allowed: UNIX path, default: `./data/store/fst/`) — Path to the Finite-State Transducer database store
 
+**[store.fst.pool]**
+
+* `inactive_after` (type: _integer_, allowed: seconds, default: `300`) — Time after which a cached graph is considered inactive and can be closed (if it is not used, ie. re-activated)
+
 ### Run Sonic
 
 Sonic can be run as such:

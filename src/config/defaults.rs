@@ -58,3 +58,7 @@ pub fn store_kv_database_max_compactions() -> u16 {
 pub fn store_kv_database_max_flushes() -> u16 {
     1
 }
+
+pub fn store_fst_pool_inactive_after() -> u64 {
+    300
+}

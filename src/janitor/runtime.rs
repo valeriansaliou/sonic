@@ -8,6 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::store::kv::StoreKVPool;
+use crate::store::fst::StoreFSTPool;
 
 pub struct JanitorBuilder;
 pub struct Janitor;
@@ -47,5 +48,6 @@ impl Janitor {
     fn tick() {
         // Proceed all tick actions
         StoreKVPool::janitor();
+        StoreFSTPool::janitor();
     }
 }
