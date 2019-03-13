@@ -144,20 +144,20 @@ mod tests {
     #[test]
     fn it_keys_meta_to_value() {
         assert_eq!(
-            StoreKeyerBuilder::meta_to_value("user:0dcde3a6", &StoreMetaKey::IIDIncr).to_string(),
-            "0:vngsgj:0"
+            StoreKeyerBuilder::meta_to_value("user:0dcde3a6", &StoreMetaKey::IIDIncr).as_bytes(),
+            [0, 19, 71, 19, 114, 0, 0, 0, 0]
         );
     }
 
     #[test]
     fn it_keys_term_to_iids() {
         assert_eq!(
-            StoreKeyerBuilder::term_to_iids("user:0dcde3a6", 772137347).to_string(),
-            "1:vngsgj:crpkzn"
+            StoreKeyerBuilder::term_to_iids("user:0dcde3a6", 772137347).as_bytes(),
+            [1, 19, 71, 19, 114, 131, 225, 5, 46]
         );
         assert_eq!(
-            StoreKeyerBuilder::term_to_iids("default", 3582484684).to_string(),
-            "1:tlegv5:1n8x2vg"
+            StoreKeyerBuilder::term_to_iids("default", 3582484684).as_bytes(),
+            [1, 225, 21, 169, 106, 204, 96, 136, 213]
         );
     }
 
@@ -165,28 +165,28 @@ mod tests {
     fn it_keys_oid_to_iid() {
         assert_eq!(
             StoreKeyerBuilder::oid_to_iid("user:0dcde3a6", &"conversation:6501e83a".to_string())
-                .to_string(),
-            "2:vngsgj:1n884db"
+                .as_bytes(),
+            [2, 19, 71, 19, 114, 31, 156, 118, 213]
         );
     }
 
     #[test]
     fn it_keys_iid_to_oid() {
         assert_eq!(
-            StoreKeyerBuilder::iid_to_oid("user:0dcde3a6", 10292198).to_string(),
-            "3:vngsgj:64lie"
+            StoreKeyerBuilder::iid_to_oid("user:0dcde3a6", 10292198).as_bytes(),
+            [3, 19, 71, 19, 114, 230, 11, 157, 0]
         );
     }
 
     #[test]
     fn it_keys_iid_to_terms() {
         assert_eq!(
-            StoreKeyerBuilder::iid_to_terms("user:0dcde3a6", 1).to_string(),
-            "4:vngsgj:1"
+            StoreKeyerBuilder::iid_to_terms("user:0dcde3a6", 1).as_bytes(),
+            [4, 19, 71, 19, 114, 1, 0, 0, 0]
         );
         assert_eq!(
-            StoreKeyerBuilder::iid_to_terms("user:0dcde3a6", 20).to_string(),
-            "4:vngsgj:k"
+            StoreKeyerBuilder::iid_to_terms("user:0dcde3a6", 20).as_bytes(),
+            [4, 19, 71, 19, 114, 20, 0, 0, 0]
         );
     }
 }
