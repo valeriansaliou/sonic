@@ -4,9 +4,10 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use fst::{Error as FSTError, Set as FSTSet};
+use fst::{Error as FSTError, Set as FSTSet, SetBuilder as FSTSetBuilder, Streamer};
 use hashbrown::{HashMap, HashSet};
-use std::fs;
+use std::fs::{self, File};
+use std::io::BufWriter;
 use std::mem;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
@@ -26,8 +27,8 @@ pub struct StoreFST {
 
 #[derive(Default)]
 pub struct StoreFSTPending {
-    pop: Arc<RwLock<HashSet<String>>>,
-    push: Arc<RwLock<HashSet<String>>>,
+    pop: Arc<RwLock<HashSet<Vec<u8>>>>,
+    push: Arc<RwLock<HashSet<Vec<u8>>>>,
 }
 
 pub struct StoreFSTActionBuilder;
@@ -36,10 +37,14 @@ pub struct StoreFSTAction {
     store: StoreFSTBox,
 }
 
+#[derive(Copy, Clone)]
+enum StoreFSTPathMode {
+    Permanent,
+    Temporary,
+}
+
 type StoreFSTBox = Arc<StoreFST>;
 type StoreFSTKey = (String, String);
-
-static FST_EXTENSION: &'static str = ".fst";
 
 lazy_static! {
     pub static ref GRAPH_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
@@ -48,6 +53,15 @@ lazy_static! {
         Arc::new(RwLock::new(HashMap::new()));
     static ref GRAPH_CONSOLIDATE: Arc<RwLock<HashSet<StoreFSTKey>>> =
         Arc::new(RwLock::new(HashSet::new()));
+}
+
+impl StoreFSTPathMode {
+    fn extension(&self) -> &'static str {
+        match self {
+            StoreFSTPathMode::Permanent => ".fst",
+            StoreFSTPathMode::Temporary => ".tmp",
+        }
+    }
 }
 
 impl StoreFSTPool {
@@ -164,20 +178,35 @@ impl StoreFSTPool {
         // Notice: write lock prevents graph to be acquired from any context
         let _write = GRAPH_WRITE_LOCK.lock().unwrap();
 
-        let (mut count_pushed, mut count_popped) = (0, 0);
+        let (mut count_moved, mut count_pushed, mut count_popped) = (0, 0, 0);
 
         let mut graph_consolidate_write = GRAPH_CONSOLIDATE.write().unwrap();
 
         if graph_consolidate_write.len() > 0 {
-            let graph_pool_read = GRAPH_POOL.read().unwrap();
+            let mut graph_pool_write = GRAPH_POOL.write().unwrap();
 
+            // Prepare close stack (used once whole set is scanned)
+            let mut close_stack: Vec<&StoreFSTKey> = Vec::new();
+
+            // Proceed FST consolidation for each store key
             for key in &*graph_consolidate_write {
-                if let Some(store) = graph_pool_read.get(&key) {
+                if let Some(store) = graph_pool_write.get(&key) {
                     let consolidate_counts = Self::consolidate_item(store);
 
-                    count_pushed += consolidate_counts.0;
-                    count_popped += consolidate_counts.1;
+                    count_moved += consolidate_counts.1;
+                    count_pushed += consolidate_counts.2;
+                    count_popped += consolidate_counts.3;
+
+                    // Stack cached store close request?
+                    if consolidate_counts.0 == true {
+                        close_stack.push(&key);
+                    }
                 }
+            }
+
+            // Close all stacked stores
+            for close_item in close_stack {
+                graph_pool_write.remove(close_item);
             }
 
             // Void the set of items to be consolidated (this has been processed)
@@ -185,13 +214,14 @@ impl StoreFSTPool {
         }
 
         info!(
-            "done scanning for fst store pool items to consolidate (pushed: {}, popped: {})",
-            count_pushed, count_popped
+            "done scanning for fst store pool items to consolidate (move: {}, push: {}, pop: {})",
+            count_moved, count_pushed, count_popped
         );
     }
 
-    fn consolidate_item(store: &StoreFSTBox) -> (usize, usize) {
-        let (mut count_pushed, mut count_popped) = (0, 0);
+    fn consolidate_item(store: &StoreFSTBox) -> (bool, usize, usize, usize) {
+        let (mut should_close, mut count_moved, mut count_pushed, mut count_popped) =
+            (false, 0, 0, 0);
 
         // Acquire write references to pending sets
         let (mut pending_push_write, mut pending_pop_write) = (
@@ -202,36 +232,98 @@ impl StoreFSTPool {
         // Do consolidate? (any change commited)
         // Notice: if both pending sets are empty do not consolidate as there may have been a \
         //   push then a pop of this push, nulling out any commited change.
-        if (pending_push_write.len() > 0 || pending_pop_write.len() > 0) {
+        if pending_push_write.len() > 0 || pending_pop_write.len() > 0 {
             // Read old FST (or default to empty FST)
             if let Ok(old_fst) = StoreFSTBuilder::open(&store.target.0, &store.target.1) {
                 // Initialize the new FST (temporary)
-                // TODO
+                let bucket_tmp_path = StoreFSTBuilder::path(
+                    StoreFSTPathMode::Temporary,
+                    &store.target.0,
+                    Some(&store.target.1),
+                );
 
-                // Append words not in pop list to new FST
-                // TODO
+                let bucket_tmp_path_parent = bucket_tmp_path.parent().unwrap();
 
-                // Append pushed words to new FST
-                // TODO
+                if fs::create_dir_all(&bucket_tmp_path_parent).is_ok() == true {
+                    if let Ok(tmp_fst_file) = File::create(&bucket_tmp_path) {
+                        let tmp_fst_writer = BufWriter::new(tmp_fst_file);
 
-                // Finish building new FST
-                // TODO
+                        // Create a builder that can be used to insert new key-value pairs.
+                        if let Ok(mut tmp_fst_builder) = FSTSetBuilder::new(tmp_fst_writer) {
+                            // Append words not in pop list to new FST (ie. old words minus pop words)
+                            let mut old_fst_stream = old_fst.stream();
 
-                // Close open store reference to old FST
-                // TODO: this is important! otherwise memory could become corrupted
+                            while let Some(old_fst_word) = old_fst_stream.next() {
+                                if pending_pop_write.contains(old_fst_word) == false {
+                                    tmp_fst_builder.insert(old_fst_word).ok();
 
-                // Replace old FST with new FST (this nukes the old FST)
-                // Notice: there is no need to re-open the new FST, as it will be automatically \
-                //   opened on its next access.
-                // TODO
+                                    count_moved += 1;
+                                } else {
+                                    count_popped += 1;
+                                }
+                            }
+
+                            // Append pushed words to new FST (ie. push words)
+                            for push_word in &*pending_push_write {
+                                tmp_fst_builder.insert(push_word).ok();
+
+                                count_pushed += 1;
+                            }
+
+                            // Finish building new FST
+                            if tmp_fst_builder.finish().is_ok() == true {
+                                // Should close open store reference to old FST
+                                should_close = true;
+
+                                // Replace old FST with new FST (this nukes the old FST)
+                                // Notice: there is no need to re-open the new FST, as it will be \
+                                //   automatically opened on its next access.
+                                let bucket_final_path = StoreFSTBuilder::path(
+                                    StoreFSTPathMode::Permanent,
+                                    &store.target.0,
+                                    Some(&store.target.1),
+                                );
+
+                                if std::fs::rename(&bucket_tmp_path, &bucket_final_path).is_ok() == true
+                                {
+                                    info!("done consolidate fst at path: {:?}", bucket_final_path);
+                                } else {
+                                    error!("error consolidating fst at path: {:?}", bucket_final_path);
+                                }
+                            } else {
+                                error!(
+                                    "error finishing building temporary fst at path: {:?}",
+                                    bucket_tmp_path
+                                );
+                            }
+                        } else {
+                            error!(
+                                "error starting building temporary fst at path: {:?}",
+                                bucket_tmp_path
+                            );
+                        }
+                    } else {
+                        error!(
+                            "error initializing temporary fst at path: {:?}",
+                            bucket_tmp_path
+                        );
+                    }
+                } else {
+                    error!(
+                        "error initializing temporary fst directory at path: {:?}",
+                        bucket_tmp_path_parent
+                    );
+                }
             }
 
             // Reset all pending sets
             *pending_push_write = HashSet::new();
             *pending_pop_write = HashSet::new();
+        } else {
+            error!("error opening old fst");
         }
 
-        (count_pushed, count_popped)
+        (should_close, count_moved, count_pushed, count_popped)
     }
 }
 
@@ -251,7 +343,8 @@ impl StoreFSTBuilder {
             collection, bucket
         );
 
-        let collection_bucket_path = Self::path(collection, Some(bucket));
+        let collection_bucket_path =
+            Self::path(StoreFSTPathMode::Permanent, collection, Some(bucket));
 
         if collection_bucket_path.exists() == true {
             // TODO: IMPORTANT >> It is up to the caller to enforce that the memory map is not \
@@ -271,11 +364,11 @@ impl StoreFSTBuilder {
         }
     }
 
-    fn path(collection: &str, bucket: Option<&str>) -> PathBuf {
+    fn path(mode: StoreFSTPathMode, collection: &str, bucket: Option<&str>) -> PathBuf {
         let mut final_path = APP_CONF.store.fst.path.join(collection);
 
         if let Some(bucket) = bucket {
-            final_path = final_path.join(format!("{}{}", bucket, FST_EXTENSION));
+            final_path = final_path.join(format!("{}{}", bucket, mode.extension()));
         }
 
         final_path
@@ -284,13 +377,15 @@ impl StoreFSTBuilder {
 
 impl StoreFST {
     pub fn contains(&self, sequence: &str) -> bool {
+        let sequence_bytes = sequence.as_bytes();
+
         // 1. Check in 'pop' set (if value is inside, it means it should not exist)
-        if self.pending.pop.read().unwrap().contains(sequence) == true {
+        if self.pending.pop.read().unwrap().contains(sequence_bytes) == true {
             return false;
         }
 
         // 2. Check in 'push' set (if value is inside, it means it should exist)
-        if self.pending.push.read().unwrap().contains(sequence) == true {
+        if self.pending.push.read().unwrap().contains(sequence_bytes) == true {
             return true;
         }
 
@@ -369,7 +464,8 @@ impl StoreFSTActionBuilder {
     }
 
     fn erase_collection(collection_str: &str) -> Result<u32, ()> {
-        let collection_path = StoreFSTBuilder::path(collection_str, None);
+        let path_mode = StoreFSTPathMode::Permanent;
+        let collection_path = StoreFSTBuilder::path(path_mode, collection_str, None);
 
         if collection_path.exists() == true {
             debug!(
@@ -381,7 +477,8 @@ impl StoreFSTActionBuilder {
             let mut buckets: Vec<String> = Vec::new();
 
             if let Ok(entries) = fs::read_dir(&collection_path) {
-                let fst_extension_len = FST_EXTENSION.len();
+                let fst_extension = path_mode.extension();
+                let fst_extension_len = fst_extension.len();
 
                 for entry in entries {
                     if let Ok(entry) = entry {
@@ -390,7 +487,7 @@ impl StoreFSTActionBuilder {
 
                             // FST file found? This is a bucket.
                             if entry_name_len > fst_extension_len
-                                && entry_name.ends_with(FST_EXTENSION) == true
+                                && entry_name.ends_with(fst_extension) == true
                             {
                                 buckets.push(String::from(
                                     &entry_name[..(entry_name_len - fst_extension_len)],
@@ -441,7 +538,11 @@ impl StoreFSTActionBuilder {
             bucket_str, collection_str
         );
 
-        let bucket_path = StoreFSTBuilder::path(collection_str, Some(bucket_str));
+        let bucket_path = StoreFSTBuilder::path(
+            StoreFSTPathMode::Permanent,
+            collection_str,
+            Some(bucket_str),
+        );
 
         if bucket_path.exists() == true {
             debug!(
@@ -487,17 +588,24 @@ impl StoreFSTAction {
     // TODO: CHANNEL FLUSHO -> pop_word for each word
     // TODO: CHANNEL SEARCH -> complete not-found words via FST +/ levenshtein distance complete
 
-    pub fn push_word(&self, word: String) -> bool {
+    pub fn push_word(&self, word: &str) -> bool {
+        let word_bytes = word.as_bytes();
+
         // Nuke word from 'pop' set? (void a previous un-consolidated commit)
-        if self.store.pending.pop.read().unwrap().contains(&word) == true {
-            self.store.pending.pop.write().unwrap().remove(&word);
+        if self.store.pending.pop.read().unwrap().contains(word_bytes) == true {
+            self.store.pending.pop.write().unwrap().remove(word_bytes);
         }
 
         // Add word in 'push' set? (only if word is not in FST)
         if self.store.graph.contains(&word) == false
-            && self.store.pending.push.read().unwrap().contains(&word) == false
+            && self.store.pending.push.read().unwrap().contains(word_bytes) == false
         {
-            self.store.pending.push.write().unwrap().insert(word);
+            self.store
+                .pending
+                .push
+                .write()
+                .unwrap()
+                .insert(word_bytes.to_vec());
 
             self.store.should_consolidate();
 
@@ -510,21 +618,23 @@ impl StoreFSTAction {
     }
 
     pub fn pop_word(&self, word: &str) -> bool {
+        let word_bytes = word.as_bytes();
+
         // Nuke word from 'push' set? (void a previous un-consolidated commit)
-        if self.store.pending.push.read().unwrap().contains(word) == true {
-            self.store.pending.push.write().unwrap().remove(word);
+        if self.store.pending.push.read().unwrap().contains(word_bytes) == true {
+            self.store.pending.push.write().unwrap().remove(word_bytes);
         }
 
         // Add word in 'pop' set? (only if word is in FST)
-        if self.store.graph.contains(word) == true
-            && self.store.pending.pop.read().unwrap().contains(word) == false
+        if self.store.graph.contains(word_bytes) == true
+            && self.store.pending.pop.read().unwrap().contains(word_bytes) == false
         {
             self.store
                 .pending
                 .pop
                 .write()
                 .unwrap()
-                .insert(word.to_string());
+                .insert(word_bytes.to_vec());
 
             self.store.should_consolidate();
 
