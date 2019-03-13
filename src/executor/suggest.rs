@@ -11,7 +11,7 @@ use crate::store::item::StoreItem;
 
 pub struct ExecutorSuggest;
 
-const SUGGEST_WORDS_LIMIT: u16 = 5;
+const SUGGEST_WORDS_LIMIT: usize = 5;
 
 impl ExecutorSuggest {
     pub fn execute<'a>(

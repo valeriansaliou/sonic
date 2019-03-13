@@ -4,14 +4,22 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use fst::{Error as FSTError, Set as FSTSet, SetBuilder as FSTSetBuilder, Streamer};
+use fst::set::Stream as FSTStream;
+use fst::{
+    Automaton, Error as FSTError, IntoStreamer, Set as FSTSet, SetBuilder as FSTSetBuilder,
+    Streamer,
+};
+use fst_levenshtein::Levenshtein;
+use fst_regex::Regex;
 use hashbrown::{HashMap, HashSet};
+use regex_syntax::escape as regex_escape;
 use std::collections::VecDeque;
 use std::fs::{self, File};
 use std::io::BufWriter;
 use std::iter::FromIterator;
 use std::mem;
 use std::path::PathBuf;
+use std::str;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::SystemTime;
 
@@ -434,21 +442,59 @@ impl StoreFSTBuilder {
 }
 
 impl StoreFST {
-    pub fn contains(&self, sequence: &str) -> bool {
-        let sequence_bytes = sequence.as_bytes();
+    pub fn contains(&self, word: &str) -> bool {
+        let word_bytes = word.as_bytes();
+
+        debug!("checking if fst contains word: {}", word);
 
         // 1. Check in 'pop' set (if value is inside, it means it should not exist)
-        if self.pending.pop.read().unwrap().contains(sequence_bytes) == true {
+        if self.pending.pop.read().unwrap().contains(word_bytes) == true {
             return false;
         }
 
         // 2. Check in 'push' set (if value is inside, it means it should exist)
-        if self.pending.push.read().unwrap().contains(sequence_bytes) == true {
+        if self.pending.push.read().unwrap().contains(word_bytes) == true {
             return true;
         }
 
         // 3. Check in 'fst' (final consolidated graph)
-        self.graph.contains(sequence)
+        self.graph.contains(word)
+    }
+
+    pub fn lookup_begins(&self, word: &str) -> Result<FSTStream<Regex>, ()> {
+        let regex_str = format!("{}.*", regex_escape(word));
+
+        debug!(
+            "looking-up word in fst via 'begins': {} with regex: {}",
+            word, regex_str
+        );
+
+        if let Ok(regex) = Regex::new(&regex_str) {
+            Ok(self.graph.search(regex).into_stream())
+        } else {
+            Err(())
+        }
+    }
+
+    pub fn lookup_typos(&self, word: &str) -> Result<FSTStream<Levenshtein>, ()> {
+        // Allow more typos in word as the word gets longer, up to a maximum limit
+        let typo_factor = match word.len() {
+            1 | 2 | 3 => 0,
+            4 | 5 | 6 => 1,
+            7 | 8 | 9 => 2,
+            _ => 3,
+        };
+
+        debug!(
+            "looking-up word in fst via 'typos': {} with typo factor: {}",
+            word, typo_factor
+        );
+
+        if let Ok(fuzzy) = Levenshtein::new(word, typo_factor) {
+            Ok(self.graph.search(fuzzy).into_stream())
+        } else {
+            Err(())
+        }
     }
 
     pub fn should_consolidate(&self) {
@@ -709,11 +755,50 @@ impl StoreFSTAction {
         self.store.contains(word)
     }
 
-    pub fn suggest_words(&self, _from_word: &str, _limit: u16) -> Option<Vec<String>> {
-        // TODO: search 'limit' words in FST (iteratively, until limit is reached)
-        // TODO: check if 'self.has_word(word)' to avoid removed words (refine when limit \
-        //   isnt reached)
+    pub fn suggest_words(&self, from_word: &str, limit: usize) -> Option<Vec<String>> {
+        let mut found_words = Vec::new();
 
-        None
+        // Try to complete provided word
+        if let Ok(stream) = self.store.lookup_begins(from_word) {
+            debug!("looking up for word: {} in 'begins' fst stream", from_word);
+
+            Self::find_words_stream(stream, &mut found_words, limit);
+        }
+
+        // Try to fuzzy-suggest other words? (eg. correct typos)
+        if found_words.len() < limit {
+            if let Ok(stream) = self.store.lookup_typos(from_word) {
+                debug!("looking up for word: {} in 'typos' fst stream", from_word);
+
+                Self::find_words_stream(stream, &mut found_words, limit);
+            }
+        }
+
+        if found_words.is_empty() == false {
+            Some(found_words)
+        } else {
+            None
+        }
+    }
+
+    fn find_words_stream<A: Automaton>(
+        mut stream: FSTStream<A>,
+        found_words: &mut Vec<String>,
+        limit: usize,
+    ) {
+        while let Some(word) = stream.next() {
+            if let Ok(word_str) = str::from_utf8(word) {
+                let word_string = word_str.to_string();
+
+                if found_words.contains(&word_string) == false {
+                    found_words.push(word_string);
+
+                    // Requested limit reached? Stop there.
+                    if found_words.len() >= limit {
+                        break;
+                    }
+                }
+            }
+        }
     }
 }
