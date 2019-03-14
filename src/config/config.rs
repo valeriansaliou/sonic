@@ -88,10 +88,17 @@ pub struct ConfigStoreFST {
     pub path: PathBuf,
 
     pub pool: ConfigStoreFSTPool,
+    pub graph: ConfigStoreFSTGraph,
 }
 
 #[derive(Deserialize)]
 pub struct ConfigStoreFSTPool {
     #[serde(default = "defaults::store_fst_pool_inactive_after")]
     pub inactive_after: u64,
+}
+
+#[derive(Deserialize)]
+pub struct ConfigStoreFSTGraph {
+    #[serde(default = "defaults::store_fst_graph_consolidate_after")]
+    pub consolidate_after: u64,
 }

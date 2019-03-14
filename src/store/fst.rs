@@ -33,6 +33,7 @@ pub struct StoreFST {
     target: StoreFSTKey,
     pending: StoreFSTPending,
     last_used: Arc<RwLock<SystemTime>>,
+    last_consolidated: Arc<RwLock<SystemTime>>,
 }
 
 #[derive(Default)]
@@ -75,8 +76,6 @@ impl StoreFSTPathMode {
 }
 
 impl StoreFSTPool {
-    // TODO: implement locks when re-building the fst? (is it necessary?)
-
     pub fn acquire<'a, T: Into<&'a str>>(
         collection: T,
         bucket: T,
@@ -159,7 +158,8 @@ impl StoreFSTPool {
                     &collection_bucket.0, &collection_bucket.1, last_used
                 );
 
-                // TODO: isnt it dirty to clone value there?
+                // Notice: the bucket value needs to be cloned, as we cannot reference as value \
+                //   that will outlive referenced value once we remove it from its owner set.
                 removal_register.push(collection_bucket.to_owned());
             }
         }
@@ -178,49 +178,87 @@ impl StoreFSTPool {
     pub fn consolidate() {
         debug!("scanning for fst store pool items to consolidate");
 
-        // TODO: do not consolidate as often please, try to consolidate every 5 min rather than \
-        //   every 30 seconds. Lower the HZ of the tasker system for certain heavy tasks, or \
-        //   check a 'last_consolidated' time for each store and only proceed the old enough ones, \
-        //   which is better to spread out consolidation steps over time over a large number of \
-        //   very active buckets.
+        // Notice: we do not consolidate all items at each tick, we try to even out multiple \
+        //   consolidation tasks over time. This lowers the overall HZ of the tasker system for \
+        //   certain heavy tasks, which is better to spread out consolidation steps over time over \
+        //   a large number of very active buckets.
 
         // Acquire write + access locks, and reference it in context
-        // Notice: write lock prevents graph to be acquired from any context
-        let _write = GRAPH_WRITE_LOCK.lock().unwrap();
+        // Notice: write lock prevents graph to be acquired from any context; while access lock \
+        //   lets the consolidate process wait that any thread using the graph is done with work.
+        let (_access, _write) = (
+            GRAPH_ACCESS_LOCK.write().unwrap(),
+            GRAPH_WRITE_LOCK.lock().unwrap(),
+        );
 
         let (mut count_moved, mut count_pushed, mut count_popped) = (0, 0, 0);
 
-        let mut graph_consolidate_write = GRAPH_CONSOLIDATE.write().unwrap();
-
-        if graph_consolidate_write.len() > 0 {
+        if GRAPH_CONSOLIDATE.read().unwrap().len() > 0 {
             let mut graph_pool_write = GRAPH_POOL.write().unwrap();
 
             // Prepare close stack (used once whole set is scanned)
-            let mut close_stack: Vec<&StoreFSTKey> = Vec::new();
+            let mut close_stack: Vec<StoreFSTKey> = Vec::new();
 
             // Proceed FST consolidation for each store key
-            for key in &*graph_consolidate_write {
-                if let Some(store) = graph_pool_write.get(&key) {
-                    let consolidate_counts = Self::consolidate_item(store);
+            {
+                let graph_consolidate_read = GRAPH_CONSOLIDATE.read().unwrap();
 
-                    count_moved += consolidate_counts.1;
-                    count_pushed += consolidate_counts.2;
-                    count_popped += consolidate_counts.3;
+                for key in &*graph_consolidate_read {
+                    if let Some(store) = graph_pool_write.get(&key) {
+                        let not_consolidated_for = store
+                            .last_consolidated
+                            .read()
+                            .unwrap()
+                            .elapsed()
+                            .unwrap()
+                            .as_secs();
 
-                    // Stack cached store close request?
-                    if consolidate_counts.0 == true {
-                        close_stack.push(&key);
+                        // Should we consolidate right now?
+                        if not_consolidated_for >= APP_CONF.store.fst.graph.consolidate_after {
+                            info!(
+                                "fst key: {:?} not consolidated for: {} seconds, may consolidate",
+                                key, not_consolidated_for
+                            );
+
+                            let consolidate_counts = Self::consolidate_item(store);
+
+                            count_moved += consolidate_counts.1;
+                            count_pushed += consolidate_counts.2;
+                            count_popped += consolidate_counts.3;
+
+                            // Stack cached store close request?
+                            if consolidate_counts.0 == true {
+                                // Notice: unfortunately we need to clone the key value there, as \
+                                //   we cannot reference the value and then use it to unassign \
+                                //   the reference from its set w/o breaking the borrow checker \
+                                //   rules. ie. there is just no other way around.
+                                close_stack.push(key.to_owned());
+                            }
+                        } else {
+                            debug!(
+                                "fst key: {:?} not consolidated for: {} seconds, no consolidate",
+                                key, not_consolidated_for
+                            );
+                        }
                     }
                 }
             }
 
             // Close all stacked stores
-            for close_item in close_stack {
-                graph_pool_write.remove(close_item);
-            }
+            {
+                let mut graph_consolidate_write = GRAPH_CONSOLIDATE.write().unwrap();
 
-            // Void the set of items to be consolidated (this has been processed)
-            *graph_consolidate_write = HashSet::new();
+                for close_item in close_stack {
+                    // Nuke old opened FST
+                    // Notice: last consolidated date will be bumped to a new date in the future \
+                    //   when a push or pop operation will be done, thus effectively scheduling a \
+                    //   consolidation in the future properly.
+                    graph_pool_write.remove(&close_item);
+
+                    // Void the set of items to be consolidated (this has been processed)
+                    graph_consolidate_write.remove(&close_item);
+                }
+            }
         }
 
         info!(
@@ -395,11 +433,16 @@ impl StoreFSTPool {
 
 impl StoreFSTBuilder {
     pub fn new(collection: &str, bucket: &str) -> Result<StoreFST, FSTError> {
-        Self::open(collection, bucket).map(|graph| StoreFST {
-            graph: graph,
-            target: (collection.to_string(), bucket.to_string()),
-            pending: StoreFSTPending::default(),
-            last_used: Arc::new(RwLock::new(SystemTime::now())),
+        Self::open(collection, bucket).map(|graph| {
+            let now = SystemTime::now();
+
+            StoreFST {
+                graph: graph,
+                target: (collection.to_string(), bucket.to_string()),
+                pending: StoreFSTPending::default(),
+                last_used: Arc::new(RwLock::new(now)),
+                last_consolidated: Arc::new(RwLock::new(now)),
+            }
         })
     }
 
@@ -504,6 +547,12 @@ impl StoreFST {
 
             // Schedule target for next consolidation tick (ie. collection + bucket tuple)
             graph_consolidate_write.insert(self.target.clone());
+
+            // Bump 'last consolidated' time, effectively de-bouncing consolidation to a fixed \
+            //   and predictible tick time in the future.
+            let mut last_consolidated_value = self.last_consolidated.write().unwrap();
+
+            mem::replace(&mut *last_consolidated_value, SystemTime::now());
 
             info!(
                 "graph consolidation scheduled on bucket: {} for collection: {}",

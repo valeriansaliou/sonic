@@ -62,3 +62,7 @@ pub fn store_kv_database_max_flushes() -> u16 {
 pub fn store_fst_pool_inactive_after() -> u64 {
     300
 }
+
+pub fn store_fst_graph_consolidate_after() -> u64 {
+    180
+}
