@@ -40,6 +40,8 @@ impl TokenLexerBuilder {
 
             // TODO: this takes a mean of 10ms to perform the ngram, this is not optimal at all \
             //   and may cause maximum RPS per thread issues.
+            // TODO: if we nuke all locale detection, the whole systems using the lexer can go \
+            //   under the millisecond in processing time.
 
             match lang_detect(text) {
                 Some(detector) => {
