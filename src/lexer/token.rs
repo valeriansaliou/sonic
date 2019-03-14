@@ -224,7 +224,7 @@ mod tests {
     #[test]
     fn it_cleans_token_mandarin() {
         let mut token_cleaner =
-            TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup, "快狐跨懒狗")
+            TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup, "快狐跨懒狗快狐跨懒狗")
                 .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Cmn));
