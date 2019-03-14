@@ -25,6 +25,18 @@ impl ConfigReader {
 
         debug!("read config file: {}", &APP_ARGS.config);
 
-        toml::from_str(&conf).expect("syntax error in config file")
+        // Parse configuration
+        let config = toml::from_str(&conf).expect("syntax error in config file");
+
+        // Validate configuration
+        Self::validate(&config);
+
+        config
+    }
+
+    fn validate(config: &Config) {
+        if config.store.fst.graph.consolidate_after >= config.store.fst.pool.inactive_after {
+            panic!("consolidate_after for fst must be strictly lower than inactive_after");
+        }
     }
 }
