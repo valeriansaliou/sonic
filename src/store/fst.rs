@@ -48,6 +48,8 @@ pub struct StoreFSTAction {
     store: StoreFSTBox,
 }
 
+pub struct StoreFSTMisc;
+
 #[derive(Copy, Clone)]
 enum StoreFSTPathMode {
     Permanent,
@@ -485,6 +487,10 @@ impl StoreFSTBuilder {
 }
 
 impl StoreFST {
+    pub fn cardinality(&self) -> usize {
+        self.graph.len()
+    }
+
     pub fn contains(&self, word: &str) -> bool {
         let word_bytes = word.as_bytes();
 
@@ -650,7 +656,10 @@ impl StoreFSTActionBuilder {
                     }
                 }
             } else {
-                warn!("failed reading directory: {:?}", collection_path);
+                warn!(
+                    "failed reading directory for erasure: {:?}",
+                    collection_path
+                );
             }
 
             // Force a FST graph close (on all contained buckets)
@@ -830,6 +839,10 @@ impl StoreFSTAction {
         }
     }
 
+    pub fn count_words(&self) -> usize {
+        self.store.cardinality()
+    }
+
     fn find_words_stream<A: Automaton>(
         mut stream: FSTStream<A>,
         found_words: &mut Vec<String>,
@@ -849,5 +862,45 @@ impl StoreFSTAction {
                 }
             }
         }
+    }
+}
+
+impl StoreFSTMisc {
+    pub fn count_collection_buckets<'a, T: Into<&'a str>>(collection: T) -> Result<usize, ()> {
+        let collection_str = collection.into();
+
+        let mut count = 0;
+
+        let path_mode = StoreFSTPathMode::Permanent;
+        let collection_path = StoreFSTBuilder::path(path_mode, collection_str, None);
+
+        if collection_path.exists() == true {
+            // Scan collection directory for contained buckets (count them)
+            if let Ok(entries) = fs::read_dir(&collection_path) {
+                let fst_extension = path_mode.extension();
+                let fst_extension_len = fst_extension.len();
+
+                for entry in entries {
+                    if let Ok(entry) = entry {
+                        if let Some(entry_name) = entry.file_name().to_str() {
+                            let entry_name_len = entry_name.len();
+
+                            // FST file found? This is a bucket.
+                            if entry_name_len > fst_extension_len
+                                && entry_name.ends_with(fst_extension) == true
+                            {
+                                count += 1;
+                            }
+                        }
+                    }
+                }
+            } else {
+                warn!("failed reading directory for count: {:?}", collection_path);
+
+                return Err(());
+            }
+        }
+
+        Ok(count)
     }
 }
