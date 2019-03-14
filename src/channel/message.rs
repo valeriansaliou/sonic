@@ -7,6 +7,7 @@
 use std::io::Write;
 use std::net::TcpStream;
 use std::str::{self, SplitWhitespace};
+use std::time::Instant;
 
 use super::command::{
     ChannelCommandBase, ChannelCommandError, ChannelCommandIngest, ChannelCommandResponse,
@@ -17,6 +18,8 @@ use crate::LINE_FEED;
 pub struct ChannelMessage;
 pub struct ChannelMessageModeSearch;
 pub struct ChannelMessageModeIngest;
+
+static COMMAND_ELAPSED_MILLIS_SLOW_WARN: u128 = 50;
 
 #[derive(PartialEq)]
 pub enum ChannelMessageResult {
@@ -36,6 +39,8 @@ impl ChannelMessage {
         let message = str::from_utf8(message_slice).unwrap_or("");
 
         debug!("got channel message: {}", message);
+
+        let command_start = Instant::now();
 
         let mut result = ChannelMessageResult::Continue;
 
@@ -79,6 +84,25 @@ impl ChannelMessage {
                     debug!("wrote response with no values: {}", response_args.0);
                 }
             }
+        }
+
+        // Measure and log time it took to execute command
+        // Notice: this is critical as to raise developer awareness on the performance bits when \
+        //   altering commands-related code, or when making changes to underlying store executors.
+        let command_took = command_start.elapsed();
+
+        if command_took.as_millis() >= COMMAND_ELAPSED_MILLIS_SLOW_WARN {
+            warn!(
+                "took a lot of time: {}ms to process channel message",
+                command_took.as_millis(),
+            );
+        } else {
+            info!(
+                "took {}ms/{}us/{}ns to process channel message",
+                command_took.as_millis(),
+                command_took.as_micros(),
+                command_took.as_nanos(),
+            );
         }
 
         return result;
