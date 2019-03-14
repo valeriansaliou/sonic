@@ -27,13 +27,19 @@ pub enum TokenLexerMode {
     NormalizeOnly,
 }
 
+static TEXT_LANG_DETECT_OVER_CHARS: usize = 20;
+
 impl TokenLexerBuilder {
     pub fn from(mode: TokenLexerMode, text: &str) -> Result<TokenLexer, ()> {
-        // Detect text language
-        // TODO: this takes a mean of 10ms to perform the ngram, this is not optimal at all and \
-        //   may cause maximum RPS per thread issues.
-        let locale = if mode == TokenLexerMode::NormalizeAndCleanup {
+        // Detect text language (if current lexer mode asks for a cleanup, and text is long-enough \
+        //   to allow the text locale detection system to function properly)
+        let locale = if mode == TokenLexerMode::NormalizeAndCleanup
+            && text.len() >= TEXT_LANG_DETECT_OVER_CHARS
+        {
             let ngram_start = Instant::now();
+
+            // TODO: this takes a mean of 10ms to perform the ngram, this is not optimal at all \
+            //   and may cause maximum RPS per thread issues.
 
             match lang_detect(text) {
                 Some(detector) => {
@@ -85,6 +91,8 @@ impl TokenLexerBuilder {
                 }
             }
         } else {
+            debug!("not detecting locale from lexer text: {}", text);
+
             // May be 'NormalizeOnly' mode; no need to perform a locale detection
             None
         };
