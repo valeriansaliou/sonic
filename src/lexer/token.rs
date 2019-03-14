@@ -15,76 +15,89 @@ use crate::store::identifiers::{StoreTermHash, StoreTermHashed};
 pub struct TokenLexerBuilder;
 
 pub struct TokenLexer<'a> {
+    mode: TokenLexerMode,
     locale: Option<Lang>,
     words: UnicodeWords<'a>,
     yields: HashSet<StoreTermHashed>,
 }
 
-impl TokenLexerBuilder {
-    pub fn from(text: &str) -> Result<TokenLexer, ()> {
-        let ngram_start = Instant::now();
+#[derive(PartialEq)]
+pub enum TokenLexerMode {
+    NormalizeAndCleanup,
+    NormalizeOnly,
+}
 
+impl TokenLexerBuilder {
+    pub fn from(mode: TokenLexerMode, text: &str) -> Result<TokenLexer, ()> {
         // Detect text language
         // TODO: this takes a mean of 10ms to perform the ngram, this is not optimal at all and \
         //   may cause maximum RPS per thread issues.
-        let locale = match lang_detect(text) {
-            Some(detector) => {
-                let mut locale = detector.lang();
+        let locale = if mode == TokenLexerMode::NormalizeAndCleanup {
+            let ngram_start = Instant::now();
 
-                let ngram_took = ngram_start.elapsed();
+            match lang_detect(text) {
+                Some(detector) => {
+                    let mut locale = detector.lang();
 
-                info!(
-                    "locale detected from lexer text: {} ({} from {} at {}/1 in {}s + {}ms)",
-                    text,
-                    locale,
-                    detector.script(),
-                    detector.confidence(),
-                    ngram_took.as_secs(),
-                    ngram_took.subsec_millis()
-                );
+                    let ngram_took = ngram_start.elapsed();
 
-                // Confidence is low, try to detect locale from stop-words.
-                if detector.is_reliable() == false {
-                    debug!(
-                        "trying to detect locale from stopwords, as locale is marked as unreliable"
+                    info!(
+                        "locale detected from lexer text: {} ({} from {} at {}/1 in {}s + {}ms)",
+                        text,
+                        locale,
+                        detector.script(),
+                        detector.confidence(),
+                        ngram_took.as_secs(),
+                        ngram_took.subsec_millis()
                     );
 
-                    let stopwords_start = Instant::now();
-
-                    // Better alternate locale found?
-                    if let Some(alternate_locale) =
-                        LexerStopWord::guess_lang(text, detector.script())
-                    {
-                        let stopwords_took = stopwords_start.elapsed();
-
-                        info!(
-                            "detected more accurate locale from stopwords: {} (took: {}s + {}ms)",
-                            alternate_locale,
-                            stopwords_took.as_secs(),
-                            stopwords_took.subsec_millis()
+                    // Confidence is low, try to detect locale from stop-words.
+                    if detector.is_reliable() == false {
+                        debug!(
+                            "trying to detect locale from stopwords, as locale is marked as unreliable"
                         );
 
-                        locale = alternate_locale;
+                        let stopwords_start = Instant::now();
+
+                        // Better alternate locale found?
+                        if let Some(alternate_locale) =
+                            LexerStopWord::guess_lang(text, detector.script())
+                        {
+                            let stopwords_took = stopwords_start.elapsed();
+
+                            info!(
+                                "detected more accurate locale from stopwords: {} (took: {}s + {}ms)",
+                                alternate_locale,
+                                stopwords_took.as_secs(),
+                                stopwords_took.subsec_millis()
+                            );
+
+                            locale = alternate_locale;
+                        }
                     }
+
+                    Some(locale)
                 }
+                None => {
+                    info!("no locale could be detected from lexer text: {}", text);
 
-                Some(locale)
+                    None
+                }
             }
-            None => {
-                info!("no locale could be detected from lexer text: {}", text);
-
-                None
-            }
+        } else {
+            // May be 'NormalizeOnly' mode; no need to perform a locale detection
+            None
         };
 
         // Build final token builder iterator
-        Ok(TokenLexer::new(text, locale))
+        Ok(TokenLexer::new(mode, text, locale))
     }
 }
 
 impl<'a> TokenLexer<'a> {
-    fn new(text: &'a str, locale: Option<Lang>) -> TokenLexer<'a> {
+    fn new(mode: TokenLexerMode, text: &'a str, locale: Option<Lang>) -> TokenLexer<'a> {
         TokenLexer {
+            mode: mode,
             locale: locale,
             words: text.unicode_words(),
             yields: HashSet::new(),
@@ -107,8 +120,10 @@ impl<'a> Iterator for TokenLexer<'a> {
             //   to a heap-indexed String; as lower-cased characters may change in bit size.
             let word = word.to_lowercase();
 
-            // Check if normalized word is a stop-word?
-            if LexerStopWord::is(&word, self.locale) == false {
+            // Check if normalized word is a stop-word? (if should normalize and cleanup)
+            if self.mode != TokenLexerMode::NormalizeAndCleanup
+                || LexerStopWord::is(&word, self.locale) == false
+            {
                 // Hash the term (this is used by all iterator consumers, as well as internally \
                 //   in the iterator to keep track of already-yielded words in a space-optimized \
                 //   manner, ie. by using 32-bit unsigned integer hashes)
@@ -145,8 +160,11 @@ mod tests {
 
     #[test]
     fn it_cleans_token_english() {
-        let mut token_cleaner =
-            TokenLexerBuilder::from("The quick brown fox jumps over the lazy dog!").unwrap();
+        let mut token_cleaner = TokenLexerBuilder::from(
+            TokenLexerMode::NormalizeAndCleanup,
+            "The quick brown fox jumps over the lazy dog!",
+        )
+        .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Eng));
         assert_eq!(
@@ -166,9 +184,11 @@ mod tests {
 
     #[test]
     fn it_cleans_token_french() {
-        let mut token_cleaner =
-            TokenLexerBuilder::from("Le vif renard brun saute par dessus le chien paresseux.")
-                .unwrap();
+        let mut token_cleaner = TokenLexerBuilder::from(
+            TokenLexerMode::NormalizeAndCleanup,
+            "Le vif renard brun saute par dessus le chien paresseux.",
+        )
+        .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Fra));
         assert_eq!(
@@ -193,7 +213,9 @@ mod tests {
 
     #[test]
     fn it_cleans_token_mandarin() {
-        let mut token_cleaner = TokenLexerBuilder::from("快狐跨懒狗").unwrap();
+        let mut token_cleaner =
+            TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup, "快狐跨懒狗")
+                .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Cmn));
         assert_eq!(token_cleaner.next(), Some(("快".to_string(), 126546256)));
@@ -206,8 +228,11 @@ mod tests {
 
     #[test]
     fn it_cleans_token_emojis() {
-        let mut token_cleaner =
-            TokenLexerBuilder::from("🚀 🙋‍♂️🙋‍♂️🙋‍♂️").unwrap();
+        let mut token_cleaner = TokenLexerBuilder::from(
+            TokenLexerMode::NormalizeAndCleanup,
+            "🚀 🙋‍♂️🙋‍♂️🙋‍♂️",
+        )
+        .unwrap();
 
         assert_eq!(token_cleaner.locale, None);
         assert_eq!(token_cleaner.next(), None);
