@@ -237,6 +237,7 @@ _The Sonic Channel Ingest mode is used for altering the search index (push, pop 
 * `FLUSHC`: Flush all indexed data from a collection (syntax: `FLUSHC <collection>`)
 * `FLUSHB`: Flush all indexed data from a bucket in a collection (syntax: `FLUSHB <collection> <bucket>`)
 * `FLUSHO`: Flush all indexed data from an object in a bucket in collection (syntax: `FLUSHO <collection> <bucket> <object>`)
+* `TRIGGER`: trigger an action (syntax: `TRIGGER [<action>]?`)
 * `PING`: ping server (syntax: `PING`)
 * `HELP`: show help (syntax: `HELP [<manual>]?`)
 * `QUIT`: stop connection (syntax: `QUIT`)

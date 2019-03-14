@@ -177,7 +177,7 @@ impl StoreFSTPool {
         );
     }
 
-    pub fn consolidate() {
+    pub fn consolidate(force: bool) {
         debug!("scanning for fst store pool items to consolidate");
 
         // Notice: we do not consolidate all items at each tick, we try to even out multiple \
@@ -216,7 +216,9 @@ impl StoreFSTPool {
                             .as_secs();
 
                         // Should we consolidate right now?
-                        if not_consolidated_for >= APP_CONF.store.fst.graph.consolidate_after {
+                        if force == true
+                            || not_consolidated_for >= APP_CONF.store.fst.graph.consolidate_after
+                        {
                             info!(
                                 "fst key: {:?} not consolidated for: {} seconds, may consolidate",
                                 key, not_consolidated_for

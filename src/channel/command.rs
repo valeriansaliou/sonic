@@ -13,6 +13,7 @@ use std::vec::Vec;
 use super::format::unescape;
 use crate::query::builder::{QueryBuilder, QueryBuilderResult};
 use crate::query::types::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
+use crate::store::fst::StoreFSTPool;
 use crate::store::operation::StoreOperationDispatch;
 use crate::APP_CONF;
 
@@ -57,8 +58,10 @@ const META_PART_GROUP_CLOSE: char = ')';
 lazy_static! {
     pub static ref COMMANDS_MODE_SEARCH: Vec<&'static str> =
         vec!["QUERY", "SUGGEST", "PING", "HELP", "QUIT"];
-    pub static ref COMMANDS_MODE_INGEST: Vec<&'static str> =
-        vec!["PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT"];
+    pub static ref COMMANDS_MODE_INGEST: Vec<&'static str> = vec![
+        "PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "TRIGGER", "PING", "HELP", "QUIT"
+    ];
+    pub static ref INGEST_TRIGGER_ACTIONS: Vec<&'static str> = vec!["consolidate"];
     static ref MANUAL_MODE_SEARCH: HashMap<&'static str, &'static Vec<&'static str>> =
         [("commands", &*COMMANDS_MODE_SEARCH)]
             .iter()
@@ -642,6 +645,32 @@ impl ChannelCommandIngest {
             _ => Err(ChannelCommandError::InvalidFormat(
                 "FLUSHO <collection> <bucket> <object>",
             )),
+        }
+    }
+
+    pub fn dispatch_trigger(mut parts: SplitWhitespace) -> ChannelResult {
+        match (parts.next(), parts.next()) {
+            (None, _) => Ok(vec![ChannelCommandResponse::Result(format!(
+                "actions({})",
+                INGEST_TRIGGER_ACTIONS.join(", ")
+            ))]),
+            (Some(action_key), next_part) => {
+                if next_part.is_none() == true {
+                    let action_key_lower = action_key.to_lowercase();
+
+                    match action_key_lower.as_str() {
+                        "consolidate" => {
+                            // Force a FST consolidate
+                            StoreFSTPool::consolidate(true);
+
+                            Ok(vec![ChannelCommandResponse::Ok])
+                        }
+                        _ => Err(ChannelCommandError::NotFound),
+                    }
+                } else {
+                    Err(ChannelCommandError::InvalidFormat("HELP [<action>]?"))
+                }
+            }
         }
     }
 

@@ -53,6 +53,6 @@ impl Tasker {
         StoreFSTPool::janitor();
 
         // #2: Others
-        StoreFSTPool::consolidate();
+        StoreFSTPool::consolidate(false);
     }
 }

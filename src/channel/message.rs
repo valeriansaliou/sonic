@@ -132,6 +132,7 @@ impl ChannelMessageMode for ChannelMessageModeIngest {
                 "FLUSHC" => ChannelCommandIngest::dispatch_flushc(parts),
                 "FLUSHB" => ChannelCommandIngest::dispatch_flushb(parts),
                 "FLUSHO" => ChannelCommandIngest::dispatch_flusho(parts),
+                "TRIGGER" => ChannelCommandIngest::dispatch_trigger(parts),
                 "PING" => ChannelCommandBase::dispatch_ping(parts),
                 "HELP" => ChannelCommandIngest::dispatch_help(parts),
                 "QUIT" => ChannelCommandBase::dispatch_quit(parts),
