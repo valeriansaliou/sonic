@@ -27,7 +27,9 @@ impl ExecutorCount {
                     // Try to resolve existing OID to IID
                     let oid = object.as_str().to_owned();
 
-                    kv_action.get_oid_to_iid(&oid).unwrap_or(None)
+                    kv_action
+                        .get_oid_to_iid(&oid)
+                        .unwrap_or(None)
                         .map(|iid| {
                             // List terms for IID
                             if let Some(terms) = kv_action.get_iid_to_terms(iid).unwrap_or(None) {
