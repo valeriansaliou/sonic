@@ -20,7 +20,9 @@ impl ExecutorCount {
                 if let Ok(_kv_store) = StoreKVPool::acquire(collection) {
                     // let kv_action = StoreKVActionBuilder::read(bucket, kv_store);
 
-                    // TODO
+                    // TODO: if object, count terms in object (from kv directly)
+                    // TODO: if bucket, count terms (from fst directly)
+                    // TODO: if collection, count buckets (from fs directly)
 
                     // TODO
                     return Ok(0);

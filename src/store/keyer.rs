@@ -27,6 +27,7 @@ enum StoreKeyerIdx<'a> {
 }
 
 type StoreKeyerKey = [u8; 9];
+pub type StoreKeyerPrefix = [u8; 5];
 
 impl<'a> StoreKeyerIdx<'a> {
     pub fn to_index(&self) -> u8 {
@@ -114,6 +115,18 @@ impl StoreKeyerBuilder {
 impl StoreKeyer {
     pub fn as_bytes(&self) -> StoreKeyerKey {
         self.key
+    }
+
+    pub fn as_prefix(&self) -> StoreKeyerPrefix {
+        // Prefix format: [idx<1B> | bucket<4B>]
+
+        [
+            self.key[0],
+            self.key[1],
+            self.key[2],
+            self.key[3],
+            self.key[4],
+        ]
     }
 }
 

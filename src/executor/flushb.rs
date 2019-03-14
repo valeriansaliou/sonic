@@ -18,16 +18,12 @@ impl ExecutorFlushB {
             let _kv_access = STORE_ACCESS_LOCK.read().unwrap();
 
             if let Ok(kv_store) = StoreKVPool::acquire(collection) {
-                let _kv_action = StoreKVActionBuilder::write(bucket, kv_store);
+                let kv_action = StoreKVActionBuilder::write(bucket, kv_store);
 
-                // TODO: begin database lock (mutex on collection database acquire fn)
-                // TODO: force a rocksdb database fd close
-                // TODO: remove whole database from file system
-                // TODO: end database lock (mutex on collection database acquire fn)
-
-                if StoreFSTActionBuilder::erase(collection, Some(bucket)).is_ok() == true {
-                    // TODO: erase on key-value store also
-                    return Ok(0);
+                if let Ok(erase_count) = kv_action.batch_erase_bucket() {
+                    if StoreFSTActionBuilder::erase(collection, Some(bucket)).is_ok() == true {
+                        return Ok(erase_count);
+                    }
                 }
             }
         }

@@ -18,7 +18,7 @@ use std::time::SystemTime;
 
 use super::identifiers::*;
 use super::item::StoreItemPart;
-use super::keyer::StoreKeyerBuilder;
+use super::keyer::{StoreKeyerBuilder, StoreKeyerPrefix};
 use crate::APP_CONF;
 
 pub struct StoreKVPool;
@@ -626,6 +626,90 @@ impl<'a> StoreKVAction<'a> {
             }
             _ => Err(()),
         }
+    }
+
+    pub fn batch_erase_bucket(&self) -> Result<u32, ()> {
+        let mut count = 0;
+
+        // Generate all key prefix values (with dummy post-prefix values; we dont care)
+        let (k_meta_to_value, k_term_to_iids, k_oid_to_iid, k_iid_to_oid, k_iid_to_terms) = (
+            StoreKeyerBuilder::meta_to_value(self.bucket.as_str(), &StoreMetaKey::IIDIncr),
+            StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), 0),
+            StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), &String::new()),
+            StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), 0),
+            StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), 0),
+        );
+
+        let key_prefixes: [StoreKeyerPrefix; 5] = [
+            k_meta_to_value.as_prefix(),
+            k_term_to_iids.as_prefix(),
+            k_oid_to_iid.as_prefix(),
+            k_iid_to_oid.as_prefix(),
+            k_iid_to_terms.as_prefix(),
+        ];
+
+        // Scan all keys per-prefix and nuke them right away
+        for key_prefix in &key_prefixes {
+            debug!(
+                "store batch erase bucket: {} for prefix: {:?}",
+                self.bucket.as_str(),
+                key_prefix
+            );
+
+            // Open database key prefix iterator
+            let mut db_prefix_iter = self.store.database.raw_iterator();
+
+            // Seek the first key starting with prefix; if the database is large, this saves a bit \
+            //   of search time (ie. iterations).
+            db_prefix_iter.seek(key_prefix);
+
+            // Check entry key (was the key found on first seek? do not engage in a loop if not)
+            if db_prefix_iter.valid() == true {
+                if let Some(first_found_key) = db_prefix_iter.key() {
+                    if first_found_key.starts_with(key_prefix) == true {
+                        // Engage in the scan loop (as the first key could be seeked)
+                        while db_prefix_iter.valid() == true {
+                            if let Some(found_key) = db_prefix_iter.key() {
+                                // Found prefix key?
+                                if found_key.starts_with(key_prefix) == true {
+                                    debug!(
+                                        "store batch erase bucket: {} found key: {:?} (iter: {})",
+                                        self.bucket.as_str(),
+                                        found_key,
+                                        count
+                                    );
+
+                                    // Remove key, and seek next matching key (until we hit against last match)
+                                    if self.store.database.delete(found_key).is_ok() == false {
+                                        // Error deleting the key, abort flush there.
+                                        return Err(());
+                                    }
+
+                                    count += 1;
+                                }
+
+                                db_prefix_iter.next();
+                            }
+                        }
+                    } else {
+                        info!(
+                            "store batch erase bucket: {} done as first key: {:?} no match: {:?}",
+                            self.bucket.as_str(),
+                            first_found_key,
+                            key_prefix
+                        );
+                    }
+                }
+            }
+        }
+
+        info!(
+            "done processing store batch erase bucket: {}; affected {} keys",
+            self.bucket.as_str(),
+            count
+        );
+
+        Ok(count)
     }
 
     fn encode_u32(decoded: u32) -> [u8; 4] {
