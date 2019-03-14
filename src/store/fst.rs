@@ -493,25 +493,6 @@ impl StoreFST {
         self.graph.len()
     }
 
-    pub fn contains(&self, word: &str) -> bool {
-        let word_bytes = word.as_bytes();
-
-        debug!("checking if fst contains word: {}", word);
-
-        // 1. Check in 'pop' set (if value is inside, it means it should not exist)
-        if self.pending.pop.read().unwrap().contains(word_bytes) == true {
-            return false;
-        }
-
-        // 2. Check in 'push' set (if value is inside, it means it should exist)
-        if self.pending.push.read().unwrap().contains(word_bytes) == true {
-            return true;
-        }
-
-        // 3. Check in 'fst' (final consolidated graph)
-        self.graph.contains(word)
-    }
-
     pub fn lookup_begins(&self, word: &str) -> Result<FSTStream<Regex>, ()> {
         let regex_str = format!("{}.*", regex_escape(word));
 
@@ -748,10 +729,6 @@ impl StoreFSTActionBuilder {
 }
 
 impl StoreFSTAction {
-    // TODO: == Add FST to the following: ==
-    // TODO: CHANNEL FLUSHO -> pop_word for each word
-    // TODO: CHANNEL SEARCH -> complete not-found words via FST +/ levenshtein distance complete
-
     pub fn push_word(&self, word: &str) -> bool {
         let word_bytes = word.as_bytes();
 
@@ -808,11 +785,6 @@ impl StoreFSTAction {
             // Not popped
             false
         }
-    }
-
-    pub fn has_word(&self, word: &str) -> bool {
-        // Notice: this method checks if word exists either in un-commited or commited stores.
-        self.store.contains(word)
     }
 
     pub fn suggest_words(&self, from_word: &str, limit: usize) -> Option<Vec<String>> {
