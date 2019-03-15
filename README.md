@@ -196,8 +196,8 @@ T2: Trying ::1...
 T3: Connected to sonic.local.
 T4: Escape character is '^]'.
 T5: CONNECTED <sonic-server v1.0.0>
-T6: START search
-T7: STARTED
+T6: START search SecretPassword
+T7: STARTED search protocol(1) buffer(20000)
 T8: QUERY messages user:0dcde3a6 "valerian saliou" LIMIT(10)
 T9: PENDING Bt2m2gYa
 T10: EVENT QUERY Bt2m2gYa conversation:71f3d63b conversation:6501e83a
@@ -261,8 +261,8 @@ T2: Trying ::1...
 T3: Connected to sonic.local.
 T4: Escape character is '^]'.
 T5: CONNECTED <sonic-server v1.0.0>
-T6: START ingest
-T7: STARTED
+T6: START ingest SecretPassword
+T7: STARTED ingest protocol(1) buffer(20000)
 T8: PUSH messages user:0dcde3a6 conversation:71f3d63b Hey Valerian
 T9: ERR invalid_format(PUSH <collection> <bucket> <object> "<text>")
 T10: PUSH messages user:0dcde3a6 conversation:71f3d63b "Hello Valerian Saliou, how are you today?"
