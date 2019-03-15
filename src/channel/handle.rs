@@ -36,6 +36,7 @@ const BUFFER_SIZE: usize = 20000;
 const MAX_LINE_SIZE: usize = BUFFER_SIZE + LINE_END_GAP + 1;
 const TCP_TIMEOUT_NON_ESTABLISHED: u64 = 10;
 
+static PROTOCOL_REVISION: u8 = 1;
 static BUFFER_LINE_SEPARATOR: u8 = '\n' as u8;
 
 lazy_static! {
@@ -76,8 +77,16 @@ impl ChannelHandle {
                 // Configure stream (established)
                 ChannelHandle::configure_stream(&stream, true);
 
-                // Send started acknowledgement
-                write!(stream, "STARTED {}{}", mode.to_str(), LINE_FEED).expect("write failed");
+                // Send started acknowledgement (with environment variables)
+                write!(
+                    stream,
+                    "STARTED {} protocol({}) buffer({}){}",
+                    mode.to_str(),
+                    PROTOCOL_REVISION,
+                    BUFFER_SIZE,
+                    LINE_FEED
+                )
+                .expect("write failed");
 
                 // Initialize packet buffer
                 let mut buffer = Vec::new();

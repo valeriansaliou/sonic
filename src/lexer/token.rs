@@ -38,11 +38,6 @@ impl TokenLexerBuilder {
         {
             let ngram_start = Instant::now();
 
-            // TODO: this takes a mean of 10ms to perform the ngram, this is not optimal at all \
-            //   and may cause maximum RPS per thread issues.
-            // TODO: if we nuke all locale detection, the whole systems using the lexer can go \
-            //   under the millisecond in processing time.
-
             match lang_detect(text) {
                 Some(detector) => {
                     let mut locale = detector.lang();
@@ -223,9 +218,11 @@ mod tests {
 
     #[test]
     fn it_cleans_token_mandarin() {
-        let mut token_cleaner =
-            TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup, "快狐跨懒狗快狐跨懒狗")
-                .unwrap();
+        let mut token_cleaner = TokenLexerBuilder::from(
+            TokenLexerMode::NormalizeAndCleanup,
+            "快狐跨懒狗快狐跨懒狗",
+        )
+        .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Cmn));
         assert_eq!(token_cleaner.next(), Some(("快".to_string(), 126546256)));
