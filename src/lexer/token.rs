@@ -27,6 +27,7 @@ pub enum TokenLexerMode {
     NormalizeOnly,
 }
 
+static TEXT_LANG_TRUNCATE_OVER_CHARS: usize = 200;
 static TEXT_LANG_DETECT_OVER_CHARS: usize = 20;
 
 impl TokenLexerBuilder {
@@ -38,7 +39,15 @@ impl TokenLexerBuilder {
         {
             let ngram_start = Instant::now();
 
-            match lang_detect(text) {
+            // Truncate text if necessary, as to avoid the ngram or stopwords detector to be \
+            //   ran on more words than those that are enough to reliably detect a locale.
+            let safe_text = if text.len() > TEXT_LANG_TRUNCATE_OVER_CHARS {
+                &text[0..TEXT_LANG_TRUNCATE_OVER_CHARS]
+            } else {
+                text
+            };
+
+            match lang_detect(safe_text) {
                 Some(detector) => {
                     let mut locale = detector.lang();
 
@@ -64,7 +73,7 @@ impl TokenLexerBuilder {
 
                         // Better alternate locale found?
                         if let Some(alternate_locale) =
-                            LexerStopWord::guess_lang(text, detector.script())
+                            LexerStopWord::guess_lang(safe_text, detector.script())
                         {
                             let stopwords_took = stopwords_start.elapsed();
 
