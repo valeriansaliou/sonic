@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::SystemTime;
 
 use super::identifiers::*;
-use super::keyer::StoreKeyerBuilder;
+use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher};
 use crate::APP_CONF;
 
 pub struct StoreKVPool;
@@ -40,8 +40,9 @@ pub enum StoreKVAcquireMode {
     OpenOnly,
 }
 
+type StoreKVAtom = u32;
 type StoreKVBox = Arc<StoreKV>;
-type StoreKVKey = (String, String);
+type StoreKVKey = (StoreKVAtom, StoreKVAtom);
 
 lazy_static! {
     pub static ref STORE_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
@@ -57,7 +58,11 @@ impl StoreKVPool {
         bucket: T,
     ) -> Result<Option<StoreKVBox>, DBError> {
         let (collection_str, bucket_str) = (collection.into(), bucket.into());
-        let pool_key = (collection_str.to_string(), bucket_str.to_string());
+
+        let pool_key = (
+            StoreKeyerHasher::to_compact(collection_str),
+            StoreKeyerHasher::to_compact(bucket_str),
+        );
 
         // Acquire general lock, and reference it in context
         // Notice: this prevents database to be opened while also erased; or 2 databases on the \
@@ -69,8 +74,8 @@ impl StoreKVPool {
 
         if let Some(store_kv) = store_pool_read.get(&pool_key) {
             debug!(
-                "kv store acquired from pool for collection: {} and bucket: {}",
-                collection_str, bucket_str
+                "kv store acquired from pool for collection: {} <{:x?}> / bucket: {} <{:x?}>",
+                collection_str, pool_key.0, bucket_str, pool_key.1
             );
 
             // Bump store last used date (avoids early janitor eviction)
@@ -84,13 +89,13 @@ impl StoreKVPool {
             Ok(Some(store_kv.clone()))
         } else {
             info!(
-                "kv store not in pool for collection: {} and bucket: {}, opening it",
-                collection_str, bucket_str
+                "kv store not in pool for collection: {} <{:x?}> / bucket: {} <{:x?}>, opening it",
+                collection_str, pool_key.0, bucket_str, pool_key.1
             );
 
             // Check if can open database?
             let can_open_db = if mode == StoreKVAcquireMode::OpenOnly {
-                StoreKVBuilder::path(collection_str, Some(bucket_str)).exists()
+                StoreKVBuilder::path(pool_key.0, Some(pool_key.1)).exists()
             } else {
                 true
             };
@@ -99,7 +104,7 @@ impl StoreKVPool {
             //   the database does not exist yet on disk and we are just looking to read data from \
             //   it)
             if can_open_db == true {
-                match StoreKVBuilder::new(collection_str, bucket_str) {
+                match StoreKVBuilder::new(collection_str, &pool_key) {
                     Ok(store_kv) => {
                         // Important: we need to drop the read reference first, to avoid \
                         //   dead-locking when acquiring the RWLock in write mode in this block.
@@ -144,13 +149,13 @@ impl StoreKVPool {
 
             if last_used.elapsed().unwrap().as_secs() >= APP_CONF.store.kv.pool.inactive_after {
                 debug!(
-                    "found expired kv store pool item: {}/{} with last used time: {:?}",
+                    "found expired kv store pool item: <{:x?}>/<{:x?}>; last used time: {:?}",
                     &collection_bucket.0, &collection_bucket.1, last_used
                 );
 
                 // Notice: the bucket value needs to be cloned, as we cannot reference as value \
                 //   that will outlive referenced value once we remove it from its owner set.
-                removal_register.push(collection_bucket.to_owned());
+                removal_register.push(*collection_bucket);
             }
         }
 
@@ -167,28 +172,32 @@ impl StoreKVPool {
 }
 
 impl StoreKVBuilder {
-    pub fn new(collection: &str, bucket: &str) -> Result<StoreKV, DBError> {
-        Self::open(collection, bucket).map(|db| StoreKV {
+    pub fn new(collection: &str, target: &(StoreKVAtom, StoreKVAtom)) -> Result<StoreKV, DBError> {
+        Self::open(collection, target).map(|db| StoreKV {
             database: db,
             last_used: Arc::new(RwLock::new(SystemTime::now())),
         })
     }
 
-    fn open(collection: &str, bucket: &str) -> Result<DB, DBError> {
+    fn open(collection: &str, target: &(StoreKVAtom, StoreKVAtom)) -> Result<DB, DBError> {
         debug!("opening key-value database for collection: {}", collection);
 
         // Configure database options
         let db_options = Self::configure();
 
         // Open database at path for collection
-        DB::open(&db_options, Self::path(collection, Some(bucket)))
+        DB::open(&db_options, Self::path(target.0, Some(target.1)))
     }
 
-    fn path(collection: &str, bucket: Option<&str>) -> PathBuf {
-        let mut final_path = APP_CONF.store.kv.path.join(collection);
+    fn path(collection_hash: StoreKVAtom, bucket_hash: Option<StoreKVAtom>) -> PathBuf {
+        let mut final_path = APP_CONF
+            .store
+            .kv
+            .path
+            .join(format!("{:x?}", collection_hash));
 
-        if let Some(bucket) = bucket {
-            final_path = final_path.join(bucket);
+        if let Some(bucket_hash) = bucket_hash {
+            final_path = final_path.join(format!("{:x?}", bucket_hash));
         }
 
         final_path
@@ -284,7 +293,8 @@ impl StoreKVActionBuilder {
     }
 
     fn erase_collection(collection_str: &str) -> Result<u32, ()> {
-        let collection_path = StoreKVBuilder::path(collection_str, None);
+        let collection_atom = StoreKeyerHasher::to_compact(collection_str);
+        let collection_path = StoreKVBuilder::path(collection_atom, None);
 
         if collection_path.exists() == true {
             debug!(
@@ -318,19 +328,14 @@ impl StoreKVActionBuilder {
             {
                 let mut store_pool_write = STORE_POOL.write().unwrap();
 
-                // Share this to avoid allocating a new collection string at each iteration, which \
-                //   can generate a lot of heap activity in large collections.
-                let mut shared_target = (collection_str.to_string(), String::new());
-
                 for bucket in buckets {
                     debug!(
                         "forcibly closing kv store bucket: {}/{}",
                         collection_str, bucket
                     );
 
-                    shared_target.1 = bucket;
-
-                    store_pool_write.remove(&shared_target);
+                    store_pool_write
+                        .remove(&(collection_atom, StoreKeyerHasher::to_compact(&bucket)));
                 }
             }
 
@@ -360,7 +365,12 @@ impl StoreKVActionBuilder {
             bucket_str, collection_str
         );
 
-        let bucket_path = StoreKVBuilder::path(collection_str, Some(bucket_str));
+        let (collection_atom, bucket_atom) = (
+            StoreKeyerHasher::to_compact(collection_str),
+            StoreKeyerHasher::to_compact(collection_str),
+        );
+
+        let bucket_path = StoreKVBuilder::path(collection_atom, Some(bucket_atom));
 
         if bucket_path.exists() == true {
             debug!(
@@ -373,7 +383,7 @@ impl StoreKVActionBuilder {
                 STORE_POOL
                     .write()
                     .unwrap()
-                    .remove(&(collection_str.to_string(), bucket_str.to_string()));
+                    .remove(&(collection_atom, bucket_atom));
             }
 
             // Remove KV store storage from filesystem

@@ -18,6 +18,8 @@ pub struct StoreKeyer {
     key: StoreKeyerKey,
 }
 
+pub struct StoreKeyerHasher;
+
 enum StoreKeyerIdx<'a> {
     MetaToValue(&'a StoreMetaKey),
     TermToIIDs(StoreTermHashed),
@@ -91,23 +93,25 @@ impl StoreKeyerBuilder {
         match idx {
             StoreKeyerIdx::MetaToValue(route) => route.as_u32(),
             StoreKeyerIdx::TermToIIDs(route) => *route,
-            StoreKeyerIdx::OIDToIID(route) => Self::hash_compact(route),
+            StoreKeyerIdx::OIDToIID(route) => StoreKeyerHasher::to_compact(route),
             StoreKeyerIdx::IIDToOID(route) => *route,
             StoreKeyerIdx::IIDToTerms(route) => *route,
         }
-    }
-
-    fn hash_compact(part: &str) -> u32 {
-        let mut hasher = XxHash32::with_seed(0);
-
-        hasher.write(part.as_bytes());
-        hasher.finish() as u32
     }
 }
 
 impl StoreKeyer {
     pub fn as_bytes(&self) -> StoreKeyerKey {
         self.key
+    }
+}
+
+impl StoreKeyerHasher {
+    pub fn to_compact(part: &str) -> u32 {
+        let mut hasher = XxHash32::with_seed(0);
+
+        hasher.write(part.as_bytes());
+        hasher.finish() as u32
     }
 }
 
