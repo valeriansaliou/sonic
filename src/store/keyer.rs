@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn it_keys_meta_to_value() {
         assert_eq!(
-            StoreKeyerBuilder::meta_to_value("user:0dcde3a6", &StoreMetaKey::IIDIncr).as_bytes(),
+            StoreKeyerBuilder::meta_to_value(&StoreMetaKey::IIDIncr).as_bytes(),
             [0, 0, 0, 0, 0]
         );
     }
@@ -137,11 +137,11 @@ mod tests {
     #[test]
     fn it_keys_term_to_iids() {
         assert_eq!(
-            StoreKeyerBuilder::term_to_iids("user:0dcde3a6", 772137347).as_bytes(),
+            StoreKeyerBuilder::term_to_iids(772137347).as_bytes(),
             [1, 131, 225, 5, 46]
         );
         assert_eq!(
-            StoreKeyerBuilder::term_to_iids("default", 3582484684).as_bytes(),
+            StoreKeyerBuilder::term_to_iids(3582484684).as_bytes(),
             [1, 204, 96, 136, 213]
         );
     }
@@ -149,8 +149,7 @@ mod tests {
     #[test]
     fn it_keys_oid_to_iid() {
         assert_eq!(
-            StoreKeyerBuilder::oid_to_iid("user:0dcde3a6", &"conversation:6501e83a".to_string())
-                .as_bytes(),
+            StoreKeyerBuilder::oid_to_iid(&"conversation:6501e83a".to_string()).as_bytes(),
             [2, 31, 156, 118, 213]
         );
     }
@@ -158,7 +157,7 @@ mod tests {
     #[test]
     fn it_keys_iid_to_oid() {
         assert_eq!(
-            StoreKeyerBuilder::iid_to_oid("user:0dcde3a6", 10292198).as_bytes(),
+            StoreKeyerBuilder::iid_to_oid(10292198).as_bytes(),
             [3, 230, 11, 157, 0]
         );
     }
@@ -166,11 +165,11 @@ mod tests {
     #[test]
     fn it_keys_iid_to_terms() {
         assert_eq!(
-            StoreKeyerBuilder::iid_to_terms("user:0dcde3a6", 1).as_bytes(),
+            StoreKeyerBuilder::iid_to_terms(1).as_bytes(),
             [4, 1, 0, 0, 0]
         );
         assert_eq!(
-            StoreKeyerBuilder::iid_to_terms("user:0dcde3a6", 20).as_bytes(),
+            StoreKeyerBuilder::iid_to_terms(20).as_bytes(),
             [4, 20, 0, 0, 0]
         );
     }
