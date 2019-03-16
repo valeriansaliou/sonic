@@ -6,7 +6,7 @@
 
 use crate::lexer::token::TokenLexer;
 use crate::query::types::QuerySearchID;
-use crate::store::fst::{StoreFSTActionBuilder, StoreFSTPool, GRAPH_ACCESS_LOCK};
+use crate::store::fst::{StoreFSTActionBuilder, StoreFSTPool};
 use crate::store::item::StoreItem;
 
 pub struct ExecutorSuggest;
@@ -22,7 +22,7 @@ impl ExecutorSuggest {
         if let StoreItem(collection, Some(bucket), None) = store {
             // Important: acquire graph access read lock, and reference it in context. This \
             //   prevents the graph from being erased while using it in this block.
-            let _fst_access = GRAPH_ACCESS_LOCK.read().unwrap();
+            general_fst_access_lock_read!();
 
             if let Ok(fst_store) = StoreFSTPool::acquire(collection, bucket) {
                 let fst_action = StoreFSTActionBuilder::access(fst_store);

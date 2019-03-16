@@ -4,11 +4,11 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use crate::store::fst::StoreFSTPool;
 use crate::store::fst::{StoreFSTActionBuilder, StoreFSTMisc};
-use crate::store::fst::{StoreFSTPool, GRAPH_ACCESS_LOCK};
 use crate::store::item::StoreItem;
 use crate::store::kv::StoreKVActionBuilder;
-use crate::store::kv::{StoreKVAcquireMode, StoreKVPool, STORE_ACCESS_LOCK};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVPool};
 
 pub struct ExecutorCount;
 
@@ -19,7 +19,7 @@ impl ExecutorCount {
             StoreItem(collection, Some(bucket), Some(object)) => {
                 // Important: acquire database access read lock, and reference it in context. This \
                 //   prevents the database from being erased while using it in this block.
-                let _kv_access = STORE_ACCESS_LOCK.read().unwrap();
+                general_kv_access_lock_read!();
 
                 if let Ok(kv_store) =
                     StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection, bucket)
@@ -53,7 +53,7 @@ impl ExecutorCount {
             StoreItem(collection, Some(bucket), None) => {
                 // Important: acquire graph access read lock, and reference it in context. This \
                 //   prevents the graph from being erased while using it in this block.
-                let _fst_access = GRAPH_ACCESS_LOCK.read().unwrap();
+                general_fst_access_lock_read!();
 
                 if let Ok(fst_store) = StoreFSTPool::acquire(collection, bucket) {
                     let fst_action = StoreFSTActionBuilder::access(fst_store);

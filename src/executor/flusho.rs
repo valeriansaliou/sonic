@@ -5,7 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::store::item::StoreItem;
-use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVPool, STORE_ACCESS_LOCK};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVPool};
 
 pub struct ExecutorFlushO;
 
@@ -14,7 +14,7 @@ impl ExecutorFlushO {
         if let StoreItem(collection, Some(bucket), Some(object)) = store {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
-            let _kv_access = STORE_ACCESS_LOCK.read().unwrap();
+            general_kv_access_lock_read!();
 
             if let Ok(kv_store) =
                 StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection, bucket)

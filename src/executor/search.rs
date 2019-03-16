@@ -9,10 +9,10 @@ use std::iter::FromIterator;
 
 use crate::lexer::token::TokenLexer;
 use crate::query::types::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
-use crate::store::fst::{StoreFSTActionBuilder, StoreFSTPool, GRAPH_ACCESS_LOCK};
+use crate::store::fst::{StoreFSTActionBuilder, StoreFSTPool};
 use crate::store::identifiers::{StoreObjectIID, StoreTermHash};
 use crate::store::item::StoreItem;
-use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVPool, STORE_ACCESS_LOCK};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVPool};
 
 pub struct ExecutorSearch;
 
@@ -27,10 +27,8 @@ impl ExecutorSearch {
         if let StoreItem(collection, Some(bucket), None) = store {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
-            let (_kv_access, _fst_access) = (
-                STORE_ACCESS_LOCK.read().unwrap(),
-                GRAPH_ACCESS_LOCK.read().unwrap(),
-            );
+            general_kv_access_lock_read!();
+            general_fst_access_lock_read!();
 
             if let (Ok(kv_store), Ok(fst_store)) = (
                 StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection, bucket),
