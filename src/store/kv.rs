@@ -31,7 +31,13 @@ pub struct StoreKV {
 pub struct StoreKVActionBuilder;
 
 pub struct StoreKVAction {
-    store: StoreKVBox,
+    store: Option<StoreKVBox>,
+}
+
+#[derive(PartialEq)]
+pub enum StoreKVAcquireMode {
+    Any,
+    OpenOnly,
 }
 
 type StoreKVBox = Arc<StoreKV>;
@@ -45,7 +51,11 @@ lazy_static! {
 }
 
 impl StoreKVPool {
-    pub fn acquire<'a, T: Into<&'a str>>(collection: T, bucket: T) -> Result<StoreKVBox, DBError> {
+    pub fn acquire<'a, T: Into<&'a str>>(
+        mode: StoreKVAcquireMode,
+        collection: T,
+        bucket: T,
+    ) -> Result<Option<StoreKVBox>, DBError> {
         let (collection_str, bucket_str) = (collection.into(), bucket.into());
         let pool_key = (collection_str.to_string(), bucket_str.to_string());
 
@@ -71,40 +81,54 @@ impl StoreKVPool {
             // Perform an early drop of the lock (frees up write lock early)
             drop(last_used_value);
 
-            Ok(store_kv.clone())
+            Ok(Some(store_kv.clone()))
         } else {
             info!(
                 "kv store not in pool for collection: {} and bucket: {}, opening it",
                 collection_str, bucket_str
             );
 
-            match StoreKVBuilder::new(collection_str, bucket_str) {
-                Ok(store_kv) => {
-                    // Important: we need to drop the read reference first, to avoid dead-locking \
-                    //   when acquiring the RWLock in write mode in this block.
-                    drop(store_pool_read);
+            // Check if can open database?
+            let can_open_db = if mode == StoreKVAcquireMode::OpenOnly {
+                StoreKVBuilder::path(collection_str, Some(bucket_str)).exists()
+            } else {
+                true
+            };
 
-                    // Acquire a thread-safe store pool reference in write mode
-                    let mut store_pool_write = STORE_POOL.write().unwrap();
-                    let store_kv_box = Arc::new(store_kv);
+            // Open KV database? (ie. we do not need to create a new KV database file tree if \
+            //   the database does not exist yet on disk and we are just looking to read data from \
+            //   it)
+            if can_open_db == true {
+                match StoreKVBuilder::new(collection_str, bucket_str) {
+                    Ok(store_kv) => {
+                        // Important: we need to drop the read reference first, to avoid \
+                        //   dead-locking when acquiring the RWLock in write mode in this block.
+                        drop(store_pool_read);
 
-                    store_pool_write.insert(pool_key, store_kv_box.clone());
+                        // Acquire a thread-safe store pool reference in write mode
+                        let mut store_pool_write = STORE_POOL.write().unwrap();
+                        let store_kv_box = Arc::new(store_kv);
 
-                    debug!(
-                        "opened and cached store in pool for collection: {} and bucket: {}",
-                        collection_str, bucket_str
-                    );
+                        store_pool_write.insert(pool_key, store_kv_box.clone());
 
-                    Ok(store_kv_box)
+                        debug!(
+                            "opened and cached store in pool for collection: {} and bucket: {}",
+                            collection_str, bucket_str
+                        );
+
+                        Ok(Some(store_kv_box))
+                    }
+                    Err(err) => {
+                        error!(
+                            "failed opening store for collection: {} because: {} and bucket: {}",
+                            collection_str, bucket_str, err
+                        );
+
+                        Err(err)
+                    }
                 }
-                Err(err) => {
-                    error!(
-                        "failed opening store for collection: {} because: {} and bucket: {}",
-                        collection_str, bucket_str, err
-                    );
-
-                    Err(err)
-                }
+            } else {
+                Ok(None)
             }
         }
     }
@@ -211,7 +235,7 @@ impl StoreKV {
 }
 
 impl StoreKVActionBuilder {
-    pub fn read(store: StoreKVBox) -> StoreKVAction {
+    pub fn read(store: Option<StoreKVBox>) -> StoreKVAction {
         let action = Self::build(store);
 
         debug!("begin action read block");
@@ -225,7 +249,7 @@ impl StoreKVActionBuilder {
         action
     }
 
-    pub fn write(store: StoreKVBox) -> StoreKVAction {
+    pub fn write(store: Option<StoreKVBox>) -> StoreKVAction {
         let action = Self::build(store);
 
         debug!("begin action write block");
@@ -294,14 +318,19 @@ impl StoreKVActionBuilder {
             {
                 let mut store_pool_write = STORE_POOL.write().unwrap();
 
-                // TODO: this is ugly, do we really need to create a heap string on each iter?!
+                // Share this to avoid allocating a new collection string at each iteration, which \
+                //   can generate a lot of heap activity in large collections.
+                let mut shared_target = (collection_str.to_string(), String::new());
+
                 for bucket in buckets {
                     debug!(
                         "forcibly closing kv store bucket: {}/{}",
                         collection_str, bucket
                     );
 
-                    store_pool_write.remove(&(collection_str.to_string(), bucket));
+                    shared_target.1 = bucket;
+
+                    store_pool_write.remove(&shared_target);
                 }
             }
 
@@ -367,7 +396,7 @@ impl StoreKVActionBuilder {
         }
     }
 
-    fn build(store: StoreKVBox) -> StoreKVAction {
+    fn build(store: Option<StoreKVBox>) -> StoreKVAction {
         StoreKVAction { store: store }
     }
 }
@@ -377,54 +406,62 @@ impl StoreKVAction {
     ///
     /// [IDX=0] ((meta)) ~> ((value))
     pub fn get_meta_to_value(&self, meta: StoreMetaKey) -> Result<Option<StoreMetaValue>, ()> {
-        let store_key = StoreKeyerBuilder::meta_to_value(&meta);
+        if let Some(ref store) = self.store {
+            let store_key = StoreKeyerBuilder::meta_to_value(&meta);
 
-        debug!("store get meta-to-value: {}", store_key);
+            debug!("store get meta-to-value: {}", store_key);
 
-        match self.store.get(&store_key.as_bytes()) {
-            Ok(Some(value)) => {
-                debug!("got meta-to-value: {}", store_key);
+            match store.get(&store_key.as_bytes()) {
+                Ok(Some(value)) => {
+                    debug!("got meta-to-value: {}", store_key);
 
-                Ok(if let Some(value) = value.to_utf8() {
-                    match meta {
-                        StoreMetaKey::IIDIncr => value
-                            .parse::<StoreObjectIID>()
-                            .ok()
-                            .map(|value| StoreMetaValue::IIDIncr(value))
-                            .or(None),
-                    }
-                } else {
-                    None
-                })
+                    Ok(if let Some(value) = value.to_utf8() {
+                        match meta {
+                            StoreMetaKey::IIDIncr => value
+                                .parse::<StoreObjectIID>()
+                                .ok()
+                                .map(|value| StoreMetaValue::IIDIncr(value))
+                                .or(None),
+                        }
+                    } else {
+                        None
+                    })
+                }
+                Ok(None) => {
+                    debug!("no meta-to-value found: {}", store_key);
+
+                    Ok(None)
+                }
+                Err(err) => {
+                    error!(
+                        "error getting meta-to-value: {} with trace: {}",
+                        store_key, err
+                    );
+
+                    Err(())
+                }
             }
-            Ok(None) => {
-                debug!("no meta-to-value found: {}", store_key);
-
-                Ok(None)
-            }
-            Err(err) => {
-                error!(
-                    "error getting meta-to-value: {} with trace: {}",
-                    store_key, err
-                );
-
-                Err(())
-            }
+        } else {
+            Ok(None)
         }
     }
 
     pub fn set_meta_to_value(&self, meta: StoreMetaKey, value: StoreMetaValue) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::meta_to_value(&meta);
+        if let Some(ref store) = self.store {
+            let store_key = StoreKeyerBuilder::meta_to_value(&meta);
 
-        debug!("store set meta-to-value: {}", store_key);
+            debug!("store set meta-to-value: {}", store_key);
 
-        let value_string = match value {
-            StoreMetaValue::IIDIncr(iid_incr) => iid_incr.to_string(),
-        };
+            let value_string = match value {
+                StoreMetaValue::IIDIncr(iid_incr) => iid_incr.to_string(),
+            };
 
-        self.store
-            .put(&store_key.as_bytes(), value_string.as_bytes())
-            .or(Err(()))
+            store
+                .put(&store_key.as_bytes(), value_string.as_bytes())
+                .or(Err(()))
+        } else {
+            Err(())
+        }
     }
 
     /// Term-to-IIDs mapper
@@ -434,41 +471,45 @@ impl StoreKVAction {
         &self,
         term_hashed: StoreTermHashed,
     ) -> Result<Option<Vec<StoreObjectIID>>, ()> {
-        let store_key = StoreKeyerBuilder::term_to_iids(term_hashed);
+        if let Some(ref store) = self.store {
+            let store_key = StoreKeyerBuilder::term_to_iids(term_hashed);
 
-        debug!("store get term-to-iids: {}", store_key);
+            debug!("store get term-to-iids: {}", store_key);
 
-        match self.store.get(&store_key.as_bytes()) {
-            Ok(Some(value)) => {
-                debug!(
-                    "got term-to-iids: {} with encoded value: {:?}",
-                    store_key, &*value
-                );
+            match store.get(&store_key.as_bytes()) {
+                Ok(Some(value)) => {
+                    debug!(
+                        "got term-to-iids: {} with encoded value: {:?}",
+                        store_key, &*value
+                    );
 
-                Self::decode_u32_list(&*value)
-                    .or(Err(()))
-                    .map(|value_decoded| {
-                        debug!(
-                            "got term-to-iids: {} with decoded value: {:?}",
-                            store_key, &value_decoded
-                        );
+                    Self::decode_u32_list(&*value)
+                        .or(Err(()))
+                        .map(|value_decoded| {
+                            debug!(
+                                "got term-to-iids: {} with decoded value: {:?}",
+                                store_key, &value_decoded
+                            );
 
-                        Some(value_decoded)
-                    })
+                            Some(value_decoded)
+                        })
+                }
+                Ok(None) => {
+                    debug!("no term-to-iids found: {}", store_key);
+
+                    Ok(None)
+                }
+                Err(err) => {
+                    error!(
+                        "error getting term-to-iids: {} with trace: {}",
+                        store_key, err
+                    );
+
+                    Err(())
+                }
             }
-            Ok(None) => {
-                debug!("no term-to-iids found: {}", store_key);
-
-                Ok(None)
-            }
-            Err(err) => {
-                error!(
-                    "error getting term-to-iids: {} with trace: {}",
-                    store_key, err
-                );
-
-                Err(())
-            }
+        } else {
+            Ok(None)
         }
     }
 
@@ -477,128 +518,154 @@ impl StoreKVAction {
         term_hashed: StoreTermHashed,
         iids: &[StoreObjectIID],
     ) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::term_to_iids(term_hashed);
+        if let Some(ref store) = self.store {
+            let store_key = StoreKeyerBuilder::term_to_iids(term_hashed);
 
-        debug!("store set term-to-iids: {}", store_key);
+            debug!("store set term-to-iids: {}", store_key);
 
-        // Encode IID list into storage serialized format
-        let iids_encoded = Self::encode_u32_list(iids);
+            // Encode IID list into storage serialized format
+            let iids_encoded = Self::encode_u32_list(iids);
 
-        debug!(
-            "store set term-to-iids: {} with encoded value: {:?}",
-            store_key, iids_encoded
-        );
+            debug!(
+                "store set term-to-iids: {} with encoded value: {:?}",
+                store_key, iids_encoded
+            );
 
-        self.store
-            .put(&store_key.as_bytes(), &iids_encoded)
-            .or(Err(()))
+            store.put(&store_key.as_bytes(), &iids_encoded).or(Err(()))
+        } else {
+            Err(())
+        }
     }
 
     pub fn delete_term_to_iids(&self, term_hashed: StoreTermHashed) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::term_to_iids(term_hashed);
+        if let Some(ref store) = self.store {
+            let store_key = StoreKeyerBuilder::term_to_iids(term_hashed);
 
-        debug!("store delete term-to-iids: {}", store_key);
+            debug!("store delete term-to-iids: {}", store_key);
 
-        self.store.delete(&store_key.as_bytes()).or(Err(()))
+            store.delete(&store_key.as_bytes()).or(Err(()))
+        } else {
+            Err(())
+        }
     }
 
     /// OID-to-IID mapper
     ///
     /// [IDX=2] ((oid)) ~> ((iid))
     pub fn get_oid_to_iid(&self, oid: &StoreObjectOID) -> Result<Option<StoreObjectIID>, ()> {
-        let store_key = StoreKeyerBuilder::oid_to_iid(oid);
+        if let Some(ref store) = self.store {
+            let store_key = StoreKeyerBuilder::oid_to_iid(oid);
 
-        debug!("store get oid-to-iid: {}", store_key);
+            debug!("store get oid-to-iid: {}", store_key);
 
-        match self.store.get(&store_key.as_bytes()) {
-            Ok(Some(value)) => {
-                debug!(
-                    "got oid-to-iid: {} with encoded value: {:?}",
-                    store_key, &*value
-                );
-
-                Self::decode_u32(&*value).or(Err(())).map(|value_decoded| {
+            match store.get(&store_key.as_bytes()) {
+                Ok(Some(value)) => {
                     debug!(
-                        "got oid-to-iid: {} with decoded value: {:?}",
-                        store_key, &value_decoded
+                        "got oid-to-iid: {} with encoded value: {:?}",
+                        store_key, &*value
                     );
 
-                    Some(value_decoded)
-                })
-            }
-            Ok(None) => {
-                debug!("no oid-to-iid found: {}", store_key);
+                    Self::decode_u32(&*value).or(Err(())).map(|value_decoded| {
+                        debug!(
+                            "got oid-to-iid: {} with decoded value: {:?}",
+                            store_key, &value_decoded
+                        );
 
-                Ok(None)
-            }
-            Err(err) => {
-                error!(
-                    "error getting oid-to-iid: {} with trace: {}",
-                    store_key, err
-                );
+                        Some(value_decoded)
+                    })
+                }
+                Ok(None) => {
+                    debug!("no oid-to-iid found: {}", store_key);
 
-                Err(())
+                    Ok(None)
+                }
+                Err(err) => {
+                    error!(
+                        "error getting oid-to-iid: {} with trace: {}",
+                        store_key, err
+                    );
+
+                    Err(())
+                }
             }
+        } else {
+            Ok(None)
         }
     }
 
     pub fn set_oid_to_iid(&self, oid: &StoreObjectOID, iid: StoreObjectIID) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::oid_to_iid(oid);
+        if let Some(ref store) = self.store {
+            let store_key = StoreKeyerBuilder::oid_to_iid(oid);
 
-        debug!("store set oid-to-iid: {}", store_key);
+            debug!("store set oid-to-iid: {}", store_key);
 
-        // Encode IID
-        let iid_encoded = Self::encode_u32(iid);
+            // Encode IID
+            let iid_encoded = Self::encode_u32(iid);
 
-        debug!(
-            "store set oid-to-iid: {} with encoded value: {:?}",
-            store_key, iid_encoded
-        );
+            debug!(
+                "store set oid-to-iid: {} with encoded value: {:?}",
+                store_key, iid_encoded
+            );
 
-        self.store
-            .put(&store_key.as_bytes(), &iid_encoded)
-            .or(Err(()))
+            store.put(&store_key.as_bytes(), &iid_encoded).or(Err(()))
+        } else {
+            Err(())
+        }
     }
 
     pub fn delete_oid_to_iid(&self, oid: &StoreObjectOID) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::oid_to_iid(oid);
+        if let Some(ref store) = self.store {
+            let store_key = StoreKeyerBuilder::oid_to_iid(oid);
 
-        debug!("store delete oid-to-iid: {}", store_key);
+            debug!("store delete oid-to-iid: {}", store_key);
 
-        self.store.delete(&store_key.as_bytes()).or(Err(()))
+            store.delete(&store_key.as_bytes()).or(Err(()))
+        } else {
+            Err(())
+        }
     }
 
     /// IID-to-OID mapper
     ///
     /// [IDX=3] ((iid)) ~> ((oid))
     pub fn get_iid_to_oid(&self, iid: StoreObjectIID) -> Result<Option<StoreObjectOID>, ()> {
-        let store_key = StoreKeyerBuilder::iid_to_oid(iid);
+        if let Some(ref store) = self.store {
+            let store_key = StoreKeyerBuilder::iid_to_oid(iid);
 
-        debug!("store get iid-to-oid: {}", store_key);
+            debug!("store get iid-to-oid: {}", store_key);
 
-        match self.store.get(&store_key.as_bytes()) {
-            Ok(Some(value)) => Ok(value.to_utf8().map(|value| value.to_string())),
-            Ok(None) => Ok(None),
-            Err(_) => Err(()),
+            match store.get(&store_key.as_bytes()) {
+                Ok(Some(value)) => Ok(value.to_utf8().map(|value| value.to_string())),
+                Ok(None) => Ok(None),
+                Err(_) => Err(()),
+            }
+        } else {
+            Ok(None)
         }
     }
 
     pub fn set_iid_to_oid(&self, iid: StoreObjectIID, oid: &StoreObjectOID) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::iid_to_oid(iid);
+        if let Some(ref store) = self.store {
+            let store_key = StoreKeyerBuilder::iid_to_oid(iid);
 
-        debug!("store set iid-to-oid: {}", store_key);
+            debug!("store set iid-to-oid: {}", store_key);
 
-        self.store
-            .put(&store_key.as_bytes(), oid.as_bytes())
-            .or(Err(()))
+            store.put(&store_key.as_bytes(), oid.as_bytes()).or(Err(()))
+        } else {
+            Err(())
+        }
     }
 
     pub fn delete_iid_to_oid(&self, iid: StoreObjectIID) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::iid_to_oid(iid);
+        if let Some(ref store) = self.store {
+            let store_key = StoreKeyerBuilder::iid_to_oid(iid);
 
-        debug!("store delete iid-to-oid: {}", store_key);
+            debug!("store delete iid-to-oid: {}", store_key);
 
-        self.store.delete(&store_key.as_bytes()).or(Err(()))
+            store.delete(&store_key.as_bytes()).or(Err(()))
+        } else {
+            Err(())
+        }
     }
 
     /// IID-to-Terms mapper
@@ -608,34 +675,38 @@ impl StoreKVAction {
         &self,
         iid: StoreObjectIID,
     ) -> Result<Option<Vec<StoreTermHashed>>, ()> {
-        let store_key = StoreKeyerBuilder::iid_to_terms(iid);
+        if let Some(ref store) = self.store {
+            let store_key = StoreKeyerBuilder::iid_to_terms(iid);
 
-        debug!("store get iid-to-terms: {}", store_key);
+            debug!("store get iid-to-terms: {}", store_key);
 
-        match self.store.get(&store_key.as_bytes()) {
-            Ok(Some(value)) => {
-                debug!(
-                    "got iid-to-terms: {} with encoded value: {:?}",
-                    store_key, &*value
-                );
+            match store.get(&store_key.as_bytes()) {
+                Ok(Some(value)) => {
+                    debug!(
+                        "got iid-to-terms: {} with encoded value: {:?}",
+                        store_key, &*value
+                    );
 
-                Self::decode_u32_list(&*value)
-                    .or(Err(()))
-                    .map(|value_decoded| {
-                        debug!(
-                            "got iid-to-terms: {} with decoded value: {:?}",
-                            store_key, &value_decoded
-                        );
+                    Self::decode_u32_list(&*value)
+                        .or(Err(()))
+                        .map(|value_decoded| {
+                            debug!(
+                                "got iid-to-terms: {} with decoded value: {:?}",
+                                store_key, &value_decoded
+                            );
 
-                        if value_decoded.is_empty() == false {
-                            Some(value_decoded)
-                        } else {
-                            None
-                        }
-                    })
+                            if value_decoded.is_empty() == false {
+                                Some(value_decoded)
+                            } else {
+                                None
+                            }
+                        })
+                }
+                Ok(None) => Ok(None),
+                Err(_) => Err(()),
             }
-            Ok(None) => Ok(None),
-            Err(_) => Err(()),
+        } else {
+            Ok(None)
         }
     }
 
@@ -644,29 +715,37 @@ impl StoreKVAction {
         iid: StoreObjectIID,
         terms_hashed: &[StoreTermHashed],
     ) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::iid_to_terms(iid);
+        if let Some(ref store) = self.store {
+            let store_key = StoreKeyerBuilder::iid_to_terms(iid);
 
-        debug!("store set iid-to-terms: {}", store_key);
+            debug!("store set iid-to-terms: {}", store_key);
 
-        // Encode term list into storage serialized format
-        let terms_hashed_encoded = Self::encode_u32_list(terms_hashed);
+            // Encode term list into storage serialized format
+            let terms_hashed_encoded = Self::encode_u32_list(terms_hashed);
 
-        debug!(
-            "store set iid-to-terms: {} with encoded value: {:?}",
-            store_key, terms_hashed_encoded
-        );
+            debug!(
+                "store set iid-to-terms: {} with encoded value: {:?}",
+                store_key, terms_hashed_encoded
+            );
 
-        self.store
-            .put(&store_key.as_bytes(), &terms_hashed_encoded)
-            .or(Err(()))
+            store
+                .put(&store_key.as_bytes(), &terms_hashed_encoded)
+                .or(Err(()))
+        } else {
+            Err(())
+        }
     }
 
     pub fn delete_iid_to_terms(&self, iid: StoreObjectIID) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::iid_to_terms(iid);
+        if let Some(ref store) = self.store {
+            let store_key = StoreKeyerBuilder::iid_to_terms(iid);
 
-        debug!("store delete iid-to-terms: {}", store_key);
+            debug!("store delete iid-to-terms: {}", store_key);
 
-        self.store.delete(&store_key.as_bytes()).or(Err(()))
+            store.delete(&store_key.as_bytes()).or(Err(()))
+        } else {
+            Err(())
+        }
     }
 
     pub fn batch_flush_bucket(

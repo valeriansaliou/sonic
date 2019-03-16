@@ -5,7 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::store::item::StoreItem;
-use crate::store::kv::{StoreKVActionBuilder, StoreKVPool, STORE_ACCESS_LOCK};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVPool, STORE_ACCESS_LOCK};
 
 pub struct ExecutorFlushO;
 
@@ -16,7 +16,9 @@ impl ExecutorFlushO {
             //   prevents the database from being erased while using it in this block.
             let _kv_access = STORE_ACCESS_LOCK.read().unwrap();
 
-            if let Ok(kv_store) = StoreKVPool::acquire(collection, bucket) {
+            if let Ok(kv_store) =
+                StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection, bucket)
+            {
                 let kv_action = StoreKVActionBuilder::write(kv_store);
 
                 // Try to resolve existing OID to IID (if it does not exist, there is nothing to \

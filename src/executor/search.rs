@@ -12,7 +12,7 @@ use crate::query::types::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
 use crate::store::fst::{StoreFSTActionBuilder, StoreFSTPool, GRAPH_ACCESS_LOCK};
 use crate::store::identifiers::{StoreObjectIID, StoreTermHash};
 use crate::store::item::StoreItem;
-use crate::store::kv::{StoreKVActionBuilder, StoreKVPool, STORE_ACCESS_LOCK};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVPool, STORE_ACCESS_LOCK};
 
 pub struct ExecutorSearch;
 
@@ -33,7 +33,7 @@ impl ExecutorSearch {
             );
 
             if let (Ok(kv_store), Ok(fst_store)) = (
-                StoreKVPool::acquire(collection, bucket),
+                StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection, bucket),
                 StoreFSTPool::acquire(collection, bucket),
             ) {
                 let (kv_action, fst_action) = (

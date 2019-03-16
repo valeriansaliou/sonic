@@ -11,7 +11,7 @@ use crate::lexer::token::TokenLexer;
 use crate::store::fst::{StoreFSTActionBuilder, StoreFSTPool, GRAPH_ACCESS_LOCK};
 use crate::store::identifiers::StoreTermHashed;
 use crate::store::item::StoreItem;
-use crate::store::kv::{StoreKVActionBuilder, StoreKVPool, STORE_ACCESS_LOCK};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVPool, STORE_ACCESS_LOCK};
 
 pub struct ExecutorPop;
 
@@ -26,7 +26,7 @@ impl ExecutorPop {
             );
 
             if let (Ok(kv_store), Ok(fst_store)) = (
-                StoreKVPool::acquire(collection, bucket),
+                StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection, bucket),
                 StoreFSTPool::acquire(collection, bucket),
             ) {
                 let (kv_action, fst_action) = (

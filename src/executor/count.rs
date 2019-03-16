@@ -8,7 +8,7 @@ use crate::store::fst::{StoreFSTActionBuilder, StoreFSTMisc};
 use crate::store::fst::{StoreFSTPool, GRAPH_ACCESS_LOCK};
 use crate::store::item::StoreItem;
 use crate::store::kv::StoreKVActionBuilder;
-use crate::store::kv::{StoreKVPool, STORE_ACCESS_LOCK};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVPool, STORE_ACCESS_LOCK};
 
 pub struct ExecutorCount;
 
@@ -21,7 +21,9 @@ impl ExecutorCount {
                 //   prevents the database from being erased while using it in this block.
                 let _kv_access = STORE_ACCESS_LOCK.read().unwrap();
 
-                if let Ok(kv_store) = StoreKVPool::acquire(collection, bucket) {
+                if let Ok(kv_store) =
+                    StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection, bucket)
+                {
                     let kv_action = StoreKVActionBuilder::read(kv_store);
 
                     // Try to resolve existing OID to IID

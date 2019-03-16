@@ -656,17 +656,20 @@ impl StoreFSTActionBuilder {
                     GRAPH_CONSOLIDATE.write().unwrap(),
                 );
 
-                // TODO: this is ugly, do we really need to create a heap string on each iter?!
+                // Share this to avoid allocating a new collection string at each iteration, which \
+                //   can generate a lot of heap activity in large collections.
+                let mut shared_target = (collection_str.to_string(), String::new());
+
                 for bucket in buckets {
                     debug!(
                         "forcibly closing fst graph bucket: {}/{}",
                         collection_str, bucket
                     );
 
-                    let bucket_target = (collection_str.to_string(), bucket);
+                    shared_target.1 = bucket;
 
-                    graph_pool_write.remove(&bucket_target);
-                    graph_consolidate_write.remove(&bucket_target);
+                    graph_pool_write.remove(&shared_target);
+                    graph_consolidate_write.remove(&shared_target);
                 }
             }
 
