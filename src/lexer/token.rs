@@ -52,72 +52,68 @@ impl TokenLexerBuilder {
                 // Perform an UTF-8 aware truncation
                 // Notice: then 'len()' check above was not UTF-8 aware, but is better than \
                 //   nothing as it avoids entering the below iterator for small strings.
+                // Notice: we fallback on text if the result is 'None'; as if it is 'None' there \
+                //   was less characters than the truncate limit in the UTF-8 parsed text. With \
+                //   this unwrap-way, we avoid doing a 'text.chars().count()' everytime, which is \
+                //   a O(N) operation, and rather guard this block with a 'text.len()' which is \
+                //   a O(1) operation but which is not 100% reliable when approaching the truncate \
+                //   limit. This is a trade-off, which saves quite a lot CPU cycles at scale.
                 text.char_indices()
                     .nth(TEXT_LANG_TRUNCATE_OVER_CHARS)
                     .map(|(end_index, _)| &text[0..end_index])
+                    .unwrap_or(text)
             } else {
-                Some(text)
+                text
             };
 
-            if let Some(safe_text) = safe_text {
-                debug!("will detect locale for lexer text: {}", safe_text);
+            debug!("will detect locale for lexer text: {}", safe_text);
 
-                match lang_detect(safe_text) {
-                    Some(detector) => {
-                        let mut locale = detector.lang();
+            match lang_detect(safe_text) {
+                Some(detector) => {
+                    let mut locale = detector.lang();
 
-                        let ngram_took = ngram_start.elapsed();
+                    let ngram_took = ngram_start.elapsed();
 
-                        info!(
-                            "locale detected from lexer text: {} ({} from {} at {}/1; {}s + {}ms)",
-                            text,
-                            locale,
-                            detector.script(),
-                            detector.confidence(),
-                            ngram_took.as_secs(),
-                            ngram_took.subsec_millis()
-                        );
+                    info!(
+                        "locale detected from lexer text: {} ({} from {} at {}/1; {}s + {}ms)",
+                        text,
+                        locale,
+                        detector.script(),
+                        detector.confidence(),
+                        ngram_took.as_secs(),
+                        ngram_took.subsec_millis()
+                    );
 
-                        // Confidence is low, try to detect locale from stop-words.
-                        if detector.is_reliable() == false {
-                            debug!(
-                                "trying to detect locale from stopwords, as locale is unreliable"
+                    // Confidence is low, try to detect locale from stop-words.
+                    if detector.is_reliable() == false {
+                        debug!("trying to detect locale from stopwords, as locale is unreliable");
+
+                        let stopwords_start = Instant::now();
+
+                        // Better alternate locale found?
+                        if let Some(alternate_locale) =
+                            LexerStopWord::guess_lang(safe_text, detector.script())
+                        {
+                            let stopwords_took = stopwords_start.elapsed();
+
+                            info!(
+                                "detected more accurate locale from stopwords: {} ({}s + {}ms)",
+                                alternate_locale,
+                                stopwords_took.as_secs(),
+                                stopwords_took.subsec_millis()
                             );
 
-                            let stopwords_start = Instant::now();
-
-                            // Better alternate locale found?
-                            if let Some(alternate_locale) =
-                                LexerStopWord::guess_lang(safe_text, detector.script())
-                            {
-                                let stopwords_took = stopwords_start.elapsed();
-
-                                info!(
-                                    "detected more accurate locale from stopwords: {} ({}s + {}ms)",
-                                    alternate_locale,
-                                    stopwords_took.as_secs(),
-                                    stopwords_took.subsec_millis()
-                                );
-
-                                locale = alternate_locale;
-                            }
+                            locale = alternate_locale;
                         }
-
-                        Some(locale)
                     }
-                    None => {
-                        info!("no locale could be detected from lexer text: {}", text);
 
-                        None
-                    }
+                    Some(locale)
                 }
-            } else {
-                warn!(
-                    "there may have been an issue truncating lexer text: {}",
-                    text
-                );
+                None => {
+                    info!("no locale could be detected from lexer text: {}", text);
 
-                None
+                    None
+                }
             }
         } else {
             debug!("not detecting locale from lexer text: {}", text);
