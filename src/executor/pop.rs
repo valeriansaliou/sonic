@@ -100,6 +100,14 @@ impl ExecutorPop {
                                                     // IIDs list was empty, delete whole key
                                                     executor_ensure_op!(kv_action
                                                         .delete_term_to_iids(*pop_term_hashed));
+
+                                                    // Pop from FST graph (does not exist anymore)
+                                                    if fst_action.pop_word(pop_term) == true {
+                                                        debug!(
+                                                            "pop term hash nuked from graph: {}",
+                                                            pop_term_hashed
+                                                        );
+                                                    }
                                                 } else {
                                                     // Re-build IIDs list w/o current IID
                                                     executor_ensure_op!(kv_action
@@ -113,15 +121,6 @@ impl ExecutorPop {
                                                     "failed getting term-to-iids in pop executor"
                                                 );
                                             }
-                                        }
-
-                                        // Pop from FST graph? (this consumes the term; to avoid \
-                                        //   sub-clones)
-                                        if fst_action.pop_word(pop_term) == true {
-                                            debug!(
-                                                "pop term nuked from graph with term hash: {}",
-                                                pop_term_hashed
-                                            );
                                         }
                                     }
 
