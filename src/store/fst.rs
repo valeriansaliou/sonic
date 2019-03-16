@@ -23,8 +23,8 @@ use std::str;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::SystemTime;
 
-use crate::APP_CONF;
 use super::keyer::StoreKeyerHasher;
+use crate::APP_CONF;
 
 pub struct StoreFSTPool;
 pub struct StoreFSTBuilder;
@@ -442,7 +442,10 @@ impl StoreFSTPool {
 }
 
 impl StoreFSTBuilder {
-    pub fn new(collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) -> Result<StoreFST, FSTError> {
+    pub fn new(
+        collection_hash: StoreFSTAtom,
+        bucket_hash: StoreFSTAtom,
+    ) -> Result<StoreFST, FSTError> {
         Self::open(collection_hash, bucket_hash).map(|graph| {
             let now = SystemTime::now();
 
@@ -462,8 +465,11 @@ impl StoreFSTBuilder {
             collection_hash, bucket_hash
         );
 
-        let collection_bucket_path =
-            Self::path(StoreFSTPathMode::Permanent, collection_hash, Some(bucket_hash));
+        let collection_bucket_path = Self::path(
+            StoreFSTPathMode::Permanent,
+            collection_hash,
+            Some(bucket_hash),
+        );
 
         if collection_bucket_path.exists() == true {
             // TODO: IMPORTANT >> It is up to the caller to enforce that the memory map is not \
@@ -483,8 +489,16 @@ impl StoreFSTBuilder {
         }
     }
 
-    fn path(mode: StoreFSTPathMode, collection_hash: StoreFSTAtom, bucket_hash: Option<StoreFSTAtom>) -> PathBuf {
-        let mut final_path = APP_CONF.store.fst.path.join(format!("{:x?}", collection_hash));
+    fn path(
+        mode: StoreFSTPathMode,
+        collection_hash: StoreFSTAtom,
+        bucket_hash: Option<StoreFSTAtom>,
+    ) -> PathBuf {
+        let mut final_path = APP_CONF
+            .store
+            .fst
+            .path
+            .join(format!("{:x?}", collection_hash));
 
         if let Some(bucket_hash) = bucket_hash {
             final_path = final_path.join(format!("{:x?}{}", bucket_hash, mode.extension()));
@@ -634,7 +648,8 @@ impl StoreFSTActionBuilder {
         if bucket_atoms.is_empty() == false {
             debug!(
                 "will force-close {} fst buckets for collection: {}",
-                bucket_atoms.len(), collection_str
+                bucket_atoms.len(),
+                collection_str
             );
 
             let (mut graph_pool_write, mut graph_consolidate_write) = (
