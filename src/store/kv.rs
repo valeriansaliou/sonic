@@ -104,7 +104,7 @@ impl StoreKVPool {
             //   the database does not exist yet on disk and we are just looking to read data from \
             //   it)
             if can_open_db == true {
-                match StoreKVBuilder::new(collection_str, &pool_key) {
+                match StoreKVBuilder::new(pool_key.0, pool_key.1) {
                     Ok(store_kv) => {
                         // Important: we need to drop the read reference first, to avoid \
                         //   dead-locking when acquiring the RWLock in write mode in this block.
@@ -172,21 +172,24 @@ impl StoreKVPool {
 }
 
 impl StoreKVBuilder {
-    pub fn new(collection: &str, target: &(StoreKVAtom, StoreKVAtom)) -> Result<StoreKV, DBError> {
-        Self::open(collection, target).map(|db| StoreKV {
+    pub fn new(collection_hash: StoreKVAtom, bucket_hash: StoreKVAtom) -> Result<StoreKV, DBError> {
+        Self::open(collection_hash, bucket_hash).map(|db| StoreKV {
             database: db,
             last_used: Arc::new(RwLock::new(SystemTime::now())),
         })
     }
 
-    fn open(collection: &str, target: &(StoreKVAtom, StoreKVAtom)) -> Result<DB, DBError> {
-        debug!("opening key-value database for collection: {}", collection);
+    fn open(collection_hash: StoreKVAtom, bucket_hash: StoreKVAtom) -> Result<DB, DBError> {
+        debug!(
+            "opening key-value database for collection: <{:x?}>",
+            collection_hash
+        );
 
         // Configure database options
         let db_options = Self::configure();
 
         // Open database at path for collection
-        DB::open(&db_options, Self::path(target.0, Some(target.1)))
+        DB::open(&db_options, Self::path(collection_hash, Some(bucket_hash)))
     }
 
     fn path(collection_hash: StoreKVAtom, bucket_hash: Option<StoreKVAtom>) -> PathBuf {
@@ -367,7 +370,7 @@ impl StoreKVActionBuilder {
 
         let (collection_atom, bucket_atom) = (
             StoreKeyerHasher::to_compact(collection_str),
-            StoreKeyerHasher::to_compact(collection_str),
+            StoreKeyerHasher::to_compact(bucket_str),
         );
 
         let bucket_path = StoreKVBuilder::path(collection_atom, Some(bucket_atom));
