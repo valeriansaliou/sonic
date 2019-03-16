@@ -299,7 +299,7 @@ impl StoreKVActionBuilder {
                     }
                 }
             } else {
-                warn!(
+                error!(
                     "failed reading directory for kv erasure: {:?}",
                     collection_path
                 );

@@ -873,7 +873,7 @@ impl StoreFSTMisc {
                     }
                 }
             } else {
-                warn!("failed reading directory for count: {:?}", collection_path);
+                error!("failed reading directory for count: {:?}", collection_path);
 
                 return Err(());
             }
