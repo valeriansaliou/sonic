@@ -25,7 +25,7 @@ impl ExecutorSuggest {
             let _fst_access = GRAPH_ACCESS_LOCK.read().unwrap();
 
             if let Ok(fst_store) = StoreFSTPool::acquire(collection, bucket) {
-                let fst_action = StoreFSTActionBuilder::read(fst_store);
+                let fst_action = StoreFSTActionBuilder::access(fst_store);
 
                 if let (Some(word), None) = (lexer.next(), lexer.next()) {
                     debug!("running suggest on word: {}", word.0);

@@ -24,7 +24,10 @@ impl ExecutorCount {
                 if let Ok(kv_store) =
                     StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection, bucket)
                 {
-                    let kv_action = StoreKVActionBuilder::read(kv_store);
+                    // Important: acquire bucket store read lock
+                    executor_kv_lock_read!(kv_store);
+
+                    let kv_action = StoreKVActionBuilder::access(kv_store);
 
                     // Try to resolve existing OID to IID
                     let oid = object.as_str().to_owned();
@@ -53,7 +56,7 @@ impl ExecutorCount {
                 let _fst_access = GRAPH_ACCESS_LOCK.read().unwrap();
 
                 if let Ok(fst_store) = StoreFSTPool::acquire(collection, bucket) {
-                    let fst_action = StoreFSTActionBuilder::read(fst_store);
+                    let fst_action = StoreFSTActionBuilder::access(fst_store);
 
                     Ok(fst_action.count_words() as u32)
                 } else {

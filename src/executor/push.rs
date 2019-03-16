@@ -29,23 +29,18 @@ impl ExecutorPush {
                 StoreKVPool::acquire(StoreKVAcquireMode::Any, collection, bucket),
                 StoreFSTPool::acquire(collection, bucket),
             ) {
-                let (kv_action, fst_action) = (
-                    StoreKVActionBuilder::write(kv_store),
-                    StoreFSTActionBuilder::write(fst_store),
-                );
+                // Important: acquire bucket store write lock
+                executor_kv_lock_write!(kv_store);
 
-                // TODO: when pushing anything to a list, prevent DOS by limiting the list length
-                // TODO: when poping items to prevent DOS, also nuke IID from term-to-IIDs mapping
-                // TODO: handle errors on all action.set() method and return a general ERR if one \
-                //   fails (with a proper error log).
+                let (kv_action, fst_action) = (
+                    StoreKVActionBuilder::access(kv_store),
+                    StoreFSTActionBuilder::access(fst_store),
+                );
 
                 // Try to resolve existing OID to IID, otherwise initialize IID (store the \
                 //   bi-directional relationship)
                 let oid = object.as_str().to_owned();
                 let iid = kv_action.get_oid_to_iid(&oid).unwrap_or(None).or_else(|| {
-                    // TODO: for initializer, must implement a per-bucket mutex as multiple \
-                    //   channel threads pushing at the same time may conflict.
-
                     info!("must initialize push executor oid-to-iid and iid-to-oid");
 
                     if let Ok(iid_incr) = kv_action.get_meta_to_value(StoreMetaKey::IIDIncr) {

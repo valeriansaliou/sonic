@@ -19,7 +19,10 @@ impl ExecutorFlushO {
             if let Ok(kv_store) =
                 StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection, bucket)
             {
-                let kv_action = StoreKVActionBuilder::write(kv_store);
+                // Important: acquire bucket store write lock
+                executor_kv_lock_write!(kv_store);
+
+                let kv_action = StoreKVActionBuilder::access(kv_store);
 
                 // Try to resolve existing OID to IID (if it does not exist, there is nothing to \
                 //   be flushed)

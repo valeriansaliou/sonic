@@ -472,13 +472,10 @@ impl StoreFSTBuilder {
         );
 
         if collection_bucket_path.exists() == true {
-            // TODO: IMPORTANT >> It is up to the caller to enforce that the memory map is not \
-            //   modified while it is opened. >> we need to ensure proper locking and avoid opening \
-            //   this mmap file while a producer is writing to it, otherwise boom, crash.
-
             // Open graph at path for collection
             // Notice: this is unsafe, as loaded memory is a memory-mapped file, that cannot be \
-            //   garanteed not to be muted while we own a read handle to it.
+            //   garanteed not to be muted while we own a read handle to it. Though, we use \
+            //   higher-level locking mechanisms on all callers of this method, so we are safe.
             unsafe { FSTSet::from_path(collection_bucket_path) }
         } else {
             // FST does not exist on disk, generate an empty FST for now; until a consolidation \
@@ -577,32 +574,8 @@ impl StoreFST {
 }
 
 impl StoreFSTActionBuilder {
-    pub fn read(store: StoreFSTBox) -> StoreFSTAction {
-        let action = Self::build(store);
-
-        debug!("begin action read block");
-
-        // TODO: handle the rwlock things on (collection, bucket) tuple (unpack bucket store \
-        //   and return it); read lock; return a lock guard to ensure it auto-unlocks when caller \
-        //   goes out of scope.
-
-        debug!("began action read block");
-
-        action
-    }
-
-    pub fn write(store: StoreFSTBox) -> StoreFSTAction {
-        let action = Self::build(store);
-
-        debug!("begin action write block");
-
-        // TODO: handle the rwlock things on (collection, bucket) tuple (unpack bucket store \
-        //   and return it); write lock; return a lock guard to ensure it auto-unlocks when caller \
-        //   goes out of scope.
-
-        debug!("began action write block");
-
-        action
+    pub fn access(store: StoreFSTBox) -> StoreFSTAction {
+        Self::build(store)
     }
 
     pub fn erase<'a, T: Into<&'a str>>(collection: T, bucket: Option<T>) -> Result<u32, ()> {

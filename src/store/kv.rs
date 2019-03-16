@@ -26,6 +26,7 @@ pub struct StoreKVBuilder;
 pub struct StoreKV {
     database: DB,
     last_used: Arc<RwLock<SystemTime>>,
+    pub lock: RwLock<bool>,
 }
 
 pub struct StoreKVActionBuilder;
@@ -176,6 +177,7 @@ impl StoreKVBuilder {
         Self::open(collection_hash, bucket_hash).map(|db| StoreKV {
             database: db,
             last_used: Arc::new(RwLock::new(SystemTime::now())),
+            lock: RwLock::new(false),
         })
     }
 
@@ -247,32 +249,8 @@ impl StoreKV {
 }
 
 impl StoreKVActionBuilder {
-    pub fn read(store: Option<StoreKVBox>) -> StoreKVAction {
-        let action = Self::build(store);
-
-        debug!("begin action read block");
-
-        // TODO: handle the rwlock things on (collection, bucket) tuple (unpack bucket store \
-        //   and return it); read lock; return a lock guard to ensure it auto-unlocks when caller \
-        //   goes out of scope.
-
-        debug!("began action read block");
-
-        action
-    }
-
-    pub fn write(store: Option<StoreKVBox>) -> StoreKVAction {
-        let action = Self::build(store);
-
-        debug!("begin action write block");
-
-        // TODO: handle the rwlock things on (collection, bucket) tuple (unpack bucket store \
-        //   and return it); write lock; return a lock guard to ensure it auto-unlocks when caller \
-        //   goes out of scope.
-
-        debug!("began action write block");
-
-        action
+    pub fn access(store: Option<StoreKVBox>) -> StoreKVAction {
+        Self::build(store)
     }
 
     pub fn erase<'a, T: Into<&'a str>>(collection: T, bucket: Option<T>) -> Result<u32, ()> {

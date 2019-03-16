@@ -29,9 +29,12 @@ impl ExecutorPop {
                 StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection, bucket),
                 StoreFSTPool::acquire(collection, bucket),
             ) {
+                // Important: acquire bucket store write lock
+                executor_kv_lock_write!(kv_store);
+
                 let (kv_action, fst_action) = (
-                    StoreKVActionBuilder::write(kv_store),
-                    StoreFSTActionBuilder::write(fst_store),
+                    StoreKVActionBuilder::access(kv_store),
+                    StoreFSTActionBuilder::access(fst_store),
                 );
 
                 // Try to resolve existing OID to IID (if it does not exist, there is nothing to \

@@ -36,9 +36,12 @@ impl ExecutorSearch {
                 StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection, bucket),
                 StoreFSTPool::acquire(collection, bucket),
             ) {
+                // Important: acquire bucket store read lock
+                executor_kv_lock_read!(kv_store);
+
                 let (kv_action, fst_action) = (
-                    StoreKVActionBuilder::read(kv_store),
-                    StoreFSTActionBuilder::read(fst_store),
+                    StoreKVActionBuilder::access(kv_store),
+                    StoreFSTActionBuilder::access(fst_store),
                 );
 
                 // Try to resolve existing search terms to IIDs, and perform an algebraic AND on \
