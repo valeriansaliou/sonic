@@ -609,69 +609,56 @@ impl StoreFSTActionBuilder {
         let path_mode = StoreFSTPathMode::Permanent;
         let collection_path = StoreFSTBuilder::path(path_mode, collection_str, None);
 
+        // Force a FST graph close (on all contained buckets)
+        // Notice: we first need to scan for opened buckets in-memory, as not all FSTs may be \
+        //   commited to disk; thus some FST stores that exist in-memory may not exist on-disk.
+        let mut buckets: Vec<String> = Vec::new();
+
+        {
+            let graph_pool_read = GRAPH_POOL.read().unwrap();
+
+            for target_key in graph_pool_read.keys() {
+                if target_key.0 == collection_str {
+                    buckets.push(target_key.1.to_string());
+                }
+            }
+        }
+
+        if buckets.is_empty() == false {
+            debug!(
+                "will force-close {} fst buckets for collection: {}",
+                buckets.len(),
+                collection_str
+            );
+
+            let (mut graph_pool_write, mut graph_consolidate_write) = (
+                GRAPH_POOL.write().unwrap(),
+                GRAPH_CONSOLIDATE.write().unwrap(),
+            );
+
+            // Share this to avoid allocating a new collection string at each iteration, which \
+            //   can generate a lot of heap activity in large collections.
+            let mut shared_target = (collection_str.to_string(), String::new());
+
+            for bucket in buckets {
+                debug!(
+                    "fst bucket graph force close for bucket: {}/{}",
+                    collection_str, bucket
+                );
+
+                shared_target.1 = bucket;
+
+                graph_pool_write.remove(&shared_target);
+                graph_consolidate_write.remove(&shared_target);
+            }
+        }
+
+        // Remove all FSTs on-disk
         if collection_path.exists() == true {
             debug!(
                 "fst collection store exists, erasing: {}/* at path: {:?}",
                 collection_str, &collection_path
             );
-
-            // Scan collection directory for contained bucket files
-            let mut buckets: Vec<String> = Vec::new();
-
-            if let Ok(entries) = fs::read_dir(&collection_path) {
-                let fst_extension = path_mode.extension();
-                let fst_extension_len = fst_extension.len();
-
-                for entry in entries {
-                    if let Ok(entry) = entry {
-                        if let (Ok(entry_type), Some(entry_name)) =
-                            (entry.file_type(), entry.file_name().to_str())
-                        {
-                            if entry_type.is_file() == true {
-                                let entry_name_len = entry_name.len();
-
-                                // FST file found? This is a bucket.
-                                if entry_name_len > fst_extension_len
-                                    && entry_name.ends_with(fst_extension) == true
-                                {
-                                    buckets.push(String::from(
-                                        &entry_name[..(entry_name_len - fst_extension_len)],
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                warn!(
-                    "failed reading directory for fst erasure: {:?}",
-                    collection_path
-                );
-            }
-
-            // Force a FST graph close (on all contained buckets)
-            {
-                let (mut graph_pool_write, mut graph_consolidate_write) = (
-                    GRAPH_POOL.write().unwrap(),
-                    GRAPH_CONSOLIDATE.write().unwrap(),
-                );
-
-                // Share this to avoid allocating a new collection string at each iteration, which \
-                //   can generate a lot of heap activity in large collections.
-                let mut shared_target = (collection_str.to_string(), String::new());
-
-                for bucket in buckets {
-                    debug!(
-                        "forcibly closing fst graph bucket: {}/{}",
-                        collection_str, bucket
-                    );
-
-                    shared_target.1 = bucket;
-
-                    graph_pool_write.remove(&shared_target);
-                    graph_consolidate_write.remove(&shared_target);
-                }
-            }
 
             // Remove FST graph storage from filesystem
             let erase_result = fs::remove_dir_all(&collection_path);
@@ -705,19 +692,25 @@ impl StoreFSTActionBuilder {
             Some(bucket_str),
         );
 
+        // Force a FST graph close
+        {
+            debug!(
+                "fst bucket graph force close for bucket: {}/{}",
+                collection_str, bucket_str
+            );
+
+            let bucket_target = (collection_str.to_string(), bucket_str.to_string());
+
+            GRAPH_POOL.write().unwrap().remove(&bucket_target);
+            GRAPH_CONSOLIDATE.write().unwrap().remove(&bucket_target);
+        }
+
+        // Remove FST on-disk
         if bucket_path.exists() == true {
             debug!(
                 "fst bucket graph exists, erasing: {}/{} at path: {:?}",
                 collection_str, bucket_str, &bucket_path
             );
-
-            // Force a FST graph close
-            {
-                let bucket_target = (collection_str.to_string(), bucket_str.to_string());
-
-                GRAPH_POOL.write().unwrap().remove(&bucket_target);
-                GRAPH_CONSOLIDATE.write().unwrap().remove(&bucket_target);
-            }
 
             // Remove FST graph storage from filesystem
             let erase_result = fs::remove_file(&bucket_path);
