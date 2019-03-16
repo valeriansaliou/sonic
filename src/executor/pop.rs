@@ -78,9 +78,11 @@ impl ExecutorPop {
 
                                     // Flush bucket (batch operation, as it is shared w/ other \
                                     //   executors)
-                                    kv_action
-                                        .batch_flush_bucket(iid, &oid, &iid_terms_hashed_vec)
-                                        .ok();
+                                    executor_ensure_op!(kv_action.batch_flush_bucket(
+                                        iid,
+                                        &oid,
+                                        &iid_terms_hashed_vec
+                                    ));
                                 } else {
                                     info!("nuke only certain terms for pop executor");
 
@@ -96,18 +98,20 @@ impl ExecutorPop {
 
                                                 if pop_term_iids.is_empty() == true {
                                                     // IIDs list was empty, delete whole key
-                                                    kv_action
-                                                        .delete_term_to_iids(*pop_term_hashed)
-                                                        .ok();
+                                                    executor_ensure_op!(kv_action
+                                                        .delete_term_to_iids(*pop_term_hashed));
                                                 } else {
                                                     // Re-build IIDs list w/o current IID
-                                                    kv_action
+                                                    executor_ensure_op!(kv_action
                                                         .set_term_to_iids(
                                                             *pop_term_hashed,
                                                             &pop_term_iids,
-                                                        )
-                                                        .ok();
+                                                        ));
                                                 }
+                                            } else {
+                                                error!(
+                                                    "failed getting term-to-iids in pop executor"
+                                                );
                                             }
                                         }
 
@@ -125,9 +129,13 @@ impl ExecutorPop {
                                     let remaining_terms_vec: Vec<StoreTermHashed> =
                                         Vec::from_iter(remaining_terms.into_iter());
 
-                                    kv_action.set_iid_to_terms(iid, &remaining_terms_vec).ok();
+                                    executor_ensure_op!(
+                                        kv_action.set_iid_to_terms(iid, &remaining_terms_vec)
+                                    );
                                 }
                             }
+                        } else {
+                            error!("failed getting iid-to-terms in pop executor");
                         }
                     }
 

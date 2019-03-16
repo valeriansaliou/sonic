@@ -769,10 +769,14 @@ impl StoreKVAction {
                             iid_term_iids.retain(|cur_iid| cur_iid != &iid);
                         }
 
-                        if iid_term_iids.is_empty() == true {
-                            self.delete_term_to_iids(*iid_term).ok();
+                        let is_ok = if iid_term_iids.is_empty() == true {
+                            self.delete_term_to_iids(*iid_term).is_ok()
                         } else {
-                            self.set_term_to_iids(*iid_term, &iid_term_iids).ok();
+                            self.set_term_to_iids(*iid_term, &iid_term_iids).is_ok()
+                        };
+
+                        if is_ok == false {
+                            return Err(());
                         }
                     }
                 }

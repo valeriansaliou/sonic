@@ -117,6 +117,8 @@ impl ExecutorSearch {
                     // Read IID-to-OID for this found IID
                     if let Ok(Some(oid)) = kv_action.get_iid_to_oid(*found_iid) {
                         result_oids.push(oid);
+                    } else {
+                        error!("failed getting search executor iid-to-oid");
                     }
                 }
 

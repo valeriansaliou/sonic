@@ -60,14 +60,18 @@ impl ExecutorPush {
                             == true
                         {
                             // Associate OID <> IID (bidirectional)
-                            kv_action.set_oid_to_iid(&oid, iid_incr).ok();
-                            kv_action.set_iid_to_oid(iid_incr, &oid).ok();
+                            executor_ensure_op!(kv_action.set_oid_to_iid(&oid, iid_incr));
+                            executor_ensure_op!(kv_action.set_iid_to_oid(iid_incr, &oid));
 
                             Some(iid_incr)
                         } else {
+                            error!("failed updating push executor meta-to-value iid increment");
+
                             None
                         }
                     } else {
+                        error!("failed getting push executor meta-to-value iid increment");
+
                         None
                     }
                 });
@@ -108,10 +112,14 @@ impl ExecutorPush {
 
                                 term_iids.insert(0, iid);
 
-                                kv_action.set_term_to_iids(term_hashed, &term_iids).ok();
+                                executor_ensure_op!(
+                                    kv_action.set_term_to_iids(term_hashed, &term_iids)
+                                );
 
                                 // Insert term into IID to terms map
                                 iid_terms_hashed.insert(term_hashed);
+                            } else {
+                                error!("failed getting push executor term-to-iids");
                             }
                         }
 
@@ -131,7 +139,7 @@ impl ExecutorPush {
                             collected_iids
                         );
 
-                        kv_action.set_iid_to_terms(iid, &collected_iids).ok();
+                        executor_ensure_op!(kv_action.set_iid_to_terms(iid, &collected_iids));
                     }
 
                     return Ok(());

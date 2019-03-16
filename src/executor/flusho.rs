@@ -33,20 +33,28 @@ impl ExecutorFlushO {
 
                     if let Some(iid) = iid_value {
                         // Resolve terms associated to IID
-                        let iid_terms = kv_action
-                            .get_iid_to_terms(iid)
-                            .ok()
-                            .unwrap_or(None)
-                            .unwrap_or(Vec::new());
+                        let iid_terms = {
+                            if let Ok(iid_terms_value) = kv_action.get_iid_to_terms(iid) {
+                                iid_terms_value.unwrap_or(Vec::new())
+                            } else {
+                                error!("failed getting flusho executor iid-to-terms");
+
+                                Vec::new()
+                            }
+                        };
 
                         // Flush bucket (batch operation, as it is shared w/ other executors)
                         if let Ok(batch_count) = kv_action.batch_flush_bucket(iid, &oid, &iid_terms)
                         {
                             count_flushed += batch_count;
+                        } else {
+                            error!("failed executing batch-flush-bucket in flusho executor");
                         }
                     }
 
                     return Ok(count_flushed);
+                } else {
+                    error!("failed getting flusho executor oid-to-iid");
                 }
             }
         }

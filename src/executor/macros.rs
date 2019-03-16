@@ -5,6 +5,16 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 #[macro_export]
+macro_rules! executor_ensure_op {
+    ($operation:expr) => {
+        match $operation {
+            Ok(_) => {}
+            Err(err) => error!("executor operation failed: {:?}", err),
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! executor_kv_lock_read {
     ($store:ident) => {
         let kv_store_reference = $store.clone();
