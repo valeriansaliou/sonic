@@ -16,11 +16,15 @@ impl ExecutorFlushC {
         //   even if dropped in the inner function, as this caller would still own a reference to \
         //   it.
         if let StoreItem(collection, None, None) = store {
-            if StoreFSTActionBuilder::erase(collection, None).is_ok() == true {
-                return StoreKVActionBuilder::erase(collection);
+            match (
+                StoreKVActionBuilder::erase(collection, None),
+                StoreFSTActionBuilder::erase(collection, None),
+            ) {
+                (Ok(erase_count), Ok(_)) => Ok(erase_count),
+                _ => Err(()),
             }
+        } else {
+            Err(())
         }
-
-        Err(())
     }
 }

@@ -16,8 +16,8 @@ impl ExecutorFlushO {
             //   prevents the database from being erased while using it in this block.
             let _kv_access = STORE_ACCESS_LOCK.read().unwrap();
 
-            if let Ok(kv_store) = StoreKVPool::acquire(collection) {
-                let kv_action = StoreKVActionBuilder::write(bucket, kv_store);
+            if let Ok(kv_store) = StoreKVPool::acquire(collection, bucket) {
+                let kv_action = StoreKVActionBuilder::write(kv_store);
 
                 // Try to resolve existing OID to IID (if it does not exist, there is nothing to \
                 //   be flushed)

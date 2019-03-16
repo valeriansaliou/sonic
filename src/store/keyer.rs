@@ -26,8 +26,7 @@ enum StoreKeyerIdx<'a> {
     IIDToTerms(StoreObjectIID),
 }
 
-type StoreKeyerKey = [u8; 9];
-pub type StoreKeyerPrefix = [u8; 5];
+type StoreKeyerKey = [u8; 5];
 
 impl<'a> StoreKeyerIdx<'a> {
     pub fn to_index(&self) -> u8 {
@@ -42,50 +41,44 @@ impl<'a> StoreKeyerIdx<'a> {
 }
 
 impl StoreKeyerBuilder {
-    pub fn meta_to_value<'a>(bucket: &'a str, meta: &'a StoreMetaKey) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::MetaToValue(meta), bucket)
+    pub fn meta_to_value<'a>(meta: &'a StoreMetaKey) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::MetaToValue(meta))
     }
 
-    pub fn term_to_iids<'a>(bucket: &'a str, term_hash: StoreTermHashed) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::TermToIIDs(term_hash), bucket)
+    pub fn term_to_iids<'a>(term_hash: StoreTermHashed) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::TermToIIDs(term_hash))
     }
 
-    pub fn oid_to_iid<'a>(bucket: &'a str, oid: &'a StoreObjectOID) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::OIDToIID(oid), bucket)
+    pub fn oid_to_iid<'a>(oid: &'a StoreObjectOID) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::OIDToIID(oid))
     }
 
-    pub fn iid_to_oid<'a>(bucket: &'a str, iid: StoreObjectIID) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::IIDToOID(iid), bucket)
+    pub fn iid_to_oid<'a>(iid: StoreObjectIID) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::IIDToOID(iid))
     }
 
-    pub fn iid_to_terms<'a>(bucket: &'a str, iid: StoreObjectIID) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::IIDToTerms(iid), bucket)
+    pub fn iid_to_terms<'a>(iid: StoreObjectIID) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::IIDToTerms(iid))
     }
 
-    fn make<'a>(idx: StoreKeyerIdx<'a>, bucket: &'a str) -> StoreKeyer {
+    fn make<'a>(idx: StoreKeyerIdx<'a>) -> StoreKeyer {
         StoreKeyer {
-            key: Self::build_key(idx, bucket),
+            key: Self::build_key(idx),
         }
     }
 
-    fn build_key<'a>(idx: StoreKeyerIdx<'a>, bucket: &'a str) -> StoreKeyerKey {
-        // Key format: [idx<1B> | bucket<4B> | route<4B>]
+    fn build_key<'a>(idx: StoreKeyerIdx<'a>) -> StoreKeyerKey {
+        // Key format: [idx<1B> | route<4B>]
 
-        // Encode key bucket + key route from u32 to array of u8 (ie. binary)
-        let (mut bucket_encoded, mut route_encoded) = ([0; 4], [0; 4]);
+        // Encode key key route from u32 to array of u8 (ie. binary)
+        let mut route_encoded = [0; 4];
 
-        NativeEndian::write_u32(&mut bucket_encoded, Self::hash_compact(bucket));
         NativeEndian::write_u32(&mut route_encoded, Self::route_to_compact(&idx));
 
         // Generate final binary key
         [
             // [idx<1B>]
             idx.to_index(),
-            // [bucket<4B>]
-            bucket_encoded[0],
-            bucket_encoded[1],
-            bucket_encoded[2],
-            bucket_encoded[3],
             // [route<4B>]
             route_encoded[0],
             route_encoded[1],
@@ -116,37 +109,16 @@ impl StoreKeyer {
     pub fn as_bytes(&self) -> StoreKeyerKey {
         self.key
     }
-
-    pub fn as_prefix(&self) -> StoreKeyerPrefix {
-        // Prefix format: [idx<1B> | bucket<4B>]
-
-        [
-            self.key[0],
-            self.key[1],
-            self.key[2],
-            self.key[3],
-            self.key[4],
-        ]
-    }
 }
 
 impl fmt::Display for StoreKeyer {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Convert to number
-        let (key_bucket, key_route) = (
-            Cursor::new(&self.key[1..5])
-                .read_u32::<NativeEndian>()
-                .unwrap_or(0),
-            Cursor::new(&self.key[5..9])
-                .read_u32::<NativeEndian>()
-                .unwrap_or(0),
-        );
+        let key_route = Cursor::new(&self.key[1..5])
+            .read_u32::<NativeEndian>()
+            .unwrap_or(0);
 
-        write!(
-            f,
-            "'{}:{:x?}:{:x?}' {:?}",
-            self.key[0], key_bucket, key_route, self.key
-        )
+        write!(f, "'{}:{:x?}' {:?}", self.key[0], key_route, self.key)
     }
 }
 
@@ -158,7 +130,7 @@ mod tests {
     fn it_keys_meta_to_value() {
         assert_eq!(
             StoreKeyerBuilder::meta_to_value("user:0dcde3a6", &StoreMetaKey::IIDIncr).as_bytes(),
-            [0, 19, 71, 19, 114, 0, 0, 0, 0]
+            [0, 0, 0, 0, 0]
         );
     }
 
@@ -166,11 +138,11 @@ mod tests {
     fn it_keys_term_to_iids() {
         assert_eq!(
             StoreKeyerBuilder::term_to_iids("user:0dcde3a6", 772137347).as_bytes(),
-            [1, 19, 71, 19, 114, 131, 225, 5, 46]
+            [1, 131, 225, 5, 46]
         );
         assert_eq!(
             StoreKeyerBuilder::term_to_iids("default", 3582484684).as_bytes(),
-            [1, 225, 21, 169, 106, 204, 96, 136, 213]
+            [1, 204, 96, 136, 213]
         );
     }
 
@@ -179,7 +151,7 @@ mod tests {
         assert_eq!(
             StoreKeyerBuilder::oid_to_iid("user:0dcde3a6", &"conversation:6501e83a".to_string())
                 .as_bytes(),
-            [2, 19, 71, 19, 114, 31, 156, 118, 213]
+            [2, 31, 156, 118, 213]
         );
     }
 
@@ -187,7 +159,7 @@ mod tests {
     fn it_keys_iid_to_oid() {
         assert_eq!(
             StoreKeyerBuilder::iid_to_oid("user:0dcde3a6", 10292198).as_bytes(),
-            [3, 19, 71, 19, 114, 230, 11, 157, 0]
+            [3, 230, 11, 157, 0]
         );
     }
 
@@ -195,11 +167,11 @@ mod tests {
     fn it_keys_iid_to_terms() {
         assert_eq!(
             StoreKeyerBuilder::iid_to_terms("user:0dcde3a6", 1).as_bytes(),
-            [4, 19, 71, 19, 114, 1, 0, 0, 0]
+            [4, 1, 0, 0, 0]
         );
         assert_eq!(
             StoreKeyerBuilder::iid_to_terms("user:0dcde3a6", 20).as_bytes(),
-            [4, 19, 71, 19, 114, 20, 0, 0, 0]
+            [4, 20, 0, 0, 0]
         );
     }
 }

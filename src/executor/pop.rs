@@ -26,11 +26,11 @@ impl ExecutorPop {
             );
 
             if let (Ok(kv_store), Ok(fst_store)) = (
-                StoreKVPool::acquire(collection),
+                StoreKVPool::acquire(collection, bucket),
                 StoreFSTPool::acquire(collection, bucket),
             ) {
                 let (kv_action, fst_action) = (
-                    StoreKVActionBuilder::write(bucket, kv_store),
+                    StoreKVActionBuilder::write(kv_store),
                     StoreFSTActionBuilder::write(fst_store),
                 );
 

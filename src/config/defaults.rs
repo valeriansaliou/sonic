@@ -36,7 +36,7 @@ pub fn store_fst_path() -> PathBuf {
 }
 
 pub fn store_kv_pool_inactive_after() -> u64 {
-    1800
+    180
 }
 
 pub fn store_kv_database_compress() -> bool {
@@ -60,9 +60,9 @@ pub fn store_kv_database_max_flushes() -> u16 {
 }
 
 pub fn store_fst_pool_inactive_after() -> u64 {
-    300
+    180
 }
 
 pub fn store_fst_graph_consolidate_after() -> u64 {
-    180
+    120
 }

@@ -33,11 +33,11 @@ impl ExecutorSearch {
             );
 
             if let (Ok(kv_store), Ok(fst_store)) = (
-                StoreKVPool::acquire(collection),
+                StoreKVPool::acquire(collection, bucket),
                 StoreFSTPool::acquire(collection, bucket),
             ) {
                 let (kv_action, fst_action) = (
-                    StoreKVActionBuilder::read(bucket, kv_store),
+                    StoreKVActionBuilder::read(kv_store),
                     StoreFSTActionBuilder::read(fst_store),
                 );
 

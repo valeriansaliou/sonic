@@ -588,7 +588,7 @@ impl StoreFSTActionBuilder {
     pub fn erase<'a, T: Into<&'a str>>(collection: T, bucket: Option<T>) -> Result<u32, ()> {
         let collection_str = collection.into();
 
-        info!("erase requested on collection: {}", collection_str);
+        info!("fst erase requested on collection: {}", collection_str);
 
         // Acquire write + access locks, and reference it in context
         // Notice: write lock prevents graph to be acquired from any context; while access lock \
@@ -611,7 +611,7 @@ impl StoreFSTActionBuilder {
 
         if collection_path.exists() == true {
             debug!(
-                "collection store exists, erasing: {}/* at path: {:?}",
+                "fst collection store exists, erasing: {}/* at path: {:?}",
                 collection_str, &collection_path
             );
 
@@ -624,36 +624,49 @@ impl StoreFSTActionBuilder {
 
                 for entry in entries {
                     if let Ok(entry) = entry {
-                        if let Some(entry_name) = entry.file_name().to_str() {
-                            let entry_name_len = entry_name.len();
+                        if let (Ok(entry_type), Some(entry_name)) =
+                            (entry.file_type(), entry.file_name().to_str())
+                        {
+                            if entry_type.is_file() == true {
+                                let entry_name_len = entry_name.len();
 
-                            // FST file found? This is a bucket.
-                            if entry_name_len > fst_extension_len
-                                && entry_name.ends_with(fst_extension) == true
-                            {
-                                buckets.push(String::from(
-                                    &entry_name[..(entry_name_len - fst_extension_len)],
-                                ));
+                                // FST file found? This is a bucket.
+                                if entry_name_len > fst_extension_len
+                                    && entry_name.ends_with(fst_extension) == true
+                                {
+                                    buckets.push(String::from(
+                                        &entry_name[..(entry_name_len - fst_extension_len)],
+                                    ));
+                                }
                             }
                         }
                     }
                 }
             } else {
                 warn!(
-                    "failed reading directory for erasure: {:?}",
+                    "failed reading directory for fst erasure: {:?}",
                     collection_path
                 );
             }
 
             // Force a FST graph close (on all contained buckets)
             {
-                let mut graph_pool_write = GRAPH_POOL.write().unwrap();
+                let (mut graph_pool_write, mut graph_consolidate_write) = (
+                    GRAPH_POOL.write().unwrap(),
+                    GRAPH_CONSOLIDATE.write().unwrap(),
+                );
 
                 // TODO: this is ugly, do we really need to create a heap string on each iter?!
                 for bucket in buckets {
-                    debug!("forcibly closing graph bucket: {}", bucket);
+                    debug!(
+                        "forcibly closing fst graph bucket: {}/{}",
+                        collection_str, bucket
+                    );
 
-                    graph_pool_write.remove(&(collection_str.to_string(), bucket));
+                    let bucket_target = (collection_str.to_string(), bucket);
+
+                    graph_pool_write.remove(&bucket_target);
+                    graph_consolidate_write.remove(&bucket_target);
                 }
             }
 
@@ -661,7 +674,7 @@ impl StoreFSTActionBuilder {
             let erase_result = fs::remove_dir_all(&collection_path);
 
             if erase_result.is_ok() == true {
-                debug!("done with collection erasure");
+                debug!("done with fst collection erasure");
 
                 Ok(1)
             } else {
@@ -669,7 +682,7 @@ impl StoreFSTActionBuilder {
             }
         } else {
             debug!(
-                "collection store does not exist, consider already erased: {}/* at path: {:?}",
+                "fst collection store does not exist, consider already erased: {}/* at path: {:?}",
                 collection_str, &collection_path
             );
 
@@ -679,7 +692,7 @@ impl StoreFSTActionBuilder {
 
     fn erase_bucket(collection_str: &str, bucket_str: &str) -> Result<u32, ()> {
         debug!(
-            "sub-erase on bucket: {} for collection: {}",
+            "sub-erase on fst bucket: {} for collection: {}",
             bucket_str, collection_str
         );
 
@@ -691,23 +704,23 @@ impl StoreFSTActionBuilder {
 
         if bucket_path.exists() == true {
             debug!(
-                "bucket graph exists, erasing: {}/{} at path: {:?}",
+                "fst bucket graph exists, erasing: {}/{} at path: {:?}",
                 collection_str, bucket_str, &bucket_path
             );
 
             // Force a FST graph close
             {
-                GRAPH_POOL
-                    .write()
-                    .unwrap()
-                    .remove(&(collection_str.to_string(), bucket_str.to_string()));
+                let bucket_target = (collection_str.to_string(), bucket_str.to_string());
+
+                GRAPH_POOL.write().unwrap().remove(&bucket_target);
+                GRAPH_CONSOLIDATE.write().unwrap().remove(&bucket_target);
             }
 
             // Remove FST graph storage from filesystem
             let erase_result = fs::remove_file(&bucket_path);
 
             if erase_result.is_ok() == true {
-                debug!("done with bucket erasure");
+                debug!("done with fst bucket erasure");
 
                 Ok(1)
             } else {
@@ -715,7 +728,7 @@ impl StoreFSTActionBuilder {
             }
         } else {
             debug!(
-                "bucket graph does not exist, consider already erased: {}/{} at path: {:?}",
+                "fst bucket graph does not exist, consider already erased: {}/{} at path: {:?}",
                 collection_str, bucket_str, &bucket_path
             );
 
