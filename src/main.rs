@@ -16,6 +16,7 @@ extern crate byteorder;
 extern crate fst;
 extern crate fst_levenshtein;
 extern crate fst_regex;
+extern crate graceful;
 extern crate hashbrown;
 extern crate linked_hash_set;
 extern crate rand;
@@ -44,12 +45,14 @@ use std::thread;
 use std::time::Duration;
 
 use clap::{App, Arg};
+use graceful::SignalGuard;
 use log::LevelFilter;
 
 use channel::listen::ChannelListenBuilder;
 use config::config::Config;
 use config::logger::ConfigLogger;
 use config::reader::ConfigReader;
+use store::fst::StoreFSTPool;
 use tasker::runtime::TaskerBuilder;
 
 struct AppArgs {
@@ -139,6 +142,8 @@ fn main() {
         LevelFilter::from_str(&APP_CONF.server.log_level).expect("invalid log level"),
     );
 
+    let signal_guard = SignalGuard::new();
+
     info!("starting up");
 
     // Ensure all states are bound
@@ -148,7 +153,17 @@ fn main() {
     thread::spawn(spawn_tasker);
 
     // Spawn channel (foreground thread)
-    spawn_channel();
+    thread::spawn(spawn_channel);
 
-    error!("failed to start");
+    info!("started");
+
+    signal_guard.at_exit(move |signal| {
+        info!("stopping gracefully (got signal: {})", signal);
+
+        // Perform a FST consolidation (ensures all in-memory items are synced on-disk before \
+        //   shutdown; otherwise we would lose all non-consolidated FST changes)
+        StoreFSTPool::consolidate(true);
+
+        info!("stopped");
+    });
 }
