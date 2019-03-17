@@ -160,13 +160,13 @@ Both searches and object management (ie. data ingestion) is handled via the Soni
 
 Sonic Channel can be accessed via the `telnet` utility from your computer. The very same system is also used by all Sonic Channel libraries (eg. NodeJS).
 
-### Sonic Channel (uninitialized)
+### 1️⃣ Sonic Channel (uninitialized)
 
 * `START <mode>`: select mode to use for connection (either: `search` or `ingest`)
 
 _Issuing any other command — eg. `QUIT` — in this mode will abort the TCP connection, effectively resulting in a `QUIT` with the `ENDED not_recognized` response._
 
-### Sonic Channel (Search mode)
+### 2️⃣ Sonic Channel (Search mode)
 
 _The Sonic Channel Search mode is used for querying the search index. Once in this mode, you cannot switch to other modes or gain access to commands from other modes._
 
@@ -226,7 +226,7 @@ _Notes on what happens:_
 * **T11 + T13:** we query collection `helpdesk` twice (in the example, this one is heavy, so processing of results takes more time);
 * **T17 + T18:** we receive search results for search queries of T11 + T13 (this took a while!);
 
-### Sonic Channel (Ingest mode)
+### 3️⃣ Sonic Channel (Ingest mode)
 
 _The Sonic Channel Ingest mode is used for altering the search index (push, pop and flush). Once in this mode, you cannot switch to other modes or gain access to commands from other modes._
 
@@ -293,7 +293,7 @@ _Notes on what happens:_
 * **T18:** we flush all index data from collection `messages` and bucket `user:0dcde3a6`;
 * **T19:** 42 terms have been flushed from index for command in T18;
 
-### Sonic Channel (Control mode)
+### 4️⃣ Sonic Channel (Control mode)
 
 _The Sonic Channel Control mode is used for administration purposes. Once in this mode, you cannot switch to other modes or gain access to commands from other modes._
 
