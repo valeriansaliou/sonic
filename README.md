@@ -238,7 +238,6 @@ _The Sonic Channel Ingest mode is used for altering the search index (push, pop 
 * `FLUSHC`: Flush all indexed data from a collection (syntax: `FLUSHC <collection>`)
 * `FLUSHB`: Flush all indexed data from a bucket in a collection (syntax: `FLUSHB <collection> <bucket>`)
 * `FLUSHO`: Flush all indexed data from an object in a bucket in collection (syntax: `FLUSHO <collection> <bucket> <object>`)
-* `TRIGGER`: trigger an action (syntax: `TRIGGER [<action>]?`)
 * `PING`: ping server (syntax: `PING`)
 * `HELP`: show help (syntax: `HELP [<manual>]?`)
 * `QUIT`: stop connection (syntax: `QUIT`)
@@ -293,6 +292,46 @@ _Notes on what happens:_
 * **T13:** there are 43 terms (ie. words) in index for query in T12;
 * **T18:** we flush all index data from collection `messages` and bucket `user:0dcde3a6`;
 * **T19:** 42 terms have been flushed from index for command in T18;
+
+### Sonic Channel (Control mode)
+
+_The Sonic Channel Control mode is used for administration purposes. Once in this mode, you cannot switch to other modes or gain access to commands from other modes._
+
+**➡️ Available commands:**
+
+* `TRIGGER`: trigger an action (syntax: `TRIGGER [<action>]?`)
+* `PING`: ping server (syntax: `PING`)
+* `HELP`: show help (syntax: `HELP [<manual>]?`)
+* `QUIT`: stop connection (syntax: `QUIT`)
+
+**⏩ Syntax terminology:**
+
+* `<action>`: action to be triggered (available actions: `consolidate`);
+* `<manual>`: help manual to be shown (available manuals: `commands`);
+
+**⬇️ Control flow example (via `telnet`):**
+
+```bash
+T1: telnet sonic.local 1491
+T2: Trying ::1...
+T3: Connected to sonic.local.
+T4: Escape character is '^]'.
+T5: CONNECTED <sonic-server v1.0.0>
+T6: START control SecretPassword
+T7: STARTED control protocol(1) buffer(20000)
+T8: TRIGGER consolidate
+T9: OK
+T10: PING
+T11: PONG
+T12: QUIT
+T13: ENDED quit
+T14: Connection closed by foreign host.
+```
+
+_Notes on what happens:_
+
+* **T6:** we enter `control` mode (this is required to enable `control` commands);
+* **T8:** we trigger a database consolidation (instead of waiting for the next automated consolidation tick);
 
 **📦 Sonic Channel Libraries:**
 

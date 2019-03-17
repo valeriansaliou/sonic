@@ -10,14 +10,16 @@ use std::str::{self, SplitWhitespace};
 use std::time::Instant;
 
 use super::command::{
-    ChannelCommandBase, ChannelCommandError, ChannelCommandIngest, ChannelCommandResponse,
-    ChannelCommandSearch, COMMANDS_MODE_INGEST, COMMANDS_MODE_SEARCH,
+    ChannelCommandBase, ChannelCommandControl, ChannelCommandError, ChannelCommandIngest,
+    ChannelCommandResponse, ChannelCommandSearch, COMMANDS_MODE_CONTROL, COMMANDS_MODE_INGEST,
+    COMMANDS_MODE_SEARCH,
 };
 use crate::LINE_FEED;
 
 pub struct ChannelMessage;
 pub struct ChannelMessageModeSearch;
 pub struct ChannelMessageModeIngest;
+pub struct ChannelMessageModeControl;
 
 static COMMAND_ELAPSED_MILLIS_SLOW_WARN: u128 = 50;
 
@@ -121,53 +123,33 @@ impl ChannelMessage {
 
 impl ChannelMessageMode for ChannelMessageModeSearch {
     fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
-        let (command, parts) = ChannelMessage::extract(message);
-
-        if command.is_empty() == true || COMMANDS_MODE_SEARCH.contains(&command.as_str()) == true {
-            match command.as_str() {
-                "" => Ok(vec![ChannelCommandResponse::Void]),
-                "QUERY" => ChannelCommandSearch::dispatch_query(parts),
-                "SUGGEST" => ChannelCommandSearch::dispatch_suggest(parts),
-                "PING" => ChannelCommandBase::dispatch_ping(parts),
-                "HELP" => ChannelCommandSearch::dispatch_help(parts),
-                "QUIT" => ChannelCommandBase::dispatch_quit(parts),
-                _ => Ok(vec![ChannelCommandResponse::Err(
-                    ChannelCommandError::InternalError,
-                )]),
-            }
-        } else {
-            Ok(vec![ChannelCommandResponse::Err(
-                ChannelCommandError::UnknownCommand,
-            )])
-        }
+        gen_channel_message_mode_handle!(message, COMMANDS_MODE_SEARCH, {
+            "QUERY" => ChannelCommandSearch::dispatch_query,
+            "SUGGEST" => ChannelCommandSearch::dispatch_suggest,
+            "HELP" => ChannelCommandSearch::dispatch_help,
+        })
     }
 }
 
 impl ChannelMessageMode for ChannelMessageModeIngest {
     fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
-        let (command, parts) = ChannelMessage::extract(message);
+        gen_channel_message_mode_handle!(message, COMMANDS_MODE_INGEST, {
+            "PUSH" => ChannelCommandIngest::dispatch_push,
+            "POP" => ChannelCommandIngest::dispatch_pop,
+            "COUNT" => ChannelCommandIngest::dispatch_count,
+            "FLUSHC" => ChannelCommandIngest::dispatch_flushc,
+            "FLUSHB" => ChannelCommandIngest::dispatch_flushb,
+            "FLUSHO" => ChannelCommandIngest::dispatch_flusho,
+            "HELP" => ChannelCommandIngest::dispatch_help,
+        })
+    }
+}
 
-        if command.is_empty() == true || COMMANDS_MODE_INGEST.contains(&command.as_str()) == true {
-            match command.as_str() {
-                "" => Ok(vec![ChannelCommandResponse::Void]),
-                "PUSH" => ChannelCommandIngest::dispatch_push(parts),
-                "POP" => ChannelCommandIngest::dispatch_pop(parts),
-                "COUNT" => ChannelCommandIngest::dispatch_count(parts),
-                "FLUSHC" => ChannelCommandIngest::dispatch_flushc(parts),
-                "FLUSHB" => ChannelCommandIngest::dispatch_flushb(parts),
-                "FLUSHO" => ChannelCommandIngest::dispatch_flusho(parts),
-                "TRIGGER" => ChannelCommandIngest::dispatch_trigger(parts),
-                "PING" => ChannelCommandBase::dispatch_ping(parts),
-                "HELP" => ChannelCommandIngest::dispatch_help(parts),
-                "QUIT" => ChannelCommandBase::dispatch_quit(parts),
-                _ => Ok(vec![ChannelCommandResponse::Err(
-                    ChannelCommandError::InternalError,
-                )]),
-            }
-        } else {
-            Ok(vec![ChannelCommandResponse::Err(
-                ChannelCommandError::UnknownCommand,
-            )])
-        }
+impl ChannelMessageMode for ChannelMessageModeControl {
+    fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
+        gen_channel_message_mode_handle!(message, COMMANDS_MODE_CONTROL, {
+            "TRIGGER" => ChannelCommandControl::dispatch_trigger,
+            "HELP" => ChannelCommandControl::dispatch_help,
+        })
     }
 }

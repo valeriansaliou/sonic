@@ -7,6 +7,7 @@
 pub enum ChannelMode {
     Search,
     Ingest,
+    Control,
 }
 
 impl ChannelMode {
@@ -14,6 +15,7 @@ impl ChannelMode {
         match value {
             "search" => Ok(ChannelMode::Search),
             "ingest" => Ok(ChannelMode::Ingest),
+            "control" => Ok(ChannelMode::Control),
             _ => Err(()),
         }
     }
@@ -22,6 +24,7 @@ impl ChannelMode {
         match *self {
             ChannelMode::Search => "search",
             ChannelMode::Ingest => "ingest",
+            ChannelMode::Control => "control",
         }
     }
 }

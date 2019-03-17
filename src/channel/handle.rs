@@ -11,7 +11,8 @@ use std::str;
 use std::time::Duration;
 
 use super::message::{
-    ChannelMessage, ChannelMessageModeIngest, ChannelMessageModeSearch, ChannelMessageResult,
+    ChannelMessage, ChannelMessageModeControl, ChannelMessageModeIngest, ChannelMessageModeSearch,
+    ChannelMessageResult,
 };
 use super::mode::ChannelMode;
 use crate::APP_CONF;
@@ -235,6 +236,9 @@ impl ChannelHandle {
             }
             ChannelMode::Ingest => {
                 ChannelMessage::on::<ChannelMessageModeIngest>(stream, message_slice)
+            }
+            ChannelMode::Control => {
+                ChannelMessage::on::<ChannelMessageModeControl>(stream, message_slice)
             }
         }
     }

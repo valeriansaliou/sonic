@@ -44,6 +44,7 @@ pub enum ChannelCommandResponse {
 pub struct ChannelCommandBase;
 pub struct ChannelCommandSearch;
 pub struct ChannelCommandIngest;
+pub struct ChannelCommandControl;
 
 type ChannelResult = Result<Vec<ChannelCommandResponse>, ChannelCommandError>;
 type MetaPartsResult<'a> = Result<(&'a str, &'a str), (&'a str, &'a str)>;
@@ -58,10 +59,11 @@ const META_PART_GROUP_CLOSE: char = ')';
 lazy_static! {
     pub static ref COMMANDS_MODE_SEARCH: Vec<&'static str> =
         vec!["QUERY", "SUGGEST", "PING", "HELP", "QUIT"];
-    pub static ref COMMANDS_MODE_INGEST: Vec<&'static str> = vec![
-        "PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "TRIGGER", "PING", "HELP", "QUIT"
-    ];
-    pub static ref INGEST_TRIGGER_ACTIONS: Vec<&'static str> = vec!["consolidate"];
+    pub static ref COMMANDS_MODE_INGEST: Vec<&'static str> =
+        vec!["PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT"];
+    pub static ref COMMANDS_MODE_CONTROL: Vec<&'static str> =
+        vec!["TRIGGER", "PING", "HELP", "QUIT"];
+    pub static ref CONTROL_TRIGGER_ACTIONS: Vec<&'static str> = vec!["consolidate"];
     static ref MANUAL_MODE_SEARCH: HashMap<&'static str, &'static Vec<&'static str>> =
         [("commands", &*COMMANDS_MODE_SEARCH)]
             .iter()
@@ -69,6 +71,11 @@ lazy_static! {
             .collect();
     static ref MANUAL_MODE_INGEST: HashMap<&'static str, &'static Vec<&'static str>> =
         [("commands", &*COMMANDS_MODE_INGEST)]
+            .iter()
+            .cloned()
+            .collect();
+    static ref MANUAL_MODE_CONTROL: HashMap<&'static str, &'static Vec<&'static str>> =
+        [("commands", &*COMMANDS_MODE_CONTROL)]
             .iter()
             .cloned()
             .collect();
@@ -648,11 +655,17 @@ impl ChannelCommandIngest {
         }
     }
 
+    pub fn dispatch_help(parts: SplitWhitespace) -> ChannelResult {
+        ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_INGEST)
+    }
+}
+
+impl ChannelCommandControl {
     pub fn dispatch_trigger(mut parts: SplitWhitespace) -> ChannelResult {
         match (parts.next(), parts.next()) {
             (None, _) => Ok(vec![ChannelCommandResponse::Result(format!(
                 "actions({})",
-                INGEST_TRIGGER_ACTIONS.join(", ")
+                CONTROL_TRIGGER_ACTIONS.join(", ")
             ))]),
             (Some(action_key), next_part) => {
                 if next_part.is_none() == true {
@@ -675,7 +688,7 @@ impl ChannelCommandIngest {
     }
 
     pub fn dispatch_help(parts: SplitWhitespace) -> ChannelResult {
-        ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_INGEST)
+        ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_CONTROL)
     }
 }
 
