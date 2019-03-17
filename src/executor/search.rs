@@ -76,8 +76,10 @@ impl ExecutorSearch {
 
                         // Suggest N words, in case the first one is found in FST as an exact \
                         //   match of term, we can pick next ones to complete search even further.
+                        // Notice: we add '1' to the 'alternates_try' number as to account for \
+                        //   exact match suggestion that comes as first result and is to be ignored.
                         if let Some(suggested_words) =
-                            fst_action.suggest_words(&term, alternates_try, Some(1))
+                            fst_action.suggest_words(&term, alternates_try + 1, Some(1))
                         {
                             let mut iids_new_len = iids.len();
 
