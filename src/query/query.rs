@@ -16,7 +16,12 @@ pub enum Query<'a> {
         QuerySearchLimit,
         QuerySearchOffset,
     ),
-    Suggest(StoreItem<'a>, QuerySearchID, TokenLexer<'a>),
+    Suggest(
+        StoreItem<'a>,
+        QuerySearchID,
+        TokenLexer<'a>,
+        QuerySearchLimit,
+    ),
     Push(StoreItem<'a>, TokenLexer<'a>),
     Pop(StoreItem<'a>, TokenLexer<'a>),
     Count(StoreItem<'a>),

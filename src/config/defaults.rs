@@ -31,6 +31,14 @@ pub fn channel_search_query_alternates_try() -> usize {
     4
 }
 
+pub fn channel_search_suggest_limit_default() -> u16 {
+    5
+}
+
+pub fn channel_search_suggest_limit_maximum() -> u16 {
+    20
+}
+
 pub fn store_kv_path() -> PathBuf {
     PathBuf::from("./data/store/kv/")
 }

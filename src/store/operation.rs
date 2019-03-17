@@ -24,8 +24,8 @@ impl StoreOperationDispatch {
                 ExecutorSearch::execute(store, query_id, lexer, limit, offset)
                     .map(|results| results.map(|results| results.join(" ")))
             }
-            Query::Suggest(store, query_id, lexer) => {
-                ExecutorSuggest::execute(store, query_id, lexer)
+            Query::Suggest(store, query_id, lexer, limit) => {
+                ExecutorSuggest::execute(store, query_id, lexer, limit)
                     .map(|results| results.map(|results| results.join(" ")))
             }
             Query::Push(store, lexer) => ExecutorPush::execute(store, lexer).map(|_| None),

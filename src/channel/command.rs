@@ -456,15 +456,53 @@ impl ChannelCommandSearch {
                     event_id, collection, bucket
                 );
 
-                // Commit 'suggest' query
-                ChannelCommandBase::commit_pending_operation(
-                    "SUGGEST",
-                    &event_id,
-                    QueryBuilder::suggest(event_id.to_owned(), collection, bucket, &text),
-                )
+                // Define suggest parameters
+                let mut suggest_limit = APP_CONF.channel.search.suggest_limit_default;
+
+                // Parse meta parts (meta comes after text; extract meta parts second)
+                let mut last_meta_err = None;
+
+                while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
+                {
+                    match Self::handle_query_meta(meta_result) {
+                        (_, _, Some(parse_err)) => last_meta_err = Some(parse_err),
+                        (Some(suggest_limit_parsed), None, None) => {
+                            suggest_limit = suggest_limit_parsed
+                        }
+                        _ => {}
+                    }
+                }
+
+                if let Some(err) = last_meta_err {
+                    Err(err)
+                } else if suggest_limit < 1
+                    || suggest_limit > APP_CONF.channel.search.suggest_limit_maximum
+                {
+                    Err(ChannelCommandError::PolicyReject(
+                        "LIMIT out of minimum/maximum bounds",
+                    ))
+                } else {
+                    debug!(
+                        "will suggest for #{} with text: {}, limit: {}",
+                        event_id, text, suggest_limit
+                    );
+
+                    // Commit 'suggest' query
+                    ChannelCommandBase::commit_pending_operation(
+                        "SUGGEST",
+                        &event_id,
+                        QueryBuilder::suggest(
+                            event_id.to_owned(),
+                            collection,
+                            bucket,
+                            &text,
+                            suggest_limit,
+                        ),
+                    )
+                }
             }
             _ => Err(ChannelCommandError::InvalidFormat(
-                "SUGGEST <collection> <bucket> \"<word>\"",
+                "SUGGEST <collection> <bucket> \"<word>\" [LIMIT(<count>)]?",
             )),
         }
     }

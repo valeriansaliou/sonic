@@ -37,12 +37,13 @@ impl QueryBuilder {
         collection: &'a str,
         bucket: &'a str,
         terms: &'a str,
+        limit: u16,
     ) -> QueryBuilderResult<'a> {
         match (
             StoreItemBuilder::from_depth_2(collection, bucket),
             TokenLexerBuilder::from(TokenLexerMode::NormalizeOnly, terms),
         ) {
-            (Ok(store), Ok(text_lexed)) => Ok(Query::Suggest(store, query_id, text_lexed)),
+            (Ok(store), Ok(text_lexed)) => Ok(Query::Suggest(store, query_id, text_lexed, limit)),
             _ => Err(()),
         }
     }
