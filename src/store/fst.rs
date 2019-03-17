@@ -525,14 +525,25 @@ impl StoreFST {
         }
     }
 
-    pub fn lookup_typos(&self, word: &str) -> Result<FSTStream<Levenshtein>, ()> {
+    pub fn lookup_typos(
+        &self,
+        word: &str,
+        max_factor: Option<u32>,
+    ) -> Result<FSTStream<Levenshtein>, ()> {
         // Allow more typos in word as the word gets longer, up to a maximum limit
-        let typo_factor = match word.len() {
+        let mut typo_factor = match word.len() {
             1 | 2 | 3 => 0,
             4 | 5 | 6 => 1,
             7 | 8 | 9 => 2,
             _ => 3,
         };
+
+        // Cap typo factor to set maximum?
+        if let Some(max_factor) = max_factor {
+            if typo_factor > max_factor {
+                typo_factor = max_factor;
+            }
+        }
 
         debug!(
             "looking-up word in fst via 'typos': {} with typo factor: {}",
@@ -791,7 +802,12 @@ impl StoreFSTAction {
         }
     }
 
-    pub fn suggest_words(&self, from_word: &str, limit: usize) -> Option<Vec<String>> {
+    pub fn suggest_words(
+        &self,
+        from_word: &str,
+        limit: usize,
+        max_typo_factor: Option<u32>,
+    ) -> Option<Vec<String>> {
         let mut found_words = Vec::new();
 
         // Try to complete provided word
@@ -803,7 +819,7 @@ impl StoreFSTAction {
 
         // Try to fuzzy-suggest other words? (eg. correct typos)
         if found_words.len() < limit {
-            if let Ok(stream) = self.store.lookup_typos(from_word) {
+            if let Ok(stream) = self.store.lookup_typos(from_word, max_typo_factor) {
                 debug!("looking up for word: {} in 'typos' fst stream", from_word);
 
                 Self::find_words_stream(stream, &mut found_words, limit);

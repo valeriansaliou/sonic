@@ -56,7 +56,7 @@ impl ExecutorSearch {
                     if iids.is_empty() == true {
                         debug!("no iid was found, completing for term: {}", term);
 
-                        if let Some(suggested_words) = fst_action.suggest_words(&term, 1) {
+                        if let Some(suggested_words) = fst_action.suggest_words(&term, 1, Some(1)) {
                             if let Some(suggested_word) = suggested_words.first() {
                                 debug!("got completed word: {} for term: {}", suggested_word, term);
 
