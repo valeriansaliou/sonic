@@ -160,8 +160,6 @@ Both searches and object management (ie. data ingestion) is handled via the Soni
 
 Sonic Channel can be accessed via the `telnet` utility from your computer. The very same system is also used by all Sonic Channel libraries (eg. NodeJS).
 
----
-
 ### 1️⃣ Sonic Channel (uninitialized)
 
 * `START <mode>`: select mode to use for connection (either: `search` or `ingest`)
@@ -340,8 +338,6 @@ _Notes on what happens:_
 
 * **T6:** we enter `control` mode (this is required to enable `control` commands);
 * **T8:** we trigger a database consolidation (instead of waiting for the next automated consolidation tick);
-
----
 
 ## 📦 Sonic Channel Libraries
 
