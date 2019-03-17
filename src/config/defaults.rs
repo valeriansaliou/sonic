@@ -31,7 +31,7 @@ pub fn store_kv_path() -> PathBuf {
     PathBuf::from("./data/store/kv/")
 }
 
-pub fn store_kv_retain_word_objects() -> u32 {
+pub fn store_kv_retain_word_objects() -> usize {
     1000
 }
 

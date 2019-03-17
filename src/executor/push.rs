@@ -12,6 +12,7 @@ use crate::store::fst::{StoreFSTActionBuilder, StoreFSTPool};
 use crate::store::identifiers::{StoreMetaKey, StoreMetaValue, StoreTermHashed};
 use crate::store::item::StoreItem;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVPool};
+use crate::APP_CONF;
 
 pub struct ExecutorPush;
 
@@ -111,6 +112,18 @@ impl ExecutorPush {
                                 info!("has push executor term-to-iids: {}", iid);
 
                                 term_iids.insert(0, iid);
+
+                                // Truncate IIDs linked to term? (ie. storage is too long)
+                                let truncate_limit = APP_CONF.store.kv.retain_word_objects;
+
+                                if term_iids.len() > truncate_limit {
+                                    info!(
+                                        "push executor term-to-iids object too long (limit: {})",
+                                        truncate_limit
+                                    );
+
+                                    term_iids.truncate(truncate_limit);
+                                }
 
                                 executor_ensure_op!(
                                     kv_action.set_term_to_iids(term_hashed, &term_iids)

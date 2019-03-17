@@ -55,7 +55,7 @@ pub struct ConfigStoreKV {
     pub path: PathBuf,
 
     #[serde(default = "defaults::store_kv_retain_word_objects")]
-    pub retain_word_objects: u32,
+    pub retain_word_objects: usize,
 
     pub pool: ConfigStoreKVPool,
     pub database: ConfigStoreKVDatabase,
