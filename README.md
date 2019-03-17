@@ -351,7 +351,7 @@ Sonic distributes official Sonic Channel bindings for your programming language:
 
 👉 Cannot find the library for your programming language? Build your own and be referenced here! ([contact me](https://valeriansaliou.name/))
 
-## Which languages are supported?
+## Which text languages are supported?
 
 Sonic supports a wide range of languages in its lexing system. If a language is not in this list, you will still be able to push this language to the search index, but stop-words will not be eluded, which could lead to lower-quality search results.
 
