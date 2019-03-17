@@ -34,7 +34,7 @@ _👋 You use Sonic and you want to be listed there? [Contact me](https://valeri
 
 * **Search terms are stored in collections, organized in buckets**; you may use a single bucket, or a bucket per user on your platform if you need to search in separate graphs.
 * **Search results return object identifiers**, that can be resolved from an external database if you need to enrich the search results. This makes Sonic a simple graph storage system, that points to identifier results. Sonic doesn't store any textual data in its graphs.
-* **Networked channel interface (Sonic Channel)**, that let you search your stored graphs or manage data ingestion (push in the index, pop from the index, flush a collection, flush a bucket, etc.). The Sonic Channel protocol was designed to be lightweight on resources and simple to integrate with (the protocol is specified in the sections below).
+* **Networked channel interface (Sonic Channel)**, that let you search your stored graphs, manage data ingestion (push in the index, pop from the index, flush a collection, flush a bucket, etc.) and perform administrative actions. The Sonic Channel protocol was designed to be lightweight on resources and simple to integrate with (the protocol is specified in the sections below).
 * **Easy-to-use libraries**, that let you connect to Sonic Channel from your apps.
 
 ## Limitations
