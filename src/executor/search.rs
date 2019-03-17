@@ -47,8 +47,9 @@ impl ExecutorSearch {
                 let mut found_iids: LinkedHashSet<StoreObjectIID> = LinkedHashSet::new();
 
                 while let Some((term, term_hashed)) = lexer.next() {
+                    // TODO: paging (currently only page 0)
                     let mut iids = kv_action
-                        .get_term_to_iids(term_hashed)
+                        .get_term_to_iids(term_hashed, 0)
                         .unwrap_or(None)
                         .unwrap_or(Vec::new());
 
@@ -60,8 +61,9 @@ impl ExecutorSearch {
                             if let Some(suggested_word) = suggested_words.first() {
                                 debug!("got completed word: {} for term: {}", suggested_word, term);
 
+                                // TODO: paging (currently only page 0)
                                 if let Some(suggested_iids) = kv_action
-                                    .get_term_to_iids(StoreTermHash::from(&suggested_word))
+                                    .get_term_to_iids(StoreTermHash::from(&suggested_word), 0)
                                     .unwrap_or(None)
                                 {
                                     iids.extend(suggested_iids);
