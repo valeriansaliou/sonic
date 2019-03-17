@@ -294,24 +294,12 @@ impl ChannelCommandBase {
         }
     }
 
-    pub fn make_error_invalid_meta_key(
-        meta_key: &str,
-        meta_value: &str,
-    ) -> Option<ChannelCommandError> {
-        Some(ChannelCommandError::InvalidMetaKey((
-            meta_key.to_owned(),
-            meta_value.to_owned(),
-        )))
+    pub fn make_error_invalid_meta_key(meta_key: &str, meta_value: &str) -> ChannelCommandError {
+        ChannelCommandError::InvalidMetaKey((meta_key.to_owned(), meta_value.to_owned()))
     }
 
-    pub fn make_error_invalid_meta_value(
-        meta_key: &str,
-        meta_value: &str,
-    ) -> Option<ChannelCommandError> {
-        Some(ChannelCommandError::InvalidMetaValue((
-            meta_key.to_owned(),
-            meta_value.to_owned(),
-        )))
+    pub fn make_error_invalid_meta_value(meta_key: &str, meta_value: &str) -> ChannelCommandError {
+        ChannelCommandError::InvalidMetaValue((meta_key.to_owned(), meta_value.to_owned()))
     }
 
     pub fn commit_ok_operation<'a>(query_builder: QueryBuilderResult<'a>) -> ChannelResult {
@@ -397,11 +385,9 @@ impl ChannelCommandSearch {
                 while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
                 {
                     match Self::handle_query_meta(meta_result) {
-                        (_, _, Some(parse_err)) => last_meta_err = Some(parse_err),
-                        (Some(query_limit_parsed), None, None) => query_limit = query_limit_parsed,
-                        (None, Some(query_offset_parsed), None) => {
-                            query_offset = query_offset_parsed
-                        }
+                        Ok((Some(query_limit_parsed), None)) => query_limit = query_limit_parsed,
+                        Ok((None, Some(query_offset_parsed))) => query_offset = query_offset_parsed,
+                        Err(parse_err) => last_meta_err = Some(parse_err),
                         _ => {}
                     }
                 }
@@ -464,11 +450,9 @@ impl ChannelCommandSearch {
 
                 while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
                 {
-                    match Self::handle_query_meta(meta_result) {
-                        (_, _, Some(parse_err)) => last_meta_err = Some(parse_err),
-                        (Some(suggest_limit_parsed), None, None) => {
-                            suggest_limit = suggest_limit_parsed
-                        }
+                    match Self::handle_suggest_meta(meta_result) {
+                        Ok(Some(suggest_limit_parsed)) => suggest_limit = suggest_limit_parsed,
+                        Err(parse_err) => last_meta_err = Some(parse_err),
                         _ => {}
                     }
                 }
@@ -513,11 +497,7 @@ impl ChannelCommandSearch {
 
     fn handle_query_meta(
         meta_result: MetaPartsResult,
-    ) -> (
-        Option<QuerySearchLimit>,
-        Option<QuerySearchOffset>,
-        Option<ChannelCommandError>,
-    ) {
+    ) -> Result<(Option<QuerySearchLimit>, Option<QuerySearchOffset>), ChannelCommandError> {
         match meta_result {
             Ok((meta_key, meta_value)) => {
                 debug!("handle query meta: {} = {}", meta_key, meta_value);
@@ -526,45 +506,65 @@ impl ChannelCommandSearch {
                     "LIMIT" => {
                         // 'LIMIT(<count>)' where 0 <= <count> < 2^16
                         if let Ok(query_limit_parsed) = meta_value.parse::<QuerySearchLimit>() {
-                            (Some(query_limit_parsed), None, None)
+                            Ok((Some(query_limit_parsed), None))
                         } else {
-                            (
-                                None,
-                                None,
-                                ChannelCommandBase::make_error_invalid_meta_value(
-                                    &meta_key,
-                                    &meta_value,
-                                ),
-                            )
+                            Err(ChannelCommandBase::make_error_invalid_meta_value(
+                                &meta_key,
+                                &meta_value,
+                            ))
                         }
                     }
                     "OFFSET" => {
                         // 'OFFSET(<count>)' where 0 <= <count> < 2^32
                         if let Ok(query_offset_parsed) = meta_value.parse::<QuerySearchOffset>() {
-                            (None, Some(query_offset_parsed), None)
+                            Ok((None, Some(query_offset_parsed)))
                         } else {
-                            (
-                                None,
-                                None,
-                                ChannelCommandBase::make_error_invalid_meta_value(
-                                    &meta_key,
-                                    &meta_value,
-                                ),
-                            )
+                            Err(ChannelCommandBase::make_error_invalid_meta_value(
+                                &meta_key,
+                                &meta_value,
+                            ))
                         }
                     }
-                    _ => (
-                        None,
-                        None,
-                        ChannelCommandBase::make_error_invalid_meta_key(&meta_key, &meta_value),
-                    ),
+                    _ => Err(ChannelCommandBase::make_error_invalid_meta_key(
+                        &meta_key,
+                        &meta_value,
+                    )),
                 }
             }
-            Err(err) => (
-                None,
-                None,
-                ChannelCommandBase::make_error_invalid_meta_key(&err.0, &err.1),
-            ),
+            Err(err) => Err(ChannelCommandBase::make_error_invalid_meta_key(
+                &err.0, &err.1,
+            )),
+        }
+    }
+
+    fn handle_suggest_meta(
+        meta_result: MetaPartsResult,
+    ) -> Result<Option<QuerySearchLimit>, ChannelCommandError> {
+        match meta_result {
+            Ok((meta_key, meta_value)) => {
+                debug!("handle suggest meta: {} = {}", meta_key, meta_value);
+
+                match meta_key {
+                    "LIMIT" => {
+                        // 'LIMIT(<count>)' where 0 <= <count> < 2^16
+                        if let Ok(suggest_limit_parsed) = meta_value.parse::<QuerySearchLimit>() {
+                            Ok(Some(suggest_limit_parsed))
+                        } else {
+                            Err(ChannelCommandBase::make_error_invalid_meta_value(
+                                &meta_key,
+                                &meta_value,
+                            ))
+                        }
+                    }
+                    _ => Err(ChannelCommandBase::make_error_invalid_meta_key(
+                        &meta_key,
+                        &meta_value,
+                    )),
+                }
+            }
+            Err(err) => Err(ChannelCommandBase::make_error_invalid_meta_key(
+                &err.0, &err.1,
+            )),
         }
     }
 }
