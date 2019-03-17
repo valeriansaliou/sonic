@@ -333,7 +333,9 @@ _Notes on what happens:_
 * **T6:** we enter `control` mode (this is required to enable `control` commands);
 * **T8:** we trigger a database consolidation (instead of waiting for the next automated consolidation tick);
 
-**📦 Sonic Channel Libraries:**
+## Sonic Channel Libraries
+
+Sonic distributes official Sonic Channel bindings for your programming language:
 
 * **NodeJS**: **[node-sonic-channel](https://www.npmjs.com/package/sonic-channel)**
 
