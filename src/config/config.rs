@@ -41,6 +41,9 @@ pub struct ConfigChannelSearch {
 
     #[serde(default = "defaults::channel_search_query_limit_maximum")]
     pub query_limit_maximum: u16,
+
+    #[serde(default = "defaults::channel_search_query_alternates_try")]
+    pub query_alternates_try: usize,
 }
 
 #[derive(Deserialize)]

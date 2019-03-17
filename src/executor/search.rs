@@ -13,6 +13,7 @@ use crate::store::fst::{StoreFSTActionBuilder, StoreFSTPool};
 use crate::store::identifiers::{StoreObjectIID, StoreTermHash};
 use crate::store::item::StoreItem;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVPool};
+use crate::APP_CONF;
 
 pub struct ExecutorSearch;
 
@@ -46,27 +47,82 @@ impl ExecutorSearch {
                 //   all resulting IIDs for each given term.
                 let mut found_iids: LinkedHashSet<StoreObjectIID> = LinkedHashSet::new();
 
-                while let Some((term, term_hashed)) = lexer.next() {
-                    let mut iids = kv_action
-                        .get_term_to_iids(term_hashed)
-                        .unwrap_or(None)
-                        .unwrap_or(Vec::new());
+                'lexing: while let Some((term, term_hashed)) = lexer.next() {
+                    let mut iids = LinkedHashSet::from_iter(
+                        kv_action
+                            .get_term_to_iids(term_hashed)
+                            .unwrap_or(None)
+                            .unwrap_or(Vec::new())
+                            .into_iter(),
+                    );
 
                     // No IIDs? Try to complete with a suggested alternate word
-                    if iids.is_empty() == true {
-                        debug!("no iid was found, completing for term: {}", term);
+                    // Notice: this may sound dirty to try generating as many results as the \
+                    //   'retain_word_objects' value, but as we do not know if another lexed word \
+                    //   comes next we need to exhaust all search space as to intersect it with \
+                    //   the (likely) upcoming word.
+                    let (higher_limit, alternates_try) = (
+                        APP_CONF.store.kv.retain_word_objects,
+                        APP_CONF.channel.search.query_alternates_try,
+                    );
 
-                        if let Some(suggested_words) = fst_action.suggest_words(&term, 1, Some(1)) {
-                            if let Some(suggested_word) = suggested_words.first() {
+                    if iids.len() < higher_limit && alternates_try > 0 {
+                        debug!(
+                            "not enough iids were found ({}/{}), completing for term: {}",
+                            iids.len(),
+                            higher_limit,
+                            term
+                        );
+
+                        // Suggest N words, in case the first one is found in FST as an exact \
+                        //   match of term, we can pick next ones to complete search even further.
+                        if let Some(suggested_words) =
+                            fst_action.suggest_words(&term, alternates_try, Some(1))
+                        {
+                            let mut iids_new_len = iids.len();
+
+                            // This loop will be broken early if we get enough results at some \
+                            //   iteration
+                            'suggestions: for suggested_word in suggested_words {
+                                // Do not load base results twice for same term as base term
+                                if suggested_word == term {
+                                    continue 'suggestions;
+                                }
+
                                 debug!("got completed word: {} for term: {}", suggested_word, term);
 
                                 if let Some(suggested_iids) = kv_action
                                     .get_term_to_iids(StoreTermHash::from(&suggested_word))
                                     .unwrap_or(None)
                                 {
-                                    iids.extend(suggested_iids);
+                                    for suggested_iid in suggested_iids {
+                                        // Do not append the same IID twice (can happen a lot \
+                                        //   when completing from suggested results that point \
+                                        //   to the same end-OID)
+                                        if iids.contains(&suggested_iid) == false {
+                                            iids.insert(suggested_iid);
+
+                                            iids_new_len += 1;
+
+                                            // Higher limit now reached? Stop acquiring new \
+                                            //   suggested IIDs now.
+                                            if iids_new_len >= higher_limit {
+                                                debug!(
+                                                    "got enough completed results for term: {}",
+                                                    term
+                                                );
+
+                                                break 'suggestions;
+                                            }
+                                        }
+                                    }
                                 }
                             }
+
+                            debug!(
+                                "done completing results for term: {}, now {} results",
+                                term, iids_new_len
+                            );
                         } else {
                             debug!("did not get any completed word for term: {}", term);
                         }
@@ -75,16 +131,10 @@ impl ExecutorSearch {
                     debug!("got search executor iids: {:?} for term: {}", iids, term);
 
                     // Intersect found IIDs with previous batch
-                    let iids_set: LinkedHashSet<StoreObjectIID> =
-                        LinkedHashSet::from_iter(iids.into_iter());
-
                     if found_iids.is_empty() == true {
-                        found_iids = iids_set;
+                        found_iids = iids;
                     } else {
-                        found_iids = found_iids
-                            .intersection(&iids_set)
-                            .map(|value| *value)
-                            .collect();
+                        found_iids = found_iids.intersection(&iids).map(|value| *value).collect();
                     }
 
                     debug!(
@@ -99,7 +149,7 @@ impl ExecutorSearch {
                             term
                         );
 
-                        break;
+                        break 'lexing;
                     }
                 }
 
@@ -108,10 +158,11 @@ impl ExecutorSearch {
                 let mut result_oids = Vec::new();
                 let (limit_usize, offset_usize) = (limit as usize, offset as usize);
 
-                for (index, found_iid) in found_iids.iter().skip(offset_usize).enumerate() {
+                'paging: for (index, found_iid) in found_iids.iter().skip(offset_usize).enumerate()
+                {
                     // Stop there?
                     if index >= limit_usize {
-                        break;
+                        break 'paging;
                     }
 
                     // Read IID-to-OID for this found IID
