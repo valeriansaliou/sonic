@@ -15,6 +15,7 @@ use std::mem;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::SystemTime;
+use std::vec::Drain;
 
 use super::identifiers::*;
 use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher};
@@ -785,6 +786,54 @@ impl StoreKVAction {
             }
             _ => Err(()),
         }
+    }
+
+    pub fn batch_truncate_object(
+        &self,
+        term_hashed: StoreTermHashed,
+        term_iids_drain: Drain<StoreObjectIID>,
+    ) -> Result<u32, ()> {
+        let mut count = 0;
+
+        for term_iid_drain in term_iids_drain {
+            debug!("store batch truncate object iid: {}", term_iid_drain);
+
+            // Nuke term in IID to Terms list
+            if let Ok(Some(mut term_iid_drain_terms)) = self.get_iid_to_terms(term_iid_drain) {
+                count += 1;
+
+                term_iid_drain_terms.retain(|cur_term| cur_term != &term_hashed);
+
+                // IID to Terms list is empty? Flush whole object.
+                if term_iid_drain_terms.is_empty() == true {
+                    // Acquire OID for this drained IID
+                    if let Ok(Some(term_iid_drain_oid)) = self.get_iid_to_oid(term_iid_drain) {
+                        if self
+                            .batch_flush_bucket(term_iid_drain, &term_iid_drain_oid, &Vec::new())
+                            .is_err()
+                            == true
+                        {
+                            error!(
+                                "failed executing store batch truncate object batch-flush-bucket"
+                            );
+                        }
+                    } else {
+                        error!("failed getting store batch truncate object iid-to-oid");
+                    }
+                } else {
+                    // Update IID to Terms list
+                    if self
+                        .set_iid_to_terms(term_iid_drain, &term_iid_drain_terms)
+                        .is_err()
+                        == true
+                    {
+                        error!("failed setting store batch truncate object iid-to-terms");
+                    }
+                }
+            }
+        }
+
+        Ok(count)
     }
 
     fn encode_u32(decoded: u32) -> [u8; 4] {

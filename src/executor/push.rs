@@ -122,7 +122,11 @@ impl ExecutorPush {
                                         truncate_limit
                                     );
 
-                                    term_iids.truncate(truncate_limit);
+                                    // Drain overflowing IIDs (ie. oldest ones that overflow)
+                                    let term_iids_drain = term_iids.drain(truncate_limit..);
+
+                                    executor_ensure_op!(kv_action
+                                        .batch_truncate_object(term_hashed, term_iids_drain));
                                 }
 
                                 executor_ensure_op!(
