@@ -402,7 +402,7 @@ impl StoreKVAction {
 
             debug!("store get meta-to-value: {}", store_key);
 
-            match store.get(&store_key.to_vec()) {
+            match store.get(&store_key.as_bytes()) {
                 Ok(Some(value)) => {
                     debug!("got meta-to-value: {}", store_key);
 
@@ -448,7 +448,7 @@ impl StoreKVAction {
             };
 
             store
-                .put(&store_key.to_vec(), value_string.as_bytes())
+                .put(&store_key.as_bytes(), value_string.as_bytes())
                 .or(Err(()))
         } else {
             Err(())
@@ -461,14 +461,13 @@ impl StoreKVAction {
     pub fn get_term_to_iids(
         &self,
         term_hashed: StoreTermHashed,
-        page: u16,
     ) -> Result<Option<Vec<StoreObjectIID>>, ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::term_to_iids(term_hashed, page);
+            let store_key = StoreKeyerBuilder::term_to_iids(term_hashed);
 
             debug!("store get term-to-iids: {}", store_key);
 
-            match store.get(&store_key.to_vec()) {
+            match store.get(&store_key.as_bytes()) {
                 Ok(Some(value)) => {
                     debug!(
                         "got term-to-iids: {} with encoded value: {:?}",
@@ -508,15 +507,10 @@ impl StoreKVAction {
     pub fn set_term_to_iids(
         &self,
         term_hashed: StoreTermHashed,
-        page: u16,
         iids: &[StoreObjectIID],
     ) -> Result<(), ()> {
-        // Notice: we need paging there, as there can be A LOT of IIDs for a given term in large \
-        //   search databases, which can be overkill for Sonic to decode everytime this is \
-        //   requested. And indeed this resource is due to be accessed quite often, as it is the \
-        //   central piece of every search query.
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::term_to_iids(term_hashed, page);
+            let store_key = StoreKeyerBuilder::term_to_iids(term_hashed);
 
             debug!("store set term-to-iids: {}", store_key);
 
@@ -528,19 +522,19 @@ impl StoreKVAction {
                 store_key, iids_encoded
             );
 
-            store.put(&store_key.to_vec(), &iids_encoded).or(Err(()))
+            store.put(&store_key.as_bytes(), &iids_encoded).or(Err(()))
         } else {
             Err(())
         }
     }
 
-    pub fn delete_term_to_iids(&self, term_hashed: StoreTermHashed, page: u16) -> Result<(), ()> {
+    pub fn delete_term_to_iids(&self, term_hashed: StoreTermHashed) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::term_to_iids(term_hashed, page);
+            let store_key = StoreKeyerBuilder::term_to_iids(term_hashed);
 
             debug!("store delete term-to-iids: {}", store_key);
 
-            store.delete(&store_key.to_vec()).or(Err(()))
+            store.delete(&store_key.as_bytes()).or(Err(()))
         } else {
             Err(())
         }
@@ -555,7 +549,7 @@ impl StoreKVAction {
 
             debug!("store get oid-to-iid: {}", store_key);
 
-            match store.get(&store_key.to_vec()) {
+            match store.get(&store_key.as_bytes()) {
                 Ok(Some(value)) => {
                     debug!(
                         "got oid-to-iid: {} with encoded value: {:?}",
@@ -604,7 +598,7 @@ impl StoreKVAction {
                 store_key, iid_encoded
             );
 
-            store.put(&store_key.to_vec(), &iid_encoded).or(Err(()))
+            store.put(&store_key.as_bytes(), &iid_encoded).or(Err(()))
         } else {
             Err(())
         }
@@ -616,7 +610,7 @@ impl StoreKVAction {
 
             debug!("store delete oid-to-iid: {}", store_key);
 
-            store.delete(&store_key.to_vec()).or(Err(()))
+            store.delete(&store_key.as_bytes()).or(Err(()))
         } else {
             Err(())
         }
@@ -631,7 +625,7 @@ impl StoreKVAction {
 
             debug!("store get iid-to-oid: {}", store_key);
 
-            match store.get(&store_key.to_vec()) {
+            match store.get(&store_key.as_bytes()) {
                 Ok(Some(value)) => Ok(value.to_utf8().map(|value| value.to_string())),
                 Ok(None) => Ok(None),
                 Err(_) => Err(()),
@@ -647,7 +641,7 @@ impl StoreKVAction {
 
             debug!("store set iid-to-oid: {}", store_key);
 
-            store.put(&store_key.to_vec(), oid.as_bytes()).or(Err(()))
+            store.put(&store_key.as_bytes(), oid.as_bytes()).or(Err(()))
         } else {
             Err(())
         }
@@ -659,7 +653,7 @@ impl StoreKVAction {
 
             debug!("store delete iid-to-oid: {}", store_key);
 
-            store.delete(&store_key.to_vec()).or(Err(()))
+            store.delete(&store_key.as_bytes()).or(Err(()))
         } else {
             Err(())
         }
@@ -677,7 +671,7 @@ impl StoreKVAction {
 
             debug!("store get iid-to-terms: {}", store_key);
 
-            match store.get(&store_key.to_vec()) {
+            match store.get(&store_key.as_bytes()) {
                 Ok(Some(value)) => {
                     debug!(
                         "got iid-to-terms: {} with encoded value: {:?}",
@@ -712,9 +706,6 @@ impl StoreKVAction {
         iid: StoreObjectIID,
         terms_hashed: &[StoreTermHashed],
     ) -> Result<(), ()> {
-        // Notice: we do not need paging there, as the amount of terms is limited for a given IID \
-        //   anyway, and this resource is not accessed a lot of times, ie. only if we need to \
-        //   flush something from the KV store or count.
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::iid_to_terms(iid);
 
@@ -729,7 +720,7 @@ impl StoreKVAction {
             );
 
             store
-                .put(&store_key.to_vec(), &terms_hashed_encoded)
+                .put(&store_key.as_bytes(), &terms_hashed_encoded)
                 .or(Err(()))
         } else {
             Err(())
@@ -742,7 +733,7 @@ impl StoreKVAction {
 
             debug!("store delete iid-to-terms: {}", store_key);
 
-            store.delete(&store_key.to_vec()).or(Err(()))
+            store.delete(&store_key.as_bytes()).or(Err(()))
         } else {
             Err(())
         }
@@ -770,8 +761,7 @@ impl StoreKVAction {
             (Ok(_), Ok(_), Ok(_)) => {
                 // Delete IID from each associated term
                 for iid_term in iid_terms_hashed {
-                    // TODO: do this for all pages! (currently only page 0)
-                    if let Ok(Some(mut iid_term_iids)) = self.get_term_to_iids(*iid_term, 0) {
+                    if let Ok(Some(mut iid_term_iids)) = self.get_term_to_iids(*iid_term) {
                         if iid_term_iids.contains(&iid) == true {
                             count += 1;
 
@@ -779,11 +769,10 @@ impl StoreKVAction {
                             iid_term_iids.retain(|cur_iid| cur_iid != &iid);
                         }
 
-                        // TODO: do this for all pages! (currently only page 0)
                         let is_ok = if iid_term_iids.is_empty() == true {
-                            self.delete_term_to_iids(*iid_term, 0).is_ok()
+                            self.delete_term_to_iids(*iid_term).is_ok()
                         } else {
-                            self.set_term_to_iids(*iid_term, 0, &iid_term_iids).is_ok()
+                            self.set_term_to_iids(*iid_term, &iid_term_iids).is_ok()
                         };
 
                         if is_ok == false {

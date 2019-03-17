@@ -96,8 +96,7 @@ impl ExecutorPush {
                     while let Some((term, term_hashed)) = lexer.next() {
                         // Check that term is not already linked to IID
                         if iid_terms_hashed.contains(&term_hashed) == false {
-                            // TODO: paging (currently only page 0)
-                            if let Ok(term_iids) = kv_action.get_term_to_iids(term_hashed, 0) {
+                            if let Ok(term_iids) = kv_action.get_term_to_iids(term_hashed) {
                                 has_commits = true;
 
                                 // Add IID in first position in list for terms
@@ -113,9 +112,8 @@ impl ExecutorPush {
 
                                 term_iids.insert(0, iid);
 
-                                // TODO: paging (currently only page 0)
                                 executor_ensure_op!(
-                                    kv_action.set_term_to_iids(term_hashed, 0, &term_iids)
+                                    kv_action.set_term_to_iids(term_hashed, &term_iids)
                                 );
 
                                 // Insert term into IID to terms map

@@ -90,18 +90,16 @@ impl ExecutorPop {
                                     for (pop_term, pop_term_hashed) in &pop_terms {
                                         // Check that term is linked to IID (and should be removed)
                                         if iid_terms_hashed.contains(pop_term_hashed) == true {
-                                            // TODO: paging (currently only page 0)
                                             if let Ok(Some(mut pop_term_iids)) =
-                                                kv_action.get_term_to_iids(*pop_term_hashed, 0)
+                                                kv_action.get_term_to_iids(*pop_term_hashed)
                                             {
                                                 // Remove IID from list of IIDs to be popped
                                                 pop_term_iids.retain(|cur_iid| cur_iid != &iid);
 
                                                 if pop_term_iids.is_empty() == true {
                                                     // IIDs list was empty, delete whole key
-                                                    // TODO: paging (currently only page 0)
                                                     executor_ensure_op!(kv_action
-                                                        .delete_term_to_iids(*pop_term_hashed, 0));
+                                                        .delete_term_to_iids(*pop_term_hashed));
 
                                                     // Pop from FST graph (does not exist anymore)
                                                     if fst_action.pop_word(pop_term) == true {
@@ -112,11 +110,9 @@ impl ExecutorPop {
                                                     }
                                                 } else {
                                                     // Re-build IIDs list w/o current IID
-                                                    // TODO: paging (currently only page 0)
                                                     executor_ensure_op!(kv_action
                                                         .set_term_to_iids(
                                                             *pop_term_hashed,
-                                                            0,
                                                             &pop_term_iids,
                                                         ));
                                                 }

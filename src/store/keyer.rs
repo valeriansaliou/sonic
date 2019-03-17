@@ -16,7 +16,6 @@ pub struct StoreKeyerBuilder;
 
 pub struct StoreKeyer {
     key: StoreKeyerKey,
-    page: Option<StoreKeyerPage>,
 }
 
 pub struct StoreKeyerHasher;
@@ -29,11 +28,7 @@ enum StoreKeyerIdx<'a> {
     IIDToTerms(StoreObjectIID),
 }
 
-type StoreKeyerKey = [u8; KEY_CAPACITY];
-type StoreKeyerPage = [u8; PAGE_CAPACITY];
-
-const KEY_CAPACITY: usize = 5;
-const PAGE_CAPACITY: usize = 2;
+type StoreKeyerKey = [u8; 5];
 
 impl<'a> StoreKeyerIdx<'a> {
     pub fn to_index(&self) -> u8 {
@@ -49,29 +44,28 @@ impl<'a> StoreKeyerIdx<'a> {
 
 impl StoreKeyerBuilder {
     pub fn meta_to_value<'a>(meta: &'a StoreMetaKey) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::MetaToValue(meta), None)
+        Self::make(StoreKeyerIdx::MetaToValue(meta))
     }
 
-    pub fn term_to_iids<'a>(term_hash: StoreTermHashed, page: u16) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::TermToIIDs(term_hash), Some(page))
+    pub fn term_to_iids<'a>(term_hash: StoreTermHashed) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::TermToIIDs(term_hash))
     }
 
     pub fn oid_to_iid<'a>(oid: &'a StoreObjectOID) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::OIDToIID(oid), None)
+        Self::make(StoreKeyerIdx::OIDToIID(oid))
     }
 
     pub fn iid_to_oid<'a>(iid: StoreObjectIID) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::IIDToOID(iid), None)
+        Self::make(StoreKeyerIdx::IIDToOID(iid))
     }
 
     pub fn iid_to_terms<'a>(iid: StoreObjectIID) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::IIDToTerms(iid), None)
+        Self::make(StoreKeyerIdx::IIDToTerms(iid))
     }
 
-    fn make<'a>(idx: StoreKeyerIdx<'a>, page: Option<u16>) -> StoreKeyer {
+    fn make<'a>(idx: StoreKeyerIdx<'a>) -> StoreKeyer {
         StoreKeyer {
             key: Self::build_key(idx),
-            page: Self::build_page(page)
         }
     }
 
@@ -95,26 +89,6 @@ impl StoreKeyerBuilder {
         ]
     }
 
-    fn build_page<'a>(page: Option<u16>) -> Option<StoreKeyerPage> {
-        // Page format: [page<2B>]
-
-        if let Some(page) = page {
-            // Encode page from u16 to array of u8 (ie. binary)
-            let mut page_encoded = [0; 4];
-
-            LittleEndian::write_u16(&mut page_encoded, page);
-
-            // Generate final binary key
-            Some([
-                // [page<2B>]
-                page_encoded[0],
-                page_encoded[1],
-            ])
-        } else {
-            None
-        }
-    }
-
     fn route_to_compact<'a>(idx: &StoreKeyerIdx<'a>) -> u32 {
         match idx {
             StoreKeyerIdx::MetaToValue(route) => route.as_u32(),
@@ -127,20 +101,8 @@ impl StoreKeyerBuilder {
 }
 
 impl StoreKeyer {
-    pub fn to_vec(&self) -> Vec<u8> {
-        // Notice: maximum capacity for [idx<1B> | route<4B>] + optional [page<2B>], which avoids \
-        //   upsizing the vector capacity if we push the page (saving a memory allocation at the \
-        //   cost of 2 extra bytes for keys that do not need to append the page).
-        let mut bytes = Vec::with_capacity(KEY_CAPACITY + PAGE_CAPACITY);
-
-        bytes.extend(&self.key);
-
-        // Append page?
-        if let Some(page) = self.page {
-            bytes.extend(&page);
-        }
-
-        bytes
+    pub fn as_bytes(&self) -> StoreKeyerKey {
+        self.key
     }
 }
 
@@ -171,48 +133,48 @@ mod tests {
     #[test]
     fn it_keys_meta_to_value() {
         assert_eq!(
-            &StoreKeyerBuilder::meta_to_value(&StoreMetaKey::IIDIncr).to_vec(),
-            &[0, 0, 0, 0, 0]
+            StoreKeyerBuilder::meta_to_value(&StoreMetaKey::IIDIncr).as_bytes(),
+            [0, 0, 0, 0, 0]
         );
     }
 
     #[test]
     fn it_keys_term_to_iids() {
         assert_eq!(
-            &StoreKeyerBuilder::term_to_iids(772137347, 0).to_vec(),
-            &[1, 131, 225, 5, 46, 0, 0]
+            StoreKeyerBuilder::term_to_iids(772137347).as_bytes(),
+            [1, 131, 225, 5, 46]
         );
         assert_eq!(
-            &StoreKeyerBuilder::term_to_iids(3582484684, 4).to_vec(),
-            &[1, 204, 96, 136, 213, 4, 0]
+            StoreKeyerBuilder::term_to_iids(3582484684).as_bytes(),
+            [1, 204, 96, 136, 213]
         );
     }
 
     #[test]
     fn it_keys_oid_to_iid() {
         assert_eq!(
-            &StoreKeyerBuilder::oid_to_iid(&"conversation:6501e83a".to_string()).to_vec(),
-            &[2, 31, 156, 118, 213]
+            StoreKeyerBuilder::oid_to_iid(&"conversation:6501e83a".to_string()).as_bytes(),
+            [2, 31, 156, 118, 213]
         );
     }
 
     #[test]
     fn it_keys_iid_to_oid() {
         assert_eq!(
-            &StoreKeyerBuilder::iid_to_oid(10292198).to_vec(),
-            &[3, 230, 11, 157, 0]
+            StoreKeyerBuilder::iid_to_oid(10292198).as_bytes(),
+            [3, 230, 11, 157, 0]
         );
     }
 
     #[test]
     fn it_keys_iid_to_terms() {
         assert_eq!(
-            &StoreKeyerBuilder::iid_to_terms(1).to_vec(),
-            &[4, 1, 0, 0, 0]
+            StoreKeyerBuilder::iid_to_terms(1).as_bytes(),
+            [4, 1, 0, 0, 0]
         );
         assert_eq!(
-            &StoreKeyerBuilder::iid_to_terms(20).to_vec(),
-            &[4, 20, 0, 0, 0]
+            StoreKeyerBuilder::iid_to_terms(20).as_bytes(),
+            [4, 20, 0, 0, 0]
         );
     }
 }
