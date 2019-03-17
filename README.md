@@ -160,11 +160,15 @@ Both searches and object management (ie. data ingestion) is handled via the Soni
 
 Sonic Channel can be accessed via the `telnet` utility from your computer. The very same system is also used by all Sonic Channel libraries (eg. NodeJS).
 
+---
+
 ### 1️⃣ Sonic Channel (uninitialized)
 
 * `START <mode>`: select mode to use for connection (either: `search` or `ingest`)
 
 _Issuing any other command — eg. `QUIT` — in this mode will abort the TCP connection, effectively resulting in a `QUIT` with the `ENDED not_recognized` response._
+
+---
 
 ### 2️⃣ Sonic Channel (Search mode)
 
@@ -225,6 +229,8 @@ _Notes on what happens:_
 * **T10:** Sonic processed search query of T8 with marker `Bt2m2gYa` and sends 2 search results (those are conversation identifiers, that refer to a primary key in an external database);
 * **T11 + T13:** we query collection `helpdesk` twice (in the example, this one is heavy, so processing of results takes more time);
 * **T17 + T18:** we receive search results for search queries of T11 + T13 (this took a while!);
+
+---
 
 ### 3️⃣ Sonic Channel (Ingest mode)
 
@@ -293,6 +299,8 @@ _Notes on what happens:_
 * **T18:** we flush all index data from collection `messages` and bucket `user:0dcde3a6`;
 * **T19:** 42 terms have been flushed from index for command in T18;
 
+---
+
 ### 4️⃣ Sonic Channel (Control mode)
 
 _The Sonic Channel Control mode is used for administration purposes. Once in this mode, you cannot switch to other modes or gain access to commands from other modes._
@@ -332,6 +340,8 @@ _Notes on what happens:_
 
 * **T6:** we enter `control` mode (this is required to enable `control` commands);
 * **T8:** we trigger a database consolidation (instead of waiting for the next automated consolidation tick);
+
+---
 
 ## 📦 Sonic Channel Libraries
 
