@@ -1,7 +1,3 @@
-sudo: required
-services:
-  - docker
-
 language: rust
 rust:
   - stable
@@ -9,22 +5,3 @@ rust:
   - nightly
 
 cache: cargo
-
-env:
-  matrix:
-    - OS=debian DIST=jessie ARCH=x86_64
-
-# script:
-#   - git clone https://github.com/packpack/packpack.git packpack
-#   - packpack/packpack
-#
-# deploy:
-#   provider: packagecloud
-#   username: ${PACKAGECLOUD_USER}
-#   repository: ${PACKAGECLOUD_REPO}
-#   token: ${PACKAGECLOUD_TOKEN}
-#   dist: ${OS}/${DIST}
-#   package_glob: build/*.{deb,rpm}
-#   skip_cleanup: true
-#   on:
-#     tags: true

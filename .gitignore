@@ -4,8 +4,5 @@ target/*
 *#
 .cargo
 
-build/
-packpack/
-
 data/store/fst/*
 data/store/kv/*

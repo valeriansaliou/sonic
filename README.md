@@ -73,10 +73,6 @@ cargo install sonic-server
 
 Ensure that your `$PATH` is properly configured to source the Crates binaries, and then run Sonic using the `sonic` command.
 
-**Install from packages:**
-
-Debian & Ubuntu packages are also available. Refer to the _[How to install it on Debian & Ubuntu?](#how-to-install-it-on-debian--ubuntu)_ section.
-
 **Install from Docker Hub:**
 
 You might find it convenient to run Sonic via Docker. You can find the pre-built Sonic image on Docker Hub as [valeriansaliou/sonic](https://hub.docker.com/r/valeriansaliou/sonic/).
