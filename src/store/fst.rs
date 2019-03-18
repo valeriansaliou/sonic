@@ -23,6 +23,9 @@ use std::str;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::SystemTime;
 
+use super::generic::{
+    StoreGeneric, StoreGenericActionBuilder, StoreGenericBuilder, StoreGenericPool,
+};
 use super::keyer::StoreKeyerHasher;
 use crate::APP_CONF;
 
@@ -80,10 +83,7 @@ impl StoreFSTPathMode {
 }
 
 impl StoreFSTPool {
-    pub fn acquire<'a, T: Into<&'a str>>(
-        collection: T,
-        bucket: T,
-    ) -> Result<StoreFSTBox, FSTError> {
+    pub fn acquire<'a, T: Into<&'a str>>(collection: T, bucket: T) -> Result<StoreFSTBox, ()> {
         let (collection_str, bucket_str) = (collection.into(), bucket.into());
 
         let pool_key = (
@@ -100,87 +100,23 @@ impl StoreFSTPool {
         let graph_pool_read = GRAPH_POOL.read().unwrap();
 
         if let Some(store_fst) = graph_pool_read.get(&pool_key) {
-            debug!(
-                "fst store acquired from pool for collection: {} <{:x?}> / bucket: {} <{:x?}>",
-                collection_str, pool_key.0, bucket_str, pool_key.1
-            );
-
-            // Bump store last used date (avoids early janitor eviction)
-            let mut last_used_value = store_fst.last_used.write().unwrap();
-
-            mem::replace(&mut *last_used_value, SystemTime::now());
-
-            // Perform an early drop of the lock (frees up write lock early)
-            drop(last_used_value);
-
-            Ok(store_fst.clone())
+            Self::proceed_acquire_cache("fst", collection_str, bucket_str, pool_key, &store_fst)
         } else {
             info!(
                 "fst store not in pool for collection: {} <{:x?}> / bucket: {} <{:x?}>, opening it",
                 collection_str, pool_key.0, bucket_str, pool_key.1
             );
 
-            match StoreFSTBuilder::new(pool_key.0, pool_key.1) {
-                Ok(store_fst) => {
-                    // Important: we need to drop the read reference first, to avoid dead-locking \
-                    //   when acquiring the RWLock in write mode in this block.
-                    drop(graph_pool_read);
+            // Important: we need to drop the read reference first, to avoid dead-locking \
+            //   when acquiring the RWLock in write mode in this block.
+            drop(graph_pool_read);
 
-                    // Acquire a thread-safe store pool reference in write mode
-                    let mut graph_pool_write = GRAPH_POOL.write().unwrap();
-                    let store_fst_box = Arc::new(store_fst);
-
-                    graph_pool_write.insert(pool_key, store_fst_box.clone());
-
-                    debug!(
-                        "opened and cached store in pool for collection: {} and bucket: {}",
-                        collection_str, bucket_str
-                    );
-
-                    Ok(store_fst_box)
-                }
-                Err(err) => {
-                    error!(
-                        "failed opening store for collection: {} because: {} and bucket: {}",
-                        collection_str, bucket_str, err
-                    );
-
-                    Err(err)
-                }
-            }
+            Self::proceed_acquire_open("fst", collection_str, bucket_str, pool_key, &*GRAPH_POOL)
         }
     }
 
     pub fn janitor() {
-        debug!("scanning for fst store pool items to janitor");
-
-        let mut store_pool_write = GRAPH_POOL.write().unwrap();
-        let mut removal_register: Vec<StoreFSTKey> = Vec::new();
-
-        for (collection_bucket, store_fst) in store_pool_write.iter() {
-            let last_used = store_fst.last_used.read().unwrap();
-
-            if last_used.elapsed().unwrap().as_secs() >= APP_CONF.store.fst.pool.inactive_after {
-                debug!(
-                    "found expired fst store pool item: <{:x?}>/<{:x?}>; last used time: {:?}",
-                    &collection_bucket.0, &collection_bucket.1, last_used
-                );
-
-                // Notice: the bucket value needs to be cloned, as we cannot reference as value \
-                //   that will outlive referenced value once we remove it from its owner set.
-                removal_register.push(*collection_bucket);
-            }
-        }
-
-        for collection_bucket in &removal_register {
-            store_pool_write.remove(collection_bucket);
-        }
-
-        info!(
-            "done scanning for fst store pool items to janitor, expired {} items, now has {} items",
-            removal_register.len(),
-            store_pool_write.len()
-        );
+        Self::proceed_janitor("fst", &*GRAPH_POOL, APP_CONF.store.fst.pool.inactive_after)
     }
 
     pub fn consolidate(force: bool) {
@@ -441,24 +377,9 @@ impl StoreFSTPool {
     }
 }
 
+impl StoreGenericPool<StoreFSTAtom, StoreFST, StoreFSTBuilder> for StoreFSTPool {}
+
 impl StoreFSTBuilder {
-    pub fn new(
-        collection_hash: StoreFSTAtom,
-        bucket_hash: StoreFSTAtom,
-    ) -> Result<StoreFST, FSTError> {
-        Self::open(collection_hash, bucket_hash).map(|graph| {
-            let now = SystemTime::now();
-
-            StoreFST {
-                graph: graph,
-                target: (collection_hash, bucket_hash),
-                pending: StoreFSTPending::default(),
-                last_used: Arc::new(RwLock::new(now)),
-                last_consolidated: Arc::new(RwLock::new(now)),
-            }
-        })
-    }
-
     fn open(collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) -> Result<FSTSet, FSTError> {
         debug!(
             "opening finite-state transducer graph for collection: <{:x?}> and bucket: <{:x?}>",
@@ -502,6 +423,28 @@ impl StoreFSTBuilder {
         }
 
         final_path
+    }
+}
+
+impl StoreGenericBuilder<StoreFSTAtom, StoreFST> for StoreFSTBuilder {
+    fn new(collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) -> Result<StoreFST, ()> {
+        Self::open(collection_hash, bucket_hash)
+            .map(|graph| {
+                let now = SystemTime::now();
+
+                StoreFST {
+                    graph: graph,
+                    target: (collection_hash, bucket_hash),
+                    pending: StoreFSTPending::default(),
+                    last_used: Arc::new(RwLock::new(now)),
+                    last_consolidated: Arc::new(RwLock::new(now)),
+                }
+            })
+            .or_else(|err| {
+                error!("failed opening fst: {}", err);
+
+                Err(())
+            })
     }
 }
 
@@ -584,32 +527,34 @@ impl StoreFST {
     }
 }
 
+impl StoreGeneric for StoreFST {
+    fn ref_last_used<'a>(&'a self) -> &'a RwLock<SystemTime> {
+        &self.last_used
+    }
+}
+
 impl StoreFSTActionBuilder {
     pub fn access(store: StoreFSTBox) -> StoreFSTAction {
         Self::build(store)
     }
 
     pub fn erase<'a, T: Into<&'a str>>(collection: T, bucket: Option<T>) -> Result<u32, ()> {
-        let collection_str = collection.into();
+        Self::dispatch_erase(
+            "fst",
+            collection,
+            bucket,
+            &*GRAPH_ACCESS_LOCK,
+            &*GRAPH_WRITE_LOCK,
+        )
+    }
+}
 
-        info!("fst erase requested on collection: {}", collection_str);
-
-        // Acquire write + access locks, and reference it in context
-        // Notice: write lock prevents graph to be acquired from any context; while access lock \
-        //   lets the erasure process wait that any thread using the graph is done with work.
-        let (_access, _write) = (
-            GRAPH_ACCESS_LOCK.write().unwrap(),
-            GRAPH_WRITE_LOCK.lock().unwrap(),
-        );
-
-        if let Some(bucket) = bucket {
-            Self::erase_bucket(collection_str, bucket.into())
-        } else {
-            Self::erase_collection(collection_str)
-        }
+impl StoreGenericActionBuilder<StoreFSTBox, StoreFSTAction> for StoreFSTActionBuilder {
+    fn build(store: StoreFSTBox) -> StoreFSTAction {
+        StoreFSTAction { store: store }
     }
 
-    fn erase_collection(collection_str: &str) -> Result<u32, ()> {
+    fn proceed_erase_collection(collection_str: &str) -> Result<u32, ()> {
         let path_mode = StoreFSTPathMode::Permanent;
         let collection_atom = StoreKeyerHasher::to_compact(collection_str);
         let collection_path = StoreFSTBuilder::path(path_mode, collection_atom, None);
@@ -681,7 +626,7 @@ impl StoreFSTActionBuilder {
         }
     }
 
-    fn erase_bucket(collection_str: &str, bucket_str: &str) -> Result<u32, ()> {
+    fn proceed_erase_bucket(collection_str: &str, bucket_str: &str) -> Result<u32, ()> {
         debug!(
             "sub-erase on fst bucket: {} for collection: {}",
             bucket_str, collection_str
@@ -736,10 +681,6 @@ impl StoreFSTActionBuilder {
 
             Ok(0)
         }
-    }
-
-    fn build(store: StoreFSTBox) -> StoreFSTAction {
-        StoreFSTAction { store: store }
     }
 }
 
