@@ -61,6 +61,8 @@ cargo build --release
 
 You can find the built binaries in the `./target/release` directory.
 
+_Install `libclang-dev` to be able to compile the required RocksDB dependency._
+
 **Install from Cargo:**
 
 You can install Sonic directly with `cargo install`:
