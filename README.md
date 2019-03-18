@@ -9,11 +9,7 @@ Sonic can be used as a simple alternative to super-heavy and full-featured searc
 
 **🇫🇷 Crafted in Nantes, France.**
 
-TODO: write journal article (link below)
-
-**:newspaper: The Sonic project was initially announced in [a post on my personal journal](https://journal.valeriansaliou.name/TODO/).**
-
-TODO: sonic hedgehog image (from personal drawing) (below)
+**:newspaper: The Sonic project was initially announced in [a post on my personal journal](https://journal.valeriansaliou.name/announcing-sonic-a-super-light-alternative-to-elasticsearch/).**
 
 ![Sonic](https://valeriansaliou.github.io/sonic/images/sonic.png)
 
@@ -415,9 +411,7 @@ Sonic supports a wide range of languages in its lexing system. If a language is 
 
 Sonic was built for [Crisp](https://crisp.chat/) from the start. As Crisp was growing and indexing more and more search data into a full-text search SQL database, we decided it was time to switch to a proper search backend system. When reviewing Elasticsearch (ELS) and others, we found those were full-featured heavyweight systems that did not scale well with Crisp's freemium-based cost structure.
 
-At the end, we decided to build our own search backend, designed to be simple and lightweight on resources. We did some benchmarks on how Sonic behaves at scale.
-
-TODO: benchmarks (graphs + tables + load tests)
+At the end, we decided to build our own search backend, designed to be simple and lightweight on resources.
 
 ## :fire: Report A Vulnerability
 
