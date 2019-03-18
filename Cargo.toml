@@ -52,7 +52,7 @@ debug = true
 debug-assertions = true
 
 [profile.release]
-opt-level = "s"
+opt-level = 3
 lto = true
 debug = false
 debug-assertions = false
