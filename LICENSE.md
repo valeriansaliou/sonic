@@ -4,13 +4,13 @@ Mozilla Public License Version 2.0 (Modified)
 0. License Amendments
 ---------------------
 
-0.1. Re-Selling of the Software is Forbidden
-    means that it is forbidden to sell a service that builds its core
-    value on the software. The software can be used for commercial
-    purposes, but it should not be sold as-a-service (to make things clear,
-    you are not allowed to build an Algolia competitor based on the
-    licensed source code; ie. Algolia is an hosted search service sold as
-    a SaaS). This statement does not apply for core project contributors.
+0.1. Re-selling of the software is forbidden. It means that it is forbidden
+    to sell a service that builds its core value on the software. The
+    software can be used for commercial purposes, but it should not be sold
+    as-a-service (to make things clear, you are not allowed to build an
+    Algolia competitor based on the licensed source code; ie. Algolia is
+    an hosted search service sold as a SaaS). This statement does not apply
+    for core project contributors.
 
 1. Definitions
 --------------
