@@ -11,8 +11,6 @@ Sonic can be used as a simple alternative to super-heavy and full-featured searc
 
 **:newspaper: The Sonic project was initially announced in [a post on my personal journal](https://journal.valeriansaliou.name/announcing-sonic-a-super-light-alternative-to-elasticsearch/).**
 
-![Sonic](https://valeriansaliou.github.io/sonic/images/sonic.png)
-
 ## Who uses it?
 
 <table>
