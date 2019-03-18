@@ -15,7 +15,7 @@ We consider here the packaging flow of Sonic version `1.0` for Debian, for targe
     3. Bump Debian package version in `debian/rules` to `1.0`
 
 3. **How to build Sonic for Linux on macOS:**
-    1. `apt-get install -y build-essential libclang-dev`
+    1. `apt-get install -y build-essential clang`
     2. `cargo build --target=x86_64-unknown-linux-musl --release`
 
 4. **How to package built binary and release it on GitHub:**
