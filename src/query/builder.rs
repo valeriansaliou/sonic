@@ -122,3 +122,78 @@ impl QueryBuilder {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_builds_search_query() {
+        assert!(QueryBuilder::search(
+            "id1".to_string(),
+            "c:test:1",
+            "b:test:1",
+            "Michael Dake",
+            10,
+            20
+        )
+        .is_ok());
+        assert!(
+            QueryBuilder::search("id2".to_string(), "c:test:1", "", "Michael Dake", 1, 0).is_err()
+        );
+    }
+
+    #[test]
+    fn it_builds_suggest_query() {
+        assert!(
+            QueryBuilder::suggest("id1".to_string(), "c:test:2", "b:test:2", "Micha", 5).is_ok()
+        );
+        assert!(QueryBuilder::suggest("id2".to_string(), "c:test:2", "", "Micha", 1).is_err());
+    }
+
+    #[test]
+    fn it_builds_push_query() {
+        assert!(QueryBuilder::push(
+            "c:test:3",
+            "b:test:3",
+            "o:test:3",
+            "My name is Michael Dake. I'm ordering in the US."
+        )
+        .is_ok());
+        assert!(
+            QueryBuilder::push("c:test:3", "", "o:test:3", "My name is Michael Dake.").is_err()
+        );
+    }
+
+    #[test]
+    fn it_builds_pop_query() {
+        assert!(QueryBuilder::pop("c:test:4", "b:test:4", "o:test:4", "ordering US").is_ok());
+        assert!(QueryBuilder::pop("c:test:4", "", "o:test:4", "ordering US").is_err());
+    }
+
+    #[test]
+    fn it_builds_count_query() {
+        assert!(QueryBuilder::count("c:test:5", None, None).is_ok());
+        assert!(QueryBuilder::count("c:test:5", Some("b:test:5"), None).is_ok());
+        assert!(QueryBuilder::count("c:test:5", Some("b:test:5"), Some("o:test:5")).is_ok());
+        assert!(QueryBuilder::count("c:test:5", Some(""), Some("o:test:5")).is_err());
+    }
+
+    #[test]
+    fn it_builds_flushc_query() {
+        assert!(QueryBuilder::flushc("c:test:6").is_ok());
+        assert!(QueryBuilder::flushc("").is_err());
+    }
+
+    #[test]
+    fn it_builds_flushb_query() {
+        assert!(QueryBuilder::flushb("c:test:7", "b:test:7").is_ok());
+        assert!(QueryBuilder::flushb("c:test:7", "").is_err());
+    }
+
+    #[test]
+    fn it_builds_flusho_query() {
+        assert!(QueryBuilder::flusho("c:test:8", "b:test:8", "o:test:8").is_ok());
+        assert!(QueryBuilder::flusho("c:test:8", "b:test:8", "").is_err());
+    }
+}

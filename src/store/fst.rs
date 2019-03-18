@@ -839,3 +839,25 @@ impl StoreFSTMisc {
         Ok(count)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_acquires_graph() {
+        assert!(StoreFSTPool::acquire("c:test:1", "b:test:1").is_ok());
+    }
+
+    #[test]
+    fn it_janitors_graph() {
+        StoreFSTPool::janitor();
+    }
+
+    #[test]
+    fn it_proceeds_primitives() {
+        let store = StoreFSTPool::acquire("c:test:2", "b:test:2").unwrap();
+
+        assert!(store.lookup_typos("valerien", None).is_ok());
+    }
+}

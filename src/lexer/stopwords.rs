@@ -368,3 +368,50 @@ impl LexerStopWord {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_detects_stopwords() {
+        assert_eq!(LexerStopWord::is("the", None), false);
+        assert_eq!(LexerStopWord::is("the", Some(Lang::Eng)), true);
+        assert_eq!(LexerStopWord::is("fox", Some(Lang::Eng)), false);
+        assert_eq!(LexerStopWord::is("bonjour", Some(Lang::Fra)), false);
+        assert_eq!(LexerStopWord::is("ici", Some(Lang::Fra)), true);
+    }
+
+    #[test]
+    fn it_guesses_language() {
+        assert_eq!(
+            LexerStopWord::guess_lang(
+                "I believe there is an extremely simple way to whip climate change.",
+                Script::Latin
+            ),
+            Some(Lang::Eng)
+        );
+        assert_eq!(
+            LexerStopWord::guess_lang(
+                "permettre aux pharmaciens de délivrer sous certaines conditions des médicaments",
+                Script::Latin
+            ),
+            Some(Lang::Fra)
+        );
+        assert_eq!(
+            LexerStopWord::guess_lang(
+                "Tarlós István főpolgármester utasítása alapján a Főváros a Budapest Portálon",
+                Script::Latin
+            ),
+            Some(Lang::Hun)
+        );
+        assert_eq!(
+            LexerStopWord::guess_lang("aux", Script::Latin),
+            Some(Lang::Fra)
+        );
+        assert_eq!(
+            LexerStopWord::guess_lang("feefeffd zd", Script::Latin),
+            None
+        );
+    }
+}

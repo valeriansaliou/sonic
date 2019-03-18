@@ -38,3 +38,19 @@ impl StoreTermHash {
         hasher.finish() as u32
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_converts_meta_key_to_u32() {
+        assert_eq!(StoreMetaKey::IIDIncr.as_u32(), 0);
+    }
+
+    #[test]
+    fn it_hashes_term() {
+        assert_eq!(StoreTermHash::from("hash:1"), 3637660813);
+        assert_eq!(StoreTermHash::from("hash:2"), 3577985381);
+    }
+}

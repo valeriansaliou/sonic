@@ -26,3 +26,21 @@ pub fn unescape(text: &str) -> String {
 
     unescaped
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_unescapes_command_text() {
+        assert_eq!(unescape(r#"hello world!"#), r#"hello world!"#.to_string());
+        assert_eq!(
+            unescape(r#"i'm so good at this"#),
+            r#"i'm so good at this"#.to_string()
+        );
+        assert_eq!(
+            unescape(r#"look at \\\\"\\\" me i'm \\"\"trying to hack you\""#),
+            r#"look at \\"\" me i'm \""trying to hack you""#.to_string()
+        );
+    }
+}

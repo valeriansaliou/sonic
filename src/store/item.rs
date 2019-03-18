@@ -5,15 +5,18 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 pub struct StoreItemBuilder;
+
+#[derive(PartialEq, Debug)]
 pub struct StoreItem<'a>(
     pub StoreItemPart<'a>,
     pub Option<StoreItemPart<'a>>,
     pub Option<StoreItemPart<'a>>,
 );
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub struct StoreItemPart<'a>(&'a str);
 
+#[derive(PartialEq, Debug)]
 pub enum StoreItemError {
     InvalidCollection,
     InvalidBucket,
@@ -94,5 +97,66 @@ impl StoreItemBuilder {
             (_, Err(_), _) => Err(StoreItemError::InvalidBucket),
             (_, _, Err(_)) => Err(StoreItemError::InvalidObject),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_builds_store_item_depth_1() {
+        assert_eq!(
+            StoreItemBuilder::from_depth_1("c:test:1"),
+            Ok(StoreItem(StoreItemPart("c:test:1"), None, None))
+        );
+        assert_eq!(
+            StoreItemBuilder::from_depth_1(""),
+            Err(StoreItemError::InvalidCollection)
+        );
+    }
+
+    #[test]
+    fn it_builds_store_item_depth_2() {
+        assert_eq!(
+            StoreItemBuilder::from_depth_2("c:test:2", "b:test:2"),
+            Ok(StoreItem(
+                StoreItemPart("c:test:2"),
+                Some(StoreItemPart("b:test:2")),
+                None
+            ))
+        );
+        assert_eq!(
+            StoreItemBuilder::from_depth_2("", "b:test:2"),
+            Err(StoreItemError::InvalidCollection)
+        );
+        assert_eq!(
+            StoreItemBuilder::from_depth_2("c:test:2", ""),
+            Err(StoreItemError::InvalidBucket)
+        );
+    }
+
+    #[test]
+    fn it_builds_store_item_depth_3() {
+        assert_eq!(
+            StoreItemBuilder::from_depth_3("c:test:3", "b:test:3", "o:test:3"),
+            Ok(StoreItem(
+                StoreItemPart("c:test:3"),
+                Some(StoreItemPart("b:test:3")),
+                Some(StoreItemPart("o:test:3"))
+            ))
+        );
+        assert_eq!(
+            StoreItemBuilder::from_depth_3("", "b:test:3", "o:test:3"),
+            Err(StoreItemError::InvalidCollection)
+        );
+        assert_eq!(
+            StoreItemBuilder::from_depth_3("c:test:3", "", "o:test:3"),
+            Err(StoreItemError::InvalidBucket)
+        );
+        assert_eq!(
+            StoreItemBuilder::from_depth_3("c:test:3", "b:test:3", ""),
+            Err(StoreItemError::InvalidObject)
+        );
     }
 }

@@ -177,4 +177,25 @@ mod tests {
             [4, 20, 0, 0, 0]
         );
     }
+
+    #[test]
+    fn it_hashes_compact() {
+        assert_eq!(StoreKeyerHasher::to_compact("key:1"), 3370353088);
+        assert_eq!(StoreKeyerHasher::to_compact("key:2"), 1042559698);
+    }
+
+    #[test]
+    fn it_formats_key() {
+        assert_eq!(
+            &format!("{}", StoreKeyerBuilder::term_to_iids(772137347)),
+            "'1:2e05e183' [1, 131, 225, 5, 46]"
+        );
+        assert_eq!(
+            &format!(
+                "{}",
+                StoreKeyerBuilder::meta_to_value(&StoreMetaKey::IIDIncr)
+            ),
+            "'0:0' [0, 0, 0, 0, 0]"
+        );
+    }
 }

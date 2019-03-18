@@ -692,7 +692,7 @@ impl StoreKVAction {
         &self,
         iid: StoreObjectIID,
         oid: &StoreObjectOID,
-        iid_terms_hashed: &Vec<StoreTermHashed>,
+        iid_terms_hashed: &[StoreTermHashed],
     ) -> Result<u32, ()> {
         let mut count = 0;
 
@@ -818,5 +818,93 @@ impl StoreKVAction {
         }
 
         Ok(decoded)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_acquires_database() {
+        assert!(StoreKVPool::acquire(StoreKVAcquireMode::Any, "c:test:1", "b:test:1").is_ok());
+    }
+
+    #[test]
+    fn it_janitors_database() {
+        StoreKVPool::janitor();
+    }
+
+    #[test]
+    fn it_proceeds_primitives() {
+        let store = StoreKVPool::acquire(StoreKVAcquireMode::Any, "c:test:2", "b:test:2")
+            .unwrap()
+            .unwrap();
+
+        assert!(store.get(&[0]).is_ok());
+        assert!(store.put(&[0], &[1, 0, 0, 0]).is_ok());
+        assert!(store.delete(&[0]).is_ok());
+    }
+
+    #[test]
+    fn it_proceeds_actions() {
+        let store = StoreKVPool::acquire(StoreKVAcquireMode::Any, "c:test:3", "b:test:3").unwrap();
+        let action = StoreKVActionBuilder::access(store);
+
+        assert!(action.get_meta_to_value(StoreMetaKey::IIDIncr).is_ok());
+        assert!(action
+            .set_meta_to_value(StoreMetaKey::IIDIncr, StoreMetaValue::IIDIncr(1))
+            .is_ok());
+
+        assert!(action.get_term_to_iids(1).is_ok());
+        assert!(action.set_term_to_iids(1, &[0, 1, 2]).is_ok());
+        assert!(action.delete_term_to_iids(1).is_ok());
+
+        assert!(action.get_oid_to_iid(&"s".to_string()).is_ok());
+        assert!(action.set_oid_to_iid(&"s".to_string(), 4).is_ok());
+        assert!(action.delete_oid_to_iid(&"s".to_string()).is_ok());
+
+        assert!(action.get_iid_to_oid(4).is_ok());
+        assert!(action.set_iid_to_oid(4, &"s".to_string()).is_ok());
+        assert!(action.delete_iid_to_oid(4).is_ok());
+
+        assert!(action.get_iid_to_terms(4).is_ok());
+        assert!(action.set_iid_to_terms(4, &[45402]).is_ok());
+        assert!(action.delete_iid_to_terms(4).is_ok());
+    }
+
+    #[test]
+    fn it_encodes_atom() {
+        assert_eq!(StoreKVAction::encode_u32(0), [0, 0, 0, 0]);
+        assert_eq!(StoreKVAction::encode_u32(1), [1, 0, 0, 0]);
+        assert_eq!(StoreKVAction::encode_u32(45402), [90, 177, 0, 0]);
+    }
+
+    #[test]
+    fn it_decodes_atom() {
+        assert_eq!(StoreKVAction::decode_u32(&[0, 0, 0, 0]), Ok(0));
+        assert_eq!(StoreKVAction::decode_u32(&[1, 0, 0, 0]), Ok(1));
+        assert_eq!(StoreKVAction::decode_u32(&[90, 177, 0, 0]), Ok(45402));
+    }
+
+    #[test]
+    fn it_encodes_atom_list() {
+        assert_eq!(
+            StoreKVAction::encode_u32_list(&[0, 2, 3]),
+            [0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]
+        );
+        assert_eq!(StoreKVAction::encode_u32_list(&[45402]), [90, 177, 0, 0]);
+    }
+
+    #[test]
+    fn it_decodes_atom_list() {
+        assert_eq!(
+            StoreKVAction::decode_u32_list(&[0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]),
+            Ok(vec![0, 2, 3])
+        );
+        assert_eq!(
+            StoreKVAction::decode_u32_list(&[90, 177, 0, 0]),
+            Ok(vec![45402])
+        );
     }
 }
