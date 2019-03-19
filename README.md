@@ -449,6 +449,8 @@ We want to import all those messages into a clean Sonic instance, and then perfo
 
 #### ⏬ Results
 
+**Our findings:**
+
 * We imported ~1,000,000 messages of dynamic length (some very long, eg. emails);
 * Once imported, the search index weights 20MB (KV) + 1.4MB (FST) on disk;
 * CPU usage during import averaged 75% of a single CPU core;
