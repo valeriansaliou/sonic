@@ -45,6 +45,7 @@ whatlang = "0.7"
 [features]
 default = ["alloc-jemalloc"]
 alloc-jemalloc = ["jemallocator"]
+benchmark = []
 
 [profile.dev]
 opt-level = 0
@@ -52,6 +53,12 @@ debug = true
 debug-assertions = true
 
 [profile.release]
+opt-level = 3
+lto = true
+debug = false
+debug-assertions = false
+
+[profile.bench]
 opt-level = 3
 lto = true
 debug = false

@@ -128,10 +128,7 @@ impl fmt::Display for StoreKeyer {
 
 #[cfg(test)]
 mod tests {
-    extern crate test;
-
     use super::*;
-    use test::Bencher;
 
     #[test]
     fn it_keys_meta_to_value() {
@@ -201,6 +198,14 @@ mod tests {
             "'0:0' [0, 0, 0, 0, 0]"
         );
     }
+}
+
+#[cfg(all(feature = "benchmark", test))]
+mod benches {
+    extern crate test;
+
+    use super::*;
+    use test::Bencher;
 
     #[bench]
     fn bench_hash_compact_short(b: &mut Bencher) {

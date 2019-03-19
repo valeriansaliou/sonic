@@ -28,10 +28,7 @@ pub fn unescape(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    extern crate test;
-
     use super::*;
-    use test::Bencher;
 
     #[test]
     fn it_unescapes_command_text() {
@@ -45,6 +42,14 @@ mod tests {
             r#"look at \\"\" me i'm \""trying to hack you""#.to_string()
         );
     }
+}
+
+#[cfg(all(feature = "benchmark", test))]
+mod benches {
+    extern crate test;
+
+    use super::*;
+    use test::Bencher;
 
     #[bench]
     fn bench_unescape_command_text(b: &mut Bencher) {

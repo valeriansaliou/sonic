@@ -827,10 +827,7 @@ impl StoreKVAction {
 
 #[cfg(test)]
 mod tests {
-    extern crate test;
-
     use super::*;
-    use test::Bencher;
 
     #[test]
     fn it_acquires_database() {
@@ -914,6 +911,14 @@ mod tests {
             Ok(vec![45402])
         );
     }
+}
+
+#[cfg(all(feature = "benchmark", test))]
+mod benches {
+    extern crate test;
+
+    use super::*;
+    use test::Bencher;
 
     #[bench]
     fn bench_encode_atom(b: &mut Bencher) {

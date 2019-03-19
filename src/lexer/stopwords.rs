@@ -371,10 +371,7 @@ impl LexerStopWord {
 
 #[cfg(test)]
 mod tests {
-    extern crate test;
-
     use super::*;
-    use test::Bencher;
 
     #[test]
     fn it_detects_stopwords() {
@@ -417,6 +414,14 @@ mod tests {
             None
         );
     }
+}
+
+#[cfg(all(feature = "benchmark", test))]
+mod benches {
+    extern crate test;
+
+    use super::*;
+    use test::Bencher;
 
     #[bench]
     fn bench_detect_stopwords_not_found(b: &mut Bencher) {

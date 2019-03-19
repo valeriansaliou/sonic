@@ -189,10 +189,7 @@ impl<'a> Iterator for TokenLexer<'a> {
 
 #[cfg(test)]
 mod tests {
-    extern crate test;
-
     use super::*;
-    use test::Bencher;
 
     #[test]
     fn it_cleans_token_english() {
@@ -275,6 +272,14 @@ mod tests {
         assert_eq!(token_cleaner.locale, None);
         assert_eq!(token_cleaner.next(), None);
     }
+}
+
+#[cfg(all(feature = "benchmark", test))]
+mod benches {
+    extern crate test;
+
+    use super::*;
+    use test::Bencher;
 
     #[bench]
     fn bench_normalize_token_french_build(b: &mut Bencher) {
