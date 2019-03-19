@@ -422,6 +422,13 @@ TODO: Rust compiler flags
 TODO: Number of messages to import, with total data size to import (~100MB raw text)
 TODO: Number of threads used, ie. 1 over 4 CPU cores; 8 virtual
 
+### Scripts
+
+**The scripts we used to perform the benchmark are:**
+
+* [sonic-benchmark_batch-push.js](https://gist.github.com/valeriansaliou/e5ab737b28601ebd70483f904d21aa09)
+* [sonic-benchmark_batch-query.js](https://gist.github.com/valeriansaliou/3ef8315d7282bd173c2cb9eba64fa739)
+
 ### Results
 
 TODO: notice that query is done on 1M items (number of imported messages in Sonic database)
@@ -429,11 +436,11 @@ TODO: notice that final KV DB size is 20MB; and FST is 1.4MB
 TODO: CPU usage of Sonic during import (~75% of 1 core mean)
 TODO: measure RPS in a table comparison
 
-**Batch PUSH results as seen from our terminal:**
+**Batch PUSH results as seen from our terminal (from initial index of: 0 objects):**
 
 ![Batch PUSH benchmark](https://valeriansaliou.github.io/sonic/images/benchmark-batch-push.png)
 
-**Batch QUERY results as seen from our terminal:**
+**Batch QUERY results as seen from our terminal (on index of: 1,000,000 objects):**
 
 ![Batch QUERY benchmark](https://valeriansaliou.github.io/sonic/images/benchmark-batch-query.png)
 
