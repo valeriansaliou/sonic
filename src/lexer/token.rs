@@ -406,7 +406,7 @@ mod benches {
     }
 
     #[bench]
-    fn bench_clean_token_english_build(b: &mut Bencher) {
+    fn bench_clean_token_english_regular_build(b: &mut Bencher) {
         b.iter(|| {
             TokenLexerBuilder::from(
                 TokenLexerMode::NormalizeAndCleanup,
@@ -416,11 +416,28 @@ mod benches {
     }
 
     #[bench]
-    fn bench_clean_token_english_exhaust(b: &mut Bencher) {
+    fn bench_clean_token_english_regular_exhaust(b: &mut Bencher) {
         b.iter(|| {
             let token_cleaner = TokenLexerBuilder::from(
                 TokenLexerMode::NormalizeAndCleanup,
                 "The quick brown fox jumps over the lazy dog!",
+            )
+            .unwrap();
+
+            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
+        });
+    }
+
+    #[bench]
+    fn bench_clean_token_english_long_exhaust(b: &mut Bencher) {
+        b.iter(|| {
+            let token_cleaner = TokenLexerBuilder::from(
+                TokenLexerMode::NormalizeAndCleanup,
+                r#"Running an electrical current through water splits it into oxygen and hydrogen,
+                the latter of which can be used as a reliable, zero-emission fuel source. In the
+                past, the process of purifying water beforehand was too energy intensive for this
+                process to be useful — but now scientists have figured out how to skip the process
+                altogether and convert seawater into usable hydrogen"#,
             )
             .unwrap();
 
