@@ -11,11 +11,13 @@ Sonic can be used as a simple alternative to super-heavy and full-featured searc
 
 **:newspaper: The Sonic project was initially announced in [a post on my personal journal](https://journal.valeriansaliou.name/announcing-sonic-a-super-light-alternative-to-elasticsearch/).**
 
+![Sonic](https://valeriansaliou.github.io/sonic/images/banner.jpg)
+
 ## Who uses it?
 
 <table>
 <tr>
-<td align="center"><a href="https://crisp.chat/"><img src="https://valeriansaliou.github.io/sonic/images/crisp.png" height="64" /></a></td>
+<td align="center"><a href="https://crisp.chat/"><img src="https://valeriansaliou.github.io/sonic/images/logo-crisp.png" height="64" /></a></td>
 </tr>
 <tr>
 <td align="center">Crisp</td>
