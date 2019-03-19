@@ -411,6 +411,32 @@ Sonic was built for [Crisp](https://crisp.chat/) from the start. As Crisp was gr
 
 At the end, we decided to build our own search backend, designed to be simple and lightweight on resources.
 
+### Benchmark
+
+### Context
+
+TODO: scenario
+TODO: environment w/ MacBook specs (+ SSD speed)
+TODO: Sonic version
+TODO: Rust compiler flags
+TODO: Number of messages to import, with total data size to import (~100MB raw text)
+TODO: Number of threads used, ie. 1 over 4 CPU cores; 8 virtual
+
+### Results
+
+TODO: notice that query is done on 1M items (number of imported messages in Sonic database)
+TODO: notice that final KV DB size is 20MB; and FST is 1.4MB
+TODO: CPU usage of Sonic during import (~75% of 1 core mean)
+TODO: measure RPS in a table comparison
+
+**Batch PUSH results as seen from our terminal:**
+
+![Batch PUSH benchmark](https://valeriansaliou.github.io/sonic/images/benchmark-batch-push.png)
+
+**Batch QUERY results as seen from our terminal:**
+
+![Batch QUERY benchmark](https://valeriansaliou.github.io/sonic/images/benchmark-batch-query.png)
+
 ## :fire: Report A Vulnerability
 
 If you find a vulnerability in Sonic, you are more than welcome to report it directly to [@valeriansaliou](https://github.com/valeriansaliou) by sending an encrypted email to [valerian@valeriansaliou.name](mailto:valerian@valeriansaliou.name). Do not report vulnerabilities in public GitHub issues, as they may be exploited by malicious people to target production servers running an unpatched Sonic instance.
