@@ -436,6 +436,19 @@ TODO: notice that final KV DB size is 20MB; and FST is 1.4MB
 TODO: CPU usage of Sonic during import (~75% of 1 core mean)
 TODO: measure RPS in a table comparison
 
+**Compared results per operation (on a single object):**
+
+We took a sample of 8 results from our batched operations, which produced a total of 1,000 results (1,000,000 items, with 1,000 items batched per measurement report).
+
+_This is not very scientific, but it should give you a clear idea of Sonic performances._
+
+**Time spent per operation can be found in the table below:**
+
+Operation | Average | Best  | Worst
+--------- | ------- | ----- | -----
+PUSH      | 275μs   | 190μs | 363μs
+QUERY     | 880μs   | 852μs | 1ms
+
 **Batch PUSH results as seen from our terminal (from initial index of: 0 objects):**
 
 ![Batch PUSH benchmark](https://valeriansaliou.github.io/sonic/images/benchmark-batch-push.png)
