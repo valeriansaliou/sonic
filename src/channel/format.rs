@@ -16,7 +16,7 @@ pub fn unescape(text: &str) -> String {
             match characters.next() {
                 Some('n') => unescaped.push('\n'),
                 Some('\"') => unescaped.push('\"'),
-                _ => unescaped.push(character)
+                _ => unescaped.push(character),
             };
         } else {
             unescaped.push(character);

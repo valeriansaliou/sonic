@@ -7,7 +7,9 @@
 use hashbrown::HashSet;
 use std::time::Instant;
 use unicode_segmentation::{UnicodeSegmentation, UnicodeWords};
-use whatlang::{detect as lang_detect, Lang};
+use whatlang::{
+    detect as lang_detect_all, detect_lang as lang_detect, detect_script as script_detect, Lang,
+};
 
 use super::stopwords::LexerStopWord;
 use crate::store::identifiers::{StoreTermHash, StoreTermHashed};
@@ -28,93 +30,16 @@ pub enum TokenLexerMode {
 }
 
 static TEXT_LANG_TRUNCATE_OVER_CHARS: usize = 200;
-static TEXT_LANG_DETECT_OVER_CHARS: usize = 20;
+static TEXT_LANG_DETECT_PROCEED_OVER_CHARS: usize = 20;
+static TEXT_LANG_DETECT_NGRAM_UNDER_CHARS: usize = 60;
 
 impl TokenLexerBuilder {
     pub fn from(mode: TokenLexerMode, text: &str) -> Result<TokenLexer, ()> {
-        // Detect text language (if current lexer mode asks for a cleanup, and text is long-enough \
-        //   to allow the text locale detection system to function properly)
-        let locale = if mode == TokenLexerMode::NormalizeAndCleanup
-            && text.len() >= TEXT_LANG_DETECT_OVER_CHARS
-        {
-            let ngram_start = Instant::now();
+        // Detect text language? (if current lexer mode asks for a cleanup)
+        let locale = if mode == TokenLexerMode::NormalizeAndCleanup {
+            debug!("detecting locale from lexer text: {}", text);
 
-            // Truncate text if necessary, as to avoid the ngram or stopwords detector to be \
-            //   ran on more words than those that are enough to reliably detect a locale.
-            let safe_text = if text.len() > TEXT_LANG_TRUNCATE_OVER_CHARS {
-                debug!(
-                    "lexer text needs to be truncated, as it is too long ({}/{}): {}",
-                    text.len(),
-                    TEXT_LANG_TRUNCATE_OVER_CHARS,
-                    text
-                );
-
-                // Perform an UTF-8 aware truncation
-                // Notice: then 'len()' check above was not UTF-8 aware, but is better than \
-                //   nothing as it avoids entering the below iterator for small strings.
-                // Notice: we fallback on text if the result is 'None'; as if it is 'None' there \
-                //   was less characters than the truncate limit in the UTF-8 parsed text. With \
-                //   this unwrap-way, we avoid doing a 'text.chars().count()' everytime, which is \
-                //   a O(N) operation, and rather guard this block with a 'text.len()' which is \
-                //   a O(1) operation but which is not 100% reliable when approaching the truncate \
-                //   limit. This is a trade-off, which saves quite a lot CPU cycles at scale.
-                text.char_indices()
-                    .nth(TEXT_LANG_TRUNCATE_OVER_CHARS)
-                    .map(|(end_index, _)| &text[0..end_index])
-                    .unwrap_or(text)
-            } else {
-                text
-            };
-
-            debug!("will detect locale for lexer text: {}", safe_text);
-
-            match lang_detect(safe_text) {
-                Some(detector) => {
-                    let mut locale = detector.lang();
-
-                    let ngram_took = ngram_start.elapsed();
-
-                    info!(
-                        "locale detected from lexer text: {} ({} from {} at {}/1; {}s + {}ms)",
-                        text,
-                        locale,
-                        detector.script(),
-                        detector.confidence(),
-                        ngram_took.as_secs(),
-                        ngram_took.subsec_millis()
-                    );
-
-                    // Confidence is low, try to detect locale from stop-words.
-                    if detector.is_reliable() == false {
-                        debug!("trying to detect locale from stopwords, as locale is unreliable");
-
-                        let stopwords_start = Instant::now();
-
-                        // Better alternate locale found?
-                        if let Some(alternate_locale) =
-                            LexerStopWord::guess_lang(safe_text, detector.script())
-                        {
-                            let stopwords_took = stopwords_start.elapsed();
-
-                            info!(
-                                "detected more accurate locale from stopwords: {} ({}s + {}ms)",
-                                alternate_locale,
-                                stopwords_took.as_secs(),
-                                stopwords_took.subsec_millis()
-                            );
-
-                            locale = alternate_locale;
-                        }
-                    }
-
-                    Some(locale)
-                }
-                None => {
-                    info!("no locale could be detected from lexer text: {}", text);
-
-                    None
-                }
-            }
+            Self::detect_lang(text)
         } else {
             debug!("not detecting locale from lexer text: {}", text);
 
@@ -124,6 +49,155 @@ impl TokenLexerBuilder {
 
         // Build final token builder iterator
         Ok(TokenLexer::new(mode, text, locale))
+    }
+
+    fn detect_lang(text: &str) -> Option<Lang> {
+        // Detect only if text is long-enough to allow the text locale detection system to \
+        //   function properly
+        if text.len() < TEXT_LANG_DETECT_PROCEED_OVER_CHARS {
+            return None;
+        }
+
+        // Truncate text if necessary, as to avoid the ngram or stopwords detector to be \
+        //   ran on more words than those that are enough to reliably detect a locale.
+        let safe_text = if text.len() > TEXT_LANG_TRUNCATE_OVER_CHARS {
+            debug!(
+                "lexer text needs to be truncated, as it is too long ({}/{}): {}",
+                text.len(),
+                TEXT_LANG_TRUNCATE_OVER_CHARS,
+                text
+            );
+
+            // Perform an UTF-8 aware truncation
+            // Notice: then 'len()' check above was not UTF-8 aware, but is better than \
+            //   nothing as it avoids entering the below iterator for small strings.
+            // Notice: we fallback on text if the result is 'None'; as if it is 'None' there \
+            //   was less characters than the truncate limit in the UTF-8 parsed text. With \
+            //   this unwrap-way, we avoid doing a 'text.chars().count()' everytime, which is \
+            //   a O(N) operation, and rather guard this block with a 'text.len()' which is \
+            //   a O(1) operation but which is not 100% reliable when approaching the truncate \
+            //   limit. This is a trade-off, which saves quite a lot CPU cycles at scale.
+            text.char_indices()
+                .nth(TEXT_LANG_TRUNCATE_OVER_CHARS)
+                .map(|(end_index, _)| &text[0..end_index])
+                .unwrap_or(text)
+        } else {
+            text
+        };
+
+        debug!("will detect locale for lexer safe text: {}", safe_text);
+
+        // Attempt to detect the locale from text using an hybrid method that maximizes both \
+        //   accuracy and performance.
+        // Notice: as the 'ngram' method is almost 10x slower than the 'stopwords' method, we \
+        //   prefer using the 'stopwords' method on long texts where we can be sure to see quite \
+        //   a lot of stopwords which will produce a reliable result. However, for shorter texts \
+        //   there are not enough north none stopwords, thus we use the slower 'ngram' method as \
+        //   an attempt to extract the locale using trigrams. Still, if either of these methods \
+        //   fails at detecting a locale it will try using the other method in fallback as to \
+        //   produce the most reliable result while minimizing CPU cycles.
+        if safe_text.len() < TEXT_LANG_DETECT_NGRAM_UNDER_CHARS {
+            debug!(
+                "lexer text is shorter than {} characters, using the slow method",
+                TEXT_LANG_DETECT_NGRAM_UNDER_CHARS
+            );
+
+            Self::detect_lang_slow(safe_text)
+        } else {
+            debug!(
+                "lexer text is equal or longer than {} characters, using the fast method",
+                TEXT_LANG_DETECT_NGRAM_UNDER_CHARS
+            );
+
+            Self::detect_lang_fast(safe_text)
+        }
+    }
+
+    fn detect_lang_slow(safe_text: &str) -> Option<Lang> {
+        let ngram_start = Instant::now();
+
+        match lang_detect_all(safe_text) {
+            Some(detector) => {
+                let ngram_took = ngram_start.elapsed();
+
+                let mut locale = detector.lang();
+
+                info!(
+                    "[slow lexer] locale detected from text: {} ({} from {} at {}/1; {}s + {}ms)",
+                    safe_text,
+                    locale,
+                    detector.script(),
+                    detector.confidence(),
+                    ngram_took.as_secs(),
+                    ngram_took.subsec_millis()
+                );
+
+                // Confidence is low, try to detect locale from stop-words.
+                // Notice: this is a fallback but should not be too reliable for short \
+                //   texts.
+                if detector.is_reliable() == false {
+                    debug!("[slow lexer] trying to detect locale from stopwords instead");
+
+                    // Better alternate locale found?
+                    if let Some(alternate_locale) =
+                        LexerStopWord::guess_lang(safe_text, detector.script())
+                    {
+                        info!(
+                            "[slow lexer] detected more accurate locale from stopwords: {}",
+                            alternate_locale
+                        );
+
+                        locale = alternate_locale;
+                    }
+                }
+
+                Some(locale)
+            }
+            None => {
+                info!(
+                    "[slow lexer] no locale could be detected from text: {}",
+                    safe_text
+                );
+
+                None
+            }
+        }
+    }
+
+    fn detect_lang_fast(safe_text: &str) -> Option<Lang> {
+        let stopwords_start = Instant::now();
+
+        match script_detect(safe_text) {
+            Some(script) => {
+                // Locale found?
+                if let Some(locale) = LexerStopWord::guess_lang(safe_text, script) {
+                    let stopwords_took = stopwords_start.elapsed();
+
+                    info!(
+                        "[fast lexer] locale detected from text: {} ({}; {}s + {}ms)",
+                        safe_text,
+                        locale,
+                        stopwords_took.as_secs(),
+                        stopwords_took.subsec_millis()
+                    );
+
+                    Some(locale)
+                } else {
+                    debug!("[fast lexer] trying to detect locale from fallback ngram instead");
+
+                    // No locale found, fallback on slow ngram.
+                    lang_detect(safe_text)
+                }
+            }
+            None => {
+                info!(
+                    "[fast lexer] no script could be detected from text: {}",
+                    safe_text
+                );
+
+                None
+            }
+        }
     }
 }
 
@@ -272,6 +346,33 @@ mod tests {
         assert_eq!(token_cleaner.locale, None);
         assert_eq!(token_cleaner.next(), None);
     }
+
+    #[test]
+    fn it_detects_lang_english_regular() {
+        assert_eq!(
+            TokenLexerBuilder::detect_lang("The quick brown fox jumps over the lazy dog!"),
+            Some(Lang::Eng)
+        );
+    }
+
+    #[test]
+    fn it_detects_lang_english_long() {
+        assert_eq!(
+            TokenLexerBuilder::detect_lang(
+                r#"Running an electrical current through water splits it into oxygen and hydrogen,
+            the latter of which can be used as a reliable, zero-emission fuel source. In the past,
+            the process of purifying water beforehand was too energy intensive for this process to
+            be useful — but now scientists have figured out how to skip the process altogether and
+            convert seawater into usable hydrogen"#
+            ),
+            Some(Lang::Eng)
+        );
+    }
+
+    #[test]
+    fn it_doesnt_detect_lang_english_tiny() {
+        assert_eq!(TokenLexerBuilder::detect_lang("The quick"), None);
+    }
 }
 
 #[cfg(all(feature = "benchmark", test))]
@@ -341,5 +442,33 @@ mod benches {
 
             token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
         });
+    }
+
+    #[bench]
+    fn bench_detect_lang_english_short(b: &mut Bencher) {
+        b.iter(|| TokenLexerBuilder::detect_lang("The quick brown fox."));
+    }
+
+    #[bench]
+    fn bench_detect_lang_english_regular(b: &mut Bencher) {
+        b.iter(|| TokenLexerBuilder::detect_lang("The quick brown fox jumps over the lazy dog!"));
+    }
+
+    #[bench]
+    fn bench_detect_lang_english_long(b: &mut Bencher) {
+        b.iter(|| {
+            TokenLexerBuilder::detect_lang(
+                r#"Running an electrical current through water splits it into oxygen and hydrogen,
+            the latter of which can be used as a reliable, zero-emission fuel source. In the past,
+            the process of purifying water beforehand was too energy intensive for this process to
+            be useful — but now scientists have figured out how to skip the process altogether and
+            convert seawater into usable hydrogen"#,
+            )
+        });
+    }
+
+    #[bench]
+    fn bench_dont_detect_lang_english_tiny(b: &mut Bencher) {
+        b.iter(|| TokenLexerBuilder::detect_lang("The quick"));
     }
 }
