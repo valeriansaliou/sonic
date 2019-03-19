@@ -30,10 +30,10 @@ impl ExecutorCount {
                     let kv_action = StoreKVActionBuilder::access(kv_store);
 
                     // Try to resolve existing OID to IID
-                    let oid = object.as_str().to_owned();
+                    let oid = object.as_str();
 
                     kv_action
-                        .get_oid_to_iid(&oid)
+                        .get_oid_to_iid(oid)
                         .unwrap_or(None)
                         .map(|iid| {
                             // List terms for IID

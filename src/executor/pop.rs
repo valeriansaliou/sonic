@@ -37,9 +37,9 @@ impl ExecutorPop {
 
                 // Try to resolve existing OID to IID (if it does not exist, there is nothing to \
                 //   be flushed)
-                let oid = object.as_str().to_owned();
+                let oid = object.as_str();
 
-                if let Ok(iid_value) = kv_action.get_oid_to_iid(&oid) {
+                if let Ok(iid_value) = kv_action.get_oid_to_iid(oid) {
                     let mut count_popped = 0;
 
                     if let Some(iid) = iid_value {
@@ -80,7 +80,7 @@ impl ExecutorPop {
                                     //   executors)
                                     executor_ensure_op!(kv_action.batch_flush_bucket(
                                         iid,
-                                        &oid,
+                                        oid,
                                         &iid_terms_hashed_vec
                                     ));
                                 } else {

@@ -23,7 +23,7 @@ pub struct StoreKeyerHasher;
 enum StoreKeyerIdx<'a> {
     MetaToValue(&'a StoreMetaKey),
     TermToIIDs(StoreTermHashed),
-    OIDToIID(&'a StoreObjectOID),
+    OIDToIID(StoreObjectOID<'a>),
     IIDToOID(StoreObjectIID),
     IIDToTerms(StoreObjectIID),
 }
@@ -51,7 +51,7 @@ impl StoreKeyerBuilder {
         Self::make(StoreKeyerIdx::TermToIIDs(term_hash))
     }
 
-    pub fn oid_to_iid<'a>(oid: &'a StoreObjectOID) -> StoreKeyer {
+    pub fn oid_to_iid<'a>(oid: StoreObjectOID<'a>) -> StoreKeyer {
         Self::make(StoreKeyerIdx::OIDToIID(oid))
     }
 

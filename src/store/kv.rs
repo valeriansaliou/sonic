@@ -492,7 +492,10 @@ impl StoreKVAction {
     /// OID-to-IID mapper
     ///
     /// [IDX=2] ((oid)) ~> ((iid))
-    pub fn get_oid_to_iid(&self, oid: &StoreObjectOID) -> Result<Option<StoreObjectIID>, ()> {
+    pub fn get_oid_to_iid<'a>(
+        &self,
+        oid: StoreObjectOID<'a>,
+    ) -> Result<Option<StoreObjectIID>, ()> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::oid_to_iid(oid);
 
@@ -533,7 +536,11 @@ impl StoreKVAction {
         }
     }
 
-    pub fn set_oid_to_iid(&self, oid: &StoreObjectOID, iid: StoreObjectIID) -> Result<(), ()> {
+    pub fn set_oid_to_iid<'a>(
+        &self,
+        oid: StoreObjectOID<'a>,
+        iid: StoreObjectIID,
+    ) -> Result<(), ()> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::oid_to_iid(oid);
 
@@ -553,7 +560,7 @@ impl StoreKVAction {
         }
     }
 
-    pub fn delete_oid_to_iid(&self, oid: &StoreObjectOID) -> Result<(), ()> {
+    pub fn delete_oid_to_iid<'a>(&self, oid: StoreObjectOID<'a>) -> Result<(), ()> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::oid_to_iid(oid);
 
@@ -568,7 +575,7 @@ impl StoreKVAction {
     /// IID-to-OID mapper
     ///
     /// [IDX=3] ((iid)) ~> ((oid))
-    pub fn get_iid_to_oid(&self, iid: StoreObjectIID) -> Result<Option<StoreObjectOID>, ()> {
+    pub fn get_iid_to_oid(&self, iid: StoreObjectIID) -> Result<Option<String>, ()> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::iid_to_oid(iid);
 
@@ -584,7 +591,11 @@ impl StoreKVAction {
         }
     }
 
-    pub fn set_iid_to_oid(&self, iid: StoreObjectIID, oid: &StoreObjectOID) -> Result<(), ()> {
+    pub fn set_iid_to_oid<'a>(
+        &self,
+        iid: StoreObjectIID,
+        oid: StoreObjectOID<'a>,
+    ) -> Result<(), ()> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::iid_to_oid(iid);
 
@@ -688,10 +699,10 @@ impl StoreKVAction {
         }
     }
 
-    pub fn batch_flush_bucket(
+    pub fn batch_flush_bucket<'a>(
         &self,
         iid: StoreObjectIID,
-        oid: &StoreObjectOID,
+        oid: StoreObjectOID<'a>,
         iid_terms_hashed: &[StoreTermHashed],
     ) -> Result<u32, ()> {
         let mut count = 0;

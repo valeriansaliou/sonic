@@ -38,8 +38,8 @@ impl ExecutorPush {
 
                 // Try to resolve existing OID to IID, otherwise initialize IID (store the \
                 //   bi-directional relationship)
-                let oid = object.as_str().to_owned();
-                let iid = kv_action.get_oid_to_iid(&oid).unwrap_or(None).or_else(|| {
+                let oid = object.as_str();
+                let iid = kv_action.get_oid_to_iid(oid).unwrap_or(None).or_else(|| {
                     info!("must initialize push executor oid-to-iid and iid-to-oid");
 
                     if let Ok(iid_incr) = kv_action.get_meta_to_value(StoreMetaKey::IIDIncr) {
@@ -61,8 +61,8 @@ impl ExecutorPush {
                             == true
                         {
                             // Associate OID <> IID (bidirectional)
-                            executor_ensure_op!(kv_action.set_oid_to_iid(&oid, iid_incr));
-                            executor_ensure_op!(kv_action.set_iid_to_oid(iid_incr, &oid));
+                            executor_ensure_op!(kv_action.set_oid_to_iid(oid, iid_incr));
+                            executor_ensure_op!(kv_action.set_iid_to_oid(iid_incr, oid));
 
                             Some(iid_incr)
                         } else {

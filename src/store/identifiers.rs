@@ -8,7 +8,7 @@ use std::hash::Hasher;
 use twox_hash::XxHash32;
 
 pub type StoreObjectIID = u32;
-pub type StoreObjectOID = String;
+pub type StoreObjectOID<'a> = &'a str;
 pub type StoreTermHashed = u32;
 
 pub struct StoreTermHash;
