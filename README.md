@@ -426,8 +426,8 @@ TODO: Number of threads used, ie. 1 over 4 CPU cores; 8 virtual
 
 **The scripts we used to perform the benchmark are:**
 
-* [sonic-benchmark_batch-push.js](https://gist.github.com/valeriansaliou/e5ab737b28601ebd70483f904d21aa09)
-* [sonic-benchmark_batch-query.js](https://gist.github.com/valeriansaliou/3ef8315d7282bd173c2cb9eba64fa739)
+1. **PUSH script**: [sonic-benchmark_batch-push.js](https://gist.github.com/valeriansaliou/e5ab737b28601ebd70483f904d21aa09)
+2. **QUERY script**: [sonic-benchmark_batch-query.js](https://gist.github.com/valeriansaliou/3ef8315d7282bd173c2cb9eba64fa739)
 
 ### Results
 
