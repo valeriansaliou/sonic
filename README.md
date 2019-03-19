@@ -435,7 +435,7 @@ We want to import all those messages into a clean Sonic instance, and then perfo
 * **Rustc version**: `rustc 1.35.0-nightly (719b0d984 2019-03-13)`
 * **Compiler flags**: `release` profile (`-03` with `lto`)
 
-**Our dataset is as follows:**
+**Our dataset is as such:**
 
 * **Number of objects**: ~1,000,000 messages
 * **Total size**: ~100MB of raw message text (this does not account for identifiers and other metas)
