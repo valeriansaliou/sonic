@@ -442,7 +442,7 @@ We took a sample of 8 results from our batched operations, which produced a tota
 
 _This is not very scientific, but it should give you a clear idea of Sonic performances._
 
-**Time spent per operation can be found in the table below:**
+**Time spent per operation:**
 
 Operation | Average | Best  | Worst
 --------- | ------- | ----- | -----
