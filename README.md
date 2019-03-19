@@ -447,7 +447,7 @@ We want to import all those messages into a clean Sonic instance, and then perfo
 1. **PUSH script**: [sonic-benchmark_batch-push.js](https://gist.github.com/valeriansaliou/e5ab737b28601ebd70483f904d21aa09)
 2. **QUERY script**: [sonic-benchmark_batch-query.js](https://gist.github.com/valeriansaliou/3ef8315d7282bd173c2cb9eba64fa739)
 
-#### ↘ Results
+#### ⏬ Results
 
 TODO: notice that query is done on 1M items (number of imported messages in Sonic database)
 TODO: notice that final KV DB size is 20MB; and FST is 1.4MB
