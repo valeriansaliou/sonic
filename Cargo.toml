@@ -60,6 +60,5 @@ debug-assertions = false
 
 [profile.bench]
 opt-level = 3
-lto = true
 debug = false
 debug-assertions = false
