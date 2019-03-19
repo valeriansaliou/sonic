@@ -11,14 +11,14 @@ use crate::store::item::StoreItem;
 pub enum Query<'a> {
     Search(
         StoreItem<'a>,
-        QuerySearchID,
+        QuerySearchID<'a>,
         TokenLexer<'a>,
         QuerySearchLimit,
         QuerySearchOffset,
     ),
     Suggest(
         StoreItem<'a>,
-        QuerySearchID,
+        QuerySearchID<'a>,
         TokenLexer<'a>,
         QuerySearchLimit,
     ),

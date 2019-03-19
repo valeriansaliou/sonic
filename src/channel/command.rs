@@ -12,7 +12,7 @@ use std::vec::Vec;
 
 use super::format::unescape;
 use crate::query::builder::{QueryBuilder, QueryBuilderResult};
-use crate::query::types::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
+use crate::query::types::{QuerySearchLimit, QuerySearchOffset};
 use crate::store::fst::StoreFSTPool;
 use crate::store::operation::StoreOperationDispatch;
 use crate::APP_CONF;
@@ -351,7 +351,7 @@ impl ChannelCommandBase {
             .or(Err(ChannelCommandError::QueryError))
     }
 
-    pub fn generate_event_id() -> QuerySearchID {
+    pub fn generate_event_id() -> String {
         thread_rng()
             .sample_iter(&Alphanumeric)
             .take(EVENT_ID_SIZE)
@@ -411,7 +411,7 @@ impl ChannelCommandSearch {
                         "QUERY",
                         &event_id,
                         QueryBuilder::search(
-                            event_id.to_owned(),
+                            &event_id,
                             collection,
                             bucket,
                             &text,
@@ -475,13 +475,7 @@ impl ChannelCommandSearch {
                     ChannelCommandBase::commit_pending_operation(
                         "SUGGEST",
                         &event_id,
-                        QueryBuilder::suggest(
-                            event_id.to_owned(),
-                            collection,
-                            bucket,
-                            &text,
-                            suggest_limit,
-                        ),
+                        QueryBuilder::suggest(&event_id, collection, bucket, &text, suggest_limit),
                     )
                 }
             }

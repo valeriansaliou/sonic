@@ -14,7 +14,7 @@ pub type QueryBuilderResult<'a> = Result<Query<'a>, ()>;
 
 impl QueryBuilder {
     pub fn search<'a>(
-        query_id: String,
+        query_id: &'a str,
         collection: &'a str,
         bucket: &'a str,
         terms: &'a str,
@@ -33,7 +33,7 @@ impl QueryBuilder {
     }
 
     pub fn suggest<'a>(
-        query_id: String,
+        query_id: &'a str,
         collection: &'a str,
         bucket: &'a str,
         terms: &'a str,
@@ -129,26 +129,16 @@ mod tests {
 
     #[test]
     fn it_builds_search_query() {
-        assert!(QueryBuilder::search(
-            "id1".to_string(),
-            "c:test:1",
-            "b:test:1",
-            "Michael Dake",
-            10,
-            20
-        )
-        .is_ok());
         assert!(
-            QueryBuilder::search("id2".to_string(), "c:test:1", "", "Michael Dake", 1, 0).is_err()
+            QueryBuilder::search("id1", "c:test:1", "b:test:1", "Michael Dake", 10, 20).is_ok()
         );
+        assert!(QueryBuilder::search("id2", "c:test:1", "", "Michael Dake", 1, 0).is_err());
     }
 
     #[test]
     fn it_builds_suggest_query() {
-        assert!(
-            QueryBuilder::suggest("id1".to_string(), "c:test:2", "b:test:2", "Micha", 5).is_ok()
-        );
-        assert!(QueryBuilder::suggest("id2".to_string(), "c:test:2", "", "Micha", 1).is_err());
+        assert!(QueryBuilder::suggest("id1", "c:test:2", "b:test:2", "Micha", 5).is_ok());
+        assert!(QueryBuilder::suggest("id2", "c:test:2", "", "Micha", 1).is_err());
     }
 
     #[test]
