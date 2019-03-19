@@ -64,6 +64,8 @@ type StoreFSTAtom = u32;
 type StoreFSTBox = Arc<StoreFST>;
 type StoreFSTKey = (StoreFSTAtom, StoreFSTAtom);
 
+static LOOKUP_REGEX_RANGE_UNICODE: &'static str = "[\\x{0000}-\\x{FFFF}]";
+
 lazy_static! {
     pub static ref GRAPH_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
     static ref GRAPH_WRITE_LOCK: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
@@ -454,12 +456,11 @@ impl StoreFST {
     }
 
     pub fn lookup_begins(&self, word: &str) -> Result<FSTStream<Regex>, ()> {
-        // Notice: this regex is only compatible with Latin characters, for speed reasons at \
-        //   scale; though non-Latin languages can still fallback on the alternate 'Levenshtein' \
-        //   lookup method if lookup is needed. We found out that the 'match any' syntax ('.*') \
-        //   was super-slow. Using the restrictive syntax below divided the cost of a search \
-        //   QUERY by 2. The regex below has been found out to be nearly zero-cost.
-        let regex_str = format!("{}([a-zA-Z0-9_]*)", regex_escape(word));
+        // Notice: this regex maps over the whole unicode range, for speed reasons at scale. \
+        //   We found out that the 'match any' syntax ('.*') was super-slow. Using the restrictive \
+        //   syntax below divided the cost of eg. a search query by 2. The regex below has been \
+        //   found out to be nearly zero-cost to compile and execute, for whatever reason.
+        let regex_str = format!("{}({}*)", regex_escape(word), LOOKUP_REGEX_RANGE_UNICODE);
 
         debug!(
             "looking-up word in fst via 'begins': {} with regex: {}",
