@@ -456,7 +456,7 @@ impl StoreFST {
     }
 
     pub fn lookup_begins(&self, word: &str) -> Result<FSTStream<Regex>, ()> {
-        // Notice: this regex maps over the whole unicode range, for speed reasons at scale. \
+        // Notice: this regex maps over an unicode range, for speed reasons at scale. \
         //   We found out that the 'match any' syntax ('.*') was super-slow. Using the restrictive \
         //   syntax below divided the cost of eg. a search query by 2. The regex below has been \
         //   found out to be nearly zero-cost to compile and execute, for whatever reason.
