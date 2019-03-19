@@ -5,7 +5,7 @@ Sonic
 
 **Sonic is a fast, lightweight and schema-less search backend. It ingests search texts and identifier tuples, that can then be queried against.**
 
-Sonic can be used as a simple alternative to super-heavy and full-featured search backends such as Elasticsearch in some use-cases. It is capable of normalizing natural language search queries, auto-completing a search query and providing most relevant results for a query.
+Sonic can be used as a simple alternative to super-heavy and full-featured search backends such as Elasticsearch in some use-cases. It is capable of normalizing natural language search queries, auto-completing a search query and providing the most relevant results for a query.
 
 **🇫🇷 Crafted in Nantes, France.**
 
@@ -26,9 +26,9 @@ _👋 You use Sonic and you want to be listed there? [Contact me](https://valeri
 
 ## Features
 
-* **Search terms are stored in collections, organized in buckets**; you may use a single bucket, or a bucket per user on your platform if you need to search in separate graphs.
-* **Search results return object identifiers**, that can be resolved from an external database if you need to enrich the search results. This makes Sonic a simple graph storage system, that points to identifier results. Sonic doesn't store any textual data in its graphs.
-* **Networked channel interface (Sonic Channel)**, that let you search your stored graphs, manage data ingestion (push in the index, pop from the index, flush a collection, flush a bucket, etc.) and perform administrative actions. The Sonic Channel protocol was designed to be lightweight on resources and simple to integrate with (the protocol is specified in the sections below).
+* **Search terms are stored in collections, organized in buckets**; you may use a single bucket, or a bucket per user on your platform if you need to search in separate indexes.
+* **Search results return object identifiers**, that can be resolved from an external database if you need to enrich the search results. This makes Sonic a simple word index, that points to identifier results. Sonic doesn't store any direct textual data in its index, but it still holds a word graph for auto-completion and typo corrections.
+* **Networked channel interface (Sonic Channel)**, that let you search your index, manage data ingestion (push in the index, pop from the index, flush a collection, flush a bucket, etc.) and perform administrative actions. The Sonic Channel protocol was designed to be lightweight on resources and simple to integrate with (the protocol is specified in the sections below).
 * **Easy-to-use libraries**, that let you connect to Sonic Channel from your apps.
 
 ## Limitations
@@ -186,7 +186,7 @@ _The Sonic Channel Search mode is used for querying the search index. Once in th
 * `<count>`: a positive integer number; set within allowed maximum & minimum limits;
 * `<manual>`: help manual to be shown (available manuals: `commands`);
 
-_Notice: the `bucket` terminology may confuse some Sonic users. As we are well-aware Sonic may be used in an environment where end-users may each hold their own search index graph in a given `collection`, we made it possible to manage per-end-user search graphs with `bucket`. If you only have a single index graph per `collection` (most Sonic users will), we advise you use a static generic name for your `bucket`, for instance: `default`._
+_Notice: the `bucket` terminology may confuse some Sonic users. As we are well-aware Sonic may be used in an environment where end-users may each hold their own search index in a given `collection`, we made it possible to manage per-end-user search indexes with `bucket`. If you only have a single index per `collection` (most Sonic users will), we advise you use a static generic name for your `bucket`, for instance: `default`._
 
 **⬇️ Search flow example (via `telnet`):**
 
@@ -252,7 +252,7 @@ _The Sonic Channel Ingest mode is used for altering the search index (push, pop 
 * `<text>`: search text to be indexed (can be a single word, or a longer text; within maximum length safety limits; between quotes);
 * `<manual>`: help manual to be shown (available manuals: `commands`);
 
-_Notice: the `bucket` terminology may confuse some Sonic users. As we are well-aware Sonic may be used in an environment where end-users may each hold their own search index graph in a given `collection`, we made it possible to manage per-end-user search graphs with `bucket`. If you only have a single index graph per `collection` (most Sonic users will), we advise you use a static generic name for your `bucket`, for instance: `default`._
+_Notice: the `bucket` terminology may confuse some Sonic users. As we are well-aware Sonic may be used in an environment where end-users may each hold their own search index in a given `collection`, we made it possible to manage per-end-user search indexes with `bucket`. If you only have a single index per `collection` (most Sonic users will), we advise you use a static generic name for your `bucket`, for instance: `default`._
 
 **⬇️ Ingest flow example (via `telnet`):**
 
