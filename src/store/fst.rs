@@ -454,7 +454,12 @@ impl StoreFST {
     }
 
     pub fn lookup_begins(&self, word: &str) -> Result<FSTStream<Regex>, ()> {
-        let regex_str = format!("{}.*", regex_escape(word));
+        // Notice: this regex is only compatible with Latin characters, for speed reasons at \
+        //   scale; though non-Latin languages can still fallback on the alternate 'Levenshtein' \
+        //   lookup method if lookup is needed. We found out that the 'match any' syntax ('.*') \
+        //   was super-slow. Using the restrictive syntax below divided the cost of a search \
+        //   QUERY by 2. The regex below has been found out to be nearly zero-cost.
+        let regex_str = format!("{}([a-zA-Z0-9_]*)", regex_escape(word));
 
         debug!(
             "looking-up word in fst via 'begins': {} with regex: {}",
