@@ -64,7 +64,8 @@ type StoreFSTAtom = u32;
 type StoreFSTBox = Arc<StoreFST>;
 type StoreFSTKey = (StoreFSTAtom, StoreFSTAtom);
 
-static LOOKUP_REGEX_RANGE_UNICODE: &'static str = "[\\x{0000}-\\x{FFFF}]";
+// Notice: this Unicode range comes for most alphabets in the world
+static LOOKUP_REGEX_RANGE_UNICODE: &'static str = "[\\x{0000}-\\x{1B7F}]";
 
 lazy_static! {
     pub static ref GRAPH_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
