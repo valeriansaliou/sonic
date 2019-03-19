@@ -64,8 +64,7 @@ type StoreFSTAtom = u32;
 type StoreFSTBox = Arc<StoreFST>;
 type StoreFSTKey = (StoreFSTAtom, StoreFSTAtom);
 
-// Notice: this Unicode range comes for most alphabets in the world
-static LOOKUP_REGEX_RANGE_UNICODE: &'static str = "[\\x{0000}-\\x{1B7F}]";
+static LOOKUP_REGEX_RANGE_LATIN: &'static str = "[\\x{0000}-\\x{024F}]";
 
 lazy_static! {
     pub static ref GRAPH_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
@@ -461,7 +460,7 @@ impl StoreFST {
         //   We found out that the 'match any' syntax ('.*') was super-slow. Using the restrictive \
         //   syntax below divided the cost of eg. a search query by 2. The regex below has been \
         //   found out to be nearly zero-cost to compile and execute, for whatever reason.
-        let regex_str = format!("{}({}*)", regex_escape(word), LOOKUP_REGEX_RANGE_UNICODE);
+        let regex_str = format!("{}({}*)", regex_escape(word), LOOKUP_REGEX_RANGE_LATIN);
 
         debug!(
             "looking-up word in fst via 'begins': {} with regex: {}",
