@@ -4,27 +4,23 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use std::collections::VecDeque;
-
 pub fn unescape(text: &str) -> String {
     // Pre-reserve a byte-aware required capacity as to avoid heap resizes (30% performance \
     //   gain relative to initializing this with a zero-capacity)
     let mut unescaped = String::with_capacity(text.as_bytes().len());
+    let mut characters = text.chars();
 
-    let mut queue: VecDeque<_> = String::from(text).chars().collect();
-
-    while let Some(character) = queue.pop_front() {
-        if character != '\\' {
+    while let Some(character) = characters.next() {
+        if character == '\\' {
+            // Found escaped character
+            match characters.next() {
+                Some('n') => unescaped.push('\n'),
+                Some('\"') => unescaped.push('\"'),
+                _ => unescaped.push(character)
+            };
+        } else {
             unescaped.push(character);
-
-            continue;
         }
-
-        match queue.pop_front() {
-            Some('n') => unescaped.push('\n'),
-            Some('\"') => unescaped.push('\"'),
-            _ => unescaped.push(character),
-        };
     }
 
     unescaped
