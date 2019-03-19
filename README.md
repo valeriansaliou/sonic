@@ -413,14 +413,31 @@ At the end, we decided to build our own search backend, designed to be simple an
 
 ### Benchmark
 
+### Scenario
+
+We performed an extract of all messages from the Crisp team used for [Crisp](https://crisp.chat/) own customer support.
+
+We want to import all those messages into a clean Sonic instance, and then perform searches on the index we built. We will measure the time that Sonic spent executing each operation (ie. each `PUSH` and `QUERY` commands over Sonic Channel), and group results per 1,000 operations (this outputs a mean time per 1,000 operations).
+
 ### Context
 
-TODO: scenario
-TODO: environment w/ MacBook specs (+ SSD speed)
-TODO: Sonic version
-TODO: Rust compiler flags
-TODO: Number of messages to import, with total data size to import (~100MB raw text)
-TODO: Number of threads used, ie. 1 over 4 CPU cores; 8 virtual
+**Our benchmark is ran on the following computer:**
+
+* **Device**: MacBook Pro (Retina, 15-inch, Mid 2014)
+* **OS**: MacOS 10.14.3
+* **Disk**: 512GB SSD (formatted under the AFS file system)
+* **CPU**: 2.5 GHz Intel Core i7
+* **RAM**: 16 GB 1600 MHz DDR3
+
+**Sonic is compiled as following:**
+
+* **Sonic version**: 1.0.1
+* **Compiler flags**: Release profile (`-03` with `LTO`)
+
+**Our dataset is as follows:**
+
+* **Number of objects**: ~1,000,000 messages
+* **Total size**: ~100MB of raw message text (this does not account for identifiers and other metas)
 
 ### Scripts
 
@@ -433,8 +450,8 @@ TODO: Number of threads used, ie. 1 over 4 CPU cores; 8 virtual
 
 TODO: notice that query is done on 1M items (number of imported messages in Sonic database)
 TODO: notice that final KV DB size is 20MB; and FST is 1.4MB
-TODO: CPU usage of Sonic during import (~75% of 1 core mean)
-TODO: measure RPS in a table comparison
+TODO: CPU usage of Sonic during import (~75% of 1 core mean; only 1 thread used)
+TODO: measure RPS
 
 **Compared results per operation (on a single object):**
 
