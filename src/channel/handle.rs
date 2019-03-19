@@ -90,7 +90,7 @@ impl ChannelHandle {
                 .expect("write failed");
 
                 // Initialize packet buffer
-                let mut buffer = Vec::new();
+                let mut buffer = Vec::with_capacity(MAX_LINE_SIZE);
 
                 // Wait for incoming messages
                 'handler: loop {

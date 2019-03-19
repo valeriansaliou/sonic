@@ -157,8 +157,8 @@ impl ExecutorSearch {
 
                 // Resolve OIDs from IIDs
                 // Notice: we also proceed paging from there
-                let mut result_oids = Vec::new();
                 let (limit_usize, offset_usize) = (limit as usize, offset as usize);
+                let mut result_oids = Vec::with_capacity(limit_usize);
 
                 'paging: for (index, found_iid) in found_iids.iter().skip(offset_usize).enumerate()
                 {

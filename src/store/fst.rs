@@ -401,7 +401,7 @@ impl StoreFSTBuilder {
         } else {
             // FST does not exist on disk, generate an empty FST for now; until a consolidation \
             //   task occurs and populates the on-disk-FST.
-            let empty_iter: Vec<&str> = vec![];
+            let empty_iter: Vec<&str> = Vec::new();
 
             FSTSet::from_iter(empty_iter)
         }
@@ -749,7 +749,7 @@ impl StoreFSTAction {
         limit: usize,
         max_typo_factor: Option<u32>,
     ) -> Option<Vec<String>> {
-        let mut found_words = Vec::new();
+        let mut found_words = Vec::with_capacity(limit);
 
         // Try to complete provided word
         if let Ok(stream) = self.store.lookup_begins(from_word) {
