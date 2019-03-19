@@ -457,7 +457,7 @@ We want to import all those messages into a clean Sonic instance, and then perfo
 * We used a single Sonic Channel TCP connection, which limits the import to a single thread (we could have load-balanced this across as many Sonic Channel connections as there are CPUs);
 * We get an import RPS approaching 4,000 operations per second (per thread);
 * We get a search query RPS approaching 1,000 operations per second (per thread);
-* On the hyper-threaded 4-cores CPU used, we could have parallelized operations to 8 virtual cores, thus theoretically increasing the import RPS to 32,000 operations / second, while the search query RPS would be increased to 8,000 operations / second;
+* On the hyper-threaded 4-cores CPU used, we could have parallelized operations to 8 virtual cores, thus theoretically increasing the import RPS to 32,000 operations / second, while the search query RPS would be increased to 8,000 operations / second (we may be SSD-bound at some point though);
 
 **Compared results per operation (on a single object):**
 
