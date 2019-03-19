@@ -411,6 +411,8 @@ Sonic was built for [Crisp](https://crisp.chat/) from the start. As Crisp was gr
 
 At the end, we decided to build our own search backend, designed to be simple and lightweight on resources.
 
+You can run function-level benchmarks with the command: `cargo bench --features benchmark`
+
 ### 👩‍🔬 Benchmark #1
 
 #### ➡️ Scenario
