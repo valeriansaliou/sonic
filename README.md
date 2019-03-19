@@ -7,7 +7,7 @@ Sonic
 
 Sonic can be used as a simple alternative to super-heavy and full-featured search backends such as Elasticsearch in some use-cases. It is capable of normalizing natural language search queries, auto-completing a search query and providing the most relevant results for a query.
 
-A strong attention to performance and code cleanliness has been given when designing Sonic. It aims at being crash-free, super-fast and puts minimum strain on server resources (our measurements have shown that Sonic - when under load - responds to search queries in the μs range, consumes ~30MB RAM and has a north-to-null CPU footprint; [see our benchmarks](#how-fast--lightweight-is-it)).
+A strong attention to performance and code cleanliness has been given when designing Sonic. It aims at being crash-free, super-fast and puts minimum strain on server resources (our measurements have shown that Sonic - when under load - responds to search queries in the μs range, eats ~30MB RAM and has a north-to-null CPU footprint; [see our benchmarks](#how-fast--lightweight-is-it)).
 
 **🇫🇷 Crafted in Nantes, France.**
 
