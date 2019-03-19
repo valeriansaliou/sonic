@@ -60,7 +60,7 @@ pub fn store_kv_database_parallelism() -> u16 {
 }
 
 pub fn store_kv_database_max_files() -> u16 {
-    1000
+    100
 }
 
 pub fn store_kv_database_max_compactions() -> u16 {
