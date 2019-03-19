@@ -449,10 +449,12 @@ We want to import all those messages into a clean Sonic instance, and then perfo
 
 #### ⏬ Results
 
-TODO: notice that query is done on 1M items (number of imported messages in Sonic database)
-TODO: notice that final KV DB size is 20MB; and FST is 1.4MB
-TODO: CPU usage of Sonic during import (~75% of 1 core mean; only 1 thread used)
-TODO: measure RPS
+* We imported ~1,000,000 messages of dynamic length (some very long, eg. emails);
+* Once imported, the search index weights 20MB (KV) + 1.4MB (FST) on disk;
+* CPU usage during import averaged 75% of a single CPU core;
+* We used a single Sonic Channel TCP connection, which limits the import to a single thread (we could have load-balanced this across as many Sonic Channel connections as there are CPUs);
+* We get an import RPS approaching 4,000 operations per second (per thread);
+* We get a search query RPS approaching 1,000 operations per second (per thread);
 
 **Compared results per operation (on a single object):**
 
