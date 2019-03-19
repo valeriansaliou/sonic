@@ -411,15 +411,15 @@ Sonic was built for [Crisp](https://crisp.chat/) from the start. As Crisp was gr
 
 At the end, we decided to build our own search backend, designed to be simple and lightweight on resources.
 
-### Benchmark
+### 👩‍🔬 Benchmark
 
-### Scenario
+#### Scenario
 
 We performed an extract of all messages from the Crisp team used for [Crisp](https://crisp.chat/) own customer support.
 
 We want to import all those messages into a clean Sonic instance, and then perform searches on the index we built. We will measure the time that Sonic spent executing each operation (ie. each `PUSH` and `QUERY` commands over Sonic Channel), and group results per 1,000 operations (this outputs a mean time per 1,000 operations).
 
-### Context
+#### Context
 
 **Our benchmark is ran on the following computer:**
 
@@ -440,14 +440,14 @@ We want to import all those messages into a clean Sonic instance, and then perfo
 * **Number of objects**: ~1,000,000 messages
 * **Total size**: ~100MB of raw message text (this does not account for identifiers and other metas)
 
-### Scripts
+#### Scripts
 
 **The scripts we used to perform the benchmark are:**
 
 1. **PUSH script**: [sonic-benchmark_batch-push.js](https://gist.github.com/valeriansaliou/e5ab737b28601ebd70483f904d21aa09)
 2. **QUERY script**: [sonic-benchmark_batch-query.js](https://gist.github.com/valeriansaliou/3ef8315d7282bd173c2cb9eba64fa739)
 
-### Results
+#### Results
 
 TODO: notice that query is done on 1M items (number of imported messages in Sonic database)
 TODO: notice that final KV DB size is 20MB; and FST is 1.4MB
