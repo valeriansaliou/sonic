@@ -433,7 +433,7 @@ We want to import all those messages into a clean Sonic instance, and then perfo
 
 * **Sonic version**: 1.0.1
 * **Rustc version**: `rustc 1.35.0-nightly (719b0d984 2019-03-13)`
-* **Compiler flags**: Release profile (`-03` with `lto`)
+* **Compiler flags**: `release` profile (`-03` with `lto`)
 
 **Our dataset is as follows:**
 
