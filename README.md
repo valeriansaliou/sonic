@@ -432,7 +432,8 @@ We want to import all those messages into a clean Sonic instance, and then perfo
 **Sonic is compiled as following:**
 
 * **Sonic version**: 1.0.1
-* **Compiler flags**: Release profile (`-03` with `LTO`)
+* **Rustc version**: `rustc 1.35.0-nightly (719b0d984 2019-03-13)`
+* **Compiler flags**: Release profile (`-03` with `lto`)
 
 **Our dataset is as follows:**
 
