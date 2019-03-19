@@ -128,7 +128,10 @@ impl fmt::Display for StoreKeyer {
 
 #[cfg(test)]
 mod tests {
+    extern crate test;
+
     use super::*;
+    use test::Bencher;
 
     #[test]
     fn it_keys_meta_to_value() {
@@ -197,5 +200,46 @@ mod tests {
             ),
             "'0:0' [0, 0, 0, 0, 0]"
         );
+    }
+
+    #[bench]
+    fn bench_hash_compact_short(b: &mut Bencher) {
+        b.iter(|| StoreKeyerHasher::to_compact("key:bench:1"));
+    }
+
+    #[bench]
+    fn bench_hash_compact_long(b: &mut Bencher) {
+        b.iter(|| {
+            StoreKeyerHasher::to_compact(
+                "key:bench:2:long:long:long:long:long:long:long:long:long:long:long:long:long:long",
+            )
+        });
+    }
+
+    #[bench]
+    fn bench_key_meta_to_value(b: &mut Bencher) {
+        b.iter(|| StoreKeyerBuilder::meta_to_value(&StoreMetaKey::IIDIncr));
+    }
+
+    #[bench]
+    fn bench_key_term_to_iids(b: &mut Bencher) {
+        b.iter(|| StoreKeyerBuilder::term_to_iids(772137347));
+    }
+
+    #[bench]
+    fn bench_key_oid_to_iid(b: &mut Bencher) {
+        let key = "conversation:6501e83a".to_string();
+
+        b.iter(|| StoreKeyerBuilder::oid_to_iid(&key));
+    }
+
+    #[bench]
+    fn bench_key_iid_to_oid(b: &mut Bencher) {
+        b.iter(|| StoreKeyerBuilder::iid_to_oid(10292198));
+    }
+
+    #[bench]
+    fn bench_key_iid_to_terms(b: &mut Bencher) {
+        b.iter(|| StoreKeyerBuilder::iid_to_terms(1));
     }
 }

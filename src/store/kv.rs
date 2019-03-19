@@ -823,7 +823,10 @@ impl StoreKVAction {
 
 #[cfg(test)]
 mod tests {
+    extern crate test;
+
     use super::*;
+    use test::Bencher;
 
     #[test]
     fn it_acquires_database() {
@@ -906,5 +909,31 @@ mod tests {
             StoreKVAction::decode_u32_list(&[90, 177, 0, 0]),
             Ok(vec![45402])
         );
+    }
+
+    #[bench]
+    fn bench_encode_atom(b: &mut Bencher) {
+        b.iter(|| StoreKVAction::encode_u32(0));
+    }
+
+    #[bench]
+    fn bench_decode_atom(b: &mut Bencher) {
+        let encoded_atom = [0, 0, 0, 0];
+
+        b.iter(|| StoreKVAction::decode_u32(&encoded_atom));
+    }
+
+    #[bench]
+    fn bench_encode_atom_list(b: &mut Bencher) {
+        let atom_list = [0, 2, 3];
+
+        b.iter(|| StoreKVAction::encode_u32_list(&atom_list));
+    }
+
+    #[bench]
+    fn bench_decode_atom_list(b: &mut Bencher) {
+        let encoded_atom_list = [0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0];
+
+        b.iter(|| StoreKVAction::decode_u32_list(&encoded_atom_list));
     }
 }

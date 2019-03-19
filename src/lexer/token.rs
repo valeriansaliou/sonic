@@ -189,7 +189,10 @@ impl<'a> Iterator for TokenLexer<'a> {
 
 #[cfg(test)]
 mod tests {
+    extern crate test;
+
     use super::*;
+    use test::Bencher;
 
     #[test]
     fn it_cleans_token_english() {
@@ -245,7 +248,7 @@ mod tests {
     }
 
     #[test]
-    fn it_cleans_token_mandarin() {
+    fn it_cleans_token_chinese() {
         let mut token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup,
             "快狐跨懒狗快狐跨懒狗",
@@ -271,5 +274,67 @@ mod tests {
 
         assert_eq!(token_cleaner.locale, None);
         assert_eq!(token_cleaner.next(), None);
+    }
+
+    #[bench]
+    fn bench_normalize_token_french_build(b: &mut Bencher) {
+        b.iter(|| {
+            TokenLexerBuilder::from(
+                TokenLexerMode::NormalizeOnly,
+                "Le vif renard brun saute par dessus le chien paresseux.",
+            )
+        });
+    }
+
+    #[bench]
+    fn bench_normalize_token_french_exhaust(b: &mut Bencher) {
+        b.iter(|| {
+            let token_cleaner = TokenLexerBuilder::from(
+                TokenLexerMode::NormalizeOnly,
+                "Le vif renard brun saute par dessus le chien paresseux.",
+            )
+            .unwrap();
+
+            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
+        });
+    }
+
+    #[bench]
+    fn bench_clean_token_english_build(b: &mut Bencher) {
+        b.iter(|| {
+            TokenLexerBuilder::from(
+                TokenLexerMode::NormalizeAndCleanup,
+                "The quick brown fox jumps over the lazy dog!",
+            )
+        });
+    }
+
+    #[bench]
+    fn bench_clean_token_english_exhaust(b: &mut Bencher) {
+        b.iter(|| {
+            let token_cleaner = TokenLexerBuilder::from(
+                TokenLexerMode::NormalizeAndCleanup,
+                "The quick brown fox jumps over the lazy dog!",
+            )
+            .unwrap();
+
+            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
+        });
+    }
+
+    #[bench]
+    fn bench_clean_token_chinese_build(b: &mut Bencher) {
+        b.iter(|| TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup, "快狐跨懒狗"));
+    }
+
+    #[bench]
+    fn bench_clean_token_chinese_exhaust(b: &mut Bencher) {
+        b.iter(|| {
+            let token_cleaner =
+                TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup, "快狐跨懒狗")
+                    .unwrap();
+
+            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
+        });
     }
 }

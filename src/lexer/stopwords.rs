@@ -371,7 +371,10 @@ impl LexerStopWord {
 
 #[cfg(test)]
 mod tests {
+    extern crate test;
+
     use super::*;
+    use test::Bencher;
 
     #[test]
     fn it_detects_stopwords() {
@@ -413,5 +416,30 @@ mod tests {
             LexerStopWord::guess_lang("feefeffd zd", Script::Latin),
             None
         );
+    }
+
+    #[bench]
+    fn bench_detect_stopwords_not_found(b: &mut Bencher) {
+        b.iter(|| LexerStopWord::is("fox", Some(Lang::Eng)));
+    }
+
+    #[bench]
+    fn bench_detect_stopwords_found(b: &mut Bencher) {
+        b.iter(|| LexerStopWord::is("the", Some(Lang::Eng)));
+    }
+
+    #[bench]
+    fn bench_guess_language_latin(b: &mut Bencher) {
+        b.iter(|| {
+            LexerStopWord::guess_lang(
+                "I believe there is an extremely simple way to whip climate change.",
+                Script::Latin,
+            )
+        });
+    }
+
+    #[bench]
+    fn bench_guess_language_mandarin(b: &mut Bencher) {
+        b.iter(|| LexerStopWord::guess_lang("快狐跨懒狗", Script::Mandarin));
     }
 }
