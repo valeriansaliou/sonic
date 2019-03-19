@@ -171,7 +171,7 @@ impl LexerStopWord {
         for script_lang in script_langs {
             let lang_stopwords = Self::lang_stopwords(*script_lang);
 
-            if lang_stopwords.len() > 0 {
+            if lang_stopwords.is_empty() == false {
                 let mut lang_count = 0;
 
                 // This is a simple split, that does not take into account uppercase letters and \
