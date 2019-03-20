@@ -15,6 +15,8 @@ A strong attention to performance and code cleanliness has been given when desig
 
 ![Sonic](https://valeriansaliou.github.io/sonic/images/banner.jpg)
 
+_"Sonic" is the mascot of the Sonic project. I drew it to look like a psychedelic hipster hedgehog._
+
 ## Who uses it?
 
 <table>
