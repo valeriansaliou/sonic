@@ -48,7 +48,7 @@ pub fn store_kv_retain_word_objects() -> usize {
 }
 
 pub fn store_kv_pool_inactive_after() -> u64 {
-    180
+    1800
 }
 
 pub fn store_kv_database_compress() -> bool {
@@ -76,9 +76,9 @@ pub fn store_fst_path() -> PathBuf {
 }
 
 pub fn store_fst_pool_inactive_after() -> u64 {
-    180
+    300
 }
 
 pub fn store_fst_graph_consolidate_after() -> u64 {
-    120
+    180
 }

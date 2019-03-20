@@ -133,7 +133,7 @@ Use the sample [config.cfg](https://github.com/valeriansaliou/sonic/blob/master/
 
 **[store.kv.pool]**
 
-* `inactive_after` (type: _integer_, allowed: seconds, default: `180`) — Time after which a cached database is considered inactive and can be closed (if it is not used, ie. re-activated)
+* `inactive_after` (type: _integer_, allowed: seconds, default: `1800`) — Time after which a cached database is considered inactive and can be closed (if it is not used, ie. re-activated)
 
 **[store.kv.database]**
 
@@ -149,11 +149,11 @@ Use the sample [config.cfg](https://github.com/valeriansaliou/sonic/blob/master/
 
 **[store.fst.pool]**
 
-* `inactive_after` (type: _integer_, allowed: seconds, default: `180`) — Time after which a cached graph is considered inactive and can be closed (if it is not used, ie. re-activated)
+* `inactive_after` (type: _integer_, allowed: seconds, default: `300`) — Time after which a cached graph is considered inactive and can be closed (if it is not used, ie. re-activated)
 
 **[store.fst.graph]**
 
-* `consolidate_after` (type: _integer_, allowed: seconds, default: `120`) — Time after which a graph that has pending updates should be consolidated (increase this delay if you encounter high-CPU usage issues when a consolidation task kicks-in; this value should be lower than `store.fst.pool.inactive_after`)
+* `consolidate_after` (type: _integer_, allowed: seconds, default: `180`) — Time after which a graph that has pending updates should be consolidated (increase this delay if you encounter high-CPU usage issues when a consolidation task kicks-in; this value should be lower than `store.fst.pool.inactive_after`)
 
 ### Run Sonic
 
