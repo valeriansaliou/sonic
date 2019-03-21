@@ -12,8 +12,6 @@ use std::mem;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::SystemTime;
 
-use super::item::StoreItemPart;
-
 pub trait StoreGenericKey {}
 
 pub trait StoreGeneric {
@@ -130,25 +128,20 @@ pub trait StoreGenericBuilder<K, S> {
 }
 
 pub trait StoreGenericActionBuilder {
-    fn proceed_erase_bucket<'a>(
-        collection: StoreItemPart<'a>,
-        bucket: StoreItemPart<'a>,
-    ) -> Result<u32, ()>;
+    fn proceed_erase_collection(collection_str: &str) -> Result<u32, ()>;
 
-    fn proceed_erase_collection<'a>(collection: StoreItemPart<'a>) -> Result<u32, ()>;
+    fn proceed_erase_bucket(collection_str: &str, bucket_str: &str) -> Result<u32, ()>;
 
-    fn dispatch_erase<'a>(
+    fn dispatch_erase<'a, T: Into<&'a str>>(
         kind: &str,
-        collection: StoreItemPart<'a>,
-        bucket: Option<StoreItemPart<'a>>,
+        collection: T,
+        bucket: Option<T>,
         access_lock: &Arc<RwLock<bool>>,
         write_lock: &Arc<Mutex<bool>>,
     ) -> Result<u32, ()> {
-        info!(
-            "{} erase requested on collection: {}",
-            kind,
-            collection.as_str()
-        );
+        let collection_str = collection.into();
+
+        info!("{} erase requested on collection: {}", kind, collection_str);
 
         // Acquire write + access locks, and reference it in context
         // Notice: write lock prevents store to be acquired from any context; while access lock \
@@ -156,9 +149,9 @@ pub trait StoreGenericActionBuilder {
         let (_access, _write) = (access_lock.write().unwrap(), write_lock.lock().unwrap());
 
         if let Some(bucket) = bucket {
-            Self::proceed_erase_bucket(collection, bucket)
+            Self::proceed_erase_bucket(collection_str, bucket.into())
         } else {
-            Self::proceed_erase_collection(collection)
+            Self::proceed_erase_collection(collection_str)
         }
     }
 }

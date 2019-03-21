@@ -161,48 +161,49 @@ mod tests {
     #[test]
     fn it_keys_meta_to_value() {
         assert_eq!(
-            StoreKeyerBuilder::meta_to_value(&StoreMetaKey::IIDIncr).as_bytes(),
-            [0, 0, 0, 0, 0]
+            StoreKeyerBuilder::meta_to_value("bucket:1", &StoreMetaKey::IIDIncr).as_bytes(),
+            [0, 108, 244, 29, 93, 0, 0, 0, 0]
         );
     }
 
     #[test]
     fn it_keys_term_to_iids() {
         assert_eq!(
-            StoreKeyerBuilder::term_to_iids(772137347).as_bytes(),
-            [1, 131, 225, 5, 46]
+            StoreKeyerBuilder::term_to_iids("bucket:2", 772137347).as_bytes(),
+            [1, 50, 220, 166, 65, 131, 225, 5, 46]
         );
         assert_eq!(
-            StoreKeyerBuilder::term_to_iids(3582484684).as_bytes(),
-            [1, 204, 96, 136, 213]
+            StoreKeyerBuilder::term_to_iids("bucket:2", 3582484684).as_bytes(),
+            [1, 50, 220, 166, 65, 204, 96, 136, 213]
         );
     }
 
     #[test]
     fn it_keys_oid_to_iid() {
         assert_eq!(
-            StoreKeyerBuilder::oid_to_iid(&"conversation:6501e83a".to_string()).as_bytes(),
-            [2, 31, 156, 118, 213]
+            StoreKeyerBuilder::oid_to_iid("bucket:3", &"conversation:6501e83a".to_string())
+                .as_bytes(),
+            [2, 171, 194, 213, 57, 31, 156, 118, 213]
         );
     }
 
     #[test]
     fn it_keys_iid_to_oid() {
         assert_eq!(
-            StoreKeyerBuilder::iid_to_oid(10292198).as_bytes(),
-            [3, 230, 11, 157, 0]
+            StoreKeyerBuilder::iid_to_oid("bucket:4", 10292198).as_bytes(),
+            [3, 105, 12, 54, 147, 230, 11, 157, 0]
         );
     }
 
     #[test]
     fn it_keys_iid_to_terms() {
         assert_eq!(
-            StoreKeyerBuilder::iid_to_terms(1).as_bytes(),
-            [4, 1, 0, 0, 0]
+            StoreKeyerBuilder::iid_to_terms("bucket:5", 1).as_bytes(),
+            [4, 137, 142, 73, 67, 1, 0, 0, 0]
         );
         assert_eq!(
-            StoreKeyerBuilder::iid_to_terms(20).as_bytes(),
-            [4, 20, 0, 0, 0]
+            StoreKeyerBuilder::iid_to_terms("bucket:5", 20).as_bytes(),
+            [4, 137, 142, 73, 67, 20, 0, 0, 0]
         );
     }
 
@@ -215,15 +216,15 @@ mod tests {
     #[test]
     fn it_formats_key() {
         assert_eq!(
-            &format!("{}", StoreKeyerBuilder::term_to_iids(772137347)),
-            "'1:2e05e183' [1, 131, 225, 5, 46]"
+            &format!("{}", StoreKeyerBuilder::term_to_iids("bucket:6", 72137347)),
+            "'1:71198b49:44cba83' [1, 73, 139, 25, 113, 131, 186, 76, 4]"
         );
         assert_eq!(
             &format!(
                 "{}",
-                StoreKeyerBuilder::meta_to_value(&StoreMetaKey::IIDIncr)
+                StoreKeyerBuilder::meta_to_value("bucket:6", &StoreMetaKey::IIDIncr)
             ),
-            "'0:0' [0, 0, 0, 0, 0]"
+            "'0:71198b49:0' [0, 73, 139, 25, 113, 0, 0, 0, 0]"
         );
     }
 }
@@ -251,28 +252,28 @@ mod benches {
 
     #[bench]
     fn bench_key_meta_to_value(b: &mut Bencher) {
-        b.iter(|| StoreKeyerBuilder::meta_to_value(&StoreMetaKey::IIDIncr));
+        b.iter(|| StoreKeyerBuilder::meta_to_value("bucket:bench:1", &StoreMetaKey::IIDIncr));
     }
 
     #[bench]
     fn bench_key_term_to_iids(b: &mut Bencher) {
-        b.iter(|| StoreKeyerBuilder::term_to_iids(772137347));
+        b.iter(|| StoreKeyerBuilder::term_to_iids("bucket:bench:2", 772137347));
     }
 
     #[bench]
     fn bench_key_oid_to_iid(b: &mut Bencher) {
         let key = "conversation:6501e83a".to_string();
 
-        b.iter(|| StoreKeyerBuilder::oid_to_iid(&key));
+        b.iter(|| StoreKeyerBuilder::oid_to_iid("bucket:bench:3", &key));
     }
 
     #[bench]
     fn bench_key_iid_to_oid(b: &mut Bencher) {
-        b.iter(|| StoreKeyerBuilder::iid_to_oid(10292198));
+        b.iter(|| StoreKeyerBuilder::iid_to_oid("bucket:bench:4", 10292198));
     }
 
     #[bench]
     fn bench_key_iid_to_terms(b: &mut Bencher) {
-        b.iter(|| StoreKeyerBuilder::iid_to_terms(1));
+        b.iter(|| StoreKeyerBuilder::iid_to_terms("bucket:bench:5", 1));
     }
 }

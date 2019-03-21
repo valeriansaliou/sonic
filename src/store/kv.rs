@@ -63,11 +63,11 @@ lazy_static! {
 }
 
 impl StoreKVPool {
-    pub fn acquire<'a>(
+    pub fn acquire<'a, T: Into<&'a str>>(
         mode: StoreKVAcquireMode,
-        collection: StoreItemPart<'a>,
+        collection: T,
     ) -> Result<Option<StoreKVBox>, ()> {
-        let collection_str = collection.as_str();
+        let collection_str = collection.into();
         let pool_key = StoreKVKey::from_str(collection_str);
 
         // Acquire general lock, and reference it in context
@@ -206,10 +206,7 @@ impl StoreKVActionBuilder {
         Self::build(bucket, store)
     }
 
-    pub fn erase<'a>(
-        collection: StoreItemPart<'a>,
-        bucket: Option<StoreItemPart<'a>>,
-    ) -> Result<u32, ()> {
+    pub fn erase<'a, T: Into<&'a str>>(collection: T, bucket: Option<T>) -> Result<u32, ()> {
         Self::dispatch_erase(
             "kv",
             collection,
@@ -228,8 +225,7 @@ impl StoreKVActionBuilder {
 }
 
 impl StoreGenericActionBuilder for StoreKVActionBuilder {
-    fn proceed_erase_collection<'a>(collection: StoreItemPart<'a>) -> Result<u32, ()> {
-        let collection_str = collection.as_str();
+    fn proceed_erase_collection(collection_str: &str) -> Result<u32, ()> {
         let collection_atom = StoreKeyerHasher::to_compact(collection_str);
         let collection_path = StoreKVBuilder::path(collection_atom);
 
@@ -268,10 +264,7 @@ impl StoreGenericActionBuilder for StoreKVActionBuilder {
         }
     }
 
-    fn proceed_erase_bucket<'a>(
-        _collection: StoreItemPart<'a>,
-        _bucket: StoreItemPart<'a>,
-    ) -> Result<u32, ()> {
+    fn proceed_erase_bucket(_collection: &str, _bucket: &str) -> Result<u32, ()> {
         // This one is not implemented, as we need to acquire the collection; which would cause \
         //   a party-killer dead-lock.
         Err(())
@@ -899,7 +892,8 @@ mod tests {
     #[test]
     fn it_proceeds_actions() {
         let store = StoreKVPool::acquire(StoreKVAcquireMode::Any, "c:test:3").unwrap();
-        let action = StoreKVActionBuilder::access(bucket, store);
+        let action =
+            StoreKVActionBuilder::access(StoreItemPart::from_str("b:test:3").unwrap(), store);
 
         assert!(action.get_meta_to_value(StoreMetaKey::IIDIncr).is_ok());
         assert!(action

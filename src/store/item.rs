@@ -44,6 +44,12 @@ impl<'a> StoreItemPart<'a> {
     }
 }
 
+impl<'a> Into<&'a str> for StoreItemPart<'a> {
+    fn into(self) -> &'a str {
+        self.as_str()
+    }
+}
+
 impl StoreItemBuilder {
     pub fn from_depth_1<'a>(collection: &'a str) -> Result<StoreItem<'a>, StoreItemError> {
         // Validate & box collection
