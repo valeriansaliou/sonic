@@ -750,44 +750,49 @@ impl<'a> StoreKVAction<'a> {
                 //   bit of search time (ie. iterations).
                 db_prefix_iter.seek(key_prefix);
 
-                // Check entry key (was the key found on first seek? do not engage in a loop if not)
-                if db_prefix_iter.valid() == true {
-                    if let Some(first_found_key) = db_prefix_iter.key() {
-                        if first_found_key.starts_with(key_prefix) == true {
-                            // Engage in the scan loop (as the first key could be seeked)
-                            while db_prefix_iter.valid() == true {
-                                if let Some(found_key) = db_prefix_iter.key() {
-                                    // Found prefix key?
-                                    if found_key.starts_with(key_prefix) == true {
-                                        debug!(
-                                            "store batch erase bucket: {} found key: {:?} (N{})",
-                                            self.bucket.as_str(),
-                                            found_key,
-                                            count
-                                        );
-
-                                        // Remove key, and seek next matching key (until we hit \
-                                        //   against last match)
-                                        if store.database.delete(found_key).is_ok() == false {
-                                            // Error deleting the key, abort flush there.
-                                            return Err(());
-                                        }
-
-                                        count += 1;
-                                    }
-
-                                    db_prefix_iter.next();
-                                }
-                            }
-                        } else {
-                            info!(
-                                "store batch erase bucket: {} done as 1st key: {:?} no match: {:?}",
+                // Engage in the scan loop
+                // Notice: as RocksDB keys are ordered, we can simply seek to the first key \
+                //   matching prefix, and iterate until we get a key that does not match prefix.
+                while db_prefix_iter.valid() == true {
+                    if let Some(found_key) = db_prefix_iter.key() {
+                        // Found prefix key?
+                        if found_key.starts_with(key_prefix) == true {
+                            debug!(
+                                "store batch erase bucket: {} found key: {:?} (N{})",
                                 self.bucket.as_str(),
-                                first_found_key,
-                                key_prefix
+                                found_key,
+                                count
                             );
+
+                            // Remove key, and seek next matching key (until we hit \
+                            //   against last match)
+                            if store.database.delete(found_key).is_ok() == false {
+                                // Error deleting the key, abort flush there.
+                                return Err(());
+                            }
+
+                            count += 1;
+
+                            // Move to next item, and continue the loop to next key
+                            db_prefix_iter.next();
+
+                            continue;
                         }
+
+                        debug!(
+                            "store batch erase bucket: {} end scan on key: {:?} (no prefix match)",
+                            self.bucket.as_str(),
+                            found_key
+                        );
                     }
+
+                    info!(
+                        "store batch erase bucket: {} scan can be ended",
+                        self.bucket.as_str()
+                    );
+
+                    // Break the loop by default (scanned key does not match prefix)
+                    break;
                 }
             }
 
