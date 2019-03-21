@@ -25,14 +25,14 @@ impl ExecutorPush {
             general_fst_access_lock_read!();
 
             if let (Ok(kv_store), Ok(fst_store)) = (
-                StoreKVPool::acquire(StoreKVAcquireMode::Any, collection, bucket),
+                StoreKVPool::acquire(StoreKVAcquireMode::Any, collection),
                 StoreFSTPool::acquire(collection, bucket),
             ) {
                 // Important: acquire bucket store write lock
                 executor_kv_lock_write!(kv_store);
 
                 let (kv_action, fst_action) = (
-                    StoreKVActionBuilder::access(kv_store),
+                    StoreKVActionBuilder::access(bucket, kv_store),
                     StoreFSTActionBuilder::access(fst_store),
                 );
 

@@ -16,13 +16,11 @@ impl ExecutorFlushO {
             //   prevents the database from being erased while using it in this block.
             general_kv_access_lock_read!();
 
-            if let Ok(kv_store) =
-                StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection, bucket)
-            {
+            if let Ok(kv_store) = StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection) {
                 // Important: acquire bucket store write lock
                 executor_kv_lock_write!(kv_store);
 
-                let kv_action = StoreKVActionBuilder::access(kv_store);
+                let kv_action = StoreKVActionBuilder::access(bucket, kv_store);
 
                 // Try to resolve existing OID to IID (if it does not exist, there is nothing to \
                 //   be flushed)

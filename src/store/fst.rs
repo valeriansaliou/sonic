@@ -14,6 +14,7 @@ use fst_regex::Regex;
 use hashbrown::{HashMap, HashSet};
 use regex_syntax::escape as regex_escape;
 use std::collections::VecDeque;
+use std::fmt;
 use std::fs::{self, File};
 use std::io::BufWriter;
 use std::iter::FromIterator;
@@ -26,6 +27,7 @@ use std::time::SystemTime;
 use super::generic::{
     StoreGeneric, StoreGenericActionBuilder, StoreGenericBuilder, StoreGenericPool,
 };
+use super::item::StoreItemPart;
 use super::keyer::StoreKeyerHasher;
 use crate::APP_CONF;
 
@@ -52,6 +54,12 @@ pub struct StoreFSTAction {
     store: StoreFSTBox,
 }
 
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+pub struct StoreFSTKey {
+    collection_hash: StoreFSTAtom,
+    bucket_hash: StoreFSTAtom,
+}
+
 pub struct StoreFSTMisc;
 
 #[derive(Copy, Clone)]
@@ -62,7 +70,6 @@ enum StoreFSTPathMode {
 
 type StoreFSTAtom = u32;
 type StoreFSTBox = Arc<StoreFST>;
-type StoreFSTKey = (StoreFSTAtom, StoreFSTAtom);
 
 static LOOKUP_REGEX_RANGE_LATIN: &'static str = "[\\x{0000}-\\x{024F}]";
 
@@ -85,13 +92,13 @@ impl StoreFSTPathMode {
 }
 
 impl StoreFSTPool {
-    pub fn acquire<'a, T: Into<&'a str>>(collection: T, bucket: T) -> Result<StoreFSTBox, ()> {
-        let (collection_str, bucket_str) = (collection.into(), bucket.into());
+    pub fn acquire<'a>(
+        collection: StoreItemPart<'a>,
+        bucket: StoreItemPart<'a>,
+    ) -> Result<StoreFSTBox, ()> {
+        let (collection_str, bucket_str) = (collection.as_str(), bucket.as_str());
 
-        let pool_key = (
-            StoreKeyerHasher::to_compact(collection_str),
-            StoreKeyerHasher::to_compact(bucket_str),
-        );
+        let pool_key = StoreFSTKey::from_str(collection_str, bucket_str);
 
         // Acquire general lock, and reference it in context
         // Notice: this prevents graph to be opened while also erased; or 2 graphs on the \
@@ -102,18 +109,18 @@ impl StoreFSTPool {
         let graph_pool_read = GRAPH_POOL.read().unwrap();
 
         if let Some(store_fst) = graph_pool_read.get(&pool_key) {
-            Self::proceed_acquire_cache("fst", collection_str, bucket_str, pool_key, &store_fst)
+            Self::proceed_acquire_cache("fst", collection_str, pool_key, &store_fst)
         } else {
             info!(
                 "fst store not in pool for collection: {} <{:x?}> / bucket: {} <{:x?}>, opening it",
-                collection_str, pool_key.0, bucket_str, pool_key.1
+                collection_str, pool_key.collection_hash, bucket_str, pool_key.bucket_hash
             );
 
             // Important: we need to drop the read reference first, to avoid dead-locking \
             //   when acquiring the RWLock in write mode in this block.
             drop(graph_pool_read);
 
-            Self::proceed_acquire_open("fst", collection_str, bucket_str, pool_key, &*GRAPH_POOL)
+            Self::proceed_acquire_open("fst", collection_str, pool_key, &*GRAPH_POOL)
         }
     }
 
@@ -164,7 +171,7 @@ impl StoreFSTPool {
                             || not_consolidated_for >= APP_CONF.store.fst.graph.consolidate_after
                         {
                             info!(
-                                "fst key: {:?} not consolidated for: {} seconds, may consolidate",
+                                "fst key: {} not consolidated for: {} seconds, may consolidate",
                                 key, not_consolidated_for
                             );
 
@@ -184,7 +191,7 @@ impl StoreFSTPool {
                             }
                         } else {
                             debug!(
-                                "fst key: {:?} not consolidated for: {} seconds, no consolidate",
+                                "fst key: {} not consolidated for: {} seconds, no consolidate",
                                 key, not_consolidated_for
                             );
                         }
@@ -230,12 +237,14 @@ impl StoreFSTPool {
         //   push then a pop of this push, nulling out any commited change.
         if pending_push_write.len() > 0 || pending_pop_write.len() > 0 {
             // Read old FST (or default to empty FST)
-            if let Ok(old_fst) = StoreFSTBuilder::open(store.target.0, store.target.1) {
+            if let Ok(old_fst) =
+                StoreFSTBuilder::open(store.target.collection_hash, store.target.bucket_hash)
+            {
                 // Initialize the new FST (temporary)
                 let bucket_tmp_path = StoreFSTBuilder::path(
                     StoreFSTPathMode::Temporary,
-                    store.target.0,
-                    Some(store.target.1),
+                    store.target.collection_hash,
+                    Some(store.target.bucket_hash),
                 );
 
                 let bucket_tmp_path_parent = bucket_tmp_path.parent().unwrap();
@@ -328,8 +337,8 @@ impl StoreFSTPool {
                                 //   automatically opened on its next access.
                                 let bucket_final_path = StoreFSTBuilder::path(
                                     StoreFSTPathMode::Permanent,
-                                    store.target.0,
-                                    Some(store.target.1),
+                                    store.target.collection_hash,
+                                    Some(store.target.bucket_hash),
                                 );
 
                                 if std::fs::rename(&bucket_tmp_path, &bucket_final_path).is_ok()
@@ -379,7 +388,7 @@ impl StoreFSTPool {
     }
 }
 
-impl StoreGenericPool<StoreFSTAtom, StoreFST, StoreFSTBuilder> for StoreFSTPool {}
+impl StoreGenericPool<StoreFSTKey, StoreFST, StoreFSTBuilder> for StoreFSTPool {}
 
 impl StoreFSTBuilder {
     fn open(collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) -> Result<FSTSet, FSTError> {
@@ -428,15 +437,15 @@ impl StoreFSTBuilder {
     }
 }
 
-impl StoreGenericBuilder<StoreFSTAtom, StoreFST> for StoreFSTBuilder {
-    fn new(collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) -> Result<StoreFST, ()> {
-        Self::open(collection_hash, bucket_hash)
+impl StoreGenericBuilder<StoreFSTKey, StoreFST> for StoreFSTBuilder {
+    fn new(pool_key: StoreFSTKey) -> Result<StoreFST, ()> {
+        Self::open(pool_key.collection_hash, pool_key.bucket_hash)
             .map(|graph| {
                 let now = SystemTime::now();
 
                 StoreFST {
                     graph: graph,
-                    target: (collection_hash, bucket_hash),
+                    target: pool_key,
                     pending: StoreFSTPending::default(),
                     last_used: Arc::new(RwLock::new(now)),
                     last_consolidated: Arc::new(RwLock::new(now)),
@@ -520,14 +529,11 @@ impl StoreFST {
 
             mem::replace(&mut *last_consolidated_value, SystemTime::now());
 
-            info!(
-                "graph consolidation scheduled on bucket: <{:x?}> for collection: <{:x?}>",
-                self.target.0, self.target.1
-            );
+            info!("graph consolidation scheduled on pool key: {}", self.target);
         } else {
             debug!(
-                "graph consolidation already scheduled on bucket: <{:x?}> for collection: <{:x?}>",
-                self.target.0, self.target.1
+                "graph consolidation already scheduled on pool key: {}",
+                self.target
             );
         }
     }
@@ -544,7 +550,10 @@ impl StoreFSTActionBuilder {
         Self::build(store)
     }
 
-    pub fn erase<'a, T: Into<&'a str>>(collection: T, bucket: Option<T>) -> Result<u32, ()> {
+    pub fn erase<'a>(
+        collection: StoreItemPart<'a>,
+        bucket: Option<StoreItemPart<'a>>,
+    ) -> Result<u32, ()> {
         Self::dispatch_erase(
             "fst",
             collection,
@@ -553,15 +562,17 @@ impl StoreFSTActionBuilder {
             &*GRAPH_WRITE_LOCK,
         )
     }
-}
 
-impl StoreGenericActionBuilder<StoreFSTBox, StoreFSTAction> for StoreFSTActionBuilder {
     fn build(store: StoreFSTBox) -> StoreFSTAction {
         StoreFSTAction { store: store }
     }
+}
 
-    fn proceed_erase_collection(collection_str: &str) -> Result<u32, ()> {
+impl StoreGenericActionBuilder for StoreFSTActionBuilder {
+    fn proceed_erase_collection<'a>(collection: StoreItemPart<'a>) -> Result<u32, ()> {
         let path_mode = StoreFSTPathMode::Permanent;
+
+        let collection_str = collection.as_str();
         let collection_atom = StoreKeyerHasher::to_compact(collection_str);
         let collection_path = StoreFSTBuilder::path(path_mode, collection_atom, None);
 
@@ -574,8 +585,8 @@ impl StoreGenericActionBuilder<StoreFSTBox, StoreFSTAction> for StoreFSTActionBu
             let graph_pool_read = GRAPH_POOL.read().unwrap();
 
             for target_key in graph_pool_read.keys() {
-                if target_key.0 == collection_atom {
-                    bucket_atoms.push(target_key.1);
+                if target_key.collection_hash == collection_atom {
+                    bucket_atoms.push(target_key.bucket_hash);
                 }
             }
         }
@@ -598,7 +609,7 @@ impl StoreGenericActionBuilder<StoreFSTBox, StoreFSTAction> for StoreFSTActionBu
                     collection_str, bucket_atom
                 );
 
-                let bucket_target = (collection_atom, bucket_atom);
+                let bucket_target = StoreFSTKey::from_atom(collection_atom, bucket_atom);
 
                 graph_pool_write.remove(&bucket_target);
                 graph_consolidate_write.remove(&bucket_target);
@@ -632,7 +643,12 @@ impl StoreGenericActionBuilder<StoreFSTBox, StoreFSTAction> for StoreFSTActionBu
         }
     }
 
-    fn proceed_erase_bucket(collection_str: &str, bucket_str: &str) -> Result<u32, ()> {
+    fn proceed_erase_bucket<'a>(
+        collection: StoreItemPart<'a>,
+        bucket: StoreItemPart<'a>,
+    ) -> Result<u32, ()> {
+        let (collection_str, bucket_str) = (collection.as_str(), bucket.as_str());
+
         debug!(
             "sub-erase on fst bucket: {} for collection: {}",
             bucket_str, collection_str
@@ -656,7 +672,7 @@ impl StoreGenericActionBuilder<StoreFSTBox, StoreFSTAction> for StoreFSTActionBu
                 collection_str, bucket_str
             );
 
-            let bucket_target = (collection_atom, bucket_atom);
+            let bucket_target = StoreFSTKey::from_atom(collection_atom, bucket_atom);
 
             GRAPH_POOL.write().unwrap().remove(&bucket_target);
             GRAPH_CONSOLIDATE.write().unwrap().remove(&bucket_target);
@@ -807,12 +823,12 @@ impl StoreFSTAction {
 }
 
 impl StoreFSTMisc {
-    pub fn count_collection_buckets<'a, T: Into<&'a str>>(collection: T) -> Result<usize, ()> {
+    pub fn count_collection_buckets<'a>(collection: StoreItemPart<'a>) -> Result<usize, ()> {
         let mut count = 0;
 
         let path_mode = StoreFSTPathMode::Permanent;
 
-        let collection_atom = StoreKeyerHasher::to_compact(collection.into());
+        let collection_atom = StoreKeyerHasher::to_compact(collection.as_str());
         let collection_path = StoreFSTBuilder::path(path_mode, collection_atom, None);
 
         if collection_path.exists() == true {
@@ -843,6 +859,28 @@ impl StoreFSTMisc {
         }
 
         Ok(count)
+    }
+}
+
+impl StoreFSTKey {
+    pub fn from_atom(collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) -> StoreFSTKey {
+        StoreFSTKey {
+            collection_hash: collection_hash,
+            bucket_hash: bucket_hash,
+        }
+    }
+
+    pub fn from_str(collection_str: &str, bucket_str: &str) -> StoreFSTKey {
+        StoreFSTKey {
+            collection_hash: StoreKeyerHasher::to_compact(collection_str),
+            bucket_hash: StoreKeyerHasher::to_compact(bucket_str),
+        }
+    }
+}
+
+impl fmt::Display for StoreFSTKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "<{:x?}/{:x?}>", self.collection_hash, self.bucket_hash)
     }
 }
 

@@ -28,7 +28,8 @@ enum StoreKeyerIdx<'a> {
     IIDToTerms(StoreObjectIID),
 }
 
-type StoreKeyerKey = [u8; 5];
+type StoreKeyerKey = [u8; 9];
+pub type StoreKeyerPrefix = [u8; 5];
 
 impl<'a> StoreKeyerIdx<'a> {
     pub fn to_index(&self) -> u8 {
@@ -43,44 +44,50 @@ impl<'a> StoreKeyerIdx<'a> {
 }
 
 impl StoreKeyerBuilder {
-    pub fn meta_to_value<'a>(meta: &'a StoreMetaKey) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::MetaToValue(meta))
+    pub fn meta_to_value<'a>(bucket: &'a str, meta: &'a StoreMetaKey) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::MetaToValue(meta), bucket)
     }
 
-    pub fn term_to_iids<'a>(term_hash: StoreTermHashed) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::TermToIIDs(term_hash))
+    pub fn term_to_iids<'a>(bucket: &'a str, term_hash: StoreTermHashed) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::TermToIIDs(term_hash), bucket)
     }
 
-    pub fn oid_to_iid<'a>(oid: StoreObjectOID<'a>) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::OIDToIID(oid))
+    pub fn oid_to_iid<'a>(bucket: &'a str, oid: StoreObjectOID<'a>) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::OIDToIID(oid), bucket)
     }
 
-    pub fn iid_to_oid<'a>(iid: StoreObjectIID) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::IIDToOID(iid))
+    pub fn iid_to_oid<'a>(bucket: &'a str, iid: StoreObjectIID) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::IIDToOID(iid), bucket)
     }
 
-    pub fn iid_to_terms<'a>(iid: StoreObjectIID) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::IIDToTerms(iid))
+    pub fn iid_to_terms<'a>(bucket: &'a str, iid: StoreObjectIID) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::IIDToTerms(iid), bucket)
     }
 
-    fn make<'a>(idx: StoreKeyerIdx<'a>) -> StoreKeyer {
+    fn make<'a>(idx: StoreKeyerIdx<'a>, bucket: &'a str) -> StoreKeyer {
         StoreKeyer {
-            key: Self::build_key(idx),
+            key: Self::build_key(idx, bucket),
         }
     }
 
-    fn build_key<'a>(idx: StoreKeyerIdx<'a>) -> StoreKeyerKey {
-        // Key format: [idx<1B> | route<4B>]
+    fn build_key<'a>(idx: StoreKeyerIdx<'a>, bucket: &'a str) -> StoreKeyerKey {
+        // Key format: [idx<1B> | bucket<4B> | route<4B>]
 
-        // Encode key route from u32 to array of u8 (ie. binary)
-        let mut route_encoded = [0; 4];
+        // Encode key bucket + key route from u32 to array of u8 (ie. binary)
+        let (mut bucket_encoded, mut route_encoded) = ([0; 4], [0; 4]);
 
+        LittleEndian::write_u32(&mut bucket_encoded, StoreKeyerHasher::to_compact(bucket));
         LittleEndian::write_u32(&mut route_encoded, Self::route_to_compact(&idx));
 
         // Generate final binary key
         [
             // [idx<1B>]
             idx.to_index(),
+            // [bucket<4B>]
+            bucket_encoded[0],
+            bucket_encoded[1],
+            bucket_encoded[2],
+            bucket_encoded[3],
             // [route<4B>]
             route_encoded[0],
             route_encoded[1],
@@ -104,6 +111,18 @@ impl StoreKeyer {
     pub fn as_bytes(&self) -> StoreKeyerKey {
         self.key
     }
+
+    pub fn as_prefix(&self) -> StoreKeyerPrefix {
+        // Prefix format: [idx<1B> | bucket<4B>]
+
+        [
+            self.key[0],
+            self.key[1],
+            self.key[2],
+            self.key[3],
+            self.key[4],
+        ]
+    }
 }
 
 impl StoreKeyerHasher {
@@ -118,11 +137,20 @@ impl StoreKeyerHasher {
 impl fmt::Display for StoreKeyer {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Convert to number
-        let key_route = Cursor::new(&self.key[1..5])
-            .read_u32::<LittleEndian>()
-            .unwrap_or(0);
+        let (key_bucket, key_route) = (
+            Cursor::new(&self.key[1..5])
+                .read_u32::<LittleEndian>()
+                .unwrap_or(0),
+            Cursor::new(&self.key[5..9])
+                .read_u32::<LittleEndian>()
+                .unwrap_or(0),
+        );
 
-        write!(f, "'{}:{:x?}' {:?}", self.key[0], key_route, self.key)
+        write!(
+            f,
+            "'{}:{:x?}:{:x?}' {:?}",
+            self.key[0], key_bucket, key_route, self.key
+        )
     }
 }
 

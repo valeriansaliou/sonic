@@ -9,6 +9,7 @@ use hashbrown::HashMap;
 use rocksdb::{
     DBCompactionStyle, DBCompressionType, DBVector, Error as DBError, Options as DBOptions, DB,
 };
+use std::fmt;
 use std::fs;
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -20,7 +21,8 @@ use super::generic::{
     StoreGeneric, StoreGenericActionBuilder, StoreGenericBuilder, StoreGenericPool,
 };
 use super::identifiers::*;
-use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher};
+use super::item::StoreItemPart;
+use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher, StoreKeyerPrefix};
 use crate::APP_CONF;
 
 pub struct StoreKVPool;
@@ -34,8 +36,14 @@ pub struct StoreKV {
 
 pub struct StoreKVActionBuilder;
 
-pub struct StoreKVAction {
+pub struct StoreKVAction<'a> {
     store: Option<StoreKVBox>,
+    bucket: StoreItemPart<'a>,
+}
+
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+pub struct StoreKVKey {
+    collection_hash: StoreKVAtom,
 }
 
 #[derive(PartialEq)]
@@ -46,7 +54,6 @@ pub enum StoreKVAcquireMode {
 
 type StoreKVAtom = u32;
 type StoreKVBox = Arc<StoreKV>;
-type StoreKVKey = (StoreKVAtom, StoreKVAtom);
 
 lazy_static! {
     pub static ref STORE_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
@@ -56,17 +63,12 @@ lazy_static! {
 }
 
 impl StoreKVPool {
-    pub fn acquire<'a, T: Into<&'a str>>(
+    pub fn acquire<'a>(
         mode: StoreKVAcquireMode,
-        collection: T,
-        bucket: T,
+        collection: StoreItemPart<'a>,
     ) -> Result<Option<StoreKVBox>, ()> {
-        let (collection_str, bucket_str) = (collection.into(), bucket.into());
-
-        let pool_key = (
-            StoreKeyerHasher::to_compact(collection_str),
-            StoreKeyerHasher::to_compact(bucket_str),
-        );
+        let collection_str = collection.as_str();
+        let pool_key = StoreKVKey::from_str(collection_str);
 
         // Acquire general lock, and reference it in context
         // Notice: this prevents database to be opened while also erased; or 2 databases on the \
@@ -77,12 +79,12 @@ impl StoreKVPool {
         let store_pool_read = STORE_POOL.read().unwrap();
 
         if let Some(store_kv) = store_pool_read.get(&pool_key) {
-            Self::proceed_acquire_cache("kv", collection_str, bucket_str, pool_key, &store_kv)
+            Self::proceed_acquire_cache("kv", collection_str, pool_key, &store_kv)
                 .map(|result| Some(result))
         } else {
             info!(
-                "kv store not in pool for collection: {} <{:x?}> / bucket: {} <{:x?}>, opening it",
-                collection_str, pool_key.0, bucket_str, pool_key.1
+                "kv store not in pool for collection: {} {}, opening it",
+                collection_str, pool_key
             );
 
             // Important: we need to drop the read reference first, to avoid \
@@ -91,7 +93,7 @@ impl StoreKVPool {
 
             // Check if can open database?
             let can_open_db = if mode == StoreKVAcquireMode::OpenOnly {
-                StoreKVBuilder::path(pool_key.0, Some(pool_key.1)).exists()
+                StoreKVBuilder::path(pool_key.collection_hash).exists()
             } else {
                 true
             };
@@ -100,7 +102,7 @@ impl StoreKVPool {
             //   the database does not exist yet on disk and we are just looking to read data from \
             //   it)
             if can_open_db == true {
-                Self::proceed_acquire_open("kv", collection_str, bucket_str, pool_key, &*STORE_POOL)
+                Self::proceed_acquire_open("kv", collection_str, pool_key, &*STORE_POOL)
                     .map(|result| Some(result))
             } else {
                 Ok(None)
@@ -113,10 +115,10 @@ impl StoreKVPool {
     }
 }
 
-impl StoreGenericPool<StoreKVAtom, StoreKV, StoreKVBuilder> for StoreKVPool {}
+impl StoreGenericPool<StoreKVKey, StoreKV, StoreKVBuilder> for StoreKVPool {}
 
 impl StoreKVBuilder {
-    fn open(collection_hash: StoreKVAtom, bucket_hash: StoreKVAtom) -> Result<DB, DBError> {
+    fn open(collection_hash: StoreKVAtom) -> Result<DB, DBError> {
         debug!(
             "opening key-value database for collection: <{:x?}>",
             collection_hash
@@ -126,21 +128,15 @@ impl StoreKVBuilder {
         let db_options = Self::configure();
 
         // Open database at path for collection
-        DB::open(&db_options, Self::path(collection_hash, Some(bucket_hash)))
+        DB::open(&db_options, Self::path(collection_hash))
     }
 
-    fn path(collection_hash: StoreKVAtom, bucket_hash: Option<StoreKVAtom>) -> PathBuf {
-        let mut final_path = APP_CONF
+    fn path(collection_hash: StoreKVAtom) -> PathBuf {
+        APP_CONF
             .store
             .kv
             .path
-            .join(format!("{:x?}", collection_hash));
-
-        if let Some(bucket_hash) = bucket_hash {
-            final_path = final_path.join(format!("{:x?}", bucket_hash));
-        }
-
-        final_path
+            .join(format!("{:x?}", collection_hash))
     }
 
     fn configure() -> DBOptions {
@@ -169,9 +165,9 @@ impl StoreKVBuilder {
     }
 }
 
-impl StoreGenericBuilder<StoreKVAtom, StoreKV> for StoreKVBuilder {
-    fn new(collection_hash: StoreKVAtom, bucket_hash: StoreKVAtom) -> Result<StoreKV, ()> {
-        Self::open(collection_hash, bucket_hash)
+impl StoreGenericBuilder<StoreKVKey, StoreKV> for StoreKVBuilder {
+    fn new(pool_key: StoreKVKey) -> Result<StoreKV, ()> {
+        Self::open(pool_key.collection_hash)
             .map(|db| StoreKV {
                 database: db,
                 last_used: Arc::new(RwLock::new(SystemTime::now())),
@@ -206,11 +202,14 @@ impl StoreGeneric for StoreKV {
 }
 
 impl StoreKVActionBuilder {
-    pub fn access(store: Option<StoreKVBox>) -> StoreKVAction {
-        Self::build(store)
+    pub fn access<'a>(bucket: StoreItemPart<'a>, store: Option<StoreKVBox>) -> StoreKVAction<'a> {
+        Self::build(bucket, store)
     }
 
-    pub fn erase<'a, T: Into<&'a str>>(collection: T, bucket: Option<T>) -> Result<u32, ()> {
+    pub fn erase<'a>(
+        collection: StoreItemPart<'a>,
+        bucket: Option<StoreItemPart<'a>>,
+    ) -> Result<u32, ()> {
         Self::dispatch_erase(
             "kv",
             collection,
@@ -219,59 +218,35 @@ impl StoreKVActionBuilder {
             &*STORE_WRITE_LOCK,
         )
     }
+
+    fn build<'a>(bucket: StoreItemPart<'a>, store: Option<StoreKVBox>) -> StoreKVAction<'a> {
+        StoreKVAction {
+            store: store,
+            bucket: bucket,
+        }
+    }
 }
 
-impl StoreGenericActionBuilder<Option<StoreKVBox>, StoreKVAction> for StoreKVActionBuilder {
-    fn build(store: Option<StoreKVBox>) -> StoreKVAction {
-        StoreKVAction { store: store }
-    }
-
-    fn proceed_erase_collection(collection_str: &str) -> Result<u32, ()> {
+impl StoreGenericActionBuilder for StoreKVActionBuilder {
+    fn proceed_erase_collection<'a>(collection: StoreItemPart<'a>) -> Result<u32, ()> {
+        let collection_str = collection.as_str();
         let collection_atom = StoreKeyerHasher::to_compact(collection_str);
-        let collection_path = StoreKVBuilder::path(collection_atom, None);
+        let collection_path = StoreKVBuilder::path(collection_atom);
+
+        // Force a KV store close
+        {
+            let mut store_pool_write = STORE_POOL.write().unwrap();
+
+            let collection_target = StoreKVKey::from_atom(collection_atom);
+
+            store_pool_write.remove(&collection_target);
+        }
 
         if collection_path.exists() == true {
             debug!(
                 "kv collection store exists, erasing: {}/* at path: {:?}",
                 collection_str, &collection_path
             );
-
-            // Scan collection directory for contained bucket files
-            let mut buckets: Vec<String> = Vec::new();
-
-            if let Ok(entries) = fs::read_dir(&collection_path) {
-                for entry in entries {
-                    if let Ok(entry) = entry {
-                        if let Ok(entry_type) = entry.file_type() {
-                            if entry_type.is_dir() == true {
-                                if let Ok(entry_name) = entry.file_name().into_string() {
-                                    buckets.push(entry_name);
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                error!(
-                    "failed reading directory for kv erasure: {:?}",
-                    collection_path
-                );
-            }
-
-            // Force a KV store close (on all contained buckets)
-            {
-                let mut store_pool_write = STORE_POOL.write().unwrap();
-
-                for bucket in buckets {
-                    debug!(
-                        "forcibly closing kv store bucket: {}/{}",
-                        collection_str, bucket
-                    );
-
-                    store_pool_write
-                        .remove(&(collection_atom, StoreKeyerHasher::to_compact(&bucket)));
-                }
-            }
 
             // Remove KV store storage from filesystem
             let erase_result = fs::remove_dir_all(&collection_path);
@@ -293,61 +268,55 @@ impl StoreGenericActionBuilder<Option<StoreKVBox>, StoreKVAction> for StoreKVAct
         }
     }
 
-    fn proceed_erase_bucket(collection_str: &str, bucket_str: &str) -> Result<u32, ()> {
+    fn proceed_erase_bucket<'a>(
+        collection: StoreItemPart<'a>,
+        bucket: StoreItemPart<'a>,
+    ) -> Result<u32, ()> {
         debug!(
             "sub-erase on kv bucket: {} for collection: {}",
-            bucket_str, collection_str
+            bucket.as_str(),
+            collection.as_str()
         );
 
-        let (collection_atom, bucket_atom) = (
-            StoreKeyerHasher::to_compact(collection_str),
-            StoreKeyerHasher::to_compact(bucket_str),
-        );
+        if let Ok(kv_store) = StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection) {
+            if kv_store.is_some() == true {
+                // Store exists, proceed erasure.
+                debug!(
+                    "kv collection store exists, erasing: {} from {}",
+                    bucket.as_str(),
+                    collection.as_str()
+                );
 
-        let bucket_path = StoreKVBuilder::path(collection_atom, Some(bucket_atom));
+                let kv_action = Self::access(bucket, kv_store);
 
-        if bucket_path.exists() == true {
-            debug!(
-                "kv bucket store exists, erasing: {}/{} at path: {:?}",
-                collection_str, bucket_str, &bucket_path
-            );
+                if let Ok(erase_count) = kv_action.batch_erase_bucket() {
+                    debug!("done with kv bucket erasure");
 
-            // Force a KV store close
-            {
-                STORE_POOL
-                    .write()
-                    .unwrap()
-                    .remove(&(collection_atom, bucket_atom));
-            }
-
-            // Remove KV store storage from filesystem
-            let erase_result = fs::remove_dir_all(&bucket_path);
-
-            if erase_result.is_ok() == true {
-                debug!("done with kv bucket erasure");
-
-                Ok(1)
+                    return Ok(erase_count);
+                }
             } else {
-                Err(())
-            }
-        } else {
-            debug!(
-                "kv bucket store does not exist, consider already erased: {}/{} at path: {:?}",
-                collection_str, bucket_str, &bucket_path
-            );
+                // Store does not exist, consider as already erased.
+                debug!(
+                    "kv collection store does not exist, consider {} from {} already erased",
+                    bucket.as_str(),
+                    collection.as_str()
+                );
 
-            Ok(0)
+                return Ok(0);
+            }
         }
+
+        Err(())
     }
 }
 
-impl StoreKVAction {
+impl<'a> StoreKVAction<'a> {
     /// Meta-to-Value mapper
     ///
     /// [IDX=0] ((meta)) ~> ((value))
     pub fn get_meta_to_value(&self, meta: StoreMetaKey) -> Result<Option<StoreMetaValue>, ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::meta_to_value(&meta);
+            let store_key = StoreKeyerBuilder::meta_to_value(self.bucket.as_str(), &meta);
 
             debug!("store get meta-to-value: {}", store_key);
 
@@ -388,7 +357,7 @@ impl StoreKVAction {
 
     pub fn set_meta_to_value(&self, meta: StoreMetaKey, value: StoreMetaValue) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::meta_to_value(&meta);
+            let store_key = StoreKeyerBuilder::meta_to_value(self.bucket.as_str(), &meta);
 
             debug!("store set meta-to-value: {}", store_key);
 
@@ -412,7 +381,7 @@ impl StoreKVAction {
         term_hashed: StoreTermHashed,
     ) -> Result<Option<Vec<StoreObjectIID>>, ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::term_to_iids(term_hashed);
+            let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed);
 
             debug!("store get term-to-iids: {}", store_key);
 
@@ -459,7 +428,7 @@ impl StoreKVAction {
         iids: &[StoreObjectIID],
     ) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::term_to_iids(term_hashed);
+            let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed);
 
             debug!("store set term-to-iids: {}", store_key);
 
@@ -479,7 +448,7 @@ impl StoreKVAction {
 
     pub fn delete_term_to_iids(&self, term_hashed: StoreTermHashed) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::term_to_iids(term_hashed);
+            let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed);
 
             debug!("store delete term-to-iids: {}", store_key);
 
@@ -492,12 +461,9 @@ impl StoreKVAction {
     /// OID-to-IID mapper
     ///
     /// [IDX=2] ((oid)) ~> ((iid))
-    pub fn get_oid_to_iid<'a>(
-        &self,
-        oid: StoreObjectOID<'a>,
-    ) -> Result<Option<StoreObjectIID>, ()> {
+    pub fn get_oid_to_iid(&self, oid: StoreObjectOID<'a>) -> Result<Option<StoreObjectIID>, ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::oid_to_iid(oid);
+            let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
 
             debug!("store get oid-to-iid: {}", store_key);
 
@@ -536,13 +502,9 @@ impl StoreKVAction {
         }
     }
 
-    pub fn set_oid_to_iid<'a>(
-        &self,
-        oid: StoreObjectOID<'a>,
-        iid: StoreObjectIID,
-    ) -> Result<(), ()> {
+    pub fn set_oid_to_iid(&self, oid: StoreObjectOID<'a>, iid: StoreObjectIID) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::oid_to_iid(oid);
+            let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
 
             debug!("store set oid-to-iid: {}", store_key);
 
@@ -560,9 +522,9 @@ impl StoreKVAction {
         }
     }
 
-    pub fn delete_oid_to_iid<'a>(&self, oid: StoreObjectOID<'a>) -> Result<(), ()> {
+    pub fn delete_oid_to_iid(&self, oid: StoreObjectOID<'a>) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::oid_to_iid(oid);
+            let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
 
             debug!("store delete oid-to-iid: {}", store_key);
 
@@ -577,7 +539,7 @@ impl StoreKVAction {
     /// [IDX=3] ((iid)) ~> ((oid))
     pub fn get_iid_to_oid(&self, iid: StoreObjectIID) -> Result<Option<String>, ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::iid_to_oid(iid);
+            let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
 
             debug!("store get iid-to-oid: {}", store_key);
 
@@ -591,13 +553,9 @@ impl StoreKVAction {
         }
     }
 
-    pub fn set_iid_to_oid<'a>(
-        &self,
-        iid: StoreObjectIID,
-        oid: StoreObjectOID<'a>,
-    ) -> Result<(), ()> {
+    pub fn set_iid_to_oid(&self, iid: StoreObjectIID, oid: StoreObjectOID<'a>) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::iid_to_oid(iid);
+            let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
 
             debug!("store set iid-to-oid: {}", store_key);
 
@@ -609,7 +567,7 @@ impl StoreKVAction {
 
     pub fn delete_iid_to_oid(&self, iid: StoreObjectIID) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::iid_to_oid(iid);
+            let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
 
             debug!("store delete iid-to-oid: {}", store_key);
 
@@ -627,7 +585,7 @@ impl StoreKVAction {
         iid: StoreObjectIID,
     ) -> Result<Option<Vec<StoreTermHashed>>, ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::iid_to_terms(iid);
+            let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
 
             debug!("store get iid-to-terms: {}", store_key);
 
@@ -667,7 +625,7 @@ impl StoreKVAction {
         terms_hashed: &[StoreTermHashed],
     ) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::iid_to_terms(iid);
+            let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
 
             debug!("store set iid-to-terms: {}", store_key);
 
@@ -689,7 +647,7 @@ impl StoreKVAction {
 
     pub fn delete_iid_to_terms(&self, iid: StoreObjectIID) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::iid_to_terms(iid);
+            let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
 
             debug!("store delete iid-to-terms: {}", store_key);
 
@@ -699,7 +657,7 @@ impl StoreKVAction {
         }
     }
 
-    pub fn batch_flush_bucket<'a>(
+    pub fn batch_flush_bucket(
         &self,
         iid: StoreObjectIID,
         oid: StoreObjectOID<'a>,
@@ -795,6 +753,95 @@ impl StoreKVAction {
         Ok(count)
     }
 
+    pub fn batch_erase_bucket(&self) -> Result<u32, ()> {
+        if let Some(ref store) = self.store {
+            let mut count = 0;
+
+            // Generate all key prefix values (with dummy post-prefix values; we dont care)
+            let (k_meta_to_value, k_term_to_iids, k_oid_to_iid, k_iid_to_oid, k_iid_to_terms) = (
+                StoreKeyerBuilder::meta_to_value(self.bucket.as_str(), &StoreMetaKey::IIDIncr),
+                StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), 0),
+                StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), &String::new()),
+                StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), 0),
+                StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), 0),
+            );
+
+            let key_prefixes: [StoreKeyerPrefix; 5] = [
+                k_meta_to_value.as_prefix(),
+                k_term_to_iids.as_prefix(),
+                k_oid_to_iid.as_prefix(),
+                k_iid_to_oid.as_prefix(),
+                k_iid_to_terms.as_prefix(),
+            ];
+
+            // Scan all keys per-prefix and nuke them right away
+            for key_prefix in &key_prefixes {
+                debug!(
+                    "store batch erase bucket: {} for prefix: {:?}",
+                    self.bucket.as_str(),
+                    key_prefix
+                );
+
+                // Open database key prefix iterator
+                let mut db_prefix_iter = store.database.raw_iterator();
+
+                // Seek the first key starting with prefix; if the database is large, this saves a \
+                //   bit of search time (ie. iterations).
+                db_prefix_iter.seek(key_prefix);
+
+                // Check entry key (was the key found on first seek? do not engage in a loop if not)
+                if db_prefix_iter.valid() == true {
+                    if let Some(first_found_key) = db_prefix_iter.key() {
+                        if first_found_key.starts_with(key_prefix) == true {
+                            // Engage in the scan loop (as the first key could be seeked)
+                            while db_prefix_iter.valid() == true {
+                                if let Some(found_key) = db_prefix_iter.key() {
+                                    // Found prefix key?
+                                    if found_key.starts_with(key_prefix) == true {
+                                        debug!(
+                                            "store batch erase bucket: {} found key: {:?} (N{})",
+                                            self.bucket.as_str(),
+                                            found_key,
+                                            count
+                                        );
+
+                                        // Remove key, and seek next matching key (until we hit \
+                                        //   against last match)
+                                        if store.database.delete(found_key).is_ok() == false {
+                                            // Error deleting the key, abort flush there.
+                                            return Err(());
+                                        }
+
+                                        count += 1;
+                                    }
+
+                                    db_prefix_iter.next();
+                                }
+                            }
+                        } else {
+                            info!(
+                                "store batch erase bucket: {} done as 1st key: {:?} no match: {:?}",
+                                self.bucket.as_str(),
+                                first_found_key,
+                                key_prefix
+                            );
+                        }
+                    }
+                }
+            }
+
+            info!(
+                "done processing store batch erase bucket: {}; affected {} keys",
+                self.bucket.as_str(),
+                count
+            );
+
+            Ok(count)
+        } else {
+            Err(())
+        }
+    }
+
     fn encode_u32(decoded: u32) -> [u8; 4] {
         let mut encoded = [0; 4];
 
@@ -836,13 +883,33 @@ impl StoreKVAction {
     }
 }
 
+impl StoreKVKey {
+    pub fn from_atom(collection_hash: StoreKVAtom) -> StoreKVKey {
+        StoreKVKey {
+            collection_hash: collection_hash,
+        }
+    }
+
+    pub fn from_str(collection_str: &str) -> StoreKVKey {
+        StoreKVKey {
+            collection_hash: StoreKeyerHasher::to_compact(collection_str),
+        }
+    }
+}
+
+impl fmt::Display for StoreKVKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "<{:x?}>", self.collection_hash)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn it_acquires_database() {
-        assert!(StoreKVPool::acquire(StoreKVAcquireMode::Any, "c:test:1", "b:test:1").is_ok());
+        assert!(StoreKVPool::acquire(StoreKVAcquireMode::Any, "c:test:1").is_ok());
     }
 
     #[test]
@@ -852,7 +919,7 @@ mod tests {
 
     #[test]
     fn it_proceeds_primitives() {
-        let store = StoreKVPool::acquire(StoreKVAcquireMode::Any, "c:test:2", "b:test:2")
+        let store = StoreKVPool::acquire(StoreKVAcquireMode::Any, "c:test:2")
             .unwrap()
             .unwrap();
 
@@ -863,8 +930,8 @@ mod tests {
 
     #[test]
     fn it_proceeds_actions() {
-        let store = StoreKVPool::acquire(StoreKVAcquireMode::Any, "c:test:3", "b:test:3").unwrap();
-        let action = StoreKVActionBuilder::access(store);
+        let store = StoreKVPool::acquire(StoreKVAcquireMode::Any, "c:test:3").unwrap();
+        let action = StoreKVActionBuilder::access(bucket, store);
 
         assert!(action.get_meta_to_value(StoreMetaKey::IIDIncr).is_ok());
         assert!(action

@@ -21,13 +21,12 @@ impl ExecutorCount {
                 //   prevents the database from being erased while using it in this block.
                 general_kv_access_lock_read!();
 
-                if let Ok(kv_store) =
-                    StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection, bucket)
+                if let Ok(kv_store) = StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection)
                 {
                     // Important: acquire bucket store read lock
                     executor_kv_lock_read!(kv_store);
 
-                    let kv_action = StoreKVActionBuilder::access(kv_store);
+                    let kv_action = StoreKVActionBuilder::access(bucket, kv_store);
 
                     // Try to resolve existing OID to IID
                     let oid = object.as_str();
