@@ -867,7 +867,7 @@ impl StoreFSTKey {
 
 impl fmt::Display for StoreFSTKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<{:x?}/{:x?}>", self.collection_hash, self.bucket_hash)
+        write!(f, "<{:x?}>/<{:x?}>", self.collection_hash, self.bucket_hash)
     }
 }
 
