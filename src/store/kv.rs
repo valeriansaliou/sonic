@@ -269,43 +269,11 @@ impl StoreGenericActionBuilder for StoreKVActionBuilder {
     }
 
     fn proceed_erase_bucket<'a>(
-        collection: StoreItemPart<'a>,
-        bucket: StoreItemPart<'a>,
+        _collection: StoreItemPart<'a>,
+        _bucket: StoreItemPart<'a>,
     ) -> Result<u32, ()> {
-        debug!(
-            "sub-erase on kv bucket: {} for collection: {}",
-            bucket.as_str(),
-            collection.as_str()
-        );
-
-        if let Ok(kv_store) = StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection) {
-            if kv_store.is_some() == true {
-                // Store exists, proceed erasure.
-                debug!(
-                    "kv collection store exists, erasing: {} from {}",
-                    bucket.as_str(),
-                    collection.as_str()
-                );
-
-                let kv_action = Self::access(bucket, kv_store);
-
-                if let Ok(erase_count) = kv_action.batch_erase_bucket() {
-                    debug!("done with kv bucket erasure");
-
-                    return Ok(erase_count);
-                }
-            } else {
-                // Store does not exist, consider as already erased.
-                debug!(
-                    "kv collection store does not exist, consider {} from {} already erased",
-                    bucket.as_str(),
-                    collection.as_str()
-                );
-
-                return Ok(0);
-            }
-        }
-
+        // This one is not implemented, as we need to acquire the collection; which would cause \
+        //   a party-killer dead-lock.
         Err(())
     }
 }
