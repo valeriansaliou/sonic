@@ -40,6 +40,10 @@ _👋 You use Sonic and you want to be listed there? [Contact me](https://valeri
 * **Networked channel interface (Sonic Channel)**, that let you search your index, manage data ingestion (push in the index, pop from the index, flush a collection, flush a bucket, etc.) and perform administrative actions. The Sonic Channel protocol was designed to be lightweight on resources and simple to integrate with (the protocol is specified in the sections below).
 * **Easy-to-use libraries**, that let you connect to Sonic Channel from your apps.
 
+![Demo on Crisp Helpdesk search](https://valeriansaliou.github.io/sonic/images/crisp-help-search.gif)
+
+> _Once integrated, this is the kind of real-time full-text search you can get. Recorded from (Crisp Helpdesk)[https://help.crisp.chat/]._
+
 ## Limitations
 
 * **Indexed data limits**: Sonic is designed for large search indexes split over thousands of search buckets per collection. An IID (ie. Internal-ID) is stored in the index as a 32 bits number, which theoretically allow up to ~4.2 billion objects to be indexed (ie. OID) per bucket. We've observed storage savings of 30% to 40%, which justifies the trade-off on large databases (versus Sonic using 64 bits IIDs). Also, Sonic only keeps the N most recently pushed results for a given word, in a sliding window way (the sliding window width can be configured).
