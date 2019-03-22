@@ -40,9 +40,13 @@ _👋 You use Sonic and you want to be listed there? [Contact me](https://valeri
 * **Networked channel interface (Sonic Channel)**, that let you search your index, manage data ingestion (push in the index, pop from the index, flush a collection, flush a bucket, etc.) and perform administrative actions. The Sonic Channel protocol was designed to be lightweight on resources and simple to integrate with (the protocol is specified in the sections below).
 * **Easy-to-use libraries**, that let you connect to Sonic Channel from your apps.
 
-![Demo on Crisp Helpdesk search](https://valeriansaliou.github.io/sonic/images/crisp-search-demo.gif)
+## Demo
 
-> _Once integrated, this is the kind of real-time full-text search you get. Recorded from: https://help.crisp.chat/_
+Sonic is integrated in all Crisp search products on the [Crisp](https://crisp.chat/) platform.
+
+**You can test Sonic live on: [Crisp Helpdesk](https://help.crisp.chat/), and get an idea of the speed and relevance of search results returned by Sonic.**
+
+![Demo on Crisp Helpdesk search](https://valeriansaliou.github.io/sonic/images/crisp-search-demo.gif)
 
 ## Limitations
 
