@@ -42,7 +42,7 @@ _👋 You use Sonic and you want to be listed there? [Contact me](https://valeri
 
 ![Demo on Crisp Helpdesk search](https://valeriansaliou.github.io/sonic/images/crisp-search-demo.gif)
 
-> _Once integrated, this is the kind of real-time full-text search you can get. Recorded from: https://help.crisp.chat/_
+> _Once integrated, this is the kind of real-time full-text search you get. Recorded from: https://help.crisp.chat/_
 
 ## Limitations
 
