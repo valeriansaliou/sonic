@@ -38,6 +38,8 @@ Sonic is integrated in all Crisp search products on the [Crisp](https://crisp.ch
 
 ![Demo on Crisp Helpdesk search](https://valeriansaliou.github.io/sonic/images/crisp-search-demo.gif)
 
+> _Sonic fuzzy search in helpdesk articles at its best. Lookup for any word or group of terms, get results instantly._
+
 ## Features
 
 * **Search terms are stored in collections, organized in buckets**; you may use a single bucket, or a bucket per user on your platform if you need to search in separate indexes.
