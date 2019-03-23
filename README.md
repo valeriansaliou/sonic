@@ -3,7 +3,7 @@ Sonic
 
 [![Build Status](https://travis-ci.org/valeriansaliou/sonic.svg?branch=master)](https://travis-ci.org/valeriansaliou/sonic) [![Dependency Status](https://deps.rs/repo/github/valeriansaliou/sonic/status.svg)](https://deps.rs/repo/github/valeriansaliou/sonic) [![Buy Me A Coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg)](https://www.buymeacoffee.com/valeriansaliou)
 
-**Sonic is a fast, lightweight and schema-less search backend. It ingests search texts and identifier tuples, that can then be queried against.**
+**Sonic is a fast, lightweight and schema-less search backend. It ingests search texts and identifier tuples, that can then be queried against in microseconds time.**
 
 Sonic can be used as a simple alternative to super-heavy and full-featured search backends such as Elasticsearch in some use-cases. It is capable of normalizing natural language search queries, auto-completing a search query and providing the most relevant results for a query. Sonic is an identifier index, rather than a document index; when queried, it returns IDs that can be then used to refer to actual data in an external database.
 
