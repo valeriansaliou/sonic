@@ -7,6 +7,10 @@ Protocol
 
 This document specifies the Sonic Channel protocol. Use it if you are looking to build your own Sonic Channel library, or if you are looking to debug Sonic using eg. `telnet` in command-line.
 
+To start a `telnet` session with your local Sonic instance, execute: `telnet ::1 1491`
+
+_Refer to sections below to interact with Sonic Channel._
+
 ---
 
 ### 1️⃣ Sonic Channel (uninitialized)
