@@ -32,7 +32,7 @@ _👋 You use Sonic and you want to be listed there? [Contact me](https://valeri
 
 ## Demo
 
-Sonic is integrated in all Crisp search products on the [Crisp](https://crisp.chat/) platform.
+Sonic is integrated in all Crisp search products on the [Crisp](https://crisp.chat/) platform. It is used to index half a billion objects on a $5/mth 1-vCPU SSD cloud server. Crisp users use it to search in their messages, conversations, contacts, helpdesk articles and more.
 
 **You can test Sonic live on: [Crisp Helpdesk](https://help.crisp.chat/), and get an idea of the speed and relevance of Sonic search results.**
 
