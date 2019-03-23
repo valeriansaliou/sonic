@@ -3,7 +3,7 @@ Protocol
 
 # ⚡️ Sonic Channel
 
-Sonic Channel can be accessed via the `telnet` utility from your computer. It is used to perform searches and ingest index data. You can also use it for Sonic administration operations.
+**Sonic Channel is used to perform searches and ingest index data. You can also use it for Sonic administration operations. Sonic Channel listens on TCP port 1491.**
 
 This document specifies the Sonic Channel protocol. Use it if you are looking to build your own Sonic Channel library, or if you are looking to debug Sonic using eg. `telnet` in command-line.
 
