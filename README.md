@@ -7,7 +7,7 @@ Sonic
 
 Sonic can be used as a simple alternative to super-heavy and full-featured search backends such as Elasticsearch in some use-cases. It is capable of normalizing natural language search queries, auto-completing a search query and providing the most relevant results for a query.
 
-A strong attention to performance and code cleanliness has been given when designing Sonic. It aims at being crash-free, super-fast and puts minimum strain on server resources (our measurements have shown that Sonic - when under load - responds to search queries in the μs range, eats ~30MB RAM and has a low CPU footprint; [see our benchmarks](#how-fast--lightweight-is-it)).
+A strong attention to performance and code cleanliness has been given when designing Sonic. It aims at being crash-free, super-fast and puts minimum strain on server resources (our measurements have shown that Sonic - when under load - responds to search queries in the μs range, eats ~30MB RAM and has a low CPU footprint; [see our benchmarks](https://github.com/valeriansaliou/sonic#how-fast--lightweight-is-it)).
 
 **🇫🇷 Crafted in Nantes, France.**
 
@@ -49,7 +49,7 @@ Sonic is integrated in all Crisp search products on the [Crisp](https://crisp.ch
 * **Auto-complete any word** in real-time via the suggest operation. This helps build a snappy word suggestion feature in your end-user search interface.
 * **Full Unicode compatibility** on 80+ most spoken languages in the word. Sonic removes useless stop words from any text (eg. 'the' in English), after guessing the text language. This ensures any searched or ingested text is clean before it hits the index.
 * **Networked channel interface (Sonic Channel)**, that let you search your index, manage data ingestion (push in the index, pop from the index, flush a collection, flush a bucket, etc.) and perform administrative actions. The Sonic Channel protocol was designed to be lightweight on resources and simple to integrate with (the protocol is specified in the sections below).
-* **Easy-to-use libraries**, that let you connect to Sonic Channel from your apps.
+* **Easy-to-use libraries**, that let you connect to Sonic Channel from your apps; [see libraries](https://github.com/valeriansaliou/sonic#-sonic-channel-libraries).
 
 ## How to use it?
 
