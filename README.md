@@ -281,4 +281,4 @@ If you find a vulnerability in Sonic, you are more than welcome to report it dir
 
 **:warning: You must encrypt your email using [@valeriansaliou](https://github.com/valeriansaliou) GPG public key: [:key:valeriansaliou.gpg.pub.asc](https://valeriansaliou.name/files/keys/valeriansaliou.gpg.pub.asc).**
 
-**:gift: Based on the severity of the vulnerability, I may offer a $200 (US) bounty to whomever reported it.**
+**:gift: Based on the severity of the vulnerability, I may offer a $100 (US) bounty to whomever reported it.**
