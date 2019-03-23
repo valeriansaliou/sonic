@@ -193,11 +193,11 @@ _The Sonic Channel Search mode is used for querying the search index. Once in th
 
 **➡️ Available commands:**
 
-* `QUERY`: query database (syntax: `QUERY <collection> <bucket> "<terms>" [LIMIT(<count>)]? [OFFSET(<count>)]?`)
-* `SUGGEST`: auto-completes word (syntax: `SUGGEST <collection> <bucket> "<word>" [LIMIT(<count>)]?`)
-* `PING`: ping server (syntax: `PING`)
-* `HELP`: show help (syntax: `HELP [<manual>]?`)
-* `QUIT`: stop connection (syntax: `QUIT`)
+* `QUERY`: query database (syntax: `QUERY <collection> <bucket> "<terms>" [LIMIT(<count>)]? [OFFSET(<count>)]?`; time complexity: `O(1)`)
+* `SUGGEST`: auto-completes word (syntax: `SUGGEST <collection> <bucket> "<word>" [LIMIT(<count>)]?`; time complexity: `O(1)`)
+* `PING`: ping server (syntax: `PING`; time complexity: `O(1)`)
+* `HELP`: show help (syntax: `HELP [<manual>]?`; time complexity: `O(1)`)
+* `QUIT`: stop connection (syntax: `QUIT`; time complexity: `O(1)`)
 
 **⏩ Syntax terminology:**
 
@@ -255,15 +255,15 @@ _The Sonic Channel Ingest mode is used for altering the search index (push, pop 
 
 **➡️ Available commands:**
 
-* `PUSH`: Push search data in the index (syntax: `PUSH <collection> <bucket> <object> "<text>"`)
-* `POP`: Pop search data from the index (syntax: `POP <collection> <bucket> <object> "<text>"`)
-* `COUNT`: Count indexed search data (syntax: `COUNT <collection> [<bucket> [<object>]?]?`)
-* `FLUSHC`: Flush all indexed data from a collection (syntax: `FLUSHC <collection>`)
-* `FLUSHB`: Flush all indexed data from a bucket in a collection (syntax: `FLUSHB <collection> <bucket>`)
-* `FLUSHO`: Flush all indexed data from an object in a bucket in collection (syntax: `FLUSHO <collection> <bucket> <object>`)
-* `PING`: ping server (syntax: `PING`)
-* `HELP`: show help (syntax: `HELP [<manual>]?`)
-* `QUIT`: stop connection (syntax: `QUIT`)
+* `PUSH`: Push search data in the index (syntax: `PUSH <collection> <bucket> <object> "<text>"`; time complexity: `O(1)`)
+* `POP`: Pop search data from the index (syntax: `POP <collection> <bucket> <object> "<text>"`; time complexity: `O(1)`)
+* `COUNT`: Count indexed search data (syntax: `COUNT <collection> [<bucket> [<object>]?]?`; time complexity: `O(1)`)
+* `FLUSHC`: Flush all indexed data from a collection (syntax: `FLUSHC <collection>`; time complexity: `O(1)`)
+* `FLUSHB`: Flush all indexed data from a bucket in a collection (syntax: `FLUSHB <collection> <bucket>`; time complexity: `O(N)` where `N` is the number of bucket objects)
+* `FLUSHO`: Flush all indexed data from an object in a bucket in collection (syntax: `FLUSHO <collection> <bucket> <object>`; time complexity: `O(1)`)
+* `PING`: ping server (syntax: `PING`; time complexity: `O(1)`)
+* `HELP`: show help (syntax: `HELP [<manual>]?`; time complexity: `O(1)`)
+* `QUIT`: stop connection (syntax: `QUIT`; time complexity: `O(1)`)
 
 **⏩ Syntax terminology:**
 
@@ -324,10 +324,10 @@ _The Sonic Channel Control mode is used for administration purposes. Once in thi
 
 **➡️ Available commands:**
 
-* `TRIGGER`: trigger an action (syntax: `TRIGGER [<action>]?`)
-* `PING`: ping server (syntax: `PING`)
-* `HELP`: show help (syntax: `HELP [<manual>]?`)
-* `QUIT`: stop connection (syntax: `QUIT`)
+* `TRIGGER`: trigger an action (syntax: `TRIGGER [<action>]?`; time complexity: `O(1)`)
+* `PING`: ping server (syntax: `PING`; time complexity: `O(1)`)
+* `HELP`: show help (syntax: `HELP [<manual>]?`; time complexity: `O(1)`)
+* `QUIT`: stop connection (syntax: `QUIT`; time complexity: `O(1)`)
 
 **⏩ Syntax terminology:**
 
