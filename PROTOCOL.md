@@ -1,7 +1,7 @@
 Protocol
 ========
 
-# Sonic Channel
+# ⚡️ Sonic Channel
 
 Sonic Channel can be accessed via the `telnet` utility from your computer. It is used to perform searches and ingest index data.
 
