@@ -1,5 +1,5 @@
-Packaging
-=========
+Sonic Packaging
+===============
 
 This file contains quick reminders and notes on how to package Sonic.
 

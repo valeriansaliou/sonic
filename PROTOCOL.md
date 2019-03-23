@@ -1,5 +1,5 @@
-Protocol
-========
+Sonic Protocol
+==============
 
 # ⚡️ Sonic Channel
 

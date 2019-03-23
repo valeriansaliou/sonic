@@ -1,5 +1,5 @@
-Configuration
-=============
+Sonic Configuration
+===================
 
 # File: config.cfg
 
