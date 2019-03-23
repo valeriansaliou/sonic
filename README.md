@@ -56,7 +56,7 @@ Sonic is integrated in all Crisp search products on the [Crisp](https://crisp.ch
 
 Sonic is built in Rust. To install it, either download a version from the [Sonic releases](https://github.com/valeriansaliou/sonic/releases) page, use `cargo install` or pull the source code from `master`.
 
-**Install from source:**
+**👉 Install from source:**
 
 If you pulled the source code from Git, you can build it using `cargo`:
 
@@ -68,7 +68,7 @@ You can find the built binaries in the `./target/release` directory.
 
 _Install `clang` to be able to compile the required RocksDB dependency._
 
-**Install from Cargo:**
+**👉 Install from Cargo:**
 
 You can install Sonic directly with `cargo install`:
 
@@ -78,7 +78,7 @@ cargo install sonic-server
 
 Ensure that your `$PATH` is properly configured to source the Crates binaries, and then run Sonic using the `sonic` command.
 
-**Install from Docker Hub:**
+**👉 Install from Docker Hub:**
 
 You might find it convenient to run Sonic via Docker. You can find the pre-built Sonic image on Docker Hub as [valeriansaliou/sonic](https://hub.docker.com/r/valeriansaliou/sonic/).
 
