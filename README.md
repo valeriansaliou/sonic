@@ -128,7 +128,7 @@ Sonic distributes official Sonic Channel bindings for your programming language:
 
 * **NodeJS**: **[node-sonic-channel](https://www.npmjs.com/package/sonic-channel)**
 
-👉 Cannot find the library for your programming language? Build your own and be referenced here! ([contact me](https://valeriansaliou.name/))
+_👉 Cannot find the library for your programming language? Build your own and be referenced here! ([contact me](https://valeriansaliou.name/))_
 
 ## Which text languages are supported?
 
