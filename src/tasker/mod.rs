@@ -2,6 +2,6 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
-// License: Sonic OSS License v1.0 (SOSSL v1.0)
+// License: Mozilla Public License v2.0 (MPL v2.0)
 
 pub mod runtime;

@@ -1,20 +1,5 @@
-Sonic OSS License Version 1.0
-=============================
-
-0. Important Points
--------------------
-
-0.1. This license is based on Mozilla Public License 2.0. It has been
-    renamed and modified according to the terms of MPL 2.0. The license
-    steward has also been changed, according to the terms of MPL 2.0.
-
-0.2. Re-selling of the software is forbidden. It means that it is forbidden
-    to sell a service that builds its core value on the software. The
-    software can be used for commercial purposes, but it should not be sold
-    as-a-service (to make things clear, you are not allowed to build an
-    Algolia competitor based on the licensed source code; ie. Algolia is
-    an hosted search service sold as a SaaS). This statement does not apply
-    for core project contributors.
+Mozilla Public License Version 2.0
+==================================
 
 1. Definitions
 --------------
@@ -333,10 +318,10 @@ shall not be used to construe this License against a Contributor.
 
 10.1. New Versions
 
-Valerian Saliou (a natural person) is the license steward. Except as
-provided in Sectio 10.3, no one other than the license steward has
-the right to modify or publish new versions of this License. Each
-version will be given a distinguishing version number.
+Mozilla Foundation is the license steward. Except as provided in Section
+10.3, no one other than the license steward has the right to modify or
+publish new versions of this License. Each version will be given a
+distinguishing version number.
 
 10.2. Effect of New Versions
 
@@ -363,8 +348,9 @@ notice described in Exhibit B of this License must be attached.
 Exhibit A - Source Code Form License Notice
 -------------------------------------------
 
-  This Source Code Form is subject to the terms of the Sonic OSS
-  License, v. 1.0.
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 If it is not possible or desirable to put the notice in a particular
 file, then You may include the notice in a location (such as a LICENSE
@@ -377,4 +363,4 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
 ---------------------------------------------------------
 
   This Source Code Form is "Incompatible With Secondary Licenses", as
-  defined by the Sonic OSS License, v. 1.0.
+  defined by the Mozilla Public License, v. 2.0.

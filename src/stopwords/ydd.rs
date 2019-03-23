@@ -2,7 +2,7 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
-// License: Sonic OSS License v1.0 (SOSSL v1.0)
+// License: Mozilla Public License v2.0 (MPL v2.0)
 
 // This is an alias for HEB stopwords, but I may be mistaken there.
 pub static STOPWORDS_YDD: &[&'static str] = &[
