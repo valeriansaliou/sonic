@@ -144,14 +144,14 @@ impl StoreFSTPool {
 
         let (mut count_moved, mut count_pushed, mut count_popped) = (0, 0, 0);
 
-        let graph_consolidate_read = GRAPH_CONSOLIDATE.read().unwrap();
-
-        if graph_consolidate_read.len() > 0 {
+        if GRAPH_CONSOLIDATE.read().unwrap().len() > 0 {
             // Prepare close stack (used once whole set is scanned)
             let mut close_stack: Vec<StoreFSTKey> = Vec::new();
 
             // Proceed FST consolidation for each store key
             {
+                let graph_consolidate_read = GRAPH_CONSOLIDATE.read().unwrap();
+
                 for key in &*graph_consolidate_read {
                     if let Some(store) = GRAPH_POOL.read().unwrap().get(&key) {
                         let not_consolidated_for = store
