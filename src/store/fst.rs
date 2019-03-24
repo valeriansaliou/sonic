@@ -142,77 +142,99 @@ impl StoreFSTPool {
             GRAPH_REBUILD_LOCK.lock().unwrap(),
         );
 
-        let (mut count_moved, mut count_pushed, mut count_popped) = (0, 0, 0);
+        // Exit trap: Register is empty? Abort there.
+        if GRAPH_CONSOLIDATE.read().unwrap().is_empty() == true {
+            info!("no fst store pool items to consolidate in register (empty)");
 
-        // Notice: we need to consume the lock from there rather than assign its guard to a \
-        //   variable as to avoid a deadlock when there are stores to clean.
-        if GRAPH_CONSOLIDATE.read().unwrap().len() > 0 {
-            // Prepare close stack (used once whole set is scanned)
-            let mut close_stack: Vec<StoreFSTKey> = Vec::new();
+            return;
+        }
 
-            // Proceed FST consolidation for each store key
-            {
-                let graph_consolidate_read = GRAPH_CONSOLIDATE.read().unwrap();
+        // Step 1: List keys to be consolidated
+        let mut keys_consolidate: Vec<StoreFSTKey> = Vec::new();
 
-                for key in &*graph_consolidate_read {
-                    if let Some(store) = GRAPH_POOL.read().unwrap().get(&key) {
-                        let not_consolidated_for = store
-                            .last_consolidated
-                            .read()
-                            .unwrap()
-                            .elapsed()
-                            .unwrap()
-                            .as_secs();
+        {
+            let graph_consolidate_read = GRAPH_CONSOLIDATE.read().unwrap();
 
-                        // Should we consolidate right now?
-                        if force == true
-                            || not_consolidated_for >= APP_CONF.store.fst.graph.consolidate_after
-                        {
-                            info!(
-                                "fst key: {} not consolidated for: {} seconds, may consolidate",
-                                key, not_consolidated_for
-                            );
+            for key in &*graph_consolidate_read {
+                if let Some(store) = GRAPH_POOL.read().unwrap().get(&key) {
+                    let not_consolidated_for = store
+                        .last_consolidated
+                        .read()
+                        .unwrap()
+                        .elapsed()
+                        .unwrap()
+                        .as_secs();
 
-                            let consolidate_counts = Self::consolidate_item(store);
+                    if force == true
+                        || not_consolidated_for >= APP_CONF.store.fst.graph.consolidate_after
+                    {
+                        info!(
+                            "fst key: {} not consolidated for: {} seconds, may consolidate",
+                            key, not_consolidated_for
+                        );
 
-                            count_moved += consolidate_counts.1;
-                            count_pushed += consolidate_counts.2;
-                            count_popped += consolidate_counts.3;
-
-                            // Stack cached store close request?
-                            if consolidate_counts.0 == true {
-                                // Notice: unfortunately we need to clone the key value there, as \
-                                //   we cannot reference the value and then use it to unassign \
-                                //   the reference from its set w/o breaking the borrow checker \
-                                //   rules. ie. there is just no other way around.
-                                close_stack.push(*key);
-                            }
-                        } else {
-                            debug!(
-                                "fst key: {} not consolidated for: {} seconds, no consolidate",
-                                key, not_consolidated_for
-                            );
-                        }
+                        keys_consolidate.push(*key);
+                    } else {
+                        debug!(
+                            "fst key: {} not consolidated for: {} seconds, no consolidate",
+                            key, not_consolidated_for
+                        );
                     }
                 }
             }
+        }
 
-            // Close all stacked stores
-            {
-                let (mut graph_pool_write, mut graph_consolidate_write) = (
-                    GRAPH_POOL.write().unwrap(),
-                    GRAPH_CONSOLIDATE.write().unwrap(),
-                );
+        // Exit trap: Nothing to consolidate yet? Abort there.
+        if keys_consolidate.is_empty() == true {
+            info!("no fst store pool items need to consolidate at the moment");
 
-                for close_item in close_stack {
-                    // Nuke old opened FST
-                    // Notice: last consolidated date will be bumped to a new date in the future \
-                    //   when a push or pop operation will be done, thus effectively scheduling a \
-                    //   consolidation in the future properly.
-                    graph_pool_write.remove(&close_item);
+            return;
+        }
 
-                    // Void the set of items to be consolidated (this has been processed)
-                    graph_consolidate_write.remove(&close_item);
+        // Step 2: Clear keys to be consolidated from register
+        {
+            let mut graph_consolidate_write = GRAPH_CONSOLIDATE.write().unwrap();
+
+            for key in &keys_consolidate {
+                graph_consolidate_write.remove(key);
+
+                debug!("fst key: {} cleared from consolidate register", key);
+            }
+        }
+
+        // Step 3: Consolidate FSTs, one-by-one (sequential locking; this avoids global locks)
+        let (mut count_moved, mut count_pushed, mut count_popped) = (0, 0, 0);
+
+        {
+            for key in &keys_consolidate {
+                // As we may be renaming the FST file, ensure no consumer out of this is \
+                //   trying to open the FST file as it gets processed.
+                let _write = GRAPH_WRITE_LOCK.lock().unwrap();
+
+                let do_close = if let Some(store) = GRAPH_POOL.read().unwrap().get(key) {
+                    debug!("fst key: {} consolidate started", key);
+
+                    let consolidate_counts = Self::consolidate_item(store);
+
+                    count_moved += consolidate_counts.1;
+                    count_pushed += consolidate_counts.2;
+                    count_popped += consolidate_counts.3;
+
+                    debug!("fst key: {} consolidate complete", key);
+
+                    // Should close this FST?
+                    consolidate_counts.0
+                } else {
+                    false
+                };
+
+                // Nuke old opened FST?
+                // Notice: last consolidated date will be bumped to a new date in the future \
+                //   when a push or pop operation will be done, thus effectively scheduling \
+                //   a consolidation in the future properly.
+                // Notice: we remove this one early as to release write lock early
+                if do_close == true {
+                    GRAPH_POOL.write().unwrap().remove(key);
                 }
             }
         }
@@ -271,7 +293,8 @@ impl StoreFSTPool {
                             let mut ordered_push: VecDeque<&[u8]> =
                                 VecDeque::from_iter(ordered_push_vec);
 
-                            // Append words not in pop list to new FST (ie. old words minus pop words)
+                            // Append words not in pop list to new FST (ie. old words minus pop \
+                            //   words)
                             let mut old_fst_stream = old_fst.stream();
 
                             while let Some(old_fst_word) = old_fst_stream.next() {
@@ -341,10 +364,6 @@ impl StoreFSTPool {
                                     store.target.collection_hash,
                                     Some(store.target.bucket_hash),
                                 );
-
-                                // As we will be renaming the FST file, ensure no consumer out of \
-                                //   this is trying to open the FST file as it gets renamed.
-                                let _write = GRAPH_WRITE_LOCK.lock().unwrap();
 
                                 // Proceed temporary FST to final FST path rename
                                 if std::fs::rename(&bucket_tmp_path, &bucket_final_path).is_ok()
@@ -523,11 +542,9 @@ impl StoreFST {
 
     pub fn should_consolidate(&self) {
         // Check if not already scheduled
-        if GRAPH_CONSOLIDATE.write().unwrap().contains(&self.target) == false {
-            let mut graph_consolidate_write = GRAPH_CONSOLIDATE.write().unwrap();
-
+        if GRAPH_CONSOLIDATE.read().unwrap().contains(&self.target) == false {
             // Schedule target for next consolidation tick (ie. collection + bucket tuple)
-            graph_consolidate_write.insert(self.target);
+            GRAPH_CONSOLIDATE.write().unwrap().insert(self.target);
 
             // Bump 'last consolidated' time, effectively de-bouncing consolidation to a fixed \
             //   and predictible tick time in the future.

@@ -13,7 +13,7 @@ use crate::store::kv::StoreKVPool;
 pub struct TaskerBuilder;
 pub struct Tasker;
 
-const TASKER_TICK_INTERVAL: Duration = Duration::from_secs(20);
+const TASKER_TICK_INTERVAL: Duration = Duration::from_secs(10);
 
 impl TaskerBuilder {
     pub fn new() -> Tasker {
