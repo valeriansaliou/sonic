@@ -21,6 +21,7 @@ use std::iter::FromIterator;
 use std::mem;
 use std::path::PathBuf;
 use std::str;
+use std::thread;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::SystemTime;
 
@@ -144,7 +145,7 @@ impl StoreFSTPool {
 
         // Exit trap: Register is empty? Abort there.
         if GRAPH_CONSOLIDATE.read().unwrap().is_empty() == true {
-            info!("no fst store pool items to consolidate in register (empty)");
+            info!("no fst store pool items to consolidate in register");
 
             return;
         }
@@ -207,35 +208,45 @@ impl StoreFSTPool {
 
         {
             for key in &keys_consolidate {
-                // As we may be renaming the FST file, ensure no consumer out of this is \
-                //   trying to open the FST file as it gets processed.
-                let _write = GRAPH_WRITE_LOCK.lock().unwrap();
+                {
+                    // As we may be renaming the FST file, ensure no consumer out of this is \
+                    //   trying to open the FST file as it gets processed.
+                    let _write = GRAPH_WRITE_LOCK.lock().unwrap();
 
-                let do_close = if let Some(store) = GRAPH_POOL.read().unwrap().get(key) {
-                    debug!("fst key: {} consolidate started", key);
+                    let do_close = if let Some(store) = GRAPH_POOL.read().unwrap().get(key) {
+                        debug!("fst key: {} consolidate started", key);
 
-                    let consolidate_counts = Self::consolidate_item(store);
+                        let consolidate_counts = Self::consolidate_item(store);
 
-                    count_moved += consolidate_counts.1;
-                    count_pushed += consolidate_counts.2;
-                    count_popped += consolidate_counts.3;
+                        count_moved += consolidate_counts.1;
+                        count_pushed += consolidate_counts.2;
+                        count_popped += consolidate_counts.3;
 
-                    debug!("fst key: {} consolidate complete", key);
+                        debug!("fst key: {} consolidate complete", key);
 
-                    // Should close this FST?
-                    consolidate_counts.0
-                } else {
-                    false
-                };
+                        // Should close this FST?
+                        consolidate_counts.0
+                    } else {
+                        false
+                    };
 
-                // Nuke old opened FST?
-                // Notice: last consolidated date will be bumped to a new date in the future \
-                //   when a push or pop operation will be done, thus effectively scheduling \
-                //   a consolidation in the future properly.
-                // Notice: we remove this one early as to release write lock early
-                if do_close == true {
-                    GRAPH_POOL.write().unwrap().remove(key);
+                    // Nuke old opened FST?
+                    // Notice: last consolidated date will be bumped to a new date in the future \
+                    //   when a push or pop operation will be done, thus effectively scheduling \
+                    //   a consolidation in the future properly.
+                    // Notice: we remove this one early as to release write lock early
+                    if do_close == true {
+                        GRAPH_POOL.write().unwrap().remove(key);
+                    }
                 }
+
+                // Give a bit of time to other threads before continuing (a consolidate operation \
+                //   must not block all other threads until it completes); this method tells the \
+                //   thread scheduler to give a bit of priority to other threads, and get back \
+                //   to this thread's work when other threads are done. On large setups, this \
+                //   loop can starve other threads due to the locks used (unfortunately they \
+                //   are all necessary).
+                thread::yield_now();
             }
         }
 
