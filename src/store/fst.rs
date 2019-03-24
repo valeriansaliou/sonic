@@ -133,9 +133,9 @@ impl StoreFSTPool {
         //   certain heavy tasks, which is better to spread out consolidation steps over time over \
         //   a large number of very active buckets.
 
-        // Acquire access lock, and reference it in context
-        // Notice: access lock lets the consolidate process wait that any thread using the graph \
-        //   is done with work, while the rebuild lock prevents 2 consolidate operations to be \
+        // Acquire rebuild + access locks, and reference them in context
+        // Notice: access lock prevents the consolidate process from using the graph if it is \
+        //   ongoing erasure, while the rebuild lock prevents two consolidate operations to be \
         //   executed at the same time.
         let (_access, _rebuild) = (
             GRAPH_ACCESS_LOCK.read().unwrap(),
@@ -144,6 +144,8 @@ impl StoreFSTPool {
 
         let (mut count_moved, mut count_pushed, mut count_popped) = (0, 0, 0);
 
+        // Notice: we need to consume the lock from there rather than assign its guard to a \
+        //   variable as to avoid a deadlock when there are stores to clean.
         if GRAPH_CONSOLIDATE.read().unwrap().len() > 0 {
             // Prepare close stack (used once whole set is scanned)
             let mut close_stack: Vec<StoreFSTKey> = Vec::new();
