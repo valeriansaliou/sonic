@@ -75,6 +75,7 @@ static LOOKUP_REGEX_RANGE_LATIN: &'static str = "[\\x{0000}-\\x{024F}]";
 lazy_static! {
     pub static ref GRAPH_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
     static ref GRAPH_WRITE_LOCK: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    static ref GRAPH_REBUILD_LOCK: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     static ref GRAPH_POOL: Arc<RwLock<HashMap<StoreFSTKey, StoreFSTBox>>> =
         Arc::new(RwLock::new(HashMap::new()));
     static ref GRAPH_CONSOLIDATE: Arc<RwLock<HashSet<StoreFSTKey>>> =
@@ -132,28 +133,27 @@ impl StoreFSTPool {
         //   certain heavy tasks, which is better to spread out consolidation steps over time over \
         //   a large number of very active buckets.
 
-        // Acquire write + access locks, and reference it in context
-        // Notice: write lock prevents graph to be acquired from any context; while access lock \
-        //   lets the consolidate process wait that any thread using the graph is done with work.
-        let (_access, _write) = (
-            GRAPH_ACCESS_LOCK.write().unwrap(),
-            GRAPH_WRITE_LOCK.lock().unwrap(),
+        // Acquire access lock, and reference it in context
+        // Notice: access lock lets the consolidate process wait that any thread using the graph \
+        //   is done with work, while the rebuild lock prevents 2 consolidate operations to be \
+        //   executed at the same time.
+        let (_access, _rebuild) = (
+            GRAPH_ACCESS_LOCK.read().unwrap(),
+            GRAPH_REBUILD_LOCK.lock().unwrap(),
         );
 
         let (mut count_moved, mut count_pushed, mut count_popped) = (0, 0, 0);
 
-        if GRAPH_CONSOLIDATE.read().unwrap().len() > 0 {
-            let mut graph_pool_write = GRAPH_POOL.write().unwrap();
+        let graph_consolidate_read = GRAPH_CONSOLIDATE.read().unwrap();
 
+        if graph_consolidate_read.len() > 0 {
             // Prepare close stack (used once whole set is scanned)
             let mut close_stack: Vec<StoreFSTKey> = Vec::new();
 
             // Proceed FST consolidation for each store key
             {
-                let graph_consolidate_read = GRAPH_CONSOLIDATE.read().unwrap();
-
                 for key in &*graph_consolidate_read {
-                    if let Some(store) = graph_pool_write.get(&key) {
+                    if let Some(store) = GRAPH_POOL.read().unwrap().get(&key) {
                         let not_consolidated_for = store
                             .last_consolidated
                             .read()
@@ -197,7 +197,10 @@ impl StoreFSTPool {
 
             // Close all stacked stores
             {
-                let mut graph_consolidate_write = GRAPH_CONSOLIDATE.write().unwrap();
+                let (mut graph_pool_write, mut graph_consolidate_write) = (
+                    GRAPH_POOL.write().unwrap(),
+                    GRAPH_CONSOLIDATE.write().unwrap(),
+                );
 
                 for close_item in close_stack {
                     // Nuke old opened FST
@@ -337,6 +340,11 @@ impl StoreFSTPool {
                                     Some(store.target.bucket_hash),
                                 );
 
+                                // As we will be renaming the FST file, ensure no consumer out of \
+                                //   this is trying to open the FST file as it gets renamed.
+                                let _write = GRAPH_WRITE_LOCK.lock().unwrap();
+
+                                // Proceed temporary FST to final FST path rename
                                 if std::fs::rename(&bucket_tmp_path, &bucket_final_path).is_ok()
                                     == true
                                 {
