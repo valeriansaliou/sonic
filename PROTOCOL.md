@@ -17,7 +17,7 @@ _Refer to sections below to interact with Sonic Channel._
 
 **Please consider the following upon integrating the Sonic Channel protocol:**
 
-1. Each command sent must be terminated with a new line character (`\n`) as to commit the command to the server, otherwise Sonic will never unstack its buffer;
+1. Each command sent must be terminated with a new line character (`\n`) as to commit the command to the server;
 2. Upon starting a Sonic Channel session, your library should read the `buffer(20000)` parameter in the `STARTED` response, and use this value (in bytes) as to know when a command data should be truncated and split in multiple sub-commands (to avoid buffer overflows, ie. sending too much data in a single command);
 
 ---
