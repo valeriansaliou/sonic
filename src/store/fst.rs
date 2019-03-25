@@ -71,6 +71,8 @@ enum StoreFSTPathMode {
 type StoreFSTAtom = u32;
 type StoreFSTBox = Arc<StoreFST>;
 
+const WORD_LIMIT_LENGTH: usize = 40;
+
 static LOOKUP_REGEX_RANGE_LATIN: &'static str = "[\\x{0000}-\\x{024F}]";
 
 lazy_static! {
@@ -733,6 +735,11 @@ impl StoreGenericActionBuilder for StoreFSTActionBuilder {
 
 impl StoreFSTAction {
     pub fn push_word(&self, word: &str) -> bool {
+        // Word over limit? (abort, the FST does not perform well over large words)
+        if Self::word_over_limit(word) == true {
+            return false;
+        }
+
         let word_bytes = word.as_bytes();
 
         // Nuke word from 'pop' set? (void a previous un-consolidated commit)
@@ -762,6 +769,11 @@ impl StoreFSTAction {
     }
 
     pub fn pop_word(&self, word: &str) -> bool {
+        // Word over limit? (abort, the FST does not perform well over large words)
+        if Self::word_over_limit(word) == true {
+            return false;
+        }
+
         let word_bytes = word.as_bytes();
 
         // Nuke word from 'push' set? (void a previous un-consolidated commit)
@@ -796,6 +808,11 @@ impl StoreFSTAction {
         limit: usize,
         max_typo_factor: Option<u32>,
     ) -> Option<Vec<String>> {
+        // Word over limit? (abort, the FST does not perform well over large words)
+        if Self::word_over_limit(from_word) == true {
+            return None;
+        }
+
         let mut found_words = Vec::with_capacity(limit);
 
         // Try to complete provided word
@@ -823,6 +840,16 @@ impl StoreFSTAction {
 
     pub fn count_words(&self) -> usize {
         self.store.cardinality()
+    }
+
+    fn word_over_limit(word: &str) -> bool {
+        if word.len() > WORD_LIMIT_LENGTH {
+            debug!("got over-limit fst word: {}", word);
+
+            true
+        } else {
+            false
+        }
     }
 
     fn find_words_stream<A: Automaton>(
