@@ -29,9 +29,9 @@ pub enum TokenLexerMode {
     NormalizeOnly,
 }
 
-static TEXT_LANG_TRUNCATE_OVER_CHARS: usize = 200;
-static TEXT_LANG_DETECT_PROCEED_OVER_CHARS: usize = 20;
-static TEXT_LANG_DETECT_NGRAM_UNDER_CHARS: usize = 60;
+const TEXT_LANG_TRUNCATE_OVER_CHARS: usize = 200;
+const TEXT_LANG_DETECT_PROCEED_OVER_CHARS: usize = 20;
+const TEXT_LANG_DETECT_NGRAM_UNDER_CHARS: usize = 60;
 
 impl TokenLexerBuilder {
     pub fn from(mode: TokenLexerMode, text: &str) -> Result<TokenLexer, ()> {

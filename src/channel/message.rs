@@ -21,7 +21,7 @@ pub struct ChannelMessageModeSearch;
 pub struct ChannelMessageModeIngest;
 pub struct ChannelMessageModeControl;
 
-static COMMAND_ELAPSED_MILLIS_SLOW_WARN: u128 = 50;
+const COMMAND_ELAPSED_MILLIS_SLOW_WARN: u128 = 50;
 
 #[derive(PartialEq)]
 pub enum ChannelMessageResult {
