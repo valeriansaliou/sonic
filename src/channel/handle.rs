@@ -90,70 +90,7 @@ impl ChannelHandle {
                 )
                 .expect("write failed");
 
-                // Initialize packet buffer
-                let mut buffer: VecDeque<u8> = VecDeque::with_capacity(MAX_LINE_SIZE);
-
-                // Wait for incoming messages
-                'handler: loop {
-                    let mut read = [0; MAX_LINE_SIZE];
-
-                    match stream.read(&mut read) {
-                        Ok(n) => {
-                            // Should close?
-                            if n == 0 {
-                                break;
-                            }
-
-                            // Buffer overflow?
-                            if (n + buffer.len()) > MAX_LINE_SIZE {
-                                // Do not continue, as there is too much pending data in the \
-                                //   buffer. Most likely the client does not implement a proper \
-                                //   back-pressure management system, thus we terminate it.
-                                info!("closing channel thread because of buffer overflow");
-
-                                panic!("buffer overflow");
-                            }
-
-                            // Add chunk to buffer
-                            buffer.extend(&read[0..n]);
-
-                            // Handle full lines from buffer (keep the last incomplete line in \
-                            //   buffer)
-                            {
-                                let mut processed_line = Vec::with_capacity(MAX_LINE_SIZE);
-
-                                while let Some(byte) = buffer.pop_front() {
-                                    // Commit line and start a new one?
-                                    if byte == BUFFER_LINE_SEPARATOR {
-                                        if Self::on_message(&mode, &stream, &processed_line)
-                                            == ChannelMessageResult::Close
-                                        {
-                                            // Should close?
-                                            break 'handler;
-                                        }
-
-                                        // Important: clear the contents of the line, as it has \
-                                        //   just been processed.
-                                        processed_line.clear();
-                                    } else {
-                                        // Append current byte to processed line
-                                        processed_line.push(byte);
-                                    }
-                                }
-
-                                // Incomplete line remaining? Put it back in buffer.
-                                if processed_line.is_empty() == false {
-                                    buffer.extend(processed_line);
-                                }
-                            }
-                        }
-                        Err(err) => {
-                            info!("closing channel thread with traceback: {}", err);
-
-                            panic!("closing channel");
-                        }
-                    }
-                }
+                Self::handle_stream(mode, stream);
             }
             Err(err) => {
                 write!(stream, "ENDED {}{}", err.to_str(), LINE_FEED).expect("write failed");
@@ -176,6 +113,72 @@ impl ChannelHandle {
         assert!(stream
             .set_write_timeout(Some(Duration::new(tcp_timeout, 0)))
             .is_ok());
+    }
+
+    fn handle_stream(mode: ChannelMode, mut stream: TcpStream) {
+        // Initialize packet buffer
+        let mut buffer: VecDeque<u8> = VecDeque::with_capacity(MAX_LINE_SIZE);
+
+        // Wait for incoming messages
+        'handler: loop {
+            let mut read = [0; MAX_LINE_SIZE];
+
+            match stream.read(&mut read) {
+                Ok(n) => {
+                    // Should close?
+                    if n == 0 {
+                        break;
+                    }
+
+                    // Buffer overflow?
+                    if (n + buffer.len()) > MAX_LINE_SIZE {
+                        // Do not continue, as there is too much pending data in the buffer. \
+                        //   Most likely the client does not implement a proper back-pressure \
+                        //   management system, thus we terminate it.
+                        info!("closing channel thread because of buffer overflow");
+
+                        panic!("buffer overflow");
+                    }
+
+                    // Add chunk to buffer
+                    buffer.extend(&read[0..n]);
+
+                    // Handle full lines from buffer (keep the last incomplete line in buffer)
+                    {
+                        let mut processed_line = Vec::with_capacity(MAX_LINE_SIZE);
+
+                        while let Some(byte) = buffer.pop_front() {
+                            // Commit line and start a new one?
+                            if byte == BUFFER_LINE_SEPARATOR {
+                                if Self::on_message(&mode, &stream, &processed_line)
+                                    == ChannelMessageResult::Close
+                                {
+                                    // Should close?
+                                    break 'handler;
+                                }
+
+                                // Important: clear the contents of the line, as it has just been \
+                                //   processed.
+                                processed_line.clear();
+                            } else {
+                                // Append current byte to processed line
+                                processed_line.push(byte);
+                            }
+                        }
+
+                        // Incomplete line remaining? Put it back in buffer.
+                        if processed_line.is_empty() == false {
+                            buffer.extend(processed_line);
+                        }
+                    }
+                }
+                Err(err) => {
+                    info!("closing channel thread with traceback: {}", err);
+
+                    panic!("closing channel");
+                }
+            }
+        }
     }
 
     fn ensure_start(mut stream: &TcpStream) -> Result<ChannelMode, ChannelHandleError> {
