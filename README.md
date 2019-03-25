@@ -136,6 +136,7 @@ Sonic distributes official Sonic Channel bindings for your programming language:
 You can find below a list of Sonic Channel integrations provided by the community (many thanks to them!):
 
 * **Python**: **[asonic](https://github.com/moshe/asonic)** by [@moshe](https://github.com/moshe)
+* **Go**: **[go-sonic](https://github.com/expectedsh/go-sonic)** by [@alexisvisco](https://github.com/alexisvisco)
 
 _ℹ️ Cannot find the library for your programming language? Build your own and be referenced here! ([contact me](https://valeriansaliou.name/))_
 
