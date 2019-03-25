@@ -131,13 +131,17 @@ impl ChannelHandle {
                     }
 
                     // Buffer overflow?
-                    if (n + buffer.len()) > MAX_LINE_SIZE {
-                        // Do not continue, as there is too much pending data in the buffer. \
-                        //   Most likely the client does not implement a proper back-pressure \
-                        //   management system, thus we terminate it.
-                        info!("closing channel thread because of buffer overflow");
+                    {
+                        let buffer_len = n + buffer.len();
 
-                        panic!("buffer overflow");
+                        if buffer_len > MAX_LINE_SIZE {
+                            // Do not continue, as there is too much pending data in the buffer. \
+                            //   Most likely the client does not implement a proper back-pressure \
+                            //   management system, thus we terminate it.
+                            info!("closing channel thread because of buffer overflow");
+
+                            panic!("buffer overflow ({}/{} bytes)", buffer_len, MAX_LINE_SIZE);
+                        }
                     }
 
                     // Add chunk to buffer
