@@ -13,7 +13,16 @@ _Refer to sections below to interact with Sonic Channel._
 
 ---
 
-### 1️⃣ Sonic Channel (uninitialized)
+### 1️⃣ Before you start
+
+**Please consider the following upon integrating the Sonic Channel protocol:**
+
+1. Each command sent must be terminated with a new line character (`\n`), otherwise Sonic will never unstack its buffer;
+2. Upon starting a Sonic Channel session, your library should read the `buffer(20000)` parameter in the `STARTED` response, and use this value (in bytes) as to know when a command data should be truncated and split in multiple sub-commands (to avoid buffer overflows, ie. sending too much data in a single command);
+
+---
+
+### 2️⃣ Sonic Channel (uninitialized)
 
 * `START <mode>`: select mode to use for connection (either: `search` or `ingest`)
 
@@ -21,7 +30,7 @@ _Issuing any other command — eg. `QUIT` — in this mode will abort the TCP co
 
 ---
 
-### 2️⃣ Sonic Channel (Search mode)
+### 3️⃣ Sonic Channel (Search mode)
 
 _The Sonic Channel Search mode is used for querying the search index. Once in this mode, you cannot switch to other modes or gain access to commands from other modes._
 
@@ -83,7 +92,7 @@ _Notes on what happens:_
 
 ---
 
-### 3️⃣ Sonic Channel (Ingest mode)
+### 4️⃣ Sonic Channel (Ingest mode)
 
 _The Sonic Channel Ingest mode is used for altering the search index (push, pop and flush). Once in this mode, you cannot switch to other modes or gain access to commands from other modes._
 
@@ -152,7 +161,7 @@ _Notes on what happens:_
 
 ---
 
-### 4️⃣ Sonic Channel (Control mode)
+### 5️⃣ Sonic Channel (Control mode)
 
 _The Sonic Channel Control mode is used for administration purposes. Once in this mode, you cannot switch to other modes or gain access to commands from other modes._
 
