@@ -125,19 +125,19 @@ _If you are looking for details on the raw Sonic Channel TCP-based protocol, you
 
 ### 📦 Sonic Channel Libraries
 
-#### Official Libraries
+#### 👉 Official Libraries
 
 Sonic distributes official Sonic Channel bindings for your programming language:
 
 * **NodeJS**: **[node-sonic-channel](https://www.npmjs.com/package/sonic-channel)**
 
-#### Community Libraries
+#### 👉 Community Libraries
 
 You can find below a list of Sonic Channel integrations provided by the community (many thanks to them!):
 
 * **Python**: **[asonic](https://github.com/moshe/asonic)** by [@moshe](https://github.com/moshe)
 
-_👉 Cannot find the library for your programming language? Build your own and be referenced here! ([contact me](https://valeriansaliou.name/))_
+_Cannot find the library for your programming language? Build your own and be referenced here! ([contact me](https://valeriansaliou.name/))_
 
 ## Which text languages are supported?
 
