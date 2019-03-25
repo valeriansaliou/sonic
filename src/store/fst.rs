@@ -21,8 +21,8 @@ use std::iter::FromIterator;
 use std::mem;
 use std::path::PathBuf;
 use std::str;
-use std::thread;
 use std::sync::{Arc, Mutex, RwLock};
+use std::thread;
 use std::time::SystemTime;
 
 use super::generic::{
