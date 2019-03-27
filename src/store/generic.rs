@@ -81,10 +81,9 @@ pub trait StoreGenericPool<
     fn proceed_janitor(kind: &str, pool: &Arc<RwLock<HashMap<K, Arc<S>>>>, inactive_after: u64) {
         debug!("scanning for {} store pool items to janitor", kind);
 
-        let mut store_pool_write = pool.write().unwrap();
         let mut removal_register: Vec<K> = Vec::new();
 
-        for (collection_bucket, store) in store_pool_write.iter() {
+        for (collection_bucket, store) in pool.read().unwrap().iter() {
             let last_used_elapsed = store
                 .ref_last_used()
                 .read()
@@ -110,15 +109,19 @@ pub trait StoreGenericPool<
             }
         }
 
-        for collection_bucket in &removal_register {
-            store_pool_write.remove(collection_bucket);
+        {
+            let mut store_pool_write = pool.write().unwrap();
+
+            for collection_bucket in &removal_register {
+                store_pool_write.remove(collection_bucket);
+            }
         }
 
         info!(
             "done scanning for {} store pool items to janitor, expired {} items, now has {} items",
             kind,
             removal_register.len(),
-            store_pool_write.len()
+            pool.read().unwrap().len()
         );
     }
 }
