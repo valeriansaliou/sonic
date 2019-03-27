@@ -78,8 +78,19 @@ pub trait StoreGenericPool<
         }
     }
 
-    fn proceed_janitor(kind: &str, pool: &Arc<RwLock<HashMap<K, Arc<S>>>>, inactive_after: u64) {
+    fn proceed_janitor(
+        kind: &str,
+        pool: &Arc<RwLock<HashMap<K, Arc<S>>>>,
+        inactive_after: u64,
+        access_lock: &Arc<RwLock<bool>>,
+        write_lock: &Arc<Mutex<bool>>,
+    ) {
         debug!("scanning for {} store pool items to janitor", kind);
+
+        // Acquire write + access locks, and reference it in context
+        // Notice: write lock prevents store to be acquired from any context; while access lock \
+        //   lets the erasure process wait that any thread using the store is done with work.
+        let (_access, _write) = (access_lock.write().unwrap(), write_lock.lock().unwrap());
 
         let mut removal_register: Vec<K> = Vec::new();
 
@@ -109,7 +120,7 @@ pub trait StoreGenericPool<
             }
         }
 
-        {
+        if removal_register.is_empty() == false {
             let mut store_pool_write = pool.write().unwrap();
 
             for collection_bucket in &removal_register {

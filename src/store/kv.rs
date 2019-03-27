@@ -111,7 +111,13 @@ impl StoreKVPool {
     }
 
     pub fn janitor() {
-        Self::proceed_janitor("kv", &*STORE_POOL, APP_CONF.store.kv.pool.inactive_after)
+        Self::proceed_janitor(
+            "kv",
+            &*STORE_POOL,
+            APP_CONF.store.kv.pool.inactive_after,
+            &*STORE_ACCESS_LOCK,
+            &*STORE_WRITE_LOCK,
+        )
     }
 }
 

@@ -125,7 +125,13 @@ impl StoreFSTPool {
     }
 
     pub fn janitor() {
-        Self::proceed_janitor("fst", &*GRAPH_POOL, APP_CONF.store.fst.pool.inactive_after)
+        Self::proceed_janitor(
+            "fst",
+            &*GRAPH_POOL,
+            APP_CONF.store.fst.pool.inactive_after,
+            &*GRAPH_ACCESS_LOCK,
+            &*GRAPH_WRITE_LOCK,
+        )
     }
 
     pub fn consolidate(force: bool) {
