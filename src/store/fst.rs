@@ -108,7 +108,7 @@ impl StoreFSTPool {
         let graph_pool_read = GRAPH_POOL.read().unwrap();
 
         if let Some(store_fst) = graph_pool_read.get(&pool_key) {
-            Self::proceed_acquire_cache("fst", collection_str, pool_key, &store_fst)
+            Self::proceed_acquire_cache("fst", collection_str, pool_key, store_fst)
         } else {
             info!(
                 "fst store not in pool for collection: {} <{:x?}> / bucket: {} <{:x?}>, opening it",

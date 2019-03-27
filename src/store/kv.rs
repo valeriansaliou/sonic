@@ -78,7 +78,7 @@ impl StoreKVPool {
         let store_pool_read = STORE_POOL.read().unwrap();
 
         if let Some(store_kv) = store_pool_read.get(&pool_key) {
-            Self::proceed_acquire_cache("kv", collection_str, pool_key, &store_kv)
+            Self::proceed_acquire_cache("kv", collection_str, pool_key, store_kv)
                 .map(|result| Some(result))
         } else {
             info!(
