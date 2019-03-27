@@ -152,7 +152,8 @@ Sonic supports a wide range of languages in its lexing system. If a language is 
 * 🇧🇩 Bengali
 * 🇧🇬 Bulgarian
 * 🇲🇲 Burmese
-* 🇨🇳 Chinese (Mandarin)
+* 🇨🇳 Chinese (Simplified)
+* 🇹🇼 Chinese (Traditional)
 * 🇭🇷 Croatian
 * 🇨🇿 Czech
 * 🇩🇰 Danish
