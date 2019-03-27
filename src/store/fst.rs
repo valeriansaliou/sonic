@@ -419,13 +419,13 @@ impl StoreFSTPool {
                         bucket_tmp_path_parent
                     );
                 }
+            } else {
+                error!("error opening old fst");
             }
 
             // Reset all pending sets
             *pending_push_write = HashSet::new();
             *pending_pop_write = HashSet::new();
-        } else {
-            error!("error opening old fst");
         }
 
         (should_close, count_moved, count_pushed, count_popped)
