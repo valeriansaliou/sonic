@@ -13,7 +13,7 @@ use std::fmt;
 use std::fs;
 use std::io::Cursor;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 use std::vec::Drain;
 
@@ -57,7 +57,6 @@ type StoreKVBox = Arc<StoreKV>;
 
 lazy_static! {
     pub static ref STORE_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
-    static ref STORE_WRITE_LOCK: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     static ref STORE_POOL: Arc<RwLock<HashMap<StoreKVKey, StoreKVBox>>> =
         Arc::new(RwLock::new(HashMap::new()));
 }
@@ -69,11 +68,6 @@ impl StoreKVPool {
     ) -> Result<Option<StoreKVBox>, ()> {
         let collection_str = collection.into();
         let pool_key = StoreKVKey::from_str(collection_str);
-
-        // Acquire general lock, and reference it in context
-        // Notice: this prevents database to be opened while also erased; or 2 databases on the \
-        //   same collection to be opened at the same time.
-        let _write = STORE_WRITE_LOCK.lock().unwrap();
 
         // Acquire a thread-safe store pool reference in read mode
         let store_pool_read = STORE_POOL.read().unwrap();
@@ -116,7 +110,6 @@ impl StoreKVPool {
             &*STORE_POOL,
             APP_CONF.store.kv.pool.inactive_after,
             &*STORE_ACCESS_LOCK,
-            &*STORE_WRITE_LOCK,
         )
     }
 }
@@ -213,13 +206,7 @@ impl StoreKVActionBuilder {
     }
 
     pub fn erase<'a, T: Into<&'a str>>(collection: T, bucket: Option<T>) -> Result<u32, ()> {
-        Self::dispatch_erase(
-            "kv",
-            collection,
-            bucket,
-            &*STORE_ACCESS_LOCK,
-            &*STORE_WRITE_LOCK,
-        )
+        Self::dispatch_erase("kv", collection, bucket, &*STORE_ACCESS_LOCK)
     }
 
     fn build<'a>(bucket: StoreItemPart<'a>, store: Option<StoreKVBox>) -> StoreKVAction<'a> {

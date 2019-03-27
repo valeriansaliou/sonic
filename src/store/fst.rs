@@ -77,7 +77,6 @@ static LOOKUP_REGEX_RANGE_LATIN: &'static str = "[\\x{0000}-\\x{024F}]";
 
 lazy_static! {
     pub static ref GRAPH_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
-    static ref GRAPH_WRITE_LOCK: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     static ref GRAPH_REBUILD_LOCK: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     static ref GRAPH_POOL: Arc<RwLock<HashMap<StoreFSTKey, StoreFSTBox>>> =
         Arc::new(RwLock::new(HashMap::new()));
@@ -99,11 +98,6 @@ impl StoreFSTPool {
         let (collection_str, bucket_str) = (collection.into(), bucket.into());
 
         let pool_key = StoreFSTKey::from_str(collection_str, bucket_str);
-
-        // Acquire general lock, and reference it in context
-        // Notice: this prevents graph to be opened while also erased; or 2 graphs on the \
-        //   same collection to be opened at the same time.
-        let _write = GRAPH_WRITE_LOCK.lock().unwrap();
 
         // Acquire a thread-safe store pool reference in read mode
         let graph_pool_read = GRAPH_POOL.read().unwrap();
@@ -130,7 +124,6 @@ impl StoreFSTPool {
             &*GRAPH_POOL,
             APP_CONF.store.fst.pool.inactive_after,
             &*GRAPH_ACCESS_LOCK,
-            &*GRAPH_WRITE_LOCK,
         )
     }
 
@@ -142,14 +135,9 @@ impl StoreFSTPool {
         //   certain heavy tasks, which is better to spread out consolidation steps over time over \
         //   a large number of very active buckets.
 
-        // Acquire rebuild + access locks, and reference them in context
-        // Notice: access lock prevents the consolidate process from using the graph if it is \
-        //   ongoing erasure, while the rebuild lock prevents two consolidate operations to be \
-        //   executed at the same time.
-        let (_access, _rebuild) = (
-            GRAPH_ACCESS_LOCK.read().unwrap(),
-            GRAPH_REBUILD_LOCK.lock().unwrap(),
-        );
+        // Acquire rebuild lock, and reference it in context
+        // Notice: this prevents two consolidate operations to be executed at the same time.
+        let _rebuild = GRAPH_REBUILD_LOCK.lock().unwrap();
 
         // Exit trap: Register is empty? Abort there.
         if GRAPH_CONSOLIDATE.read().unwrap().is_empty() == true {
@@ -218,8 +206,10 @@ impl StoreFSTPool {
             for key in &keys_consolidate {
                 {
                     // As we may be renaming the FST file, ensure no consumer out of this is \
-                    //   trying to open the FST file as it gets processed.
-                    let _write = GRAPH_WRITE_LOCK.lock().unwrap();
+                    //   trying to access the FST file as it gets processed. This also waits for \
+                    //   current consumers to finish reading the FST, and prevents any new \
+                    //   consumer from opening it while we are not done there.
+                    let _access = GRAPH_ACCESS_LOCK.write().unwrap();
 
                     let do_close = if let Some(store) = GRAPH_POOL.read().unwrap().get(key) {
                         debug!("fst key: {} consolidate started", key);
@@ -593,13 +583,7 @@ impl StoreFSTActionBuilder {
     }
 
     pub fn erase<'a, T: Into<&'a str>>(collection: T, bucket: Option<T>) -> Result<u32, ()> {
-        Self::dispatch_erase(
-            "fst",
-            collection,
-            bucket,
-            &*GRAPH_ACCESS_LOCK,
-            &*GRAPH_WRITE_LOCK,
-        )
+        Self::dispatch_erase("fst", collection, bucket, &*GRAPH_ACCESS_LOCK)
     }
 
     fn build(store: StoreFSTBox) -> StoreFSTAction {

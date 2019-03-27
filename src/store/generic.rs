@@ -9,7 +9,7 @@ use core::hash::Hash;
 use hashbrown::HashMap;
 use std::fmt::Display;
 use std::mem;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
 pub trait StoreGenericKey {}
@@ -83,14 +83,12 @@ pub trait StoreGenericPool<
         pool: &Arc<RwLock<HashMap<K, Arc<S>>>>,
         inactive_after: u64,
         access_lock: &Arc<RwLock<bool>>,
-        write_lock: &Arc<Mutex<bool>>,
     ) {
         debug!("scanning for {} store pool items to janitor", kind);
 
-        // Acquire write + access locks, and reference it in context
-        // Notice: write lock prevents store to be acquired from any context; while access lock \
-        //   lets the erasure process wait that any thread using the store is done with work.
-        let (_access, _write) = (access_lock.write().unwrap(), write_lock.lock().unwrap());
+        // Acquire access lock (in blocking write mode), and reference it in context
+        // Notice: this prevents store to be acquired from any context
+        let _access = access_lock.write().unwrap();
 
         let mut removal_register: Vec<K> = Vec::new();
 
@@ -151,16 +149,14 @@ pub trait StoreGenericActionBuilder {
         collection: T,
         bucket: Option<T>,
         access_lock: &Arc<RwLock<bool>>,
-        write_lock: &Arc<Mutex<bool>>,
     ) -> Result<u32, ()> {
         let collection_str = collection.into();
 
         info!("{} erase requested on collection: {}", kind, collection_str);
 
-        // Acquire write + access locks, and reference it in context
-        // Notice: write lock prevents store to be acquired from any context; while access lock \
-        //   lets the erasure process wait that any thread using the store is done with work.
-        let (_access, _write) = (access_lock.write().unwrap(), write_lock.lock().unwrap());
+        // Acquire access lock (in blocking write mode), and reference it in context
+        // Notice: this prevents store to be acquired from any context
+        let _access = access_lock.write().unwrap();
 
         if let Some(bucket) = bucket {
             Self::proceed_erase_bucket(collection_str, bucket.into())
