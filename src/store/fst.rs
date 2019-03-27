@@ -77,6 +77,7 @@ static LOOKUP_REGEX_RANGE_LATIN: &'static str = "[\\x{0000}-\\x{024F}]";
 
 lazy_static! {
     pub static ref GRAPH_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
+    static ref GRAPH_ACQUIRE_LOCK: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     static ref GRAPH_REBUILD_LOCK: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     static ref GRAPH_POOL: Arc<RwLock<HashMap<StoreFSTKey, StoreFSTBox>>> =
         Arc::new(RwLock::new(HashMap::new()));
@@ -98,6 +99,10 @@ impl StoreFSTPool {
         let (collection_str, bucket_str) = (collection.into(), bucket.into());
 
         let pool_key = StoreFSTKey::from_str(collection_str, bucket_str);
+
+        // Freeze acquire lock, and reference it in context
+        // Notice: this prevents two graphs on the same collection to be opened at the same time.
+        let _acquire = GRAPH_ACQUIRE_LOCK.lock().unwrap();
 
         // Acquire a thread-safe store pool reference in read mode
         let graph_pool_read = GRAPH_POOL.read().unwrap();
