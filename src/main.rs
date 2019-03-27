@@ -20,7 +20,6 @@ extern crate fst_levenshtein;
 extern crate fst_regex;
 extern crate graceful;
 extern crate hashbrown;
-extern crate libc;
 extern crate linked_hash_set;
 extern crate rand;
 extern crate regex_syntax;
@@ -42,7 +41,6 @@ mod stopwords;
 mod store;
 mod tasker;
 
-use std::io;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::thread;
@@ -141,24 +139,6 @@ fn ensure_states() {
     let (_, _) = (APP_ARGS.deref(), APP_CONF.deref());
 }
 
-fn ensure_limits() {
-    // Raise file descriptor limit for the process to the maximum allowed by the system
-    // Notice: this is required for large Sonic servers to open many FST files at once
-    let limit = libc::rlimit {
-        rlim_cur: APP_CONF.server.limit_open_files,
-        rlim_max: APP_CONF.server.limit_open_files,
-    };
-
-    unsafe {
-        if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) != 0 {
-            panic!(
-                "failed setting open files limit: {}",
-                io::Error::last_os_error()
-            );
-        }
-    }
-}
-
 fn main() {
     let _logger = ConfigLogger::init(
         LevelFilter::from_str(&APP_CONF.server.log_level).expect("invalid log level"),
@@ -168,9 +148,8 @@ fn main() {
 
     info!("starting up");
 
-    // Ensure all states & limits are bound
+    // Ensure all states are bound
     ensure_states();
-    ensure_limits();
 
     // Spawn tasker (background thread)
     thread::spawn(spawn_tasker);

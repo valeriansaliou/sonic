@@ -11,10 +11,6 @@ pub fn server_log_level() -> String {
     "error".to_string()
 }
 
-pub fn server_limit_open_files() -> u64 {
-    1024
-}
-
 pub fn channel_inet() -> SocketAddr {
     "[::1]:1491".parse().unwrap()
 }

@@ -8,7 +8,6 @@ Sonic Configuration
 **[server]**
 
 * `log_level` (type: _string_, allowed: `debug`, `info`, `warn`, `error`, default: `error`) — Verbosity of logging, set it to `error` in production
-* `limit_open_files` (type: _integer_, allowed: numbers, default: `1024`) — Maximum number of open files for the process (raise this limit if you run a large deployment; check that your system security limits allow this)
 
 **[channel]**
 
