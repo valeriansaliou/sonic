@@ -177,6 +177,7 @@ Sonic supports a wide range of languages in its lexing system. If a language is 
 * 🇮🇩 Indonesian
 * 🇮🇹 Italian
 * 🇯🇵 Japanese
+* 🇮🇳 Kannada
 * 🇰🇭 Khmer
 * 🇰🇷 Korean
 * 🏳 Kurdish
