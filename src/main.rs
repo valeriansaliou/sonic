@@ -20,6 +20,7 @@ extern crate fst_levenshtein;
 extern crate fst_regex;
 extern crate graceful;
 extern crate hashbrown;
+extern crate libc;
 extern crate linked_hash_set;
 extern crate rand;
 extern crate regex_syntax;
@@ -28,7 +29,6 @@ extern crate toml;
 extern crate twox_hash;
 extern crate unicode_segmentation;
 extern crate whatlang;
-extern crate fdlimit;
 
 #[cfg(feature = "alloc-jemalloc")]
 extern crate jemallocator;
@@ -42,13 +42,13 @@ mod stopwords;
 mod store;
 mod tasker;
 
+use std::io;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
 
 use clap::{App, Arg};
-use fdlimit::raise_fd_limit;
 use graceful::SignalGuard;
 use log::LevelFilter;
 
@@ -144,7 +144,19 @@ fn ensure_states() {
 fn ensure_limits() {
     // Raise file descriptor limit for the process to the maximum allowed by the system
     // Notice: this is required for large Sonic servers to open many FST files at once
-    raise_fd_limit();
+    let limit = libc::rlimit {
+        rlim_cur: APP_CONF.server.limit_open_files,
+        rlim_max: APP_CONF.server.limit_open_files,
+    };
+
+    unsafe {
+        if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) != 0 {
+            panic!(
+                "failed setting open files limit: {}",
+                io::Error::last_os_error()
+            );
+        }
+    }
 }
 
 fn main() {

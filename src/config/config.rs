@@ -20,6 +20,9 @@ pub struct Config {
 pub struct ConfigServer {
     #[serde(default = "defaults::server_log_level")]
     pub log_level: String,
+
+    #[serde(default = "defaults::server_limit_open_files")]
+    pub limit_open_files: u64,
 }
 
 #[derive(Deserialize)]
