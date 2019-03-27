@@ -137,7 +137,9 @@ You can find below a list of Sonic Channel integrations provided by the communit
 
 * **Python**: **[asonic](https://github.com/moshe/asonic)** by [@moshe](https://github.com/moshe)
 * **Go**: **[go-sonic](https://github.com/expectedsh/go-sonic)** by [@alexisvisco](https://github.com/alexisvisco)
-* **PHP**: **[php-sonic](https://github.com/seijikun/php-sonic)** by [@seijikun](https://github.com/seijikun)
+* **PHP**:
+  * **[php-sonic](https://github.com/seijikun/php-sonic)** by [@seijikun](https://github.com/seijikun)
+  * **[php-sonic](https://github.com/php-sonic/php-sonic)** by [@touhonoob](https://github.com/touhonoob)
 
 _ℹ️ Cannot find the library for your programming language? Build your own and be referenced here! ([contact me](https://valeriansaliou.name/))_
 
