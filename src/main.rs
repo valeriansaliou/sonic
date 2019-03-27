@@ -28,6 +28,7 @@ extern crate toml;
 extern crate twox_hash;
 extern crate unicode_segmentation;
 extern crate whatlang;
+extern crate fdlimit;
 
 #[cfg(feature = "alloc-jemalloc")]
 extern crate jemallocator;
@@ -47,6 +48,7 @@ use std::thread;
 use std::time::Duration;
 
 use clap::{App, Arg};
+use fdlimit::raise_fd_limit;
 use graceful::SignalGuard;
 use log::LevelFilter;
 
@@ -139,6 +141,12 @@ fn ensure_states() {
     let (_, _) = (APP_ARGS.deref(), APP_CONF.deref());
 }
 
+fn ensure_limits() {
+    // Raise file descriptor limit for the process to the maximum allowed by the system
+    // Notice: this is required for large Sonic servers to open many FST files at once
+    raise_fd_limit();
+}
+
 fn main() {
     let _logger = ConfigLogger::init(
         LevelFilter::from_str(&APP_CONF.server.log_level).expect("invalid log level"),
@@ -148,8 +156,9 @@ fn main() {
 
     info!("starting up");
 
-    // Ensure all states are bound
+    // Ensure all states & limits are bound
     ensure_states();
+    ensure_limits();
 
     // Spawn tasker (background thread)
     thread::spawn(spawn_tasker);
