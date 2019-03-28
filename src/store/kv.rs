@@ -769,8 +769,10 @@ impl<'a> StoreKVAction<'a> {
 
                             // Remove key, and seek next matching key (until we hit \
                             //   against last match)
-                            if store.database.delete(found_key).is_ok() == false {
+                            if let Err(err) = store.database.delete(found_key) {
                                 // Error deleting the key, abort flush there.
+                                error!("failed removing key in store batch erase bucket: {}", err);
+
                                 return Err(());
                             }
 
