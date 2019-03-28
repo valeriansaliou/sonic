@@ -8,7 +8,6 @@ use core::cmp::Eq;
 use core::hash::Hash;
 use hashbrown::HashMap;
 use std::fmt::Display;
-use std::mem;
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;
 
@@ -38,7 +37,7 @@ pub trait StoreGenericPool<
         // Bump store last used date (avoids early janitor eviction)
         let mut last_used_value = store.ref_last_used().write().unwrap();
 
-        mem::replace(&mut *last_used_value, SystemTime::now());
+        *last_used_value = SystemTime::now();
 
         // Perform an early drop of the lock (frees up write lock early)
         drop(last_used_value);

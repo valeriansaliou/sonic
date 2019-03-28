@@ -18,7 +18,6 @@ use std::fmt;
 use std::fs::{self, File};
 use std::io::BufWriter;
 use std::iter::FromIterator;
-use std::mem;
 use std::path::PathBuf;
 use std::str;
 use std::sync::{Arc, Mutex, RwLock};
@@ -564,7 +563,10 @@ impl StoreFST {
             //   and predictible tick time in the future.
             let mut last_consolidated_value = self.last_consolidated.write().unwrap();
 
-            mem::replace(&mut *last_consolidated_value, SystemTime::now());
+            *last_consolidated_value = SystemTime::now();
+
+            // Perform an early drop of the lock (frees up write lock early)
+            drop(last_consolidated_value);
 
             info!("graph consolidation scheduled on pool key: {}", self.target);
         } else {
