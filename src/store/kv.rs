@@ -7,7 +7,8 @@
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
 use hashbrown::HashMap;
 use rocksdb::{
-    DBCompactionStyle, DBCompressionType, DBVector, Error as DBError, Options as DBOptions, DB,
+    DBCompactionStyle, DBCompressionType, DBVector, Error as DBError, Options as DBOptions,
+    WriteBatch, DB,
 };
 use std::fmt;
 use std::fs;
@@ -22,7 +23,7 @@ use super::generic::{
 };
 use super::identifiers::*;
 use super::item::StoreItemPart;
-use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher, StoreKeyerPrefix};
+use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher, StoreKeyerKey, StoreKeyerPrefix};
 use crate::APP_CONF;
 
 pub struct StoreKVPool;
@@ -717,10 +718,8 @@ impl<'a> StoreKVAction<'a> {
         Ok(count)
     }
 
-    pub fn batch_erase_bucket(&self) -> Result<u32, ()> {
+    pub fn batch_erase_bucket(&self) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let mut count = 0;
-
             // Generate all key prefix values (with dummy post-prefix values; we dont care)
             let (k_meta_to_value, k_term_to_iids, k_oid_to_iid, k_iid_to_oid, k_iid_to_terms) = (
                 StoreKeyerBuilder::meta_to_value(self.bucket.as_str(), &StoreMetaKey::IIDIncr),
@@ -746,68 +745,66 @@ impl<'a> StoreKVAction<'a> {
                     key_prefix
                 );
 
-                // Open database key prefix iterator
-                let mut db_prefix_iter = store.database.raw_iterator();
+                // Generate start and end prefix for batch delete (in other words, the minimum \
+                //   key value possible, and the highest key value possible)
+                let key_prefix_start: StoreKeyerKey = [
+                    key_prefix[0],
+                    key_prefix[1],
+                    key_prefix[2],
+                    key_prefix[3],
+                    key_prefix[4],
+                    0,
+                    0,
+                    0,
+                    0,
+                ];
+                let key_prefix_end: StoreKeyerKey = [
+                    key_prefix[0],
+                    key_prefix[1],
+                    key_prefix[2],
+                    key_prefix[3],
+                    key_prefix[4],
+                    255,
+                    255,
+                    255,
+                    255,
+                ];
 
-                // Seek the first key starting with prefix; if the database is large, this saves a \
-                //   bit of search time (ie. iterations).
-                db_prefix_iter.seek(key_prefix);
+                // Batch-delete keys matching range
+                let mut batch = WriteBatch::default();
 
-                // Engage in the scan loop
-                // Notice: as RocksDB keys are ordered, we can simply seek to the first key \
-                //   matching prefix, and iterate until we get a key that does not match prefix.
-                while db_prefix_iter.valid() == true {
-                    if let Some(found_key) = db_prefix_iter.key() {
-                        // Found prefix key?
-                        if found_key.starts_with(key_prefix) == true {
-                            debug!(
-                                "store batch erase bucket: {} found key: {:?} (N{})",
-                                self.bucket.as_str(),
-                                found_key,
-                                count
-                            );
-
-                            // Remove key, and seek next matching key (until we hit \
-                            //   against last match)
-                            if let Err(err) = store.database.delete(found_key) {
-                                // Error deleting the key, abort flush there.
-                                error!("failed removing key in store batch erase bucket: {}", err);
-
-                                return Err(());
-                            }
-
-                            count += 1;
-
-                            // Move to next item, and continue the loop to next key
-                            db_prefix_iter.next();
-
-                            continue;
-                        }
-
-                        debug!(
-                            "store batch erase bucket: {} end scan on key: {:?} (no prefix match)",
+                if batch
+                    .delete_range(&key_prefix_start, &key_prefix_end)
+                    .is_ok()
+                    == true
+                {
+                    // Commit operation to database
+                    if let Err(err) = store.database.write(batch) {
+                        error!(
+                            "failed in store batch erase bucket: {} with error: {}",
                             self.bucket.as_str(),
-                            found_key
+                            err
+                        );
+                    } else {
+                        debug!(
+                            "succeeded in store batch erase bucket: {}",
+                            self.bucket.as_str()
                         );
                     }
-
-                    info!(
-                        "store batch erase bucket: {} scan can be ended",
+                } else {
+                    error!(
+                        "error stacking range delete in store batch erase bucket: {}",
                         self.bucket.as_str()
                     );
-
-                    // Break the loop by default (scanned key does not match prefix)
-                    break;
                 }
             }
 
             info!(
-                "done processing store batch erase bucket: {}; affected {} keys",
-                self.bucket.as_str(),
-                count
+                "done processing store batch erase bucket: {}",
+                self.bucket.as_str()
             );
 
-            Ok(count)
+            Ok(())
         } else {
             Err(())
         }

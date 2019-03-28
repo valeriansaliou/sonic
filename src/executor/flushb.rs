@@ -34,11 +34,11 @@ impl ExecutorFlushB {
                     // Notice: we cannot use the provided KV bucket erasure helper there, as \
                     //   erasing a bucket requires a database lock, which would incur a dead-lock, \
                     //   thus we need to perform the erasure from there.
-                    if let Ok(erase_count) = kv_action.batch_erase_bucket() {
+                    if kv_action.batch_erase_bucket().is_ok() == true {
                         if StoreFSTActionBuilder::erase(collection, Some(bucket)).is_ok() == true {
                             debug!("done with bucket erasure");
 
-                            return Ok(erase_count);
+                            return Ok(1);
                         }
                     }
                 } else {

@@ -28,7 +28,7 @@ enum StoreKeyerIdx<'a> {
     IIDToTerms(StoreObjectIID),
 }
 
-type StoreKeyerKey = [u8; 9];
+pub type StoreKeyerKey = [u8; 9];
 pub type StoreKeyerPrefix = [u8; 5];
 
 impl<'a> StoreKeyerIdx<'a> {
