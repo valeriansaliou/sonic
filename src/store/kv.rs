@@ -718,7 +718,7 @@ impl<'a> StoreKVAction<'a> {
         Ok(count)
     }
 
-    pub fn batch_erase_bucket(&self) -> Result<(), ()> {
+    pub fn batch_erase_bucket(&self) -> Result<u32, ()> {
         if let Some(ref store) = self.store {
             // Generate all key prefix values (with dummy post-prefix values; we dont care)
             let (k_meta_to_value, k_term_to_iids, k_oid_to_iid, k_iid_to_oid, k_iid_to_terms) = (
@@ -809,7 +809,7 @@ impl<'a> StoreKVAction<'a> {
                 self.bucket.as_str()
             );
 
-            Ok(())
+            Ok(1)
         } else {
             Err(())
         }
