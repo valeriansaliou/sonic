@@ -786,6 +786,11 @@ impl<'a> StoreKVAction<'a> {
                             err
                         );
                     } else {
+                        // Ensure last key is deleted (as RocksDB end key is exclusive; while \
+                        //   start key is inclusive, we need to ensure the end-of-range key is \
+                        //   deleted)
+                        store.database.delete(&key_prefix_end).ok();
+
                         debug!(
                             "succeeded in store batch erase bucket: {}",
                             self.bucket.as_str()
