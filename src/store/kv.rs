@@ -159,8 +159,13 @@ impl StoreKVBuilder {
             DBCompressionType::None
         });
 
+        db_options.set_max_open_files(if let Some(value) = APP_CONF.store.kv.database.max_files {
+            value as i32
+        } else {
+            -1
+        });
+
         db_options.increase_parallelism(APP_CONF.store.kv.database.parallelism as i32);
-        db_options.set_max_open_files(APP_CONF.store.kv.database.max_files as i32);
         db_options
             .set_max_background_compactions(APP_CONF.store.kv.database.max_compactions as i32);
         db_options.set_max_background_flushes(APP_CONF.store.kv.database.max_flushes as i32);

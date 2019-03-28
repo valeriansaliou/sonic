@@ -84,8 +84,7 @@ pub struct ConfigStoreKVDatabase {
     #[serde(default = "defaults::store_kv_database_parallelism")]
     pub parallelism: u16,
 
-    #[serde(default = "defaults::store_kv_database_max_files")]
-    pub max_files: u16,
+    pub max_files: Option<u32>,
 
     #[serde(default = "defaults::store_kv_database_max_compactions")]
     pub max_compactions: u16,
