@@ -31,7 +31,7 @@ serde_derive = "1.0"
 graceful = "0.1"
 rand = "0.6"
 unicode-segmentation = "1.2"
-rocksdb = { version = "0.12", features = ["lz4"] }
+rocksdb = { git = "https://github.com/baptistejamin/rust-rocksdb", features = ["lz4"] }
 fst = "0.3"
 fst-levenshtein = "0.2"
 fst-regex = "0.2"
