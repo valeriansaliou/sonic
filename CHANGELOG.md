@@ -5,30 +5,30 @@ Sonic Changelog
 
 ### Bug Fixes
 
-* A store acquire lock has been added to prevent 2 concurrent threads from opening the same collection at the same time [@valeriansaliou, 2628077ebe7e24155975962471e7653745a0add7].
+* A store acquire lock has been added to prevent 2 concurrent threads from opening the same collection at the same time [[@valeriansaliou](https://github.com/valeriansaliou), 2628077ebe7e24155975962471e7653745a0add7].
 
 ## 1.1.7 (2019-03-27)
 
 ### Bug Fixes
 
-* A superfluous mutex was removed from KV and FST store managers, in an attempt to solve a rare dead-lock occurring on high-traffic Sonic setups in the KV store [@valeriansaliou, 60566d2f087fd6725dba4a60c3c5a3fef7e8399b].
+* A superfluous mutex was removed from KV and FST store managers, in an attempt to solve a rare dead-lock occurring on high-traffic Sonic setups in the KV store [[@valeriansaliou](https://github.com/valeriansaliou), 60566d2f087fd6725dba4a60c3c5a3fef7e8399b].
 
 ## 1.1.6 (2019-03-27)
 
 ### Changes
 
-* Reverted changes made in `v1.1.5` regarding the open files `rlimit`, as this can be set from outside Sonic [@valeriansaliou, f6400c61a9a956130ae0bdaa9a164f4955cd2a18].
+* Reverted changes made in `v1.1.5` regarding the open files `rlimit`, as this can be set from outside Sonic [[@valeriansaliou](https://github.com/valeriansaliou), f6400c61a9a956130ae0bdaa9a164f4955cd2a18].
 * Added Chinese Traditional stopwords [@dsewnr, #87].
 
 ### Bug Fixes
 
-* Improved the way database locking is handled when calling a pool janitor; this prevents potential dead-locks under high load [@valeriansaliou, fa783728fd27a116b8dcf9a7180740d204b69aa4].
+* Improved the way database locking is handled when calling a pool janitor; this prevents potential dead-locks under high load [[@valeriansaliou](https://github.com/valeriansaliou), fa783728fd27a116b8dcf9a7180740d204b69aa4].
 
 ## 1.1.5 (2019-03-27)
 
 ### New Features
 
-* Added the `server.limit_open_files` configuration variable to allow configuring `rlimit` [@valeriansaliou].
+* Added the `server.limit_open_files` configuration variable to allow configuring `rlimit` [[@valeriansaliou](https://github.com/valeriansaliou)].
 
 ## 1.1.4 (2019-03-27)
 
@@ -39,56 +39,56 @@ Sonic Changelog
 
 ### New Features
 
-* Automatically adjust `rlimit` for the process to the hard limit allowed by the system (allows opening more FSTs in parallel) [@valeriansaliou].
+* Automatically adjust `rlimit` for the process to the hard limit allowed by the system (allows opening more FSTs in parallel) [[@valeriansaliou](https://github.com/valeriansaliou)].
 
 ## 1.1.3 (2019-03-25)
 
 ### Changes
 
-* Limit the size of words that can hit against the FST graph, as the FST gets slower for long words [@valeriansaliou, #81].
+* Limit the size of words that can hit against the FST graph, as the FST gets slower for long words [[@valeriansaliou](https://github.com/valeriansaliou), #81].
 
 ### Bug Fixes
 
-* Rework Sonic Channel buffer management using a VecDeque (Sonic should now work better in harsh network environments) [@valeriansaliou, 1c2b9c8fcd28b033a7cb80d678c388ce78ab989d].
+* Rework Sonic Channel buffer management using a VecDeque (Sonic should now work better in harsh network environments) [[@valeriansaliou](https://github.com/valeriansaliou), 1c2b9c8fcd28b033a7cb80d678c388ce78ab989d].
 
 ## 1.1.2 (2019-03-24)
 
 ### Changes
 
-* FST graph consolidation locking strategy has been improved even further, based on issues with the previous rework we have noticed at scale in production (now, consolidation locking is done at a lower-priority relative to actual queries and pushes to the index) [@valeriansaliou, #68].
+* FST graph consolidation locking strategy has been improved even further, based on issues with the previous rework we have noticed at scale in production (now, consolidation locking is done at a lower-priority relative to actual queries and pushes to the index) [[@valeriansaliou](https://github.com/valeriansaliou), #68].
 
 ## 1.1.1 (2019-03-24)
 
 ### Changes
 
-* FST graph consolidation locking strategy has been reworked as to allow queries to be executed lock-free when the FST consolidate task takes a lot of time (previously, queries were being deferred due to an ongoing FST consolidate task) [@valeriansaliou, #68].
-* Removed special license clause introduced in `v1.0.2`, Sonic is full `MPL 2.0` now. [@valeriansaliou]
+* FST graph consolidation locking strategy has been reworked as to allow queries to be executed lock-free when the FST consolidate task takes a lot of time (previously, queries were being deferred due to an ongoing FST consolidate task) [[@valeriansaliou](https://github.com/valeriansaliou), #68].
+* Removed special license clause introduced in `v1.0.2`, Sonic is full `MPL 2.0` now. [[@valeriansaliou](https://github.com/valeriansaliou)]
 
 ## 1.1.0 (2019-03-21)
 
 ### Breaking Changes
 
-* Change how buckets are stored in a KV-based collection (nest them in the same RocksDB database; this is much more efficient on setups with a large number of buckets - **`v1.1.0` is incompatible with the `v1.0.0` KV database format**) [@valeriansaliou].
+* Change how buckets are stored in a KV-based collection (nest them in the same RocksDB database; this is much more efficient on setups with a large number of buckets - **`v1.1.0` is incompatible with the `v1.0.0` KV database format**) [[@valeriansaliou](https://github.com/valeriansaliou)].
 
 ### Changes
 
-* Bump `jemallocator` to version `0.3` [@valeriansaliou].
+* Bump `jemallocator` to version `0.3` [[@valeriansaliou](https://github.com/valeriansaliou)].
 
 ## 1.0.2 (2019-03-20)
 
 ### Changes
 
-* Re-license from `MPL 2.0` to `SOSSL 1.0` (Sonic has a special license clause) [@valeriansaliou].
+* Re-license from `MPL 2.0` to `SOSSL 1.0` (Sonic has a special license clause) [[@valeriansaliou](https://github.com/valeriansaliou)].
 
 ## 1.0.1 (2019-03-19)
 
 ### Changes
 
-* Added automated benchmarks (can be ran via `cargo bench --features benchmark`) [@valeriansaliou].
-* Reduced the time to query the search index by 50% via optimizations (in multiple methods, eg. the lexer) [@valeriansaliou].
+* Added automated benchmarks (can be ran via `cargo bench --features benchmark`) [[@valeriansaliou](https://github.com/valeriansaliou)].
+* Reduced the time to query the search index by 50% via optimizations (in multiple methods, eg. the lexer) [[@valeriansaliou](https://github.com/valeriansaliou)].
 
 ## 1.0.0 (2019-03-18)
 
 ### New Features
 
-* Initial Sonic release [@valeriansaliou].
+* Initial Sonic release [[@valeriansaliou](https://github.com/valeriansaliou)].
