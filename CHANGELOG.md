@@ -5,24 +5,24 @@ Sonic Changelog
 
 ### Bug Fixes
 
-* A store acquire lock has been added to prevent 2 concurrent threads from opening the same collection at the same time [[@valeriansaliou](https://github.com/valeriansaliou), [2628077ebe7e24155975962471e7653745a0add7](https://github.com/valeriansaliou/sonic/commit/2628077ebe7e24155975962471e7653745a0add7)].
+* A store acquire lock has been added to prevent 2 concurrent threads from opening the same collection at the same time [[@valeriansaliou](https://github.com/valeriansaliou), [2628077](https://github.com/valeriansaliou/sonic/commit/2628077ebe7e24155975962471e7653745a0add7)].
 
 ## 1.1.7 (2019-03-27)
 
 ### Bug Fixes
 
-* A superfluous mutex was removed from KV and FST store managers, in an attempt to solve a rare dead-lock occurring on high-traffic Sonic setups in the KV store [[@valeriansaliou](https://github.com/valeriansaliou), [60566d2f087fd6725dba4a60c3c5a3fef7e8399b](https://github.com/valeriansaliou/sonic/commit/60566d2f087fd6725dba4a60c3c5a3fef7e8399b)].
+* A superfluous mutex was removed from KV and FST store managers, in an attempt to solve a rare dead-lock occurring on high-traffic Sonic setups in the KV store [[@valeriansaliou](https://github.com/valeriansaliou), [60566d2](https://github.com/valeriansaliou/sonic/commit/60566d2f087fd6725dba4a60c3c5a3fef7e8399b)].
 
 ## 1.1.6 (2019-03-27)
 
 ### Changes
 
-* Reverted changes made in `v1.1.5` regarding the open files `rlimit`, as this can be set from outside Sonic [[@valeriansaliou](https://github.com/valeriansaliou), [f6400c61a9a956130ae0bdaa9a164f4955cd2a18](https://github.com/valeriansaliou/sonic/commit/f6400c61a9a956130ae0bdaa9a164f4955cd2a18)].
-* Added Chinese Traditional stopwords [[@dsewnr](https://github.com/dsewnr), #87].
+* Reverted changes made in `v1.1.5` regarding the open files `rlimit`, as this can be set from outside Sonic [[@valeriansaliou](https://github.com/valeriansaliou), [f6400c6](https://github.com/valeriansaliou/sonic/commit/f6400c61a9a956130ae0bdaa9a164f4955cd2a18)].
+* Added Chinese Traditional stopwords [[@dsewnr](https://github.com/dsewnr), [#87](https://github.com/valeriansaliou/sonic/issues/87)].
 
 ### Bug Fixes
 
-* Improved the way database locking is handled when calling a pool janitor; this prevents potential dead-locks under high load [[@valeriansaliou](https://github.com/valeriansaliou), [fa783728fd27a116b8dcf9a7180740d204b69aa4](https://github.com/valeriansaliou/sonic/commit/fa783728fd27a116b8dcf9a7180740d204b69aa4)].
+* Improved the way database locking is handled when calling a pool janitor; this prevents potential dead-locks under high load [[@valeriansaliou](https://github.com/valeriansaliou), [fa78372](https://github.com/valeriansaliou/sonic/commit/fa783728fd27a116b8dcf9a7180740d204b69aa4)].
 
 ## 1.1.5 (2019-03-27)
 
@@ -45,23 +45,23 @@ Sonic Changelog
 
 ### Changes
 
-* Limit the size of words that can hit against the FST graph, as the FST gets slower for long words [[@valeriansaliou](https://github.com/valeriansaliou), #81].
+* Limit the size of words that can hit against the FST graph, as the FST gets slower for long words [[@valeriansaliou](https://github.com/valeriansaliou), [#81](https://github.com/valeriansaliou/sonic/issues/)].
 
 ### Bug Fixes
 
-* Rework Sonic Channel buffer management using a VecDeque (Sonic should now work better in harsh network environments) [[@valeriansaliou](https://github.com/valeriansaliou), [1c2b9c8fcd28b033a7cb80d678c388ce78ab989d](https://github.com/valeriansaliou/sonic/commit/1c2b9c8fcd28b033a7cb80d678c388ce78ab989d)].
+* Rework Sonic Channel buffer management using a VecDeque (Sonic should now work better in harsh network environments) [[@valeriansaliou](https://github.com/valeriansaliou), [1c2b9c8](https://github.com/valeriansaliou/sonic/commit/1c2b9c8fcd28b033a7cb80d678c388ce78ab989d)].
 
 ## 1.1.2 (2019-03-24)
 
 ### Changes
 
-* FST graph consolidation locking strategy has been improved even further, based on issues with the previous rework we have noticed at scale in production (now, consolidation locking is done at a lower-priority relative to actual queries and pushes to the index) [[@valeriansaliou](https://github.com/valeriansaliou), #68].
+* FST graph consolidation locking strategy has been improved even further, based on issues with the previous rework we have noticed at scale in production (now, consolidation locking is done at a lower-priority relative to actual queries and pushes to the index) [[@valeriansaliou](https://github.com/valeriansaliou), [#68](https://github.com/valeriansaliou/sonic/issues/)].
 
 ## 1.1.1 (2019-03-24)
 
 ### Changes
 
-* FST graph consolidation locking strategy has been reworked as to allow queries to be executed lock-free when the FST consolidate task takes a lot of time (previously, queries were being deferred due to an ongoing FST consolidate task) [[@valeriansaliou](https://github.com/valeriansaliou), #68].
+* FST graph consolidation locking strategy has been reworked as to allow queries to be executed lock-free when the FST consolidate task takes a lot of time (previously, queries were being deferred due to an ongoing FST consolidate task) [[@valeriansaliou](https://github.com/valeriansaliou), [#68](https://github.com/valeriansaliou/sonic/issues/)].
 * Removed special license clause introduced in `v1.0.2`, Sonic is full `MPL 2.0` now. [[@valeriansaliou](https://github.com/valeriansaliou)]
 
 ## 1.1.0 (2019-03-21)
