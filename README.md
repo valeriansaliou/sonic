@@ -137,6 +137,8 @@ You can find below a list of Sonic Channel integrations provided by the communit
 
 * **Python**:
   * **[asonic](https://github.com/moshe/asonic)** by [@moshe](https://github.com/moshe)
+* **Ruby**:
+  * **[sonic-ruby](https://github.com/atipugin/sonic-ruby)** by [@atipugin](https://github.com/atipugin)
 * **Go**:
   * **[go-sonic](https://github.com/expectedsh/go-sonic)** by [@alexisvisco](https://github.com/alexisvisco)
 * **PHP**:
