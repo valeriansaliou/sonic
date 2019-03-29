@@ -12,7 +12,7 @@ use std::vec::Vec;
 
 use super::format::unescape;
 use crate::query::builder::{QueryBuilder, QueryBuilderResult};
-use crate::query::types::{QuerySearchLimit, QuerySearchOffset};
+use crate::query::types::{QueryIngestLang, QuerySearchLang, QuerySearchLimit, QuerySearchOffset};
 use crate::store::fst::StoreFSTPool;
 use crate::store::operation::StoreOperationDispatch;
 use crate::APP_CONF;
@@ -376,8 +376,8 @@ impl ChannelCommandSearch {
                 );
 
                 // Define query parameters
-                let mut query_limit = APP_CONF.channel.search.query_limit_default;
-                let mut query_offset = 0;
+                let (mut query_limit, mut query_offset, mut query_lang) =
+                    (APP_CONF.channel.search.query_limit_default, 0, None);
 
                 // Parse meta parts (meta comes after text; extract meta parts second)
                 let mut last_meta_err = None;
@@ -385,8 +385,15 @@ impl ChannelCommandSearch {
                 while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
                 {
                     match Self::handle_query_meta(meta_result) {
-                        Ok((Some(query_limit_parsed), None)) => query_limit = query_limit_parsed,
-                        Ok((None, Some(query_offset_parsed))) => query_offset = query_offset_parsed,
+                        Ok((Some(query_limit_parsed), None, None)) => {
+                            query_limit = query_limit_parsed
+                        }
+                        Ok((None, Some(query_offset_parsed), None)) => {
+                            query_offset = query_offset_parsed
+                        }
+                        Ok((None, None, Some(query_lang_parsed))) => {
+                            query_lang = Some(query_lang_parsed)
+                        }
                         Err(parse_err) => last_meta_err = Some(parse_err),
                         _ => {}
                     }
@@ -402,8 +409,8 @@ impl ChannelCommandSearch {
                     ))
                 } else {
                     debug!(
-                        "will search for #{} with text: {}, limit: {}, offset: {}",
-                        event_id, text, query_limit, query_offset
+                        "will search for #{} with text: {}, limit: {}, offset: {}, locale: <{:?}>",
+                        event_id, text, query_limit, query_offset, query_lang
                     );
 
                     // Commit 'search' query
@@ -417,12 +424,14 @@ impl ChannelCommandSearch {
                             &text,
                             query_limit,
                             query_offset,
+                            query_lang,
                         ),
                     )
                 }
             }
             _ => Err(ChannelCommandError::InvalidFormat(
-                "QUERY <collection> <bucket> \"<terms>\" [LIMIT(<count>)]? [OFFSET(<count>)]?",
+                "QUERY <collection> <bucket> \"<terms>\" [LIMIT(<count>)]? [OFFSET(<count>)]? \
+                 [LANG(<locale>)]?",
             )),
         }
     }
@@ -491,7 +500,14 @@ impl ChannelCommandSearch {
 
     fn handle_query_meta(
         meta_result: MetaPartsResult,
-    ) -> Result<(Option<QuerySearchLimit>, Option<QuerySearchOffset>), ChannelCommandError> {
+    ) -> Result<
+        (
+            Option<QuerySearchLimit>,
+            Option<QuerySearchOffset>,
+            Option<QuerySearchLang>,
+        ),
+        ChannelCommandError,
+    > {
         match meta_result {
             Ok((meta_key, meta_value)) => {
                 debug!("handle query meta: {} = {}", meta_key, meta_value);
@@ -500,7 +516,7 @@ impl ChannelCommandSearch {
                     "LIMIT" => {
                         // 'LIMIT(<count>)' where 0 <= <count> < 2^16
                         if let Ok(query_limit_parsed) = meta_value.parse::<QuerySearchLimit>() {
-                            Ok((Some(query_limit_parsed), None))
+                            Ok((Some(query_limit_parsed), None, None))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
                                 &meta_key,
@@ -511,7 +527,18 @@ impl ChannelCommandSearch {
                     "OFFSET" => {
                         // 'OFFSET(<count>)' where 0 <= <count> < 2^32
                         if let Ok(query_offset_parsed) = meta_value.parse::<QuerySearchOffset>() {
-                            Ok((None, Some(query_offset_parsed)))
+                            Ok((None, Some(query_offset_parsed), None))
+                        } else {
+                            Err(ChannelCommandBase::make_error_invalid_meta_value(
+                                &meta_key,
+                                &meta_value,
+                            ))
+                        }
+                    }
+                    "LANG" => {
+                        // 'LANG(<locale>)' where <locale> ∈ ISO 639-3
+                        if let Some(query_lang_parsed) = QuerySearchLang::from_code(meta_value) {
+                            Ok((None, None, Some(query_lang_parsed)))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
                                 &meta_key,
@@ -570,22 +597,45 @@ impl ChannelCommandIngest {
             parts.next(),
             parts.next(),
             ChannelCommandBase::parse_text_parts(&mut parts),
-            parts.next(),
         ) {
-            (Some(collection), Some(bucket), Some(object), Some(text), None) => {
+            (Some(collection), Some(bucket), Some(object), Some(text)) => {
                 debug!(
                     "dispatching ingest push in collection: {}, bucket: {} and object: {}",
                     collection, bucket, object
                 );
                 debug!("ingest push has text: {}", text);
 
-                // Commit 'push' query
-                ChannelCommandBase::commit_ok_operation(QueryBuilder::push(
-                    collection, bucket, object, &text,
-                ))
+                // Define push parameters
+                let mut push_lang = None;
+
+                // Parse meta parts (meta comes after text; extract meta parts second)
+                let mut last_meta_err = None;
+
+                while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
+                {
+                    match Self::handle_push_meta(meta_result) {
+                        Ok(Some(push_lang_parsed)) => push_lang = Some(push_lang_parsed),
+                        Err(parse_err) => last_meta_err = Some(parse_err),
+                        _ => {}
+                    }
+                }
+
+                if let Some(err) = last_meta_err {
+                    Err(err)
+                } else {
+                    debug!(
+                        "will push for text: {} with hinted locale: <{:?}>",
+                        text, push_lang
+                    );
+
+                    // Commit 'push' query
+                    ChannelCommandBase::commit_ok_operation(QueryBuilder::push(
+                        collection, bucket, object, &text, push_lang,
+                    ))
+                }
             }
             _ => Err(ChannelCommandError::InvalidFormat(
-                "PUSH <collection> <bucket> <object> \"<text>\"",
+                "PUSH <collection> <bucket> <object> \"<text>\" [LANG(<locale>)]?",
             )),
         }
     }
@@ -689,6 +739,37 @@ impl ChannelCommandIngest {
 
     pub fn dispatch_help(parts: SplitWhitespace) -> ChannelResult {
         ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_INGEST)
+    }
+
+    fn handle_push_meta(
+        meta_result: MetaPartsResult,
+    ) -> Result<Option<QueryIngestLang>, ChannelCommandError> {
+        match meta_result {
+            Ok((meta_key, meta_value)) => {
+                debug!("handle push meta: {} = {}", meta_key, meta_value);
+
+                match meta_key {
+                    "LANG" => {
+                        // 'LANG(<locale>)' where <locale> ∈ ISO 639-3
+                        if let Some(query_lang_parsed) = QueryIngestLang::from_code(meta_value) {
+                            Ok(Some(query_lang_parsed))
+                        } else {
+                            Err(ChannelCommandBase::make_error_invalid_meta_value(
+                                &meta_key,
+                                &meta_value,
+                            ))
+                        }
+                    }
+                    _ => Err(ChannelCommandBase::make_error_invalid_meta_key(
+                        &meta_key,
+                        &meta_value,
+                    )),
+                }
+            }
+            Err(err) => Err(ChannelCommandBase::make_error_invalid_meta_key(
+                &err.0, &err.1,
+            )),
+        }
     }
 }
 

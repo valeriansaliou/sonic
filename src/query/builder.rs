@@ -5,6 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use super::query::Query;
+use super::types::{QueryIngestLang, QuerySearchLang, QuerySearchLimit, QuerySearchOffset};
 use crate::lexer::token::{TokenLexerBuilder, TokenLexerMode};
 use crate::store::item::StoreItemBuilder;
 
@@ -18,12 +19,13 @@ impl QueryBuilder {
         collection: &'a str,
         bucket: &'a str,
         terms: &'a str,
-        limit: u16,
-        offset: u32,
+        limit: QuerySearchLimit,
+        offset: QuerySearchOffset,
+        lang: Option<QuerySearchLang>,
     ) -> QueryBuilderResult<'a> {
         match (
             StoreItemBuilder::from_depth_2(collection, bucket),
-            TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup, terms),
+            TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup(lang), terms),
         ) {
             (Ok(store), Ok(text_lexed)) => {
                 Ok(Query::Search(store, query_id, text_lexed, limit, offset))
@@ -37,7 +39,7 @@ impl QueryBuilder {
         collection: &'a str,
         bucket: &'a str,
         terms: &'a str,
-        limit: u16,
+        limit: QuerySearchLimit,
     ) -> QueryBuilderResult<'a> {
         match (
             StoreItemBuilder::from_depth_2(collection, bucket),
@@ -53,10 +55,11 @@ impl QueryBuilder {
         bucket: &'a str,
         object: &'a str,
         text: &'a str,
+        lang: Option<QueryIngestLang>,
     ) -> QueryBuilderResult<'a> {
         match (
             StoreItemBuilder::from_depth_3(collection, bucket, object),
-            TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup, text),
+            TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup(lang), text),
         ) {
             (Ok(store), Ok(text_lexed)) => Ok(Query::Push(store, text_lexed)),
             _ => Err(()),
@@ -130,9 +133,10 @@ mod tests {
     #[test]
     fn it_builds_search_query() {
         assert!(
-            QueryBuilder::search("id1", "c:test:1", "b:test:1", "Michael Dake", 10, 20).is_ok()
+            QueryBuilder::search("id1", "c:test:1", "b:test:1", "Michael Dake", 10, 20, None)
+                .is_ok()
         );
-        assert!(QueryBuilder::search("id2", "c:test:1", "", "Michael Dake", 1, 0).is_err());
+        assert!(QueryBuilder::search("id2", "c:test:1", "", "Michael Dake", 1, 0, None).is_err());
     }
 
     #[test]
@@ -147,11 +151,13 @@ mod tests {
             "c:test:3",
             "b:test:3",
             "o:test:3",
-            "My name is Michael Dake. I'm ordering in the US."
+            "My name is Michael Dake. I'm ordering in the US.",
+            None
         )
         .is_ok());
         assert!(
-            QueryBuilder::push("c:test:3", "", "o:test:3", "My name is Michael Dake.").is_err()
+            QueryBuilder::push("c:test:3", "", "o:test:3", "My name is Michael Dake.", None)
+                .is_err()
         );
     }
 

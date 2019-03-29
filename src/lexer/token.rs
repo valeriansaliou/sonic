@@ -25,7 +25,7 @@ pub struct TokenLexer<'a> {
 
 #[derive(PartialEq)]
 pub enum TokenLexerMode {
-    NormalizeAndCleanup,
+    NormalizeAndCleanup(Option<Lang>),
     NormalizeOnly,
 }
 
@@ -35,16 +35,25 @@ const TEXT_LANG_DETECT_NGRAM_UNDER_CHARS: usize = 60;
 
 impl TokenLexerBuilder {
     pub fn from(mode: TokenLexerMode, text: &str) -> Result<TokenLexer, ()> {
-        // Detect text language? (if current lexer mode asks for a cleanup)
-        let locale = if mode == TokenLexerMode::NormalizeAndCleanup {
-            debug!("detecting locale from lexer text: {}", text);
+        let locale = match mode {
+            TokenLexerMode::NormalizeAndCleanup(None) => {
+                // Detect text language (current lexer mode asks for a cleanup)
+                debug!("detecting locale from lexer text: {}", text);
 
-            Self::detect_lang(text)
-        } else {
-            debug!("not detecting locale from lexer text: {}", text);
+                Self::detect_lang(text)
+            }
+            TokenLexerMode::NormalizeAndCleanup(Some(lang)) => {
+                // Use hinted language (current lexer mode asks for a cleanup)
+                debug!("using hinted locale: {} from lexer text: {}", lang, text);
 
-            // May be 'NormalizeOnly' mode; no need to perform a locale detection
-            None
+                Some(lang)
+            }
+            TokenLexerMode::NormalizeOnly => {
+                debug!("not detecting locale from lexer text: {}", text);
+
+                // May be 'NormalizeOnly' mode; no need to perform a locale detection
+                None
+            }
         };
 
         // Build final token builder iterator
@@ -228,7 +237,7 @@ impl<'a> Iterator for TokenLexer<'a> {
             let word = word.to_lowercase();
 
             // Check if normalized word is a stop-word? (if should normalize and cleanup)
-            if self.mode != TokenLexerMode::NormalizeAndCleanup
+            if self.mode == TokenLexerMode::NormalizeOnly
                 || LexerStopWord::is(&word, self.locale) == false
             {
                 // Hash the term (this is used by all iterator consumers, as well as internally \
@@ -268,7 +277,7 @@ mod tests {
     #[test]
     fn it_cleans_token_english() {
         let mut token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup,
+            TokenLexerMode::NormalizeAndCleanup(None),
             "The quick brown fox jumps over the lazy dog!",
         )
         .unwrap();
@@ -292,7 +301,7 @@ mod tests {
     #[test]
     fn it_cleans_token_french() {
         let mut token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup,
+            TokenLexerMode::NormalizeAndCleanup(None),
             "Le vif renard brun saute par dessus le chien paresseux.",
         )
         .unwrap();
@@ -321,7 +330,7 @@ mod tests {
     #[test]
     fn it_cleans_token_chinese() {
         let mut token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup,
+            TokenLexerMode::NormalizeAndCleanup(None),
             "快狐跨懒狗快狐跨懒狗",
         )
         .unwrap();
@@ -338,13 +347,39 @@ mod tests {
     #[test]
     fn it_cleans_token_emojis() {
         let mut token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup,
+            TokenLexerMode::NormalizeAndCleanup(None),
             "🚀 🙋‍♂️🙋‍♂️🙋‍♂️",
         )
         .unwrap();
 
         assert_eq!(token_cleaner.locale, None);
         assert_eq!(token_cleaner.next(), None);
+    }
+
+    #[test]
+    fn it_cleans_token_lang_hinted() {
+        let mut token_cleaner_right = TokenLexerBuilder::from(
+            TokenLexerMode::NormalizeAndCleanup(Some(Lang::Eng)),
+            "This will be cleaned properly, as English was hinted rightfully so.",
+        )
+        .unwrap();
+        let mut token_cleaner_wrong = TokenLexerBuilder::from(
+            TokenLexerMode::NormalizeAndCleanup(Some(Lang::Fra)),
+            "This will not be cleaned properly, as French was hinted but this is English.",
+        )
+        .unwrap();
+
+        assert_eq!(token_cleaner_right.locale, Some(Lang::Eng));
+        assert_eq!(token_cleaner_wrong.locale, Some(Lang::Fra));
+
+        assert_eq!(
+            token_cleaner_right.next(),
+            Some(("cleaned".to_string(), 3550382624))
+        );
+        assert_eq!(
+            token_cleaner_wrong.next(),
+            Some(("this".to_string(), 493303710))
+        );
     }
 
     #[test]
@@ -409,7 +444,7 @@ mod benches {
     fn bench_clean_token_english_regular_build(b: &mut Bencher) {
         b.iter(|| {
             TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup,
+                TokenLexerMode::NormalizeAndCleanup(None),
                 "The quick brown fox jumps over the lazy dog!",
             )
         });
@@ -419,7 +454,7 @@ mod benches {
     fn bench_clean_token_english_regular_exhaust(b: &mut Bencher) {
         b.iter(|| {
             let token_cleaner = TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup,
+                TokenLexerMode::NormalizeAndCleanup(None),
                 "The quick brown fox jumps over the lazy dog!",
             )
             .unwrap();
@@ -432,7 +467,7 @@ mod benches {
     fn bench_clean_token_english_long_exhaust(b: &mut Bencher) {
         b.iter(|| {
             let token_cleaner = TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup,
+                TokenLexerMode::NormalizeAndCleanup(None),
                 r#"Running an electrical current through water splits it into oxygen and hydrogen,
                 the latter of which can be used as a reliable, zero-emission fuel source. In the
                 past, the process of purifying water beforehand was too energy intensive for this
@@ -447,15 +482,42 @@ mod benches {
 
     #[bench]
     fn bench_clean_token_chinese_build(b: &mut Bencher) {
-        b.iter(|| TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup, "快狐跨懒狗"));
+        b.iter(|| {
+            TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup(None), "快狐跨懒狗")
+        });
     }
 
     #[bench]
     fn bench_clean_token_chinese_exhaust(b: &mut Bencher) {
         b.iter(|| {
-            let token_cleaner =
-                TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup, "快狐跨懒狗")
-                    .unwrap();
+            let token_cleaner = TokenLexerBuilder::from(
+                TokenLexerMode::NormalizeAndCleanup(None),
+                "快狐跨懒狗",
+            )
+            .unwrap();
+
+            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
+        });
+    }
+
+    #[bench]
+    fn bench_clean_token_english_hinted_build(b: &mut Bencher) {
+        b.iter(|| {
+            TokenLexerBuilder::from(
+                TokenLexerMode::NormalizeAndCleanup(Some(Lang::Eng)),
+                "The quick brown fox jumps over the lazy dog!",
+            )
+        });
+    }
+
+    #[bench]
+    fn bench_clean_token_english_hinted_exhaust(b: &mut Bencher) {
+        b.iter(|| {
+            let token_cleaner = TokenLexerBuilder::from(
+                TokenLexerMode::NormalizeAndCleanup(Some(Lang::Eng)),
+                "The quick brown fox jumps over the lazy dog!",
+            )
+            .unwrap();
 
             token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
         });
