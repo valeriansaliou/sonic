@@ -6,4 +6,5 @@
 
 mod stopwords;
 
+pub mod ranges;
 pub mod token;

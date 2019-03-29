@@ -28,6 +28,7 @@ use super::generic::{
     StoreGeneric, StoreGenericActionBuilder, StoreGenericBuilder, StoreGenericPool,
 };
 use super::keyer::StoreKeyerHasher;
+use crate::lexer::ranges::LexerRegexRange;
 use crate::APP_CONF;
 
 pub struct StoreFSTPool;
@@ -71,8 +72,6 @@ type StoreFSTAtom = u32;
 type StoreFSTBox = Arc<StoreFST>;
 
 const WORD_LIMIT_LENGTH: usize = 40;
-
-static LOOKUP_REGEX_RANGE_LATIN: &'static str = "[\\x{0000}-\\x{024F}]";
 
 lazy_static! {
     pub static ref GRAPH_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
@@ -507,8 +506,28 @@ impl StoreFST {
         //   We found out that the 'match any' syntax ('.*') was super-slow. Using the restrictive \
         //   syntax below divided the cost of eg. a search query by 2. The regex below has been \
         //   found out to be nearly zero-cost to compile and execute, for whatever reason.
-        let regex_str = format!("{}({}*)", regex_escape(word), LOOKUP_REGEX_RANGE_LATIN);
+        // Regex format: '{escaped_word}([{unicode_range}]*)'
+        let mut regex_str = regex_escape(word);
 
+        regex_str.push_str("(");
+
+        let write_result = LexerRegexRange::from(word)
+            .unwrap_or_default()
+            .write_to(&mut regex_str);
+
+        regex_str.push_str("*)");
+
+        // Regex write failed? (this should not happen)
+        if let Err(err) = write_result {
+            error!(
+                "could not lookup word in fst via 'begins': {} because regex write failed: {}",
+                word, err
+            );
+
+            return Err(());
+        }
+
+        // Proceed word lookup
         debug!(
             "looking-up word in fst via 'begins': {} with regex: {}",
             word, regex_str
