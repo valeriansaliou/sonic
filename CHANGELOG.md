@@ -18,7 +18,7 @@ Sonic Changelog
 ### Changes
 
 * Reverted changes made in `v1.1.5` regarding the open files `rlimit`, as this can be set from outside Sonic [[@valeriansaliou](https://github.com/valeriansaliou), f6400c61a9a956130ae0bdaa9a164f4955cd2a18].
-* Added Chinese Traditional stopwords [@dsewnr, #87].
+* Added Chinese Traditional stopwords [[@dsewnr](https://github.com/dsewnr), #87].
 
 ### Bug Fixes
 
@@ -34,8 +34,8 @@ Sonic Changelog
 
 ### Changes
 
-* Added Kannada stopwords [@dileepbapat].
-* The Docker image is now much lighter [@codeflows].
+* Added Kannada stopwords [[@dileepbapat](https://github.com/dileepbapat)].
+* The Docker image is now much lighter [[@codeflows](https://github.com/codeflows)].
 
 ### New Features
 
