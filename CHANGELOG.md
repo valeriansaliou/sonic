@@ -45,7 +45,7 @@ Sonic Changelog
 
 ### Changes
 
-* Limit the size of words that can hit against the FST graph, as the FST gets slower for long words [[@valeriansaliou](https://github.com/valeriansaliou), [#81](https://github.com/valeriansaliou/sonic/issues/)].
+* Limit the size of words that can hit against the FST graph, as the FST gets slower for long words [[@valeriansaliou](https://github.com/valeriansaliou), [#81](https://github.com/valeriansaliou/sonic/issues/81)].
 
 ### Bug Fixes
 
@@ -55,13 +55,13 @@ Sonic Changelog
 
 ### Changes
 
-* FST graph consolidation locking strategy has been improved even further, based on issues with the previous rework we have noticed at scale in production (now, consolidation locking is done at a lower-priority relative to actual queries and pushes to the index) [[@valeriansaliou](https://github.com/valeriansaliou), [#68](https://github.com/valeriansaliou/sonic/issues/)].
+* FST graph consolidation locking strategy has been improved even further, based on issues with the previous rework we have noticed at scale in production (now, consolidation locking is done at a lower-priority relative to actual queries and pushes to the index) [[@valeriansaliou](https://github.com/valeriansaliou), [#68](https://github.com/valeriansaliou/sonic/issues/68)].
 
 ## 1.1.1 (2019-03-24)
 
 ### Changes
 
-* FST graph consolidation locking strategy has been reworked as to allow queries to be executed lock-free when the FST consolidate task takes a lot of time (previously, queries were being deferred due to an ongoing FST consolidate task) [[@valeriansaliou](https://github.com/valeriansaliou), [#68](https://github.com/valeriansaliou/sonic/issues/)].
+* FST graph consolidation locking strategy has been reworked as to allow queries to be executed lock-free when the FST consolidate task takes a lot of time (previously, queries were being deferred due to an ongoing FST consolidate task) [[@valeriansaliou](https://github.com/valeriansaliou), [#68](https://github.com/valeriansaliou/sonic/issues/68)].
 * Removed special license clause introduced in `v1.0.2`, Sonic is full `MPL 2.0` now. [[@valeriansaliou](https://github.com/valeriansaliou)]
 
 ## 1.1.0 (2019-03-21)
