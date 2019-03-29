@@ -8,6 +8,7 @@ We consider here the packaging flow of Sonic version `1.0.0`, for target archite
 1. **How to bump Sonic version before a release:**
     1. Bump version in `Cargo.toml` to `1.0.0`
     2. Execute `cargo update` to bump `Cargo.lock`
+    3. Update the `CHANGELOG.md` file
 
 2. **How to build Sonic for Linux on Debian:**
     1. `apt-get install -y git build-essential clang`
