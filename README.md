@@ -142,7 +142,6 @@ You can find below a list of Sonic Channel integrations provided by the communit
 * **Go**:
   * **[go-sonic](https://github.com/expectedsh/go-sonic)** by [@alexisvisco](https://github.com/alexisvisco)
 * **PHP**:
-  * **[php-sonic](https://github.com/seijikun/php-sonic)** by [@seijikun](https://github.com/seijikun)
   * **[php-sonic](https://github.com/php-sonic/php-sonic)** by [@touhonoob](https://github.com/touhonoob)
 * **Java**:
   * **[java-sonic](https://github.com/twohou/java-sonic)** by [@touhonoob](https://github.com/touhonoob)
