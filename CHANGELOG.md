@@ -1,6 +1,21 @@
 Sonic Changelog
 ===============
 
+## 1.1.9 (2019-03-29)
+
+### Bug Fixes
+
+* RocksDB has been bumped to `v5.18.3`, which fixes a dead-lock occuring in RocksDB at scale when a compaction task is ran under heavy disk writes (ie. disk flushes). This dead-lock was causing Sonic to stop responding to any command issued for the frozen collection. This dead-lock was caused by RocksDB internals (not originating from Sonic itself) [[@baptistejamin](https://github.com/baptistejamin), [19c4a10](https://github.com/baptistejamin/sonic/commit/19c4a104a6d6aaed1dd9beb2e51d2639627825cd)].
+
+### Changes
+
+* Reworked the `FLUSHB` command internals, which now use the atomic `delete_range()` operation provided by RocksDB `v5.18` [[@valeriansaliou](https://github.com/valeriansaliou), [660f8b7](https://github.com/valeriansaliou/sonic/commit/660f8b714d968400fb9f88a245752dca02249bf7)].
+
+### New Features
+
+* Added the `LANG(<locale>)` command modifier for `QUERY` and `PUSH`, that lets a Sonic Channel client force a text locale (instead of letting the lexer system guess the text language) [[@valeriansaliou](https://github.com/valeriansaliou), [#75](https://github.com/valeriansaliou/sonic/issues/75)].
+* The FST word lookup system, used by the `SUGGEST` command, now support all scripts via a restricted Unicode range forward scan [[@valeriansaliou](https://github.com/valeriansaliou), [#64](https://github.com/valeriansaliou/sonic/issues/64)].
+
 ## 1.1.8 (2019-03-27)
 
 ### Bug Fixes
