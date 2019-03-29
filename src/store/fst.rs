@@ -912,15 +912,12 @@ impl StoreFSTMisc {
 }
 
 impl StoreFSTKey {
-    pub fn from_atom(collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) -> StoreFSTKey {
-        StoreFSTKey {
-            collection_hash: collection_hash,
-            bucket_hash: bucket_hash,
-        }
+    pub fn from_atom(collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) -> Self {
+        Self { collection_hash, bucket_hash }
     }
 
-    pub fn from_str(collection_str: &str, bucket_str: &str) -> StoreFSTKey {
-        StoreFSTKey {
+    pub fn from_str(collection_str: &str, bucket_str: &str) -> Self {
+        Self {
             collection_hash: StoreKeyerHasher::to_compact(collection_str),
             bucket_hash: StoreKeyerHasher::to_compact(bucket_str),
         }
