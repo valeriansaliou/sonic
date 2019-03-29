@@ -5,7 +5,7 @@ Sonic Changelog
 
 ### Bug Fixes
 
-* RocksDB has been bumped to `v5.18.3`, which fixes a dead-lock occuring in RocksDB at scale when a compaction task is ran under heavy disk writes (ie. disk flushes). This dead-lock was causing Sonic to stop responding to any command issued for the frozen collection. This dead-lock was caused by RocksDB internals (not originating from Sonic itself) [[@baptistejamin](https://github.com/baptistejamin), [19c4a10](https://github.com/baptistejamin/sonic/commit/19c4a104a6d6aaed1dd9beb2e51d2639627825cd)].
+* RocksDB has been bumped to `v5.18.3`, which fixes a dead-lock occuring in RocksDB at scale when a compaction task is ran under heavy disk writes (ie. disk flushes). This dead-lock was causing Sonic to stop responding to any command issued for the frozen collection. This dead-lock was due to a bug in RocksDB internals (not originating from Sonic itself) [[@baptistejamin](https://github.com/baptistejamin), [19c4a10](https://github.com/baptistejamin/sonic/commit/19c4a104a6d6aaed1dd9beb2e51d2639627825cd)].
 
 ### Changes
 
