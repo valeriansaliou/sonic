@@ -146,6 +146,8 @@ You can find below a list of Sonic Channel integrations provided by the communit
   * **[php-sonic](https://github.com/php-sonic/php-sonic)** by [@touhonoob](https://github.com/touhonoob)
 * **Java**:
   * **[java-sonic](https://github.com/twohou/java-sonic)** by [@touhonoob](https://github.com/touhonoob)
+* **Elixir**:
+  * **[sonix](https://github.com/imerkle/sonix)** by [@imerkle](https://github.com/imerkle)
 
 _ℹ️ Cannot find the library for your programming language? Build your own and be referenced here! ([contact me](https://valeriansaliou.name/))_
 
