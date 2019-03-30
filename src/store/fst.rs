@@ -153,6 +153,10 @@ impl StoreFSTPool {
         let mut keys_consolidate: Vec<StoreFSTKey> = Vec::new();
 
         {
+            // Acquire access lock (in blocking write mode), and reference it in context
+            // Notice: this prevents store to be acquired from any context
+            let _access = GRAPH_ACCESS_LOCK.write().unwrap();
+
             let graph_consolidate_read = GRAPH_CONSOLIDATE.read().unwrap();
 
             for key in &*graph_consolidate_read {
@@ -193,6 +197,10 @@ impl StoreFSTPool {
 
         // Step 2: Clear keys to be consolidated from register
         {
+            // Acquire access lock (in blocking write mode), and reference it in context
+            // Notice: this prevents store to be acquired from any context
+            let _access = GRAPH_ACCESS_LOCK.write().unwrap();
+
             let mut graph_consolidate_write = GRAPH_CONSOLIDATE.write().unwrap();
 
             for key in &keys_consolidate {
