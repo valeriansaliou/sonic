@@ -48,8 +48,8 @@ Sonic is integrated in all Crisp search products on the [Crisp](https://crisp.ch
 * **Insert and remove items in the index**; index-altering operations are light and can be committed to the server while it is running. A background tasker handles the job of consolidating the index so that the entries you have pushed or popped are quickly made available for search.
 * **Auto-complete any word** in real-time via the suggest operation. This helps build a snappy word suggestion feature in your end-user search interface.
 * **Full Unicode compatibility** on 80+ most spoken languages in the world. Sonic removes useless stop words from any text (eg. 'the' in English), after guessing the text language. This ensures any searched or ingested text is clean before it hits the index; [see languages](https://github.com/valeriansaliou/sonic#which-text-languages-are-supported).
-* **Networked channel interface (Sonic Channel)**, that let you search your index, manage data ingestion (push in the index, pop from the index, flush a collection, flush a bucket, etc.) and perform administrative actions. The Sonic Channel protocol was designed to be lightweight on resources and simple to integrate with (the protocol is specified in the sections below); [read protocol specification](https://github.com/valeriansaliou/sonic/blob/master/PROTOCOL.md).
-* **Easy-to-use libraries**, that let you connect to Sonic Channel from your apps; [see libraries](https://github.com/valeriansaliou/sonic#-sonic-channel-libraries).
+* **Simple protocol (Sonic Channel)**, that let you search your index, manage data ingestion (push in the index, pop from the index, flush a collection, flush a bucket, etc.) and perform administrative actions. Sonic Channel was designed to be lightweight on resources and simple to integrate with; [read protocol specification](https://github.com/valeriansaliou/sonic/blob/master/PROTOCOL.md).
+* **Easy-to-use libraries**, that let you connect to Sonic from your apps; [see libraries](https://github.com/valeriansaliou/sonic#-sonic-channel-libraries).
 
 ## How to use it?
 
@@ -97,11 +97,11 @@ docker run -p 1491:1491 -v /path/to/your/sonic/config.cfg:/etc/sonic.cfg -v /pat
 
 In the configuration file, ensure that:
 
-* `channel.inet` is set to `0.0.0.0:1491` (this lets Sonic Channel be reached from outside the container)
+* `channel.inet` is set to `0.0.0.0:1491` (this lets sonic be reached from outside the container)
 * `store.kv.path` is set to `/var/lib/sonic/store/kv/` (this lets the external KV store directory be reached by Sonic)
 * `store.fst.path` is set to `/var/lib/sonic/store/fst/` (this lets the external FST store directory be reached by Sonic)
 
-Sonic Channel will be reachable from `tcp://localhost:1491`.
+Sonic will be reachable from `tcp://localhost:1491`.
 
 ### Configuration
 
@@ -117,7 +117,7 @@ Sonic can be run as such:
 
 ## Perform searches and manage objects
 
-Both searches and object management (ie. data ingestion) is handled via the Sonic Channel protocol only. As we want to keep things simple with Sonic (similarly to how Redis does), connecting to Sonic Channel is the way to go when you need to interact with the Sonic search database.
+Both searches and object management (i.e. data ingestion) is handled via the Sonic Channel protocol only. As we want to keep things simple with Sonic (similarly to how Redis does it), Sonic does not offer a HTTP endpoint or similar; connecting via Sonic Channel is the way to go when you need to interact with the Sonic search database.
 
 Sonic distributes official libraries, that let you integrate Sonic to your apps easily. Click on a library below to see library integration documentation and code.
 
@@ -127,14 +127,14 @@ _If you are looking for details on the raw Sonic Channel TCP-based protocol, you
 
 #### 1️⃣ Official Libraries
 
-Sonic distributes official Sonic Channel bindings for your programming language:
+Sonic distributes official Sonic integration libraries for your programming language:
 
 * **NodeJS**:
   * **[node-sonic-channel](https://www.npmjs.com/package/sonic-channel)** by [@valeriansaliou](https://github.com/valeriansaliou)
 
 #### 2️⃣ Community Libraries
 
-You can find below a list of Sonic Channel integrations provided by the community (many thanks to them!):
+You can find below a list of Sonic integrations provided by the community (many thanks to them!):
 
 * **Python**:
   * **[asonic](https://github.com/moshe/asonic)** by [@moshe](https://github.com/moshe)
@@ -292,7 +292,7 @@ QUERY     | 880μs   | 852μs | 1ms
 * **Indexed data limits**: Sonic is designed for large search indexes split over thousands of search buckets per collection. An IID (ie. Internal-ID) is stored in the index as a 32 bits number, which theoretically allow up to ~4.2 billion objects to be indexed (ie. OID) per bucket. We've observed storage savings of 30% to 40%, which justifies the trade-off on large databases (versus Sonic using 64 bits IIDs). Also, Sonic only keeps the N most recently pushed results for a given word, in a sliding window way (the sliding window width can be configured).
 * **Search query limits**: Sonic Natural Language Processing system (NLP) does not work at the sentence-level, for storage compactness reasons (we keep the FST graph shallow as to reduce time and space complexity). It works at the word-level, and is thus able to search per-word and can predict a word based on user input, though it is unable to predict the next word in a sentence.
 * **Real-time limits**: the FST needs to be rebuilt every time a word is pushed or popped from the bucket graph. As this is quite heavy, Sonic batches rebuild cycles. If you have just pushed a new word to the index and you are not seeing it in the `SUGGEST` command yet, wait for the next rebuild cycle to kick-in, or force it with `TRIGGER consolidate` in a `control` channel.
-* **Interoperability limits**: Sonic Channel protocol is the only way to read and write search entries to the Sonic search index. Sonic does not expose any HTTP API. Sonic Channel has been built with performance and minimal network footprint in mind. If you need to access Sonic Channel from an unsupported programming language, you can either [open an issue](https://github.com/valeriansaliou/sonic/issues/new) or look at the reference [node-sonic-channel](https://github.com/valeriansaliou/node-sonic-channel) implementation and build it in your target programming language.
+* **Interoperability limits**: The Sonic Channel protocol is the only way to read and write search entries to the Sonic search index. Sonic does not expose any HTTP API. Sonic Channel has been designed with performance and minimal network footprint in mind. If you need to access Sonic from an unsupported programming language, you can either [open an issue](https://github.com/valeriansaliou/sonic/issues/new) or look at the reference [node-sonic-channel](https://github.com/valeriansaliou/node-sonic-channel) implementation and build it in your target programming language.
 * **Hardware limits**: Sonic performs the search on the file-system directly; ie. it does not fit the index in RAM. A search query results in a lot of random accesses on the disk, which means that it will be quite slow on old-school HDDs and super-fast on newer SSDs. Do store the Sonic database on SSD-backed file systems only.
 
 ## :fire: Report A Vulnerability

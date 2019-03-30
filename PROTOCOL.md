@@ -3,13 +3,13 @@ Sonic Protocol
 
 # ⚡️ Sonic Channel
 
-**Sonic Channel is used to perform searches and ingest index data. You can also use it for Sonic administration operations. Sonic Channel listens on TCP port 1491.**
+**Sonic Channel is the protocol used to perform searches and ingest index data. You can also use it for Sonic administration operations. Sonic listens on TCP port 1491 by default.**
 
 This document specifies the Sonic Channel protocol. Use it if you are looking to build your own Sonic Channel library, or if you are looking to debug Sonic using eg. `telnet` in command-line.
 
 To start a `telnet` session with your local Sonic instance, execute: `telnet ::1 1491`
 
-_Refer to sections below to interact with Sonic Channel._
+_Refer to sections below to interact with Sonic._
 
 ---
 
