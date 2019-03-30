@@ -129,7 +129,8 @@ _If you are looking for details on the raw Sonic Channel TCP-based protocol, you
 
 Sonic distributes official Sonic Channel bindings for your programming language:
 
-* **NodeJS**: **[node-sonic-channel](https://www.npmjs.com/package/sonic-channel)** by [@valeriansaliou](https://github.com/valeriansaliou)
+* **NodeJS**:
+  * **[node-sonic-channel](https://www.npmjs.com/package/sonic-channel)** by [@valeriansaliou](https://github.com/valeriansaliou)
 
 #### 2️⃣ Community Libraries
 
