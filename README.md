@@ -97,7 +97,7 @@ docker run -p 1491:1491 -v /path/to/your/sonic/config.cfg:/etc/sonic.cfg -v /pat
 
 In the configuration file, ensure that:
 
-* `channel.inet` is set to `0.0.0.0:1491` (this lets sonic be reached from outside the container)
+* `channel.inet` is set to `0.0.0.0:1491` (this lets Sonic be reached from outside the container)
 * `store.kv.path` is set to `/var/lib/sonic/store/kv/` (this lets the external KV store directory be reached by Sonic)
 * `store.fst.path` is set to `/var/lib/sonic/store/fst/` (this lets the external FST store directory be reached by Sonic)
 
