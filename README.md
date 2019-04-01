@@ -146,6 +146,7 @@ You can find below a list of Sonic integrations provided by the community (many 
   * **[php-sonic](https://github.com/php-sonic/php-sonic)** by [@touhonoob](https://github.com/touhonoob)
 * **Java**:
   * **[java-sonic](https://github.com/twohou/java-sonic)** by [@touhonoob](https://github.com/touhonoob)
+  * **[jsonic](https://github.com/alohaking/jsonic)** by [@alohaking](https://github.com/alohaking)
 * **Elixir**:
   * **[sonix](https://github.com/imerkle/sonix)** by [@imerkle](https://github.com/imerkle)
 
