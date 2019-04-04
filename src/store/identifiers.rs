@@ -30,7 +30,7 @@ impl StoreMetaKey {
 }
 
 impl StoreTermHash {
-    pub fn from(term: &str) -> StoreTermHashed {
+    pub fn from(term: &str) -> Self {
         let mut hasher = XxHash32::with_seed(0);
 
         hasher.write(term.as_bytes());
