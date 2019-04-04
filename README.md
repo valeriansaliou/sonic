@@ -22,7 +22,7 @@ A strong attention to performance and code cleanliness has been given when desig
 <table>
 <tr>
 <td align="center"><a href="https://crisp.chat/"><img src="https://valeriansaliou.github.io/sonic/images/logo-crisp.png" height="64" /></a></td>
- <td align="center"><a href="https://scrumpy.io/"><img src="https://scrumpy-apps.ams3.cdn.digitaloceanspaces.com/icon.png" height="64" /></a></td>
+<td align="center"><a href="https://scrumpy.io/"><img src="https://valeriansaliou.github.io/sonic/images/logo-scrumpy.png" height="64" /></a></td>
 </tr>
 <tr>
 <td align="center">Crisp</td>
