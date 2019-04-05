@@ -213,8 +213,8 @@ impl TokenLexerBuilder {
 impl<'a> TokenLexer<'a> {
     fn new(mode: TokenLexerMode, text: &'a str, locale: Option<Lang>) -> TokenLexer<'a> {
         TokenLexer {
-            mode: mode,
-            locale: locale,
+            mode,
+            locale,
             words: text.unicode_words(),
             yields: HashSet::new(),
         }

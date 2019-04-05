@@ -488,7 +488,7 @@ impl StoreGenericBuilder<StoreFSTKey, StoreFST> for StoreFSTBuilder {
                 let now = SystemTime::now();
 
                 StoreFST {
-                    graph: graph,
+                    graph,
                     target: pool_key,
                     pending: StoreFSTPending::default(),
                     last_used: Arc::new(RwLock::new(now)),
@@ -620,7 +620,7 @@ impl StoreFSTActionBuilder {
     }
 
     fn build(store: StoreFSTBox) -> StoreFSTAction {
-        StoreFSTAction { store: store }
+        StoreFSTAction { store }
     }
 }
 
@@ -940,8 +940,8 @@ impl StoreFSTMisc {
 impl StoreFSTKey {
     pub fn from_atom(collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) -> StoreFSTKey {
         StoreFSTKey {
-            collection_hash: collection_hash,
-            bucket_hash: bucket_hash,
+            collection_hash,
+            bucket_hash,
         }
     }
 
