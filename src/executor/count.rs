@@ -13,7 +13,7 @@ use crate::store::kv::{StoreKVAcquireMode, StoreKVPool};
 pub struct ExecutorCount;
 
 impl ExecutorCount {
-    pub fn execute<'a>(store: StoreItem<'a>) -> Result<u32, ()> {
+    pub fn execute(store: StoreItem) -> Result<u32, ()> {
         match store {
             // Count terms in (collection, bucket, object) from KV
             StoreItem(collection, Some(bucket), Some(object)) => {

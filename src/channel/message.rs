@@ -110,7 +110,7 @@ impl ChannelMessage {
         result
     }
 
-    fn extract<'a>(message: &'a str) -> (String, SplitWhitespace) {
+    fn extract(message: &str) -> (String, SplitWhitespace) {
         // Extract command name and arguments
         let mut parts = message.split_whitespace();
         let command = parts.next().unwrap_or("").to_uppercase();

@@ -212,7 +212,7 @@ impl StoreGeneric for StoreKV {
 }
 
 impl StoreKVActionBuilder {
-    pub fn access<'a>(bucket: StoreItemPart<'a>, store: Option<StoreKVBox>) -> StoreKVAction<'a> {
+    pub fn access(bucket: StoreItemPart, store: Option<StoreKVBox>) -> StoreKVAction {
         Self::build(bucket, store)
     }
 
@@ -220,7 +220,7 @@ impl StoreKVActionBuilder {
         Self::dispatch_erase("kv", collection, bucket, &*STORE_ACCESS_LOCK)
     }
 
-    fn build<'a>(bucket: StoreItemPart<'a>, store: Option<StoreKVBox>) -> StoreKVAction<'a> {
+    fn build(bucket: StoreItemPart, store: Option<StoreKVBox>) -> StoreKVAction {
         StoreKVAction {
             store,
             bucket,

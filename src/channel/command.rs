@@ -166,7 +166,7 @@ impl ChannelCommandBase {
         }
     }
 
-    pub fn parse_text_parts<'a>(parts: &'a mut SplitWhitespace) -> Option<String> {
+    pub fn parse_text_parts(parts: &mut SplitWhitespace) -> Option<String> {
         // Parse text parts and nest them together
         let mut text_raw = String::new();
 
@@ -302,14 +302,14 @@ impl ChannelCommandBase {
         ChannelCommandError::InvalidMetaValue((meta_key.to_owned(), meta_value.to_owned()))
     }
 
-    pub fn commit_ok_operation<'a>(query_builder: QueryBuilderResult<'a>) -> ChannelResult {
+    pub fn commit_ok_operation(query_builder: QueryBuilderResult) -> ChannelResult {
         query_builder
             .and_then(|query| StoreOperationDispatch::dispatch(query))
             .and_then(|_| Ok(vec![ChannelCommandResponse::Ok]))
             .or(Err(ChannelCommandError::QueryError))
     }
 
-    pub fn commit_result_operation<'a>(query_builder: QueryBuilderResult<'a>) -> ChannelResult {
+    pub fn commit_result_operation(query_builder: QueryBuilderResult) -> ChannelResult {
         query_builder
             .and_then(|query| StoreOperationDispatch::dispatch(query))
             .or(Err(ChannelCommandError::QueryError))
