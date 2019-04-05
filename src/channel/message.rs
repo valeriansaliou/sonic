@@ -107,7 +107,7 @@ impl ChannelMessage {
             );
         }
 
-        return result;
+        result
     }
 
     fn extract<'a>(message: &'a str) -> (String, SplitWhitespace) {
@@ -117,7 +117,7 @@ impl ChannelMessage {
 
         debug!("will dispatch search command: {}", command);
 
-        return (command, parts);
+        (command, parts)
     }
 }
 

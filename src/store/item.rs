@@ -36,7 +36,7 @@ impl<'a> StoreItemPart<'a> {
             }
         }
 
-        return Err(());
+        Err(())
     }
 
     pub fn as_str(&self) -> &'a str {
