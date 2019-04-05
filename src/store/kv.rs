@@ -101,7 +101,7 @@ impl StoreKVPool {
             // Open KV database? (ie. we do not need to create a new KV database file tree if \
             //   the database does not exist yet on disk and we are just looking to read data from \
             //   it)
-            if can_open_db == true {
+            if can_open_db {
                 Self::proceed_acquire_open("kv", collection_str, pool_key, &*STORE_POOL)
                     .map(|result| Some(result))
             } else {
@@ -154,7 +154,7 @@ impl StoreKVBuilder {
         db_options.set_use_fsync(false);
         db_options.set_compaction_style(DBCompactionStyle::Level);
 
-        db_options.set_compression_type(if APP_CONF.store.kv.database.compress == true {
+        db_options.set_compression_type(if APP_CONF.store.kv.database.compress {
             DBCompressionType::Lz4
         } else {
             DBCompressionType::None
@@ -242,7 +242,7 @@ impl StoreGenericActionBuilder for StoreKVActionBuilder {
             store_pool_write.remove(&collection_target);
         }
 
-        if collection_path.exists() == true {
+        if collection_path.exists() {
             debug!(
                 "kv collection store exists, erasing: {}/* at path: {:?}",
                 collection_str, &collection_path
@@ -251,7 +251,7 @@ impl StoreGenericActionBuilder for StoreKVActionBuilder {
             // Remove KV store storage from filesystem
             let erase_result = fs::remove_dir_all(&collection_path);
 
-            if erase_result.is_ok() == true {
+            if erase_result.is_ok() {
                 debug!("done with kv collection erasure");
 
                 Ok(1)
@@ -569,7 +569,7 @@ impl<'a> StoreKVAction<'a> {
                                 store_key, &value_decoded
                             );
 
-                            if value_decoded.is_empty() == false {
+                            if !value_decoded.is_empty() {
                                 Some(value_decoded)
                             } else {
                                 None
@@ -645,20 +645,20 @@ impl<'a> StoreKVAction<'a> {
                 // Delete IID from each associated term
                 for iid_term in iid_terms_hashed {
                     if let Ok(Some(mut iid_term_iids)) = self.get_term_to_iids(*iid_term) {
-                        if iid_term_iids.contains(&iid) == true {
+                        if iid_term_iids.contains(&iid) {
                             count += 1;
 
                             // Remove IID from list of IIDs
                             iid_term_iids.retain(|cur_iid| cur_iid != &iid);
                         }
 
-                        let is_ok = if iid_term_iids.is_empty() == true {
+                        let is_ok = if iid_term_iids.is_empty() {
                             self.delete_term_to_iids(*iid_term).is_ok()
                         } else {
                             self.set_term_to_iids(*iid_term, &iid_term_iids).is_ok()
                         };
 
-                        if is_ok == false {
+                        if !is_ok {
                             return Err(());
                         }
                     }
@@ -687,13 +687,12 @@ impl<'a> StoreKVAction<'a> {
                 term_iid_drain_terms.retain(|cur_term| cur_term != &term_hashed);
 
                 // IID to Terms list is empty? Flush whole object.
-                if term_iid_drain_terms.is_empty() == true {
+                if term_iid_drain_terms.is_empty() {
                     // Acquire OID for this drained IID
                     if let Ok(Some(term_iid_drain_oid)) = self.get_iid_to_oid(term_iid_drain) {
                         if self
                             .batch_flush_bucket(term_iid_drain, &term_iid_drain_oid, &Vec::new())
                             .is_err()
-                            == true
                         {
                             error!(
                                 "failed executing store batch truncate object batch-flush-bucket"
@@ -707,7 +706,6 @@ impl<'a> StoreKVAction<'a> {
                     if self
                         .set_iid_to_terms(term_iid_drain, &term_iid_drain_terms)
                         .is_err()
-                        == true
                     {
                         error!("failed setting store batch truncate object iid-to-terms");
                     }
@@ -776,7 +774,6 @@ impl<'a> StoreKVAction<'a> {
                 if batch
                     .delete_range(&key_prefix_start, &key_prefix_end)
                     .is_ok()
-                    == true
                 {
                     // Commit operation to database
                     if let Err(err) = store.database.write(batch) {

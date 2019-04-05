@@ -69,7 +69,7 @@ impl ChannelMessage {
 
         // Serve response messages on socket
         for response_args in response_args_groups {
-            if response_args.0.is_empty() == false {
+            if !response_args.0.is_empty() {
                 if let Some(ref values) = response_args.1 {
                     let values_string = values.join(" ");
 

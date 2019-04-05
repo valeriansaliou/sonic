@@ -117,7 +117,7 @@ pub trait StoreGenericPool<
             }
         }
 
-        if removal_register.is_empty() == false {
+        if !removal_register.is_empty() {
             let mut store_pool_write = pool.write().unwrap();
 
             for collection_bucket in &removal_register {

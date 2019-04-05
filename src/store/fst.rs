@@ -143,7 +143,7 @@ impl StoreFSTPool {
         let _rebuild = GRAPH_REBUILD_LOCK.lock().unwrap();
 
         // Exit trap: Register is empty? Abort there.
-        if GRAPH_CONSOLIDATE.read().unwrap().is_empty() == true {
+        if GRAPH_CONSOLIDATE.read().unwrap().is_empty() {
             info!("no fst store pool items to consolidate in register");
 
             return;
@@ -169,7 +169,7 @@ impl StoreFSTPool {
                         .unwrap()
                         .as_secs();
 
-                    if force == true
+                    if force
                         || not_consolidated_for >= APP_CONF.store.fst.graph.consolidate_after
                     {
                         info!(
@@ -189,7 +189,7 @@ impl StoreFSTPool {
         }
 
         // Exit trap: Nothing to consolidate yet? Abort there.
-        if keys_consolidate.is_empty() == true {
+        if keys_consolidate.is_empty() {
             info!("no fst store pool items need to consolidate at the moment");
 
             return;
@@ -244,7 +244,7 @@ impl StoreFSTPool {
                     //   when a push or pop operation will be done, thus effectively scheduling \
                     //   a consolidation in the future properly.
                     // Notice: we remove this one early as to release write lock early
-                    if do_close == true {
+                    if do_close {
                         GRAPH_POOL.write().unwrap().remove(key);
                     }
                 }
@@ -292,7 +292,7 @@ impl StoreFSTPool {
 
                 let bucket_tmp_path_parent = bucket_tmp_path.parent().unwrap();
 
-                if fs::create_dir_all(&bucket_tmp_path_parent).is_ok() == true {
+                if fs::create_dir_all(&bucket_tmp_path_parent).is_ok() {
                     // Erase any previously-existing temporary FST (eg. process stopped while \
                     //   writing the temporary FST); there is no guarantee this succeeds.
                     fs::remove_file(&bucket_tmp_path).ok();
@@ -346,7 +346,7 @@ impl StoreFSTPool {
                                 }
 
                                 // Restore old word (if not popped)
-                                if pending_pop_write.contains(old_fst_word) == false {
+                                if !pending_pop_write.contains(old_fst_word) {
                                     if let Err(err) = tmp_fst_builder.insert(old_fst_word) {
                                         error!("failed inserting old word in fst: {}", err);
                                     }
@@ -372,7 +372,7 @@ impl StoreFSTPool {
                             }
 
                             // Finish building new FST
-                            if tmp_fst_builder.finish().is_ok() == true {
+                            if tmp_fst_builder.finish().is_ok() {
                                 // Should close open store reference to old FST
                                 should_close = true;
 
@@ -387,7 +387,6 @@ impl StoreFSTPool {
 
                                 // Proceed temporary FST to final FST path rename
                                 if std::fs::rename(&bucket_tmp_path, &bucket_final_path).is_ok()
-                                    == true
                                 {
                                     info!("done consolidate fst at path: {:?}", bucket_final_path);
                                 } else {
@@ -448,7 +447,7 @@ impl StoreFSTBuilder {
             Some(bucket_hash),
         );
 
-        if collection_bucket_path.exists() == true {
+        if collection_bucket_path.exists() {
             // Open graph at path for collection
             // Notice: this is unsafe, as loaded memory is a memory-mapped file, that cannot be \
             //   garanteed not to be muted while we own a read handle to it. Though, we use \
@@ -582,7 +581,7 @@ impl StoreFST {
 
     pub fn should_consolidate(&self) {
         // Check if not already scheduled
-        if GRAPH_CONSOLIDATE.read().unwrap().contains(&self.target) == false {
+        if !GRAPH_CONSOLIDATE.read().unwrap().contains(&self.target) {
             // Schedule target for next consolidation tick (ie. collection + bucket tuple)
             GRAPH_CONSOLIDATE.write().unwrap().insert(self.target);
 
@@ -647,7 +646,7 @@ impl StoreGenericActionBuilder for StoreFSTActionBuilder {
             }
         }
 
-        if bucket_atoms.is_empty() == false {
+        if !bucket_atoms.is_empty() {
             debug!(
                 "will force-close {} fst buckets for collection: {}",
                 bucket_atoms.len(),
@@ -673,7 +672,7 @@ impl StoreGenericActionBuilder for StoreFSTActionBuilder {
         }
 
         // Remove all FSTs on-disk
-        if collection_path.exists() == true {
+        if collection_path.exists() {
             debug!(
                 "fst collection store exists, erasing: {}/* at path: {:?}",
                 collection_str, &collection_path
@@ -682,7 +681,7 @@ impl StoreGenericActionBuilder for StoreFSTActionBuilder {
             // Remove FST graph storage from filesystem
             let erase_result = fs::remove_dir_all(&collection_path);
 
-            if erase_result.is_ok() == true {
+            if erase_result.is_ok() {
                 debug!("done with fst collection erasure");
 
                 Ok(1)
@@ -730,7 +729,7 @@ impl StoreGenericActionBuilder for StoreFSTActionBuilder {
         }
 
         // Remove FST on-disk
-        if bucket_path.exists() == true {
+        if bucket_path.exists() {
             debug!(
                 "fst bucket graph exists, erasing: {}/{} at path: {:?}",
                 collection_str, bucket_str, &bucket_path
@@ -739,7 +738,7 @@ impl StoreGenericActionBuilder for StoreFSTActionBuilder {
             // Remove FST graph storage from filesystem
             let erase_result = fs::remove_file(&bucket_path);
 
-            if erase_result.is_ok() == true {
+            if erase_result.is_ok() {
                 debug!("done with fst bucket erasure");
 
                 Ok(1)
@@ -760,20 +759,20 @@ impl StoreGenericActionBuilder for StoreFSTActionBuilder {
 impl StoreFSTAction {
     pub fn push_word(&self, word: &str) -> bool {
         // Word over limit? (abort, the FST does not perform well over large words)
-        if Self::word_over_limit(word) == true {
+        if Self::word_over_limit(word) {
             return false;
         }
 
         let word_bytes = word.as_bytes();
 
         // Nuke word from 'pop' set? (void a previous un-consolidated commit)
-        if self.store.pending.pop.read().unwrap().contains(word_bytes) == true {
+        if self.store.pending.pop.read().unwrap().contains(word_bytes) {
             self.store.pending.pop.write().unwrap().remove(word_bytes);
         }
 
         // Add word in 'push' set? (only if word is not in FST)
-        if self.store.graph.contains(&word) == false
-            && self.store.pending.push.read().unwrap().contains(word_bytes) == false
+        if !self.store.graph.contains(&word)
+            && !self.store.pending.push.read().unwrap().contains(word_bytes)
         {
             self.store
                 .pending
@@ -794,20 +793,20 @@ impl StoreFSTAction {
 
     pub fn pop_word(&self, word: &str) -> bool {
         // Word over limit? (abort, the FST does not perform well over large words)
-        if Self::word_over_limit(word) == true {
+        if Self::word_over_limit(word) {
             return false;
         }
 
         let word_bytes = word.as_bytes();
 
         // Nuke word from 'push' set? (void a previous un-consolidated commit)
-        if self.store.pending.push.read().unwrap().contains(word_bytes) == true {
+        if self.store.pending.push.read().unwrap().contains(word_bytes) {
             self.store.pending.push.write().unwrap().remove(word_bytes);
         }
 
         // Add word in 'pop' set? (only if word is in FST)
-        if self.store.graph.contains(word_bytes) == true
-            && self.store.pending.pop.read().unwrap().contains(word_bytes) == false
+        if self.store.graph.contains(word_bytes)
+            && !self.store.pending.pop.read().unwrap().contains(word_bytes)
         {
             self.store
                 .pending
@@ -833,7 +832,7 @@ impl StoreFSTAction {
         max_typo_factor: Option<u32>,
     ) -> Option<Vec<String>> {
         // Word over limit? (abort, the FST does not perform well over large words)
-        if Self::word_over_limit(from_word) == true {
+        if Self::word_over_limit(from_word) {
             return None;
         }
 
@@ -855,7 +854,7 @@ impl StoreFSTAction {
             }
         }
 
-        if found_words.is_empty() == false {
+        if !found_words.is_empty() {
             Some(found_words)
         } else {
             None
@@ -885,7 +884,7 @@ impl StoreFSTAction {
             if let Ok(word_str) = str::from_utf8(word) {
                 let word_string = word_str.to_string();
 
-                if found_words.contains(&word_string) == false {
+                if !found_words.contains(&word_string) {
                     found_words.push(word_string);
 
                     // Requested limit reached? Stop there.
@@ -907,7 +906,7 @@ impl StoreFSTMisc {
         let collection_atom = StoreKeyerHasher::to_compact(collection.into());
         let collection_path = StoreFSTBuilder::path(path_mode, collection_atom, None);
 
-        if collection_path.exists() == true {
+        if collection_path.exists() {
             // Scan collection directory for contained buckets (count them)
             if let Ok(entries) = fs::read_dir(&collection_path) {
                 let fst_extension = path_mode.extension();
@@ -920,7 +919,7 @@ impl StoreFSTMisc {
 
                             // FST file found? This is a bucket.
                             if entry_name_len > fst_extension_len
-                                && entry_name.ends_with(fst_extension) == true
+                                && entry_name.ends_with(fst_extension)
                             {
                                 count += 1;
                             }

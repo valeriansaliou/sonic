@@ -31,7 +31,7 @@ impl<'a> StoreItemPart<'a> {
         let len = part.len();
 
         if len > STORE_ITEM_PART_LEN_MIN && len <= STORE_ITEM_PART_LEN_MAX {
-            if part.chars().all(|character| character.is_ascii()) == true {
+            if part.chars().all(|character| character.is_ascii()) {
                 return Ok(StoreItemPart(part));
             }
         }
