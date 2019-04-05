@@ -89,20 +89,20 @@ impl ExecutorPop {
                                     // Nuke IID in Term-to-IIDs list
                                     for (pop_term, pop_term_hashed) in &pop_terms {
                                         // Check that term is linked to IID (and should be removed)
-                                        if iid_terms_hashed.contains(pop_term_hashed) == true {
+                                        if iid_terms_hashed.contains(pop_term_hashed) {
                                             if let Ok(Some(mut pop_term_iids)) =
                                                 kv_action.get_term_to_iids(*pop_term_hashed)
                                             {
                                                 // Remove IID from list of IIDs to be popped
                                                 pop_term_iids.retain(|cur_iid| cur_iid != &iid);
 
-                                                if pop_term_iids.is_empty() == true {
+                                                if pop_term_iids.is_empty() {
                                                     // IIDs list was empty, delete whole key
                                                     executor_ensure_op!(kv_action
                                                         .delete_term_to_iids(*pop_term_hashed));
 
                                                     // Pop from FST graph (does not exist anymore)
-                                                    if fst_action.pop_word(pop_term) == true {
+                                                    if fst_action.pop_word(pop_term) {
                                                         debug!(
                                                             "pop term hash nuked from graph: {}",
                                                             pop_term_hashed

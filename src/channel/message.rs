@@ -69,7 +69,7 @@ impl ChannelMessage {
 
         // Serve response messages on socket
         for response_args in response_args_groups {
-            if response_args.0.is_empty() == false {
+            if !response_args.0.is_empty() {
                 if let Some(ref values) = response_args.1 {
                     let values_string = values.join(" ");
 
@@ -107,17 +107,17 @@ impl ChannelMessage {
             );
         }
 
-        return result;
+        result
     }
 
-    fn extract<'a>(message: &'a str) -> (String, SplitWhitespace) {
+    fn extract(message: &str) -> (String, SplitWhitespace) {
         // Extract command name and arguments
         let mut parts = message.split_whitespace();
         let command = parts.next().unwrap_or("").to_uppercase();
 
         debug!("will dispatch search command: {}", command);
 
-        return (command, parts);
+        (command, parts)
     }
 }
 

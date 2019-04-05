@@ -11,7 +11,7 @@ use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVPool};
 pub struct ExecutorFlushB;
 
 impl ExecutorFlushB {
-    pub fn execute<'a>(store: StoreItem<'a>) -> Result<u32, ()> {
+    pub fn execute(store: StoreItem) -> Result<u32, ()> {
         if let StoreItem(collection, Some(bucket), None) = store {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
@@ -21,7 +21,7 @@ impl ExecutorFlushB {
                 // Important: acquire bucket store write lock
                 executor_kv_lock_write!(kv_store);
 
-                if kv_store.is_some() == true {
+                if kv_store.is_some() {
                     // Store exists, proceed erasure.
                     debug!(
                         "collection store exists, erasing: {} from {}",
@@ -35,7 +35,7 @@ impl ExecutorFlushB {
                     //   erasing a bucket requires a database lock, which would incur a dead-lock, \
                     //   thus we need to perform the erasure from there.
                     if let Ok(erase_count) = kv_action.batch_erase_bucket() {
-                        if StoreFSTActionBuilder::erase(collection, Some(bucket)).is_ok() == true {
+                        if StoreFSTActionBuilder::erase(collection, Some(bucket)).is_ok() {
                             debug!("done with bucket erasure");
 
                             return Ok(erase_count);

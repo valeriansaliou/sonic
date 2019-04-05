@@ -139,7 +139,7 @@ impl LexerStopWord {
     pub fn is(word: &str, locale: Option<Lang>) -> bool {
         if let Some(locale) = locale {
             // Word is a stopword (given locale)
-            if Self::lang_stopwords(locale).contains(word) == true {
+            if Self::lang_stopwords(locale).contains(word) {
                 return true;
             }
         }
@@ -171,14 +171,14 @@ impl LexerStopWord {
         for script_lang in script_langs {
             let lang_stopwords = Self::lang_stopwords(*script_lang);
 
-            if lang_stopwords.is_empty() == false {
+            if !lang_stopwords.is_empty() {
                 let mut lang_count = 0;
 
                 // This is a simple split, that does not take into account uppercase letters and \
                 //   punctuation, as to prevent memory allocations and other heavy operations. \
                 //   Trade-offs are made as this is a best-effort last-resort check.
                 for word in &text_split {
-                    if lang_stopwords.contains(word) == true {
+                    if lang_stopwords.contains(word) {
                         lang_count += 1;
                     }
                 }

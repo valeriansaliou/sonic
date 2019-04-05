@@ -101,7 +101,7 @@ impl ExecutorSearch {
                                         // Do not append the same IID twice (can happen a lot \
                                         //   when completing from suggested results that point \
                                         //   to the same end-OID)
-                                        if iids.contains(&suggested_iid) == false {
+                                        if !iids.contains(&suggested_iid) {
                                             iids.insert(suggested_iid);
 
                                             iids_new_len += 1;
@@ -133,7 +133,7 @@ impl ExecutorSearch {
                     debug!("got search executor iids: {:?} for term: {}", iids, term);
 
                     // Intersect found IIDs with previous batch
-                    if found_iids.is_empty() == true {
+                    if found_iids.is_empty() {
                         found_iids = iids;
                     } else {
                         found_iids = found_iids.intersection(&iids).map(|value| *value).collect();
@@ -145,7 +145,7 @@ impl ExecutorSearch {
                     );
 
                     // No IID found? (stop there)
-                    if found_iids.is_empty() == true {
+                    if found_iids.is_empty() {
                         info!(
                             "stop search executor as no iid was found in common for term: {}",
                             term
@@ -177,7 +177,7 @@ impl ExecutorSearch {
 
                 info!("got search executor final oids: {:?}", result_oids);
 
-                return Ok(if result_oids.is_empty() == false {
+                return Ok(if !result_oids.is_empty() {
                     Some(result_oids)
                 } else {
                     None

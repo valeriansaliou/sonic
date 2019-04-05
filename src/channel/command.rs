@@ -149,7 +149,7 @@ impl ChannelCommandBase {
                 ))])
             }
             (Some(manual_key), next_part) => {
-                if next_part.is_none() == true {
+                if next_part.is_none() {
                     if let Some(manual_data) = manuals.get(manual_key) {
                         Ok(vec![ChannelCommandResponse::Result(format!(
                             "{}({})",
@@ -166,12 +166,12 @@ impl ChannelCommandBase {
         }
     }
 
-    pub fn parse_text_parts<'a>(parts: &'a mut SplitWhitespace) -> Option<String> {
+    pub fn parse_text_parts(parts: &mut SplitWhitespace) -> Option<String> {
         // Parse text parts and nest them together
         let mut text_raw = String::new();
 
         while let Some(text_part) = parts.next() {
-            if text_raw.is_empty() == false {
+            if !text_raw.is_empty() {
                 text_raw.push_str(" ");
             }
 
@@ -209,7 +209,7 @@ impl ChannelCommandBase {
         let text_bytes = text_raw.as_bytes();
         let text_bytes_len = text_bytes.len();
 
-        if text_raw.is_empty() == true
+        if text_raw.is_empty()
             || text_bytes_len < 2
             || text_bytes[0] as char != TEXT_PART_BOUNDARY
             || text_bytes[text_bytes_len - 1] as char != TEXT_PART_BOUNDARY
@@ -231,7 +231,7 @@ impl ChannelCommandBase {
                     debug!("parsed text parts (post-processed): {}", text_inner_string);
 
                     // Text must not be empty
-                    if text_inner_string.is_empty() == false {
+                    if !text_inner_string.is_empty() {
                         Some(text_inner_string)
                     } else {
                         None
@@ -254,7 +254,7 @@ impl ChannelCommandBase {
     ) -> Option<MetaPartsResult<'a>> {
         if let Some(part) = parts.next() {
             // Parse meta (with format: 'KEY(VALUE)'; no '(' or ')' is allowed in KEY and VALUE)
-            if part.is_empty() == false {
+            if !part.is_empty() {
                 if let Some(index_open) = part.find(META_PART_GROUP_OPEN) {
                     let (key_bound_start, key_bound_end) = (0, index_open);
                     let (value_bound_start, value_bound_end) = (index_open + 1, part.len() - 1);
@@ -266,10 +266,10 @@ impl ChannelCommandBase {
                         );
 
                         // Ensure final key and value do not contain reserved syntax characters
-                        return if key.contains(META_PART_GROUP_OPEN) == false
-                            && key.contains(META_PART_GROUP_CLOSE) == false
-                            && value.contains(META_PART_GROUP_OPEN) == false
-                            && value.contains(META_PART_GROUP_CLOSE) == false
+                        return if !key.contains(META_PART_GROUP_OPEN)
+                            && !key.contains(META_PART_GROUP_CLOSE)
+                            && !value.contains(META_PART_GROUP_OPEN)
+                            && !value.contains(META_PART_GROUP_CLOSE)
                         {
                             debug!("parsed meta part as: {} = {}", key, value);
 
@@ -302,14 +302,14 @@ impl ChannelCommandBase {
         ChannelCommandError::InvalidMetaValue((meta_key.to_owned(), meta_value.to_owned()))
     }
 
-    pub fn commit_ok_operation<'a>(query_builder: QueryBuilderResult<'a>) -> ChannelResult {
+    pub fn commit_ok_operation(query_builder: QueryBuilderResult) -> ChannelResult {
         query_builder
             .and_then(|query| StoreOperationDispatch::dispatch(query))
             .and_then(|_| Ok(vec![ChannelCommandResponse::Ok]))
             .or(Err(ChannelCommandError::QueryError))
     }
 
-    pub fn commit_result_operation<'a>(query_builder: QueryBuilderResult<'a>) -> ChannelResult {
+    pub fn commit_result_operation(query_builder: QueryBuilderResult) -> ChannelResult {
         query_builder
             .and_then(|query| StoreOperationDispatch::dispatch(query))
             .or(Err(ChannelCommandError::QueryError))
@@ -781,7 +781,7 @@ impl ChannelCommandControl {
                 CONTROL_TRIGGER_ACTIONS.join(", ")
             ))]),
             (Some(action_key), next_part) => {
-                if next_part.is_none() == true {
+                if next_part.is_none() {
                     let action_key_lower = action_key.to_lowercase();
 
                     match action_key_lower.as_str() {

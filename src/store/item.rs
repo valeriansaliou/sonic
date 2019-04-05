@@ -31,12 +31,12 @@ impl<'a> StoreItemPart<'a> {
         let len = part.len();
 
         if len > STORE_ITEM_PART_LEN_MIN && len <= STORE_ITEM_PART_LEN_MAX {
-            if part.chars().all(|character| character.is_ascii()) == true {
+            if part.chars().all(|character| character.is_ascii()) {
                 return Ok(StoreItemPart(part));
             }
         }
 
-        return Err(());
+        Err(())
     }
 
     pub fn as_str(&self) -> &'a str {
@@ -51,7 +51,7 @@ impl<'a> Into<&'a str> for StoreItemPart<'a> {
 }
 
 impl StoreItemBuilder {
-    pub fn from_depth_1<'a>(collection: &'a str) -> Result<StoreItem<'a>, StoreItemError> {
+    pub fn from_depth_1(collection: &str) -> Result<StoreItem, StoreItemError> {
         // Validate & box collection
         if let Ok(collection_item) = StoreItemPart::from_str(collection) {
             Ok(StoreItem(collection_item, None, None))

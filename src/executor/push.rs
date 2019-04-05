@@ -58,7 +58,6 @@ impl ExecutorPush {
                                 StoreMetaValue::IIDIncr(iid_incr),
                             )
                             .is_ok()
-                            == true
                         {
                             // Associate OID <> IID (bidirectional)
                             executor_ensure_op!(kv_action.set_oid_to_iid(oid, iid_incr));
@@ -96,7 +95,7 @@ impl ExecutorPush {
 
                     while let Some((term, term_hashed)) = lexer.next() {
                         // Check that term is not already linked to IID
-                        if iid_terms_hashed.contains(&term_hashed) == false {
+                        if !iid_terms_hashed.contains(&term_hashed) {
                             if let Ok(term_iids) = kv_action.get_term_to_iids(term_hashed) {
                                 has_commits = true;
 
@@ -105,7 +104,7 @@ impl ExecutorPush {
 
                                 // Remove IID from list of IIDs to be popped before inserting in \
                                 //   first position?
-                                if term_iids.contains(&iid) == true {
+                                if term_iids.contains(&iid) {
                                     term_iids.retain(|cur_iid| cur_iid != &iid);
                                 }
 
@@ -141,13 +140,13 @@ impl ExecutorPush {
                         }
 
                         // Push to FST graph? (this consumes the term; to avoid sub-clones)
-                        if fst_action.push_word(&term) == true {
+                        if fst_action.push_word(&term) {
                             debug!("push term commited to graph: {}", term);
                         }
                     }
 
                     // Commit updated list of terms for IID? (if any commit made)
-                    if has_commits == true {
+                    if has_commits {
                         let collected_iids: Vec<StoreTermHashed> =
                             iid_terms_hashed.into_iter().collect();
 

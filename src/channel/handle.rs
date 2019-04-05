@@ -98,7 +98,7 @@ impl ChannelHandle {
     }
 
     fn configure_stream(stream: &TcpStream, is_established: bool) {
-        let tcp_timeout = if is_established == true {
+        let tcp_timeout = if is_established {
             APP_CONF.channel.tcp_timeout
         } else {
             TCP_TIMEOUT_NON_ESTABLISHED
@@ -170,7 +170,7 @@ impl ChannelHandle {
                         }
 
                         // Incomplete line remaining? Put it back in buffer.
-                        if processed_line.is_empty() == false {
+                        if !processed_line.is_empty() {
                             buffer.extend(processed_line);
                         }
                     }
