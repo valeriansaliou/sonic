@@ -344,7 +344,7 @@ impl ChannelCommandBase {
                     ChannelCommandResponse::Event(
                         query_type,
                         query_id.to_string(),
-                        results.unwrap_or(String::new()),
+                        results.unwrap_or_default(),
                     ),
                 ])
             })
