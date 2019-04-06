@@ -17,7 +17,7 @@ use crate::APP_CONF;
 pub struct ExecutorPush;
 
 impl ExecutorPush {
-    pub fn execute<'a>(store: StoreItem<'a>, mut lexer: TokenLexer<'a>) -> Result<(), ()> {
+    pub fn execute<'a>(store: StoreItem<'a>, lexer: TokenLexer<'a>) -> Result<(), ()> {
         if let StoreItem(collection, Some(bucket), Some(object)) = store {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.

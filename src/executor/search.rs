@@ -21,7 +21,7 @@ impl ExecutorSearch {
     pub fn execute<'a>(
         store: StoreItem<'a>,
         _event_id: QuerySearchID,
-        mut lexer: TokenLexer<'a>,
+        lexer: TokenLexer<'a>,
         limit: QuerySearchLimit,
         offset: QuerySearchOffset,
     ) -> Result<Option<Vec<String>>, ()> {
