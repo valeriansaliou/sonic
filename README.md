@@ -144,6 +144,7 @@ You can find below a list of Sonic integrations provided by the community (many 
   * **[sonic-ruby](https://github.com/atipugin/sonic-ruby)** by [@atipugin](https://github.com/atipugin)
 * **Go**:
   * **[go-sonic](https://github.com/expectedsh/go-sonic)** by [@alexisvisco](https://github.com/alexisvisco)
+  * **[go-sonic](https://github.com/OGKevin/go-sonic)** by [@OGKevin](https://github.com/OGKevin)
 * **PHP**:
   * **[php-sonic](https://github.com/php-sonic/php-sonic)** by [@touhonoob](https://github.com/touhonoob)
 * **Java**:
