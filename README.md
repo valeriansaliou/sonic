@@ -147,7 +147,7 @@ You can find below a list of Sonic integrations provided by the community (many 
   * **[go-sonic](https://github.com/OGKevin/go-sonic)** by [@OGKevin](https://github.com/OGKevin)
 * **PHP**:
   * **[php-sonic](https://github.com/php-sonic/php-sonic)** by [@touhonoob](https://github.com/touhonoob)
-  * **[psonic](https://github.com/ppshobi/psonic)** by [@Shobi](https://github.com/ppshobi)
+  * **[psonic](https://github.com/ppshobi/psonic)** by [@ppshobi](https://github.com/ppshobi)
 * **Java**:
   * **[java-sonic](https://github.com/twohou/java-sonic)** by [@touhonoob](https://github.com/touhonoob)
   * **[jsonic](https://github.com/alohaking/jsonic)** by [@alohaking](https://github.com/alohaking)
