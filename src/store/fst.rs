@@ -84,7 +84,7 @@ lazy_static! {
 }
 
 impl StoreFSTPathMode {
-    fn extension(&self) -> &'static str {
+    fn extension(self) -> &'static str {
         match self {
             StoreFSTPathMode::Permanent => ".fst",
             StoreFSTPathMode::Temporary => ".tmp",
