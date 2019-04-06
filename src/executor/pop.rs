@@ -55,14 +55,13 @@ impl ExecutorPop {
 
                             let iid_terms_hashed: LinkedHashSet<StoreTermHashed> =
                                 LinkedHashSet::from_iter(
-                                    iid_terms_hashed_vec.iter().map(|value| *value),
+                                    iid_terms_hashed_vec.iter().cloned(),
                                 );
 
                             let remaining_terms: LinkedHashSet<StoreTermHashed> = iid_terms_hashed
                                 .difference(&LinkedHashSet::from_iter(
                                     pop_terms.iter().map(|item| item.1),
-                                ))
-                                .map(|value| *value)
+                                )).cloned()
                                 .collect();
 
                             debug!(

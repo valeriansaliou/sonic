@@ -136,7 +136,7 @@ impl ExecutorSearch {
                     if found_iids.is_empty() {
                         found_iids = iids;
                     } else {
-                        found_iids = found_iids.intersection(&iids).map(|value| *value).collect();
+                        found_iids = found_iids.intersection(&iids).cloned().collect();
                     }
 
                     debug!(
