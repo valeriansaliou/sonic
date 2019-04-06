@@ -166,10 +166,10 @@ impl StoreKVBuilder {
             -1
         });
 
-        db_options.increase_parallelism(APP_CONF.store.kv.database.parallelism as i32);
+        db_options.increase_parallelism(i32::from(APP_CONF.store.kv.database.parallelism));
         db_options
-            .set_max_background_compactions(APP_CONF.store.kv.database.max_compactions as i32);
-        db_options.set_max_background_flushes(APP_CONF.store.kv.database.max_flushes as i32);
+            .set_max_background_compactions(i32::from(APP_CONF.store.kv.database.max_compactions));
+        db_options.set_max_background_flushes(i32::from(APP_CONF.store.kv.database.max_flushes));
 
         db_options
     }
