@@ -80,7 +80,7 @@ impl StoreKVPool {
 
         if let Some(store_kv) = store_pool_read.get(&pool_key) {
             Self::proceed_acquire_cache("kv", collection_str, pool_key, store_kv)
-                .map(|result| Some(result))
+                .map(Some)
         } else {
             info!(
                 "kv store not in pool for collection: {} {}, opening it",
@@ -103,7 +103,7 @@ impl StoreKVPool {
             //   it)
             if can_open_db {
                 Self::proceed_acquire_open("kv", collection_str, pool_key, &*STORE_POOL)
-                    .map(|result| Some(result))
+                    .map(Some)
             } else {
                 Ok(None)
             }
@@ -294,7 +294,7 @@ impl<'a> StoreKVAction<'a> {
                             StoreMetaKey::IIDIncr => value
                                 .parse::<StoreObjectIID>()
                                 .ok()
-                                .map(|value| StoreMetaValue::IIDIncr(value))
+                                .map(StoreMetaValue::IIDIncr)
                                 .or(None),
                         }
                     } else {
