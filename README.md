@@ -148,6 +148,7 @@ You can find below a list of Sonic integrations provided by the community (many 
 * **PHP**:
   * **[php-sonic](https://github.com/php-sonic/php-sonic)** by [@touhonoob](https://github.com/touhonoob)
   * **[psonic](https://github.com/ppshobi/psonic)** by [@ppshobi](https://github.com/ppshobi)
+  * **[laravel-scout-sonic](https://github.com/james2doyle/laravel-scout-sonic)** by [@james2doyle](https://github.com/james2doyle)
 * **Java**:
   * **[java-sonic](https://github.com/twohou/java-sonic)** by [@touhonoob](https://github.com/touhonoob)
   * **[jsonic](https://github.com/alohaking/jsonic)** by [@alohaking](https://github.com/alohaking)
