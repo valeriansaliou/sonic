@@ -322,10 +322,10 @@ impl ChannelCommandBase {
             })
     }
 
-    pub fn commit_pending_operation<'a>(
+    pub fn commit_pending_operation(
         query_type: &'static str,
         query_id: &str,
-        query_builder: QueryBuilderResult<'a>,
+        query_builder: QueryBuilderResult,
     ) -> ChannelResult {
         // Idea: this could be made asynchronous in the future, if there are some latency issues \
         //   on large Sonic deployments. The idea would be to have a number of worker threads for \

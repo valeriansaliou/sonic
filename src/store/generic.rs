@@ -14,7 +14,7 @@ use std::time::SystemTime;
 pub trait StoreGenericKey {}
 
 pub trait StoreGeneric {
-    fn ref_last_used<'a>(&'a self) -> &'a RwLock<SystemTime>;
+    fn ref_last_used(&self) -> &RwLock<SystemTime>;
 }
 
 pub trait StoreGenericPool<
