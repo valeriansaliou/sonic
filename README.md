@@ -138,6 +138,8 @@ Sonic distributes official Sonic integration libraries for your programming lang
 
 You can find below a list of Sonic integrations provided by the community (many thanks to them!):
 
+* **Rust**:
+  * **[sonic_client](https://github.com/FrontMage/sonic_client)** by [@FrontMage](https://github.com/FrontMage)
 * **Python**:
   * **[asonic](https://github.com/moshe/asonic)** by [@moshe](https://github.com/moshe)
 * **Ruby**:
