@@ -142,7 +142,7 @@ You can find below a list of Sonic integrations provided by the community (many 
   * **[sonic_client](https://github.com/FrontMage/sonic_client)** by [@FrontMage](https://github.com/FrontMage)
 * **Python**:
   * **[asonic](https://github.com/moshe/asonic)** by [@moshe](https://github.com/moshe)
-  * **[sonic-client](https://github.com/xmonader/python-sonic-client)** by [@xmonader](https://github.com/xmonader)
+  * **[python-sonic-client](https://github.com/xmonader/python-sonic-client)** by [@xmonader](https://github.com/xmonader)
 * **Ruby**:
   * **[sonic-ruby](https://github.com/atipugin/sonic-ruby)** by [@atipugin](https://github.com/atipugin)
 * **Go**:
