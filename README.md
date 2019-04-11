@@ -129,7 +129,7 @@ _If you are looking for details on the raw Sonic Channel TCP-based protocol, you
 
 #### 1️⃣ Official Libraries
 
-Sonic distributes official Sonic integration libraries for your programming language (official means reviewed and validated):
+Sonic distributes official Sonic integration libraries for your programming language (official means that those libraries have been reviewed and validated by a core maintainer):
 
 * **NodeJS**:
   * **[node-sonic-channel](https://www.npmjs.com/package/sonic-channel)** by [@valeriansaliou](https://github.com/valeriansaliou)
