@@ -158,6 +158,10 @@ You can find below a list of Sonic integrations provided by the community (many 
   * **[jsonic](https://github.com/alohaking/jsonic)** by [@alohaking](https://github.com/alohaking)
 * **Elixir**:
   * **[sonix](https://github.com/imerkle/sonix)** by [@imerkle](https://github.com/imerkle)
+* **Nim**:
+  * **[sonic](https://github.com/xmonader/nim-sonic-client)** by [@xmonader](https://github.com/xmonader)
+
+
 
 _ℹ️ Cannot find the library for your programming language? Build your own and be referenced here! ([contact me](https://valeriansaliou.name/))_
 
