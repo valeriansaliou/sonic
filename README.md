@@ -129,10 +129,12 @@ _If you are looking for details on the raw Sonic Channel TCP-based protocol, you
 
 #### 1️⃣ Official Libraries
 
-Sonic distributes official Sonic integration libraries for your programming language:
+Sonic distributes official Sonic integration libraries for your programming language (official means reviewed and validated):
 
 * **NodeJS**:
   * **[node-sonic-channel](https://www.npmjs.com/package/sonic-channel)** by [@valeriansaliou](https://github.com/valeriansaliou)
+* **PHP**:
+  * **[psonic](https://github.com/ppshobi/psonic)** by [@ppshobi](https://github.com/ppshobi)
 
 #### 2️⃣ Community Libraries
 
@@ -150,7 +152,6 @@ You can find below a list of Sonic integrations provided by the community (many 
   * **[go-sonic](https://github.com/OGKevin/go-sonic)** by [@OGKevin](https://github.com/OGKevin)
 * **PHP**:
   * **[php-sonic](https://github.com/php-sonic/php-sonic)** by [@touhonoob](https://github.com/touhonoob)
-  * **[psonic](https://github.com/ppshobi/psonic)** by [@ppshobi](https://github.com/ppshobi)
   * **[laravel-scout-sonic](https://github.com/james2doyle/laravel-scout-sonic)** by [@james2doyle](https://github.com/james2doyle)
 * **Java**:
   * **[java-sonic](https://github.com/twohou/java-sonic)** by [@touhonoob](https://github.com/touhonoob)
