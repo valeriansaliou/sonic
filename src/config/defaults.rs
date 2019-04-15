@@ -67,6 +67,10 @@ pub fn store_kv_database_max_flushes() -> u16 {
     1
 }
 
+pub fn store_kv_database_write_buffer() -> usize {
+    8192
+}
+
 pub fn store_fst_path() -> PathBuf {
     PathBuf::from("./data/store/fst/")
 }

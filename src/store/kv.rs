@@ -170,6 +170,7 @@ impl StoreKVBuilder {
         db_options
             .set_max_background_compactions(APP_CONF.store.kv.database.max_compactions as i32);
         db_options.set_max_background_flushes(APP_CONF.store.kv.database.max_flushes as i32);
+        db_options.set_write_buffer_size(APP_CONF.store.kv.database.write_buffer * 1024);
 
         db_options
     }

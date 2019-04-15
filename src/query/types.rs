@@ -32,8 +32,14 @@ mod tests {
 
     #[test]
     fn it_parses_generic_lang_from_value() {
-        assert_eq!(QueryGenericLang::from_value("none"), Some(QueryGenericLang::Disabled));
-        assert_eq!(QueryGenericLang::from_value("fra"), Some(QueryGenericLang::Enabled(Lang::Fra)));
+        assert_eq!(
+            QueryGenericLang::from_value("none"),
+            Some(QueryGenericLang::Disabled)
+        );
+        assert_eq!(
+            QueryGenericLang::from_value("fra"),
+            Some(QueryGenericLang::Enabled(Lang::Fra))
+        );
         assert_eq!(QueryGenericLang::from_value("xxx"), None);
     }
 }

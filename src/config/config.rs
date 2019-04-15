@@ -91,6 +91,9 @@ pub struct ConfigStoreKVDatabase {
 
     #[serde(default = "defaults::store_kv_database_max_flushes")]
     pub max_flushes: u16,
+
+    #[serde(default = "defaults::store_kv_database_write_buffer")]
+    pub write_buffer: usize,
 }
 
 #[derive(Deserialize)]

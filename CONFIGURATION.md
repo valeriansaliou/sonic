@@ -41,6 +41,7 @@ Sonic Configuration
 * `max_files` (type: _integer_, allowed: numbers, no default) — Maximum number of database files kept open at the same time per-database (if any; otherwise there are no limits)
 * `max_compactions` (type: _integer_, allowed: numbers, default: `1`) — Limit on the number of concurrent database compaction jobs
 * `max_flushes` (type: _integer_, allowed: numbers, default: `1`) — Limit on the number of concurrent database flush jobs
+* `write_buffer` (type: _integer_, allowed: numbers, default: `8192`) — Maximum size in KB of the write buffer, after which data gets flushed to disk (ie. `8192` is `8MB`; calculate in multiples of `1024`, eg. `128 * 1024` for `128MB`)
 
 **[store.fst]**
 
