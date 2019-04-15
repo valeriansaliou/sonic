@@ -150,10 +150,14 @@ impl StoreKVBuilder {
         // Make database options
         let mut db_options = DBOptions::default();
 
+        // Set static options
         db_options.create_if_missing(true);
         db_options.set_use_fsync(false);
         db_options.set_compaction_style(DBCompactionStyle::Level);
+        db_options.set_min_write_buffer_number(1);
+        db_options.set_max_write_buffer_number(2);
 
+        // Set dynamic options
         db_options.set_compression_type(if APP_CONF.store.kv.database.compress {
             DBCompressionType::Lz4
         } else {
