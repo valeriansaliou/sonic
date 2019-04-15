@@ -35,6 +35,12 @@ impl ConfigReader {
     }
 
     fn validate(config: &Config) {
+        // Check 'write_buffer' for KV
+        if config.store.kv.database.write_buffer == 0 {
+            panic!("write_buffer for kv must not be zero");
+        }
+
+        // Check 'consolidate_after' for FST
         if config.store.fst.graph.consolidate_after >= config.store.fst.pool.inactive_after {
             panic!("consolidate_after for fst must be strictly lower than inactive_after");
         }
