@@ -221,10 +221,7 @@ impl StoreKVActionBuilder {
     }
 
     fn build(bucket: StoreItemPart, store: Option<StoreKVBox>) -> StoreKVAction {
-        StoreKVAction {
-            store,
-            bucket,
-        }
+        StoreKVAction { store, bucket }
     }
 }
 
@@ -855,9 +852,7 @@ impl<'a> StoreKVAction<'a> {
 
 impl StoreKVKey {
     pub fn from_atom(collection_hash: StoreKVAtom) -> StoreKVKey {
-        StoreKVKey {
-            collection_hash,
-        }
+        StoreKVKey { collection_hash }
     }
 
     pub fn from_str(collection_str: &str) -> StoreKVKey {

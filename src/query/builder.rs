@@ -5,7 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use super::query::Query;
-use super::types::{QueryIngestLang, QuerySearchLang, QuerySearchLimit, QuerySearchOffset};
+use super::types::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset};
 use crate::lexer::token::{TokenLexerBuilder, TokenLexerMode};
 use crate::store::item::StoreItemBuilder;
 
@@ -21,11 +21,11 @@ impl QueryBuilder {
         terms: &'a str,
         limit: QuerySearchLimit,
         offset: QuerySearchOffset,
-        lang: Option<QuerySearchLang>,
+        lang: Option<QueryGenericLang>,
     ) -> QueryBuilderResult<'a> {
         match (
             StoreItemBuilder::from_depth_2(collection, bucket),
-            TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup(lang), terms),
+            TokenLexerBuilder::from(TokenLexerMode::from_query_lang(lang), terms),
         ) {
             (Ok(store), Ok(text_lexed)) => {
                 Ok(Query::Search(store, query_id, text_lexed, limit, offset))
@@ -55,11 +55,11 @@ impl QueryBuilder {
         bucket: &'a str,
         object: &'a str,
         text: &'a str,
-        lang: Option<QueryIngestLang>,
+        lang: Option<QueryGenericLang>,
     ) -> QueryBuilderResult<'a> {
         match (
             StoreItemBuilder::from_depth_3(collection, bucket, object),
-            TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup(lang), text),
+            TokenLexerBuilder::from(TokenLexerMode::from_query_lang(lang), text),
         ) {
             (Ok(store), Ok(text_lexed)) => Ok(Query::Push(store, text_lexed)),
             _ => Err(()),

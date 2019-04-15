@@ -169,9 +169,7 @@ impl StoreFSTPool {
                         .unwrap()
                         .as_secs();
 
-                    if force
-                        || not_consolidated_for >= APP_CONF.store.fst.graph.consolidate_after
-                    {
+                    if force || not_consolidated_for >= APP_CONF.store.fst.graph.consolidate_after {
                         info!(
                             "fst key: {} not consolidated for: {} seconds, may consolidate",
                             key, not_consolidated_for
@@ -386,8 +384,7 @@ impl StoreFSTPool {
                                 );
 
                                 // Proceed temporary FST to final FST path rename
-                                if std::fs::rename(&bucket_tmp_path, &bucket_final_path).is_ok()
-                                {
+                                if std::fs::rename(&bucket_tmp_path, &bucket_final_path).is_ok() {
                                     info!("done consolidate fst at path: {:?}", bucket_final_path);
                                 } else {
                                     error!(

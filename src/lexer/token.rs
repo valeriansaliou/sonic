@@ -12,6 +12,7 @@ use whatlang::{
 };
 
 use super::stopwords::LexerStopWord;
+use crate::query::types::QueryGenericLang;
 use crate::store::identifiers::{StoreTermHash, StoreTermHashed};
 
 pub struct TokenLexerBuilder;
@@ -221,6 +222,25 @@ impl<'a> TokenLexer<'a> {
     }
 }
 
+impl TokenLexerMode {
+    pub fn from_query_lang(lang: Option<QueryGenericLang>) -> TokenLexerMode {
+        match lang {
+            Some(QueryGenericLang::Enabled(lang)) => {
+                // Cleanup with provided language
+                TokenLexerMode::NormalizeAndCleanup(Some(lang))
+            }
+            Some(QueryGenericLang::Disabled) => {
+                // Normalize only (language purposefully set to 'none')
+                TokenLexerMode::NormalizeOnly
+            }
+            None => {
+                // Auto-detect language and cleanup (this is the default behavior)
+                TokenLexerMode::NormalizeAndCleanup(None)
+            }
+        }
+    }
+}
+
 impl<'a> Iterator for TokenLexer<'a> {
     type Item = (String, StoreTermHashed);
 
@@ -237,8 +257,7 @@ impl<'a> Iterator for TokenLexer<'a> {
             let word = word.to_lowercase();
 
             // Check if normalized word is a stop-word? (if should normalize and cleanup)
-            if self.mode == TokenLexerMode::NormalizeOnly
-                || !LexerStopWord::is(&word, self.locale)
+            if self.mode == TokenLexerMode::NormalizeOnly || !LexerStopWord::is(&word, self.locale)
             {
                 // Hash the term (this is used by all iterator consumers, as well as internally \
                 //   in the iterator to keep track of already-yielded words in a space-optimized \

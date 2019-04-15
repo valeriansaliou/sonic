@@ -12,7 +12,7 @@ use std::vec::Vec;
 
 use super::format::unescape;
 use crate::query::builder::{QueryBuilder, QueryBuilderResult};
-use crate::query::types::{QueryIngestLang, QuerySearchLang, QuerySearchLimit, QuerySearchOffset};
+use crate::query::types::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset};
 use crate::store::fst::StoreFSTPool;
 use crate::store::operation::StoreOperationDispatch;
 use crate::APP_CONF;
@@ -504,7 +504,7 @@ impl ChannelCommandSearch {
         (
             Option<QuerySearchLimit>,
             Option<QuerySearchOffset>,
-            Option<QuerySearchLang>,
+            Option<QueryGenericLang>,
         ),
         ChannelCommandError,
     > {
@@ -537,7 +537,7 @@ impl ChannelCommandSearch {
                     }
                     "LANG" => {
                         // 'LANG(<locale>)' where <locale> ∈ ISO 639-3
-                        if let Some(query_lang_parsed) = QuerySearchLang::from_code(meta_value) {
+                        if let Some(query_lang_parsed) = QueryGenericLang::from_value(meta_value) {
                             Ok((None, None, Some(query_lang_parsed)))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
@@ -743,7 +743,7 @@ impl ChannelCommandIngest {
 
     fn handle_push_meta(
         meta_result: MetaPartsResult,
-    ) -> Result<Option<QueryIngestLang>, ChannelCommandError> {
+    ) -> Result<Option<QueryGenericLang>, ChannelCommandError> {
         match meta_result {
             Ok((meta_key, meta_value)) => {
                 debug!("handle push meta: {} = {}", meta_key, meta_value);
@@ -751,7 +751,7 @@ impl ChannelCommandIngest {
                 match meta_key {
                     "LANG" => {
                         // 'LANG(<locale>)' where <locale> ∈ ISO 639-3
-                        if let Some(query_lang_parsed) = QueryIngestLang::from_code(meta_value) {
+                        if let Some(query_lang_parsed) = QueryGenericLang::from_value(meta_value) {
                             Ok(Some(query_lang_parsed))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
