@@ -801,25 +801,26 @@ impl ChannelCommandControl {
         }
     }
 
-    pub fn dispatch_info(_parts: SplitWhitespace) -> ChannelResult {
-        if let Ok(statistics) = ChannelStatistics::gather() {
-            let statistics_result = format!(
-                "uptime({}) clients_connected({}) commands_total({}) \
-                 command_latency_best({}) command_latency_worst({}) \
-                 kv_open_count({}) fst_open_count({}) fst_consolidate_count({})",
-                statistics.uptime,
-                statistics.clients_connected,
-                statistics.commands_total,
-                statistics.command_latency_best,
-                statistics.command_latency_worst,
-                statistics.kv_open_count,
-                statistics.fst_open_count,
-                statistics.fst_consolidate_count
-            );
+    pub fn dispatch_info(mut parts: SplitWhitespace) -> ChannelResult {
+        match parts.next() {
+            None => {
+                let statistics = ChannelStatistics::gather();
 
-            Ok(vec![ChannelCommandResponse::Result(statistics_result)])
-        } else {
-            Err(ChannelCommandError::InternalError)
+                Ok(vec![ChannelCommandResponse::Result(format!(
+                    "uptime({}) clients_connected({}) commands_total({}) \
+                     command_latency_best({}) command_latency_worst({}) \
+                     kv_open_count({}) fst_open_count({}) fst_consolidate_count({})",
+                    statistics.uptime,
+                    statistics.clients_connected,
+                    statistics.commands_total,
+                    statistics.command_latency_best,
+                    statistics.command_latency_worst,
+                    statistics.kv_open_count,
+                    statistics.fst_open_count,
+                    statistics.fst_consolidate_count
+                ))])
+            }
+            _ => Err(ChannelCommandError::InvalidFormat("INFO")),
         }
     }
 

@@ -43,10 +43,10 @@ pub fn ensure_states() {
 }
 
 impl ChannelStatistics {
-    pub fn gather() -> Result<ChannelStatistics, ()> {
+    pub fn gather() -> ChannelStatistics {
         let (kv_count, fst_count) = (StoreKVPool::count(), StoreFSTPool::count());
 
-        Ok(ChannelStatistics {
+        ChannelStatistics {
             uptime: START_TIME.elapsed().as_secs(),
             clients_connected: *CLIENTS_CONNECTED.read().unwrap(),
             commands_total: *COMMANDS_TOTAL.read().unwrap(),
@@ -55,6 +55,6 @@ impl ChannelStatistics {
             kv_open_count: kv_count,
             fst_open_count: fst_count.0,
             fst_consolidate_count: fst_count.1,
-        })
+        }
     }
 }
