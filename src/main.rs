@@ -51,6 +51,7 @@ use graceful::SignalGuard;
 use log::LevelFilter;
 
 use channel::listen::ChannelListenBuilder;
+use channel::statistics::ensure_states as ensure_states_channel_statistics;
 use config::config::Config;
 use config::logger::ConfigLogger;
 use config::reader::ConfigReader;
@@ -137,6 +138,9 @@ fn make_app_args() -> AppArgs {
 fn ensure_states() {
     // Ensure all statics are valid (a `deref` is enough to lazily initialize them)
     let (_, _) = (APP_ARGS.deref(), APP_CONF.deref());
+
+    // Ensure per-module states
+    ensure_states_channel_statistics();
 }
 
 fn main() {

@@ -93,6 +93,13 @@ impl StoreFSTPathMode {
 }
 
 impl StoreFSTPool {
+    pub fn count() -> (usize, usize) {
+        (
+            GRAPH_POOL.read().unwrap().len(),
+            GRAPH_CONSOLIDATE.read().unwrap().len(),
+        )
+    }
+
     pub fn acquire<'a, T: Into<&'a str>>(collection: T, bucket: T) -> Result<StoreFSTBox, ()> {
         let (collection_str, bucket_str) = (collection.into(), bucket.into());
 

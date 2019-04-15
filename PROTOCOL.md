@@ -170,6 +170,7 @@ _The Sonic Channel Control mode is used for administration purposes. Once in thi
 **➡️ Available commands:**
 
 * `TRIGGER`: trigger an action (syntax: `TRIGGER [<action>]?`; time complexity: `O(1)`)
+* `INFO`: get server information (syntax: `INFO`; time complexity: `O(1)`)
 * `PING`: ping server (syntax: `PING`; time complexity: `O(1)`)
 * `HELP`: show help (syntax: `HELP [<manual>]?`; time complexity: `O(1)`)
 * `QUIT`: stop connection (syntax: `QUIT`; time complexity: `O(1)`)

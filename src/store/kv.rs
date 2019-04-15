@@ -64,6 +64,10 @@ lazy_static! {
 }
 
 impl StoreKVPool {
+    pub fn count() -> usize {
+        STORE_POOL.read().unwrap().len()
+    }
+
     pub fn acquire<'a, T: Into<&'a str>>(
         mode: StoreKVAcquireMode,
         collection: T,

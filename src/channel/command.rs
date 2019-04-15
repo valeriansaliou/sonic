@@ -11,6 +11,7 @@ use std::str::{self, SplitWhitespace};
 use std::vec::Vec;
 
 use super::format::unescape;
+use super::statistics::ChannelStatistics;
 use crate::query::builder::{QueryBuilder, QueryBuilderResult};
 use crate::query::types::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset};
 use crate::store::fst::StoreFSTPool;
@@ -62,7 +63,7 @@ lazy_static! {
     pub static ref COMMANDS_MODE_INGEST: Vec<&'static str> =
         vec!["PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT"];
     pub static ref COMMANDS_MODE_CONTROL: Vec<&'static str> =
-        vec!["TRIGGER", "PING", "HELP", "QUIT"];
+        vec!["TRIGGER", "INFO", "PING", "HELP", "QUIT"];
     pub static ref CONTROL_TRIGGER_ACTIONS: Vec<&'static str> = vec!["consolidate"];
     static ref MANUAL_MODE_SEARCH: HashMap<&'static str, &'static Vec<&'static str>> =
         [("commands", &*COMMANDS_MODE_SEARCH)]
@@ -794,9 +795,31 @@ impl ChannelCommandControl {
                         _ => Err(ChannelCommandError::NotFound),
                     }
                 } else {
-                    Err(ChannelCommandError::InvalidFormat("HELP [<action>]?"))
+                    Err(ChannelCommandError::InvalidFormat("TRIGGER [<action>]?"))
                 }
             }
+        }
+    }
+
+    pub fn dispatch_info(_parts: SplitWhitespace) -> ChannelResult {
+        if let Ok(statistics) = ChannelStatistics::gather() {
+            let statistics_result = format!(
+                "uptime({}) clients_connected({}) commands_total({}) \
+                 command_latency_best({}) command_latency_worst({}) \
+                 kv_open_count({}) fst_open_count({}) fst_consolidate_count({})",
+                statistics.uptime,
+                statistics.clients_connected,
+                statistics.commands_total,
+                statistics.command_latency_best,
+                statistics.command_latency_worst,
+                statistics.kv_open_count,
+                statistics.fst_open_count,
+                statistics.fst_consolidate_count
+            );
+
+            Ok(vec![ChannelCommandResponse::Result(statistics_result)])
+        } else {
+            Err(ChannelCommandError::InternalError)
         }
     }
 

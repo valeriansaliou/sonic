@@ -16,6 +16,7 @@ use super::message::{
     ChannelMessageResult,
 };
 use super::mode::ChannelMode;
+use super::statistics::CLIENTS_CONNECTED;
 use crate::APP_CONF;
 use crate::LINE_FEED;
 
@@ -72,6 +73,9 @@ impl ChannelHandle {
         // Send connected banner
         write!(stream, "{}{}", *CONNECTED_BANNER, LINE_FEED).expect("write failed");
 
+        // Increment connected clients count
+        *CLIENTS_CONNECTED.write().unwrap() += 1;
+
         // Ensure channel mode is set
         match Self::ensure_start(&stream) {
             Ok(mode) => {
@@ -95,6 +99,9 @@ impl ChannelHandle {
                 write!(stream, "ENDED {}{}", err.to_str(), LINE_FEED).expect("write failed");
             }
         }
+
+        // Decrement connected clients count
+        *CLIENTS_CONNECTED.write().unwrap() -= 1;
     }
 
     fn configure_stream(stream: &TcpStream, is_established: bool) {

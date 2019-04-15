@@ -14,6 +14,7 @@ use super::command::{
     ChannelCommandResponse, ChannelCommandSearch, COMMANDS_MODE_CONTROL, COMMANDS_MODE_INGEST,
     COMMANDS_MODE_SEARCH,
 };
+use super::statistics::{COMMANDS_TOTAL, COMMAND_LATENCY_BEST, COMMAND_LATENCY_WORST};
 use crate::LINE_FEED;
 
 pub struct ChannelMessage;
@@ -107,6 +108,27 @@ impl ChannelMessage {
             );
         }
 
+        // Update command statistics
+        {
+            // Update performance measures
+            // Notice: commands that take 0ms are not accounted for there (ie. those are usually \
+            //   commands that do no work or I/O; they would make statistics less accurate)
+            let command_took_millis = command_took.as_millis() as u32;
+
+            if command_took_millis > *COMMAND_LATENCY_WORST.read().unwrap() {
+                *COMMAND_LATENCY_WORST.write().unwrap() = command_took_millis;
+            }
+            if command_took_millis > 0
+                && (*COMMAND_LATENCY_BEST.read().unwrap() == 0
+                    || command_took_millis < *COMMAND_LATENCY_BEST.read().unwrap())
+            {
+                *COMMAND_LATENCY_BEST.write().unwrap() = command_took_millis;
+            }
+
+            // Increment total commands
+            *COMMANDS_TOTAL.write().unwrap() += 1;
+        }
+
         result
     }
 
@@ -149,6 +171,7 @@ impl ChannelMessageMode for ChannelMessageModeControl {
     fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
         gen_channel_message_mode_handle!(message, COMMANDS_MODE_CONTROL, {
             "TRIGGER" => ChannelCommandControl::dispatch_trigger,
+            "INFO" => ChannelCommandControl::dispatch_info,
             "HELP" => ChannelCommandControl::dispatch_help,
         })
     }
