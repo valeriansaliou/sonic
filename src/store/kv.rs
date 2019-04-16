@@ -6,13 +6,17 @@
 
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
 use hashbrown::HashMap;
+use radix::RadixNum;
+use rocksdb::backup::{
+    BackupEngine as DBBackupEngine, BackupEngineOptions as DBBackupEngineOptions,
+};
 use rocksdb::{
     DBCompactionStyle, DBCompressionType, DBVector, Error as DBError, Options as DBOptions,
     WriteBatch, DB,
 };
 use std::fmt;
 use std::fs;
-use std::io::Cursor;
+use std::io::{self, Cursor};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::SystemTime;
@@ -55,6 +59,8 @@ pub enum StoreKVAcquireMode {
 
 type StoreKVAtom = u32;
 type StoreKVBox = Arc<StoreKV>;
+
+const ATOM_HASH_RADIX: usize = 16;
 
 lazy_static! {
     pub static ref STORE_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
@@ -123,10 +129,28 @@ impl StoreKVPool {
         )
     }
 
-    pub fn backup(path: &Path) -> Result<(), ()> {
+    pub fn backup(path: &Path) -> Result<(), io::Error> {
         debug!("backing up all kv stores to path: {:?}", path);
 
-        // TODO
+        // Create backup directory (full path)
+        fs::create_dir_all(path)?;
+
+        // Iterate on KV collections
+        for collection in fs::read_dir(&*APP_CONF.store.kv.path)? {
+            if let Ok(collection) = collection {
+                // Actual collection found?
+                match (collection.file_type(), collection.file_name().to_str()) {
+                    (Ok(collection_file_type), Some(collection_name)) => {
+                        if collection_file_type.is_dir() {
+                            debug!("kv collection ongoing backup: {}", collection_name);
+
+                            Self::backup_item(path, collection_name)?;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
 
         Ok(())
     }
@@ -139,6 +163,60 @@ impl StoreKVPool {
         //      lock)
         // -- TODO: read all KV dumps one-by-one, and read by RocksDB manager
         // -- TODO: close opened KV (if they appear in the backup)
+
+        // TODO: return error if any error occured
+        Ok(())
+    }
+
+    fn backup_item(path: &Path, collection_name: &str) -> Result<(), io::Error> {
+        // Acquire access lock (in blocking write mode), and reference it in context
+        // Notice: this prevents store to be acquired from any context
+        let _access = STORE_ACCESS_LOCK.write().unwrap();
+
+        // Generate path to KV backup
+        let kv_backup_path = path.join(collection_name);
+
+        debug!(
+            "kv collection: {} backing up to path: {:?}",
+            collection_name, kv_backup_path
+        );
+
+        // Erase any previously-existing KV backup
+        if kv_backup_path.exists() {
+            fs::remove_dir_all(&kv_backup_path)?;
+        }
+
+        // Create backup folder for collection
+        fs::create_dir_all(path.join(collection_name))?;
+
+        // Convert names to hashes (as names are hashes encoded as base-16 strings, but we need \
+        //   them as proper integers)
+        if let Ok(collection_radix) = RadixNum::from_str(collection_name, ATOM_HASH_RADIX) {
+            if let Ok(collection_hash) = collection_radix.as_decimal() {
+                if let Ok(origin_kv) = StoreKVBuilder::open(collection_hash as StoreKVAtom) {
+                    // Initialize KV database backup engine
+                    let mut kv_backup_engine =
+                        DBBackupEngine::open(&DBBackupEngineOptions::default(), &kv_backup_path)
+                            .or(Err(io::Error::new(
+                                io::ErrorKind::Other,
+                                "backup engine failure",
+                            )))?;
+
+                    // Proceed actual KV database backup
+                    kv_backup_engine
+                        .create_new_backup(&origin_kv)
+                        .or(Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            "database backup failure",
+                        )))?;
+
+                    info!(
+                        "kv collection: {} backed up to path: {:?}",
+                        collection_name, kv_backup_path
+                    );
+                }
+            }
+        }
 
         Ok(())
     }

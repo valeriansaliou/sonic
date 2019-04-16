@@ -804,8 +804,8 @@ impl ChannelCommandControl {
                                 // Proceed KV + FST backup
                                 let path = Path::new(path);
 
-                                if StoreKVPool::backup(path).is_ok()
-                                    && StoreFSTPool::backup(path).is_ok()
+                                if StoreKVPool::backup(&path.join("kv")).is_ok()
+                                    && StoreFSTPool::backup(&path.join("fst")).is_ok()
                                 {
                                     Ok(vec![ChannelCommandResponse::Ok])
                                 } else {

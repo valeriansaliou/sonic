@@ -21,6 +21,7 @@ extern crate fst_regex;
 extern crate graceful;
 extern crate hashbrown;
 extern crate linked_hash_set;
+extern crate radix;
 extern crate rand;
 extern crate regex_syntax;
 extern crate rocksdb;

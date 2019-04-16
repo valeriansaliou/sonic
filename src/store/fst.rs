@@ -12,11 +12,12 @@ use fst::{
 use fst_levenshtein::Levenshtein;
 use fst_regex::Regex;
 use hashbrown::{HashMap, HashSet};
+use radix::RadixNum;
 use regex_syntax::escape as regex_escape;
 use std::collections::VecDeque;
 use std::fmt;
 use std::fs::{self, File};
-use std::io::BufWriter;
+use std::io::{self, BufWriter, Write};
 use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 use std::str;
@@ -66,12 +67,14 @@ pub struct StoreFSTMisc;
 enum StoreFSTPathMode {
     Permanent,
     Temporary,
+    Backup,
 }
 
 type StoreFSTAtom = u32;
 type StoreFSTBox = Arc<StoreFST>;
 
 const WORD_LIMIT_LENGTH: usize = 40;
+const ATOM_HASH_RADIX: usize = 16;
 
 lazy_static! {
     pub static ref GRAPH_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
@@ -87,7 +90,8 @@ impl StoreFSTPathMode {
     fn extension(&self) -> &'static str {
         match self {
             StoreFSTPathMode::Permanent => ".fst",
-            StoreFSTPathMode::Temporary => ".tmp",
+            StoreFSTPathMode::Temporary => ".fst.tmp",
+            StoreFSTPathMode::Backup => ".fst.bck",
         }
     }
 }
@@ -137,11 +141,67 @@ impl StoreFSTPool {
         )
     }
 
-    pub fn backup(path: &Path) -> Result<(), ()> {
+    pub fn backup(path: &Path) -> Result<(), io::Error> {
         debug!("backing up all fst stores to path: {:?}", path);
 
-        // TODO: read all FSTs one-by-one
-        // TODO: stream each FST word to a .fst.bck file, for each fst
+        let fst_extension = StoreFSTPathMode::Permanent.extension();
+        let fst_extension_len = fst_extension.len();
+
+        // Create backup directory (full path)
+        fs::create_dir_all(path)?;
+
+        // Iterate on FST collections
+        for collection in fs::read_dir(&*APP_CONF.store.fst.path)? {
+            if let Ok(collection) = collection {
+                // Actual collection found?
+                match (collection.file_type(), collection.file_name().to_str()) {
+                    (Ok(collection_file_type), Some(collection_name)) => {
+                        if collection_file_type.is_dir() {
+                            debug!("fst collection ongoing backup: {}", collection_name);
+
+                            // Create backup folder for collection
+                            fs::create_dir_all(path.join(collection_name))?;
+
+                            // Iterate on FST collection buckets
+                            for bucket in
+                                fs::read_dir(APP_CONF.store.fst.path.join(collection_name))?
+                            {
+                                if let Ok(bucket) = bucket {
+                                    // Actual bucket found?
+                                    match (bucket.file_type(), bucket.file_name().to_str()) {
+                                        (Ok(bucket_file_type), Some(bucket_file_name)) => {
+                                            let bucket_file_name_len = bucket_file_name.len();
+
+                                            if bucket_file_type.is_file()
+                                                && bucket_file_name_len > fst_extension_len
+                                                && bucket_file_name.ends_with(fst_extension)
+                                            {
+                                                // Acquire bucket name (from full file name)
+                                                let bucket_name = &bucket_file_name
+                                                    [..(bucket_file_name_len - fst_extension_len)];
+
+                                                debug!(
+                                                    "fst bucket ongoing backup: {}/{}",
+                                                    collection_name, bucket_name
+                                                );
+
+                                                Self::backup_item(
+                                                    path,
+                                                    collection_name,
+                                                    bucket_name,
+                                                )?;
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
 
         Ok(())
     }
@@ -156,6 +216,7 @@ impl StoreFSTPool {
         // -- TODO: re-build actual ordered FST
         // -- TODO: close opened FST + nuke their consolidate (if they appear in the backup)
 
+        // TODO: return error if any error occured
         Ok(())
     }
 
@@ -290,6 +351,66 @@ impl StoreFSTPool {
             "done scanning for fst store pool items to consolidate (move: {}, push: {}, pop: {})",
             count_moved, count_pushed, count_popped
         );
+    }
+
+    fn backup_item(path: &Path, collection_name: &str, bucket_name: &str) -> Result<(), io::Error> {
+        // Acquire access lock (in blocking write mode), and reference it in context
+        // Notice: this prevents store to be acquired from any context
+        let _access = GRAPH_ACCESS_LOCK.write().unwrap();
+
+        // Generate path to FST backup
+        let fst_backup_path = path.join(collection_name).join(format!(
+            "{}{}",
+            bucket_name,
+            StoreFSTPathMode::Backup.extension()
+        ));
+
+        debug!(
+            "fst bucket: {}/{} backing up to path: {:?}",
+            collection_name, bucket_name, fst_backup_path
+        );
+
+        // Erase any previously-existing FST backup
+        fs::remove_file(&fst_backup_path).ok();
+
+        // Stream actual FST data to FST backup
+        let backup_fst_file = File::create(&fst_backup_path)?;
+        let mut backup_fst_writer = BufWriter::new(backup_fst_file);
+
+        let mut count_words = 0;
+
+        // Convert names to hashes (as names are hashes encoded as base-16 strings, but we need \
+        //   them as proper integers)
+        if let (Ok(collection_radix), Ok(bucket_radix)) = (
+            RadixNum::from_str(collection_name, ATOM_HASH_RADIX),
+            RadixNum::from_str(bucket_name, ATOM_HASH_RADIX),
+        ) {
+            if let (Ok(collection_hash), Ok(bucket_hash)) =
+                (collection_radix.as_decimal(), bucket_radix.as_decimal())
+            {
+                if let Ok(origin_fst) = StoreFSTBuilder::open(
+                    collection_hash as StoreFSTAtom,
+                    bucket_hash as StoreFSTAtom,
+                ) {
+                    let mut origin_fst_stream = origin_fst.stream();
+
+                    while let Some(word) = origin_fst_stream.next() {
+                        count_words += 1;
+
+                        // Write word, and append a new line
+                        backup_fst_writer.write(word)?;
+                        backup_fst_writer.write("\n".as_bytes())?;
+                    }
+
+                    info!(
+                        "fst bucket: {}/{} backed up to path: {:?} ({} words)",
+                        collection_name, bucket_name, fst_backup_path, count_words
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn consolidate_item(store: &StoreFSTBox) -> (bool, usize, usize, usize) {
