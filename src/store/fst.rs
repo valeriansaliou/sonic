@@ -18,7 +18,7 @@ use std::fmt;
 use std::fs::{self, File};
 use std::io::BufWriter;
 use std::iter::FromIterator;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
@@ -135,6 +135,28 @@ impl StoreFSTPool {
             APP_CONF.store.fst.pool.inactive_after,
             &*GRAPH_ACCESS_LOCK,
         )
+    }
+
+    pub fn backup(path: &Path) -> Result<(), ()> {
+        debug!("backing up all fst stores to path: {:?}", path);
+
+        // TODO: read all FSTs one-by-one
+        // TODO: stream each FST word to a .fst.bck file, for each fst
+
+        Ok(())
+    }
+
+    pub fn restore(path: &Path) -> Result<(), ()> {
+        debug!("restoring all fst stores from path: {:?}", path);
+
+        // TODO: <iteratively do this>:
+        // -- TODO: iteratively lock; for each FST file being processed (access + write locks; \
+        //      same as destroy lock)
+        // -- TODO: read all FST backups one-by-one
+        // -- TODO: re-build actual ordered FST
+        // -- TODO: close opened FST + nuke their consolidate (if they appear in the backup)
+
+        Ok(())
     }
 
     pub fn consolidate(force: bool) {

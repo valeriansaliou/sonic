@@ -13,7 +13,7 @@ use rocksdb::{
 use std::fmt;
 use std::fs;
 use std::io::Cursor;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::SystemTime;
 use std::vec::Drain;
@@ -121,6 +121,26 @@ impl StoreKVPool {
             APP_CONF.store.kv.pool.inactive_after,
             &*STORE_ACCESS_LOCK,
         )
+    }
+
+    pub fn backup(path: &Path) -> Result<(), ()> {
+        debug!("backing up all kv stores to path: {:?}", path);
+
+        // TODO
+
+        Ok(())
+    }
+
+    pub fn restore(path: &Path) -> Result<(), ()> {
+        debug!("restoring all kv stores from path: {:?}", path);
+
+        // TODO: <iteratively do this>:
+        // -- TODO: lock for each KV dump being processed (access + write locks; same as destroy \
+        //      lock)
+        // -- TODO: read all KV dumps one-by-one, and read by RocksDB manager
+        // -- TODO: close opened KV (if they appear in the backup)
+
+        Ok(())
     }
 }
 

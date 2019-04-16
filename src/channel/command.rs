@@ -7,6 +7,7 @@
 use hashbrown::HashMap;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
+use std::path::Path;
 use std::str::{self, SplitWhitespace};
 use std::vec::Vec;
 
@@ -15,6 +16,7 @@ use super::statistics::ChannelStatistics;
 use crate::query::builder::{QueryBuilder, QueryBuilderResult};
 use crate::query::types::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset};
 use crate::store::fst::StoreFSTPool;
+use crate::store::kv::StoreKVPool;
 use crate::store::operation::StoreOperationDispatch;
 use crate::APP_CONF;
 
@@ -64,7 +66,8 @@ lazy_static! {
         vec!["PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT"];
     pub static ref COMMANDS_MODE_CONTROL: Vec<&'static str> =
         vec!["TRIGGER", "INFO", "PING", "HELP", "QUIT"];
-    pub static ref CONTROL_TRIGGER_ACTIONS: Vec<&'static str> = vec!["consolidate"];
+    pub static ref CONTROL_TRIGGER_ACTIONS: Vec<&'static str> =
+        vec!["consolidate", "backup", "restore"];
     static ref MANUAL_MODE_SEARCH: HashMap<&'static str, &'static Vec<&'static str>> =
         [("commands", &*COMMANDS_MODE_SEARCH)]
             .iter()
@@ -776,26 +779,60 @@ impl ChannelCommandIngest {
 
 impl ChannelCommandControl {
     pub fn dispatch_trigger(mut parts: SplitWhitespace) -> ChannelResult {
-        match (parts.next(), parts.next()) {
-            (None, _) => Ok(vec![ChannelCommandResponse::Result(format!(
+        match (parts.next(), parts.next(), parts.next()) {
+            (None, _, _) => Ok(vec![ChannelCommandResponse::Result(format!(
                 "actions({})",
                 CONTROL_TRIGGER_ACTIONS.join(", ")
             ))]),
-            (Some(action_key), next_part) => {
-                if next_part.is_none() {
-                    let action_key_lower = action_key.to_lowercase();
+            (Some(action_key), data_part, last_part) => {
+                let action_key_lower = action_key.to_lowercase();
 
-                    match action_key_lower.as_str() {
-                        "consolidate" => {
+                match action_key_lower.as_str() {
+                    "consolidate" => {
+                        if data_part.is_none() {
                             // Force a FST consolidate
                             StoreFSTPool::consolidate(true);
 
                             Ok(vec![ChannelCommandResponse::Ok])
+                        } else {
+                            Err(ChannelCommandError::InvalidFormat("TRIGGER consolidate"))
                         }
-                        _ => Err(ChannelCommandError::NotFound),
                     }
-                } else {
-                    Err(ChannelCommandError::InvalidFormat("TRIGGER [<action>]?"))
+                    "backup" => {
+                        match (data_part, last_part) {
+                            (Some(path), None) => {
+                                // Proceed KV + FST backup
+                                let path = Path::new(path);
+
+                                if StoreKVPool::backup(path).is_ok()
+                                    && StoreFSTPool::backup(path).is_ok()
+                                {
+                                    Ok(vec![ChannelCommandResponse::Ok])
+                                } else {
+                                    Err(ChannelCommandError::InternalError)
+                                }
+                            }
+                            _ => Err(ChannelCommandError::InvalidFormat("TRIGGER backup <path>")),
+                        }
+                    }
+                    "restore" => {
+                        match (data_part, last_part) {
+                            (Some(path), None) => {
+                                // Proceed KV + FST restore
+                                let path = Path::new(path);
+
+                                if StoreKVPool::restore(path).is_ok()
+                                    && StoreFSTPool::restore(path).is_ok()
+                                {
+                                    Ok(vec![ChannelCommandResponse::Ok])
+                                } else {
+                                    Err(ChannelCommandError::InternalError)
+                                }
+                            }
+                            _ => Err(ChannelCommandError::InvalidFormat("TRIGGER restore <path>")),
+                        }
+                    }
+                    _ => Err(ChannelCommandError::NotFound),
                 }
             }
         }

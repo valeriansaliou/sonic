@@ -169,7 +169,7 @@ _The Sonic Channel Control mode is used for administration purposes. Once in thi
 
 **➡️ Available commands:**
 
-* `TRIGGER`: trigger an action (syntax: `TRIGGER [<action>]?`; time complexity: `O(1)`)
+* `TRIGGER`: trigger an action (syntax: `TRIGGER [<action>]? [<data>]?`; time complexity: `O(1)`)
 * `INFO`: get server information (syntax: `INFO`; time complexity: `O(1)`)
 * `PING`: ping server (syntax: `PING`; time complexity: `O(1)`)
 * `HELP`: show help (syntax: `HELP [<manual>]?`; time complexity: `O(1)`)
@@ -177,7 +177,8 @@ _The Sonic Channel Control mode is used for administration purposes. Once in thi
 
 **⏩ Syntax terminology:**
 
-* `<action>`: action to be triggered (available actions: `consolidate`);
+* `<action>`: action to be triggered (available actions: `consolidate`, `backup`, `restore`);
+* `<data>`: additional data to provide to the action (required for: `backup`, `restore`);
 * `<manual>`: help manual to be shown (available manuals: `commands`);
 
 **⬇️ Control flow example (via `telnet`):**
