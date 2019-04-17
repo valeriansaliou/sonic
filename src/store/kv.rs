@@ -138,18 +138,18 @@ impl StoreKVPool {
 
         // Iterate on KV collections
         for collection in fs::read_dir(&*APP_CONF.store.kv.path)? {
-            if let Ok(collection) = collection {
-                // Actual collection found?
-                match (collection.file_type(), collection.file_name().to_str()) {
-                    (Ok(collection_file_type), Some(collection_name)) => {
-                        if collection_file_type.is_dir() {
-                            debug!("kv collection ongoing backup: {}", collection_name);
+            let collection = collection?;
 
-                            Self::backup_item(path, collection_name)?;
-                        }
+            // Actual collection found?
+            match (collection.file_type(), collection.file_name().to_str()) {
+                (Ok(collection_file_type), Some(collection_name)) => {
+                    if collection_file_type.is_dir() {
+                        debug!("kv collection ongoing backup: {}", collection_name);
+
+                        Self::backup_item(path, collection_name)?;
                     }
-                    _ => {}
                 }
+                _ => {}
             }
         }
 
@@ -161,18 +161,18 @@ impl StoreKVPool {
 
         // Iterate on backup KV collections
         for collection in fs::read_dir(path)? {
-            if let Ok(collection) = collection {
-                // Actual collection found?
-                match (collection.file_type(), collection.file_name().to_str()) {
-                    (Ok(collection_file_type), Some(collection_name)) => {
-                        if collection_file_type.is_dir() {
-                            debug!("kv collection ongoing restore: {}", collection_name);
+            let collection = collection?;
 
-                            Self::restore_item(&collection.path(), collection_name)?;
-                        }
+            // Actual collection found?
+            match (collection.file_type(), collection.file_name().to_str()) {
+                (Ok(collection_file_type), Some(collection_name)) => {
+                    if collection_file_type.is_dir() {
+                        debug!("kv collection ongoing restore: {}", collection_name);
+
+                        Self::restore_item(&collection.path(), collection_name)?;
                     }
-                    _ => {}
                 }
+                _ => {}
             }
         }
 
@@ -204,28 +204,23 @@ impl StoreKVPool {
         //   them as proper integers)
         if let Ok(collection_radix) = RadixNum::from_str(collection_name, ATOM_HASH_RADIX) {
             if let Ok(collection_hash) = collection_radix.as_decimal() {
-                if let Ok(origin_kv) = StoreKVBuilder::open(collection_hash as StoreKVAtom) {
-                    // Initialize KV database backup engine
-                    let mut kv_backup_engine =
-                        DBBackupEngine::open(&DBBackupEngineOptions::default(), &kv_backup_path)
-                            .or(Err(io::Error::new(
-                                io::ErrorKind::Other,
-                                "backup engine failure",
-                            )))?;
+                let origin_kv = StoreKVBuilder::open(collection_hash as StoreKVAtom)
+                    .or(io_error!("database open failure"))?;
 
-                    // Proceed actual KV database backup
-                    kv_backup_engine
-                        .create_new_backup(&origin_kv)
-                        .or(Err(io::Error::new(
-                            io::ErrorKind::Other,
-                            "database backup failure",
-                        )))?;
+                // Initialize KV database backup engine
+                let mut kv_backup_engine =
+                    DBBackupEngine::open(&DBBackupEngineOptions::default(), &kv_backup_path)
+                        .or(io_error!("backup engine failure"))?;
 
-                    info!(
-                        "kv collection: {} backed up to path: {:?}",
-                        collection_name, kv_backup_path
-                    );
-                }
+                // Proceed actual KV database backup
+                kv_backup_engine
+                    .create_new_backup(&origin_kv)
+                    .or(io_error!("database backup failure"))?;
+
+                info!(
+                    "kv collection: {} backed up to path: {:?}",
+                    collection_name, kv_backup_path
+                );
             }
         }
 
@@ -262,16 +257,12 @@ impl StoreKVPool {
 
                 // Initialize KV database backup engine
                 let mut kv_backup_engine =
-                    DBBackupEngine::open(&DBBackupEngineOptions::default(), &path).or(Err(
-                        io::Error::new(io::ErrorKind::Other, "backup engine failure"),
-                    ))?;
+                    DBBackupEngine::open(&DBBackupEngineOptions::default(), &path)
+                        .or(io_error!("backup engine failure"))?;
 
                 kv_backup_engine
                     .restore_from_latest_backup(&kv_path, &kv_path, &DBRestoreOptions::default())
-                    .or(Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "database restore failure",
-                    )))?;
+                    .or(io_error!("database restore failure"))?;
 
                 info!(
                     "kv collection: {} restored to path: {:?} from backup: {:?}",
