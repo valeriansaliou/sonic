@@ -9,6 +9,7 @@ use hashbrown::HashMap;
 use radix::RadixNum;
 use rocksdb::backup::{
     BackupEngine as DBBackupEngine, BackupEngineOptions as DBBackupEngineOptions,
+    RestoreOptions as DBRestoreOptions,
 };
 use rocksdb::{
     DBCompactionStyle, DBCompressionType, DBVector, Error as DBError, Options as DBOptions,
@@ -155,16 +156,26 @@ impl StoreKVPool {
         Ok(())
     }
 
-    pub fn restore(path: &Path) -> Result<(), ()> {
+    pub fn restore(path: &Path) -> Result<(), io::Error> {
         debug!("restoring all kv stores from path: {:?}", path);
 
-        // TODO: <iteratively do this>:
-        // -- TODO: lock for each KV dump being processed (access + write locks; same as destroy \
-        //      lock)
-        // -- TODO: read all KV dumps one-by-one, and read by RocksDB manager
-        // -- TODO: close opened KV (if they appear in the backup)
+        // Iterate on backup KV collections
+        for collection in fs::read_dir(path)? {
+            if let Ok(collection) = collection {
+                // Actual collection found?
+                match (collection.file_type(), collection.file_name().to_str()) {
+                    (Ok(collection_file_type), Some(collection_name)) => {
+                        if collection_file_type.is_dir() {
+                            debug!("kv collection ongoing restore: {}", collection_name);
 
-        // TODO: return error if any error occured
+                            Self::restore_item(&collection.path(), collection_name)?;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -215,6 +226,60 @@ impl StoreKVPool {
                         collection_name, kv_backup_path
                     );
                 }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn restore_item(path: &Path, collection_name: &str) -> Result<(), io::Error> {
+        // Acquire access lock (in blocking write mode), and reference it in context
+        // Notice: this prevents store to be acquired from any context
+        let _access = STORE_ACCESS_LOCK.write().unwrap();
+
+        debug!(
+            "kv collection: {} restoring from path: {:?}",
+            collection_name, path
+        );
+
+        // Convert names to hashes (as names are hashes encoded as base-16 strings, but we need \
+        //   them as proper integers)
+        if let Ok(collection_radix) = RadixNum::from_str(collection_name, ATOM_HASH_RADIX) {
+            if let Ok(collection_hash) = collection_radix.as_decimal() {
+                // Force a KV store close
+                STORE_POOL
+                    .write()
+                    .unwrap()
+                    .remove(&StoreKVKey::from_atom(collection_hash as StoreKVAtom));
+
+                // Generate path to KV
+                let kv_path = StoreKVBuilder::path(collection_hash as StoreKVAtom);
+
+                // Remove existing KV database data?
+                if kv_path.exists() {
+                    fs::remove_dir_all(&kv_path)?;
+                }
+
+                // Create KV folder for collection
+                fs::create_dir_all(&kv_path)?;
+
+                // Initialize KV database backup engine
+                let mut kv_backup_engine =
+                    DBBackupEngine::open(&DBBackupEngineOptions::default(), &path).or(Err(
+                        io::Error::new(io::ErrorKind::Other, "backup engine failure"),
+                    ))?;
+
+                kv_backup_engine
+                    .restore_from_latest_backup(&kv_path, &kv_path, &DBRestoreOptions::default())
+                    .or(Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "database restore failure",
+                    )))?;
+
+                info!(
+                    "kv collection: {} restored to path: {:?} from backup: {:?}",
+                    collection_name, kv_path, path
+                );
             }
         }
 

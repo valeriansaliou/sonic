@@ -59,6 +59,9 @@ const TEXT_PART_ESCAPE: char = '\\';
 const META_PART_GROUP_OPEN: char = '(';
 const META_PART_GROUP_CLOSE: char = ')';
 
+static BACKUP_KV_PATH: &'static str = "kv";
+static BACKUP_FST_PATH: &'static str = "fst";
+
 lazy_static! {
     pub static ref COMMANDS_MODE_SEARCH: Vec<&'static str> =
         vec!["QUERY", "SUGGEST", "PING", "HELP", "QUIT"];
@@ -804,8 +807,8 @@ impl ChannelCommandControl {
                                 // Proceed KV + FST backup
                                 let path = Path::new(path);
 
-                                if StoreKVPool::backup(&path.join("kv")).is_ok()
-                                    && StoreFSTPool::backup(&path.join("fst")).is_ok()
+                                if StoreKVPool::backup(&path.join(BACKUP_KV_PATH)).is_ok()
+                                    && StoreFSTPool::backup(&path.join(BACKUP_FST_PATH)).is_ok()
                                 {
                                     Ok(vec![ChannelCommandResponse::Ok])
                                 } else {
@@ -821,8 +824,8 @@ impl ChannelCommandControl {
                                 // Proceed KV + FST restore
                                 let path = Path::new(path);
 
-                                if StoreKVPool::restore(path).is_ok()
-                                    && StoreFSTPool::restore(path).is_ok()
+                                if StoreKVPool::restore(&path.join(BACKUP_KV_PATH)).is_ok()
+                                    && StoreFSTPool::restore(&path.join(BACKUP_FST_PATH)).is_ok()
                                 {
                                     Ok(vec![ChannelCommandResponse::Ok])
                                 } else {

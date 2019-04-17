@@ -17,7 +17,7 @@ use regex_syntax::escape as regex_escape;
 use std::collections::VecDeque;
 use std::fmt;
 use std::fs::{self, File};
-use std::io::{self, BufWriter, Write};
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 use std::str;
@@ -206,17 +206,64 @@ impl StoreFSTPool {
         Ok(())
     }
 
-    pub fn restore(path: &Path) -> Result<(), ()> {
+    pub fn restore(path: &Path) -> Result<(), io::Error> {
         debug!("restoring all fst stores from path: {:?}", path);
 
-        // TODO: <iteratively do this>:
-        // -- TODO: iteratively lock; for each FST file being processed (access + write locks; \
-        //      same as destroy lock)
-        // -- TODO: read all FST backups one-by-one
-        // -- TODO: re-build actual ordered FST
-        // -- TODO: close opened FST + nuke their consolidate (if they appear in the backup)
+        let fst_backup_extension = StoreFSTPathMode::Backup.extension();
+        let fst_backup_extension_len = fst_backup_extension.len();
 
-        // TODO: return error if any error occured
+        // Iterate on FST collections
+        for collection in fs::read_dir(path)? {
+            if let Ok(collection) = collection {
+                // Actual collection found?
+                match (collection.file_type(), collection.file_name().to_str()) {
+                    (Ok(collection_file_type), Some(collection_name)) => {
+                        if collection_file_type.is_dir() {
+                            debug!("fst collection ongoing restore: {}", collection_name);
+
+                            // Create folder for collection
+                            fs::create_dir_all(APP_CONF.store.fst.path.join(collection_name))?;
+
+                            // Iterate on FST collection buckets
+                            for bucket in fs::read_dir(path.join(collection_name))? {
+                                if let Ok(bucket) = bucket {
+                                    // Actual bucket found?
+                                    match (bucket.file_type(), bucket.file_name().to_str()) {
+                                        (Ok(bucket_file_type), Some(bucket_file_name)) => {
+                                            let bucket_file_name_len = bucket_file_name.len();
+
+                                            if bucket_file_type.is_file()
+                                                && bucket_file_name_len > fst_backup_extension_len
+                                                && bucket_file_name.ends_with(fst_backup_extension)
+                                            {
+                                                // Acquire bucket name (from full file name)
+                                                let bucket_name = &bucket_file_name
+                                                    [..(bucket_file_name_len
+                                                        - fst_backup_extension_len)];
+
+                                                debug!(
+                                                    "fst bucket ongoing restore: {}/{}",
+                                                    collection_name, bucket_name
+                                                );
+
+                                                Self::restore_item(
+                                                    &bucket.path(),
+                                                    collection_name,
+                                                    bucket_name,
+                                                )?;
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -407,6 +454,85 @@ impl StoreFSTPool {
                         collection_name, bucket_name, fst_backup_path, count_words
                     );
                 }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn restore_item(
+        path: &Path,
+        collection_name: &str,
+        bucket_name: &str,
+    ) -> Result<(), io::Error> {
+        // Acquire access lock (in blocking write mode), and reference it in context
+        // Notice: this prevents store to be acquired from any context
+        let _access = GRAPH_ACCESS_LOCK.write().unwrap();
+
+        debug!(
+            "fst bucket: {}/{} restoring from path: {:?}",
+            collection_name, bucket_name, path
+        );
+
+        // Convert names to hashes (as names are hashes encoded as base-16 strings, but we need \
+        //   them as proper integers)
+        if let (Ok(collection_radix), Ok(bucket_radix)) = (
+            RadixNum::from_str(collection_name, ATOM_HASH_RADIX),
+            RadixNum::from_str(bucket_name, ATOM_HASH_RADIX),
+        ) {
+            if let (Ok(collection_hash), Ok(bucket_hash)) =
+                (collection_radix.as_decimal(), bucket_radix.as_decimal())
+            {
+                // Force a FST store close
+                {
+                    let bucket_target = StoreFSTKey::from_atom(
+                        collection_hash as StoreFSTAtom,
+                        bucket_hash as StoreFSTAtom,
+                    );
+
+                    GRAPH_POOL.write().unwrap().remove(&bucket_target);
+                    GRAPH_CONSOLIDATE.write().unwrap().remove(&bucket_target);
+                }
+
+                // Generate path to FST
+                let fst_path = StoreFSTBuilder::path(
+                    StoreFSTPathMode::Permanent,
+                    collection_hash as StoreFSTAtom,
+                    Some(bucket_hash as StoreFSTAtom),
+                );
+
+                // Remove existing FST data?
+                if fst_path.exists() {
+                    fs::remove_file(&fst_path)?;
+                }
+
+                // Stream backup words to restored FST
+                let fst_writer = BufWriter::new(File::create(&fst_path)?);
+                let fst_backup_reader = BufReader::new(File::open(&path)?);
+
+                let mut fst_builder = FSTSetBuilder::new(fst_writer).or(Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "graph restore builder failure",
+                )))?;
+
+                for word in fst_backup_reader.lines() {
+                    if let Ok(word) = word {
+                        fst_builder.insert(word).or(Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            "graph restore word insert failure",
+                        )))?;
+                    }
+                }
+
+                fst_builder.finish().or(Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "graph restore finish failure",
+                )))?;
+
+                info!(
+                    "fst bucket: {}/{} restored to path: {:?} from backup: {:?}",
+                    collection_name, bucket_name, fst_path, path
+                );
             }
         }
 
