@@ -247,10 +247,7 @@ impl StoreKVPool {
         if let Ok(collection_radix) = RadixNum::from_str(collection_name, ATOM_HASH_RADIX) {
             if let Ok(collection_hash) = collection_radix.as_decimal() {
                 // Force a KV store close
-                STORE_POOL
-                    .write()
-                    .unwrap()
-                    .remove(&StoreKVKey::from_atom(collection_hash as StoreKVAtom));
+                StoreKVBuilder::close(collection_hash as StoreKVAtom);
 
                 // Generate path to KV
                 let kv_path = StoreKVBuilder::path(collection_hash as StoreKVAtom);
@@ -301,6 +298,19 @@ impl StoreKVBuilder {
 
         // Open database at path for collection
         DB::open(&db_options, Self::path(collection_hash))
+    }
+
+    fn close(collection_hash: StoreKVAtom) {
+        debug!(
+            "closing key-value database for collection: <{:x?}>",
+            collection_hash
+        );
+
+        let mut store_pool_write = STORE_POOL.write().unwrap();
+
+        let collection_target = StoreKVKey::from_atom(collection_hash);
+
+        store_pool_write.remove(&collection_target);
     }
 
     fn path(collection_hash: StoreKVAtom) -> PathBuf {
@@ -403,13 +413,7 @@ impl StoreGenericActionBuilder for StoreKVActionBuilder {
         let collection_path = StoreKVBuilder::path(collection_atom);
 
         // Force a KV store close
-        {
-            let mut store_pool_write = STORE_POOL.write().unwrap();
-
-            let collection_target = StoreKVKey::from_atom(collection_atom);
-
-            store_pool_write.remove(&collection_target);
-        }
+        StoreKVBuilder::close(collection_atom);
 
         if collection_path.exists() {
             debug!(

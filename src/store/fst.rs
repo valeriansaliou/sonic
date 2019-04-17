@@ -484,15 +484,10 @@ impl StoreFSTPool {
                 (collection_radix.as_decimal(), bucket_radix.as_decimal())
             {
                 // Force a FST store close
-                {
-                    let bucket_target = StoreFSTKey::from_atom(
-                        collection_hash as StoreFSTAtom,
-                        bucket_hash as StoreFSTAtom,
-                    );
-
-                    GRAPH_POOL.write().unwrap().remove(&bucket_target);
-                    GRAPH_CONSOLIDATE.write().unwrap().remove(&bucket_target);
-                }
+                StoreFSTBuilder::close(
+                    collection_hash as StoreFSTAtom,
+                    bucket_hash as StoreFSTAtom,
+                );
 
                 // Generate path to FST
                 let fst_path = StoreFSTBuilder::path(
@@ -733,6 +728,18 @@ impl StoreFSTBuilder {
 
             FSTSet::from_iter(empty_iter)
         }
+    }
+
+    fn close(collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) {
+        debug!(
+            "closing finite-state transducer graph for collection: <{:x?}> and bucket: <{:x?}>",
+            collection_hash, bucket_hash
+        );
+
+        let bucket_target = StoreFSTKey::from_atom(collection_hash, bucket_hash);
+
+        GRAPH_POOL.write().unwrap().remove(&bucket_target);
+        GRAPH_CONSOLIDATE.write().unwrap().remove(&bucket_target);
     }
 
     fn path(
@@ -989,17 +996,7 @@ impl StoreGenericActionBuilder for StoreFSTActionBuilder {
         );
 
         // Force a FST graph close
-        {
-            debug!(
-                "fst bucket graph force close for bucket: {}/{}",
-                collection_str, bucket_str
-            );
-
-            let bucket_target = StoreFSTKey::from_atom(collection_atom, bucket_atom);
-
-            GRAPH_POOL.write().unwrap().remove(&bucket_target);
-            GRAPH_CONSOLIDATE.write().unwrap().remove(&bucket_target);
-        }
+        StoreFSTBuilder::close(collection_atom, bucket_atom);
 
         // Remove FST on-disk
         if bucket_path.exists() {
