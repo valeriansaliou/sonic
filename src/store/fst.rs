@@ -144,120 +144,30 @@ impl StoreFSTPool {
     pub fn backup(path: &Path) -> Result<(), io::Error> {
         debug!("backing up all fst stores to path: {:?}", path);
 
-        let fst_extension = StoreFSTPathMode::Permanent.extension();
-        let fst_extension_len = fst_extension.len();
-
         // Create backup directory (full path)
         fs::create_dir_all(path)?;
 
-        // Iterate on FST collections
-        for collection in fs::read_dir(&*APP_CONF.store.fst.path)? {
-            let collection = collection?;
-
-            // Actual collection found?
-            match (collection.file_type(), collection.file_name().to_str()) {
-                (Ok(collection_file_type), Some(collection_name)) => {
-                    if collection_file_type.is_dir() {
-                        debug!("fst collection ongoing backup: {}", collection_name);
-
-                        // Create backup folder for collection
-                        fs::create_dir_all(path.join(collection_name))?;
-
-                        // Iterate on FST collection buckets
-                        for bucket in fs::read_dir(APP_CONF.store.fst.path.join(collection_name))? {
-                            let bucket = bucket?;
-
-                            // Actual bucket found?
-                            match (bucket.file_type(), bucket.file_name().to_str()) {
-                                (Ok(bucket_file_type), Some(bucket_file_name)) => {
-                                    let bucket_file_name_len = bucket_file_name.len();
-
-                                    if bucket_file_type.is_file()
-                                        && bucket_file_name_len > fst_extension_len
-                                        && bucket_file_name.ends_with(fst_extension)
-                                    {
-                                        // Acquire bucket name (from full file name)
-                                        let bucket_name = &bucket_file_name
-                                            [..(bucket_file_name_len - fst_extension_len)];
-
-                                        debug!(
-                                            "fst bucket ongoing backup: {}/{}",
-                                            collection_name, bucket_name
-                                        );
-
-                                        Self::backup_item(path, collection_name, bucket_name)?;
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Ok(())
+        // Proceed dump action (backup)
+        Self::dump_action(
+            "backup",
+            StoreFSTPathMode::Permanent,
+            &*APP_CONF.store.fst.path,
+            path,
+            &Self::backup_item,
+        )
     }
 
     pub fn restore(path: &Path) -> Result<(), io::Error> {
         debug!("restoring all fst stores from path: {:?}", path);
 
-        let fst_backup_extension = StoreFSTPathMode::Backup.extension();
-        let fst_backup_extension_len = fst_backup_extension.len();
-
-        // Iterate on FST collections
-        for collection in fs::read_dir(path)? {
-            let collection = collection?;
-
-            // Actual collection found?
-            match (collection.file_type(), collection.file_name().to_str()) {
-                (Ok(collection_file_type), Some(collection_name)) => {
-                    if collection_file_type.is_dir() {
-                        debug!("fst collection ongoing restore: {}", collection_name);
-
-                        // Create folder for collection
-                        fs::create_dir_all(APP_CONF.store.fst.path.join(collection_name))?;
-
-                        // Iterate on FST collection buckets
-                        for bucket in fs::read_dir(path.join(collection_name))? {
-                            let bucket = bucket?;
-
-                            // Actual bucket found?
-                            match (bucket.file_type(), bucket.file_name().to_str()) {
-                                (Ok(bucket_file_type), Some(bucket_file_name)) => {
-                                    let bucket_file_name_len = bucket_file_name.len();
-
-                                    if bucket_file_type.is_file()
-                                        && bucket_file_name_len > fst_backup_extension_len
-                                        && bucket_file_name.ends_with(fst_backup_extension)
-                                    {
-                                        // Acquire bucket name (from full file name)
-                                        let bucket_name = &bucket_file_name
-                                            [..(bucket_file_name_len - fst_backup_extension_len)];
-
-                                        debug!(
-                                            "fst bucket ongoing restore: {}/{}",
-                                            collection_name, bucket_name
-                                        );
-
-                                        Self::restore_item(
-                                            &bucket.path(),
-                                            collection_name,
-                                            bucket_name,
-                                        )?;
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Ok(())
+        // Proceed dump action (restore)
+        Self::dump_action(
+            "restore",
+            StoreFSTPathMode::Backup,
+            path,
+            &*APP_CONF.store.fst.path,
+            &Self::restore_item,
+        )
     }
 
     pub fn consolidate(force: bool) {
@@ -393,13 +303,83 @@ impl StoreFSTPool {
         );
     }
 
-    fn backup_item(path: &Path, collection_name: &str, bucket_name: &str) -> Result<(), io::Error> {
+    fn dump_action(
+        action: &str,
+        path_mode: StoreFSTPathMode,
+        read_path: &Path,
+        write_path: &Path,
+        fn_item: &Fn(&Path, &Path, &str, &str) -> Result<(), io::Error>,
+    ) -> Result<(), io::Error> {
+        let fst_extension = path_mode.extension();
+        let fst_extension_len = fst_extension.len();
+
+        // Iterate on FST collections
+        for collection in fs::read_dir(read_path)? {
+            let collection = collection?;
+
+            // Actual collection found?
+            match (collection.file_type(), collection.file_name().to_str()) {
+                (Ok(collection_file_type), Some(collection_name)) => {
+                    if collection_file_type.is_dir() {
+                        debug!("fst collection ongoing {}: {}", action, collection_name);
+
+                        // Create write folder for collection
+                        fs::create_dir_all(write_path.join(collection_name))?;
+
+                        // Iterate on FST collection buckets
+                        for bucket in fs::read_dir(read_path.join(collection_name))? {
+                            let bucket = bucket?;
+
+                            // Actual bucket found?
+                            match (bucket.file_type(), bucket.file_name().to_str()) {
+                                (Ok(bucket_file_type), Some(bucket_file_name)) => {
+                                    let bucket_file_name_len = bucket_file_name.len();
+
+                                    if bucket_file_type.is_file()
+                                        && bucket_file_name_len > fst_extension_len
+                                        && bucket_file_name.ends_with(fst_extension)
+                                    {
+                                        // Acquire bucket name (from full file name)
+                                        let bucket_name = &bucket_file_name
+                                            [..(bucket_file_name_len - fst_extension_len)];
+
+                                        debug!(
+                                            "fst bucket ongoing {}: {}/{}",
+                                            action, collection_name, bucket_name
+                                        );
+
+                                        fn_item(
+                                            write_path,
+                                            &bucket.path(),
+                                            collection_name,
+                                            bucket_name,
+                                        )?;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    fn backup_item(
+        backup_path: &Path,
+        _origin_path: &Path,
+        collection_name: &str,
+        bucket_name: &str,
+    ) -> Result<(), io::Error> {
         // Acquire access lock (in blocking write mode), and reference it in context
         // Notice: this prevents store to be acquired from any context
         let _access = GRAPH_ACCESS_LOCK.write().unwrap();
 
         // Generate path to FST backup
-        let fst_backup_path = path.join(collection_name).join(format!(
+        let fst_backup_path = backup_path.join(collection_name).join(format!(
             "{}{}",
             bucket_name,
             StoreFSTPathMode::Backup.extension()
@@ -455,7 +435,8 @@ impl StoreFSTPool {
     }
 
     fn restore_item(
-        path: &Path,
+        _backup_path: &Path,
+        origin_path: &Path,
         collection_name: &str,
         bucket_name: &str,
     ) -> Result<(), io::Error> {
@@ -465,7 +446,7 @@ impl StoreFSTPool {
 
         debug!(
             "fst bucket: {}/{} restoring from path: {:?}",
-            collection_name, bucket_name, path
+            collection_name, bucket_name, origin_path
         );
 
         // Convert names to hashes (as names are hashes encoded as base-16 strings, but we need \
@@ -497,7 +478,7 @@ impl StoreFSTPool {
 
                 // Stream backup words to restored FST
                 let fst_writer = BufWriter::new(File::create(&fst_path)?);
-                let fst_backup_reader = BufReader::new(File::open(&path)?);
+                let fst_backup_reader = BufReader::new(File::open(&origin_path)?);
 
                 let mut fst_builder = FSTSetBuilder::new(fst_writer)
                     .or(io_error!("graph restore builder failure"))?;
@@ -516,7 +497,7 @@ impl StoreFSTPool {
 
                 info!(
                     "fst bucket: {}/{} restored to path: {:?} from backup: {:?}",
-                    collection_name, bucket_name, fst_path, path
+                    collection_name, bucket_name, fst_path, origin_path
                 );
             }
         }

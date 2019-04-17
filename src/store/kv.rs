@@ -136,40 +136,39 @@ impl StoreKVPool {
         // Create backup directory (full path)
         fs::create_dir_all(path)?;
 
-        // Iterate on KV collections
-        for collection in fs::read_dir(&*APP_CONF.store.kv.path)? {
-            let collection = collection?;
-
-            // Actual collection found?
-            match (collection.file_type(), collection.file_name().to_str()) {
-                (Ok(collection_file_type), Some(collection_name)) => {
-                    if collection_file_type.is_dir() {
-                        debug!("kv collection ongoing backup: {}", collection_name);
-
-                        Self::backup_item(path, collection_name)?;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Ok(())
+        // Proceed dump action (backup)
+        Self::dump_action("backup", &*APP_CONF.store.kv.path, path, &Self::backup_item)
     }
 
     pub fn restore(path: &Path) -> Result<(), io::Error> {
         debug!("restoring all kv stores from path: {:?}", path);
 
-        // Iterate on backup KV collections
-        for collection in fs::read_dir(path)? {
+        // Proceed dump action (restore)
+        Self::dump_action(
+            "restore",
+            path,
+            &*APP_CONF.store.kv.path,
+            &Self::restore_item,
+        )
+    }
+
+    fn dump_action(
+        action: &str,
+        read_path: &Path,
+        write_path: &Path,
+        fn_item: &Fn(&Path, &Path, &str) -> Result<(), io::Error>,
+    ) -> Result<(), io::Error> {
+        // Iterate on KV collections
+        for collection in fs::read_dir(read_path)? {
             let collection = collection?;
 
             // Actual collection found?
             match (collection.file_type(), collection.file_name().to_str()) {
                 (Ok(collection_file_type), Some(collection_name)) => {
                     if collection_file_type.is_dir() {
-                        debug!("kv collection ongoing restore: {}", collection_name);
+                        debug!("kv collection ongoing {}: {}", action, collection_name);
 
-                        Self::restore_item(&collection.path(), collection_name)?;
+                        fn_item(write_path, &collection.path(), collection_name)?;
                     }
                 }
                 _ => {}
@@ -179,13 +178,17 @@ impl StoreKVPool {
         Ok(())
     }
 
-    fn backup_item(path: &Path, collection_name: &str) -> Result<(), io::Error> {
+    fn backup_item(
+        backup_path: &Path,
+        _origin_path: &Path,
+        collection_name: &str,
+    ) -> Result<(), io::Error> {
         // Acquire access lock (in blocking write mode), and reference it in context
         // Notice: this prevents store to be acquired from any context
         let _access = STORE_ACCESS_LOCK.write().unwrap();
 
         // Generate path to KV backup
-        let kv_backup_path = path.join(collection_name);
+        let kv_backup_path = backup_path.join(collection_name);
 
         debug!(
             "kv collection: {} backing up to path: {:?}",
@@ -198,7 +201,7 @@ impl StoreKVPool {
         }
 
         // Create backup folder for collection
-        fs::create_dir_all(path.join(collection_name))?;
+        fs::create_dir_all(backup_path.join(collection_name))?;
 
         // Convert names to hashes (as names are hashes encoded as base-16 strings, but we need \
         //   them as proper integers)
@@ -227,14 +230,18 @@ impl StoreKVPool {
         Ok(())
     }
 
-    fn restore_item(path: &Path, collection_name: &str) -> Result<(), io::Error> {
+    fn restore_item(
+        _backup_path: &Path,
+        origin_path: &Path,
+        collection_name: &str,
+    ) -> Result<(), io::Error> {
         // Acquire access lock (in blocking write mode), and reference it in context
         // Notice: this prevents store to be acquired from any context
         let _access = STORE_ACCESS_LOCK.write().unwrap();
 
         debug!(
             "kv collection: {} restoring from path: {:?}",
-            collection_name, path
+            collection_name, origin_path
         );
 
         // Convert names to hashes (as names are hashes encoded as base-16 strings, but we need \
@@ -257,7 +264,7 @@ impl StoreKVPool {
 
                 // Initialize KV database backup engine
                 let mut kv_backup_engine =
-                    DBBackupEngine::open(&DBBackupEngineOptions::default(), &path)
+                    DBBackupEngine::open(&DBBackupEngineOptions::default(), &origin_path)
                         .or(io_error!("backup engine failure"))?;
 
                 kv_backup_engine
@@ -266,7 +273,7 @@ impl StoreKVPool {
 
                 info!(
                     "kv collection: {} restored to path: {:?} from backup: {:?}",
-                    collection_name, kv_path, path
+                    collection_name, kv_path, origin_path
                 );
             }
         }
