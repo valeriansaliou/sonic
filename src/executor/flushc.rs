@@ -16,6 +16,11 @@ impl ExecutorFlushC {
         //   even if dropped in the inner function, as this caller would still own a reference to \
         //   it.
         if let StoreItem(collection, None, None) = store {
+            // Acquire KV + FST locks in write mode, as we will erase them, we need to prevent any \
+            //   other consumer to use them.
+            general_kv_access_lock_write!();
+            general_fst_access_lock_write!();
+
             match (
                 StoreKVActionBuilder::erase(collection, None),
                 StoreFSTActionBuilder::erase(collection, None),

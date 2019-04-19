@@ -397,7 +397,7 @@ impl StoreKVActionBuilder {
     }
 
     pub fn erase<'a, T: Into<&'a str>>(collection: T, bucket: Option<T>) -> Result<u32, ()> {
-        Self::dispatch_erase("kv", collection, bucket, &*STORE_ACCESS_LOCK)
+        Self::dispatch_erase("kv", collection, bucket)
     }
 
     fn build(bucket: StoreItemPart, store: Option<StoreKVBox>) -> StoreKVAction {

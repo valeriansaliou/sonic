@@ -15,7 +15,9 @@ impl ExecutorFlushB {
         if let StoreItem(collection, Some(bucket), None) = store {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
+            // Notice: acquire FST lock in write mode, as we will erase it.
             general_kv_access_lock_read!();
+            general_fst_access_lock_write!();
 
             if let Ok(kv_store) = StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection) {
                 // Important: acquire bucket store write lock
