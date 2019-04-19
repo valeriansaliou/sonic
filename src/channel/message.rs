@@ -11,9 +11,10 @@ use std::time::Instant;
 
 use super::command::{
     ChannelCommandBase, ChannelCommandControl, ChannelCommandError, ChannelCommandIngest,
-    ChannelCommandResponse, ChannelCommandSearch, COMMANDS_MODE_CONTROL, COMMANDS_MODE_INGEST,
-    COMMANDS_MODE_SEARCH,
+    ChannelCommandResponse, ChannelCommandResponseArgs, ChannelCommandSearch,
+    COMMANDS_MODE_CONTROL, COMMANDS_MODE_INGEST, COMMANDS_MODE_SEARCH,
 };
+use super::listen::CHANNEL_AVAILABLE;
 use super::statistics::{COMMANDS_TOTAL, COMMAND_LATENCY_BEST, COMMAND_LATENCY_WORST};
 use crate::LINE_FEED;
 
@@ -47,26 +48,35 @@ impl ChannelMessage {
 
         let mut result = ChannelMessageResult::Continue;
 
-        // Handle response arguments to issued command
-        let response_args_groups = match M::handle(&message) {
-            Ok(resp_groups) => resp_groups
-                .iter()
-                .map(|resp| match resp {
-                    ChannelCommandResponse::Ok
-                    | ChannelCommandResponse::Pong
-                    | ChannelCommandResponse::Pending(_)
-                    | ChannelCommandResponse::Result(_)
-                    | ChannelCommandResponse::Event(_, _, _)
-                    | ChannelCommandResponse::Void
-                    | ChannelCommandResponse::Err(_) => resp.to_args(),
-                    ChannelCommandResponse::Ended(_) => {
-                        result = ChannelMessageResult::Close;
-                        resp.to_args()
-                    }
-                })
-                .collect(),
-            Err(reason) => vec![ChannelCommandResponse::Err(reason).to_args()],
-        };
+        // Process response for issued command
+        let response_args_groups: Vec<ChannelCommandResponseArgs>;
+
+        if *CHANNEL_AVAILABLE.read().unwrap() != true {
+            // Server going down, reject command
+            response_args_groups =
+                vec![ChannelCommandResponse::Err(ChannelCommandError::ShuttingDown).to_args()];
+        } else {
+            // Handle response arguments to issued command
+            response_args_groups = match M::handle(&message) {
+                Ok(resp_groups) => resp_groups
+                    .iter()
+                    .map(|resp| match resp {
+                        ChannelCommandResponse::Ok
+                        | ChannelCommandResponse::Pong
+                        | ChannelCommandResponse::Pending(_)
+                        | ChannelCommandResponse::Result(_)
+                        | ChannelCommandResponse::Event(_, _, _)
+                        | ChannelCommandResponse::Void
+                        | ChannelCommandResponse::Err(_) => resp.to_args(),
+                        ChannelCommandResponse::Ended(_) => {
+                            result = ChannelMessageResult::Close;
+                            resp.to_args()
+                        }
+                    })
+                    .collect(),
+                Err(reason) => vec![ChannelCommandResponse::Err(reason).to_args()],
+            };
+        }
 
         // Serve response messages on socket
         for response_args in response_args_groups {

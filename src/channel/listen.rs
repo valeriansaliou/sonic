@@ -5,6 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use std::net::TcpListener;
+use std::sync::RwLock;
 use std::process;
 use std::thread;
 
@@ -13,6 +14,10 @@ use crate::{APP_CONF, THREAD_NAME_CHANNEL_CLIENT};
 
 pub struct ChannelListenBuilder;
 pub struct ChannelListen;
+
+lazy_static! {
+    pub static ref CHANNEL_AVAILABLE: RwLock<bool> = RwLock::new(true);
+}
 
 impl ChannelListenBuilder {
     pub fn new() -> ChannelListen {
@@ -54,5 +59,10 @@ impl ChannelListen {
                 process::exit(1);
             }
         }
+    }
+
+    pub fn teardown() {
+        // Channel cannot be used anymore
+        *CHANNEL_AVAILABLE.write().unwrap() = false;
     }
 }

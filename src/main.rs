@@ -51,7 +51,7 @@ use clap::{App, Arg};
 use graceful::SignalGuard;
 use log::LevelFilter;
 
-use channel::listen::ChannelListenBuilder;
+use channel::listen::{ChannelListenBuilder, ChannelListen};
 use channel::statistics::ensure_states as ensure_states_channel_statistics;
 use config::config::Config;
 use config::logger::ConfigLogger;
@@ -166,6 +166,9 @@ fn main() {
 
     signal_guard.at_exit(move |signal| {
         info!("stopping gracefully (got signal: {})", signal);
+
+        // Teardown Sonic Channel
+        ChannelListen::teardown();
 
         // Perform a FST consolidation (ensures all in-memory items are synced on-disk before \
         //   shutdown; otherwise we would lose all non-consolidated FST changes)

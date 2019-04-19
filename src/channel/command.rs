@@ -26,6 +26,7 @@ pub enum ChannelCommandError {
     NotFound,
     QueryError,
     InternalError,
+    ShuttingDown,
     PolicyReject(&'static str),
     InvalidFormat(&'static str),
     InvalidMetaKey((String, String)),
@@ -48,6 +49,8 @@ pub struct ChannelCommandBase;
 pub struct ChannelCommandSearch;
 pub struct ChannelCommandIngest;
 pub struct ChannelCommandControl;
+
+pub type ChannelCommandResponseArgs = (&'static str, Option<Vec<String>>);
 
 type ChannelResult = Result<Vec<ChannelCommandResponse>, ChannelCommandError>;
 type MetaPartsResult<'a> = Result<(&'a str, &'a str), (&'a str, &'a str)>;
@@ -95,6 +98,7 @@ impl ChannelCommandError {
             ChannelCommandError::NotFound => String::from("not_found"),
             ChannelCommandError::QueryError => String::from("query_error"),
             ChannelCommandError::InternalError => String::from("internal_error"),
+            ChannelCommandError::ShuttingDown => String::from("shutting_down"),
             ChannelCommandError::PolicyReject(reason) => format!("policy_reject({})", reason),
             ChannelCommandError::InvalidFormat(format) => format!("invalid_format({})", format),
             ChannelCommandError::InvalidMetaKey(ref data) => {
@@ -108,7 +112,7 @@ impl ChannelCommandError {
 }
 
 impl ChannelCommandResponse {
-    pub fn to_args(&self) -> (&'static str, Option<Vec<String>>) {
+    pub fn to_args(&self) -> ChannelCommandResponseArgs {
         // Convert internal response to channel response arguments; this either gives 'RESPONSE' \
         //   or 'RESPONSE <value:1> <value:2> <..>' whether there are values or not.
         match *self {
