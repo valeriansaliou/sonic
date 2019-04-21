@@ -32,7 +32,7 @@ graceful = "0.1"
 rand = "0.6"
 unicode-segmentation = "1.2"
 radix = "0.4"
-rocksdb = { git = "https://github.com/rust-rocksdb/rust-rocksdb", features = ["lz4"] }
+rocksdb = { git = "https://github.com/crisp-dev/rust-rocksdb", features = ["lz4"] }
 fst = "0.3"
 fst-levenshtein = "0.2"
 fst-regex = "0.2"

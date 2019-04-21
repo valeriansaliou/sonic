@@ -71,6 +71,10 @@ pub fn store_kv_database_write_buffer() -> usize {
     16384
 }
 
+pub fn store_kv_database_write_ahead_log() -> bool {
+    true
+}
+
 pub fn store_fst_path() -> PathBuf {
     PathBuf::from("./data/store/fst/")
 }

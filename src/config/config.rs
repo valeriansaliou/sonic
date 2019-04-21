@@ -94,6 +94,9 @@ pub struct ConfigStoreKVDatabase {
 
     #[serde(default = "defaults::store_kv_database_write_buffer")]
     pub write_buffer: usize,
+
+    #[serde(default = "defaults::store_kv_database_write_ahead_log")]
+    pub write_ahead_log: bool,
 }
 
 #[derive(Deserialize)]

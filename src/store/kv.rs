@@ -13,7 +13,7 @@ use rocksdb::backup::{
 };
 use rocksdb::{
     DBCompactionStyle, DBCompressionType, DBVector, Error as DBError, Options as DBOptions,
-    WriteBatch, DB,
+    WriteBatch, WriteOptions, FlushOptions, DB,
 };
 use std::fmt;
 use std::fs;
@@ -150,6 +150,32 @@ impl StoreKVPool {
             &*APP_CONF.store.kv.path,
             &Self::restore_item,
         )
+    }
+
+    pub fn flush() {
+        debug!("flushing changes on kv store pool items to disk");
+
+        // Generate shared flush options
+        let mut flush_options = FlushOptions::default();
+
+        flush_options.set_wait(true);
+
+        // Acquire access lock (in blocking write mode), and reference it in context
+        // Notice: this prevents store to be acquired from any context
+        {
+            let _access = STORE_ACCESS_LOCK.write().unwrap();
+
+            for (collection_bucket, store) in STORE_POOL.read().unwrap().iter() {
+                // Perform flush (in blocking mode)
+                if store.database.flush_opt(&flush_options).is_ok() {
+                    debug!("flushed kv store pool item to disk: {}", collection_bucket);
+                } else {
+                    error!("failed flushing kv store pool item to disk: {}", collection_bucket);
+                }
+            }
+        }
+
+        info!("done flushing changes on kv store pool items to disk");
     }
 
     fn dump_action(
@@ -377,11 +403,38 @@ impl StoreKV {
     }
 
     pub fn put(&self, key: &[u8], data: &[u8]) -> Result<(), DBError> {
-        self.database.put(key, data)
+        let mut batch = WriteBatch::default();
+
+        batch.put(key, data)?;
+
+        self.do_write(batch)
     }
 
     pub fn delete(&self, key: &[u8]) -> Result<(), DBError> {
-        self.database.delete(key)
+        let mut batch = WriteBatch::default();
+
+        batch.delete(key)?;
+
+        self.do_write(batch)
+    }
+
+    fn do_write(&self, batch: WriteBatch) -> Result<(), DBError> {
+        // Configure this write
+        let mut write_options = WriteOptions::default();
+
+        // WAL disabled?
+        if !APP_CONF.store.kv.database.write_ahead_log {
+            debug!("ignoring wal for kv write");
+
+            write_options.disable_wal(true);
+        } else {
+            debug!("using wal for kv write");
+
+            write_options.disable_wal(false);
+        }
+
+        // Commit this write
+        self.database.write_opt(batch, &write_options)
     }
 }
 
@@ -947,7 +1000,7 @@ impl<'a> StoreKVAction<'a> {
                     .is_ok()
                 {
                     // Commit operation to database
-                    if let Err(err) = store.database.write(batch) {
+                    if let Err(err) = store.do_write(batch) {
                         error!(
                             "failed in store batch erase bucket: {} with error: {}",
                             self.bucket.as_str(),
@@ -957,7 +1010,7 @@ impl<'a> StoreKVAction<'a> {
                         // Ensure last key is deleted (as RocksDB end key is exclusive; while \
                         //   start key is inclusive, we need to ensure the end-of-range key is \
                         //   deleted)
-                        store.database.delete(&key_prefix_end).ok();
+                        store.delete(&key_prefix_end).ok();
 
                         debug!(
                             "succeeded in store batch erase bucket: {}",

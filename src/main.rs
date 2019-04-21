@@ -51,12 +51,13 @@ use clap::{App, Arg};
 use graceful::SignalGuard;
 use log::LevelFilter;
 
-use channel::listen::{ChannelListenBuilder, ChannelListen};
+use channel::listen::{ChannelListen, ChannelListenBuilder};
 use channel::statistics::ensure_states as ensure_states_channel_statistics;
 use config::config::Config;
 use config::logger::ConfigLogger;
 use config::reader::ConfigReader;
 use store::fst::StoreFSTPool;
+use store::kv::StoreKVPool;
 use tasker::runtime::TaskerBuilder;
 
 struct AppArgs {
@@ -169,6 +170,9 @@ fn main() {
 
         // Teardown Sonic Channel
         ChannelListen::teardown();
+
+        // Perform a KV flush (ensures all in-memory changes are synced on-disk before shutdown)
+        StoreKVPool::flush();
 
         // Perform a FST consolidation (ensures all in-memory items are synced on-disk before \
         //   shutdown; otherwise we would lose all non-consolidated FST changes)

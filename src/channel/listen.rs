@@ -5,8 +5,8 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use std::net::TcpListener;
-use std::sync::RwLock;
 use std::process;
+use std::sync::RwLock;
 use std::thread;
 
 use super::handle::ChannelHandle;
