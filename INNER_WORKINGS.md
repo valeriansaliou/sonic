@@ -5,6 +5,8 @@ This document was written with the goal of explaining the inner workings of Soni
 
 Anyone reading this documentation should quickly get more familiar in how such a search index can be built from scratch, to the point that they should be able to start building their own Sonic from scratch.
 
+_If you feel something is missing from this document, or if it did not help you understand a concept Sonic implements, please [open an issue](https://github.com/valeriansaliou/sonic/issues)._
+
 # The Building Blocks of a Search Index
 
 ## Basic operations of a search index
@@ -15,11 +17,12 @@ The search index server is responsible for organizing the index data in a way th
 
 In order for a client to communicate with the search index system, one needs a protocol. Sonic uses the Sonic Channel protocol, which defines a way for clients to send commands (ie. requests) to a Sonic server over the network (via a raw TCP socket); and get responses from the Sonic server. For instance, a client may send a search query command such as `QUERY collection bucket "search query"` and get a response with search results such as `EVENT QUERY isgsHQYu result_1 result_2`.
 
-On that Sonic Channel protocol, technical choices that may seem to go against common sense were made:
+**On that Sonic Channel protocol, technical choices that may seem to go against common sense were made:**
 
-1. Sonic does not expose any HTTP API interface, as it adds a network and processing overhead cost we do not want to bear;
-2. Sonic only exposes a raw TCP socket with which clients interact via the Sonic Channel protocol, which was designed to be simple, lightweight and extensible;
-3. Most Sonic Channel commands are synchronous, for simplicity's sake (Redis does the same). You can still run multiple Sonic Channel connections in parallel, and enjoy increased parallelism, but on a given Sonic Channel connection, you must wait for the previous command to return before issuing the next one;
+1. **Sonic does not expose any HTTP API interface**, as it adds a network and processing overhead cost we do not want to bear;
+2. **Sonic only exposes a raw TCP socket** with which clients interact via the Sonic Channel protocol, which was designed to be simple, lightweight and extensible;
+3. **Most Sonic Channel commands are synchronous**, for simplicity's sake (Redis does the same). You can still run multiple Sonic Channel connections in parallel, and enjoy increased parallelism, but on a given Sonic Channel connection, you must wait for the previous command to return before issuing the next one;
+4. **Some Sonic Channel commands are asynchronous**, when a lot of commands may be issued in a short period of time, in a burst pattern. This is typical of read operations such as search queries, which should be submitted as jobs to a dedicated thread pool, which can be upsized and downsized at will. To handle this, a special eventing protocol format should be used;
 
 The Sonic Channel protocol is specified in a separate document, which [you can read here](https://github.com/valeriansaliou/sonic/blob/master/PROTOCOL.md).
 
