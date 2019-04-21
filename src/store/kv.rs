@@ -20,6 +20,7 @@ use std::fs;
 use std::io::{self, Cursor};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
+use std::thread;
 use std::time::SystemTime;
 use std::vec::Drain;
 
@@ -37,6 +38,7 @@ pub struct StoreKVBuilder;
 pub struct StoreKV {
     database: DB,
     last_used: Arc<RwLock<SystemTime>>,
+    last_flushed: Arc<RwLock<SystemTime>>,
     pub lock: RwLock<bool>,
 }
 
@@ -66,6 +68,7 @@ const ATOM_HASH_RADIX: usize = 16;
 lazy_static! {
     pub static ref STORE_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
     static ref STORE_ACQUIRE_LOCK: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    static ref STORE_FLUSH_LOCK: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
     static ref STORE_POOL: Arc<RwLock<HashMap<StoreKVKey, StoreKVBox>>> =
         Arc::new(RwLock::new(HashMap::new()));
 }
@@ -152,28 +155,90 @@ impl StoreKVPool {
         )
     }
 
-    pub fn flush() {
-        debug!("flushing changes on kv store pool items to disk");
+    pub fn flush(force: bool) {
+        debug!("scanning for kv store pool items to flush to disk");
+
+        // Acquire flush lock, and reference it in context
+        // Notice: this prevents two flush operations to be executed at the same time.
+        let _flush = STORE_FLUSH_LOCK.lock().unwrap();
+
+        // Step 1: List keys to be flushed
+        let mut keys_flush: Vec<StoreKVKey> = Vec::new();
 
         {
             // Acquire access lock (in blocking write mode), and reference it in context
             // Notice: this prevents store to be acquired from any context
             let _access = STORE_ACCESS_LOCK.write().unwrap();
 
-            for (collection_bucket, store) in STORE_POOL.read().unwrap().iter() {
-                // Perform flush (in blocking mode)
-                if store.flush().is_ok() {
-                    debug!("flushed kv store pool item to disk: {}", collection_bucket);
+            let store_pool_read = STORE_POOL.read().unwrap();
+
+            for (key, store) in &*store_pool_read {
+                let not_flushed_for = store
+                    .last_flushed
+                    .read()
+                    .unwrap()
+                    .elapsed()
+                    .unwrap()
+                    .as_secs();
+
+                if force || not_flushed_for >= APP_CONF.store.kv.database.flush_after {
+                    info!(
+                        "kv key: {} not flushed for: {} seconds, may flush",
+                        key, not_flushed_for
+                    );
+
+                    keys_flush.push(*key);
                 } else {
-                    error!(
-                        "failed flushing kv store pool item to disk: {}",
-                        collection_bucket
+                    debug!(
+                        "kv key: {} not flushed for: {} seconds, no flush",
+                        key, not_flushed_for
                     );
                 }
             }
         }
 
-        info!("done flushing changes on kv store pool items to disk");
+        // Exit trap: Nothing to flush yet? Abort there.
+        if keys_flush.is_empty() {
+            info!("no kv store pool items need to be flushed at the moment");
+
+            return;
+        }
+
+        // Step 2: Flush KVs, one-by-one (sequential locking; this avoids global locks)
+        let mut count_flushed = 0;
+
+        {
+            for key in &keys_flush {
+                {
+                    // Acquire access lock (in blocking write mode), and reference it in context
+                    // Notice: this prevents store to be acquired from any context
+                    let _access = STORE_ACCESS_LOCK.write().unwrap();
+
+                    if let Some(store) = STORE_POOL.read().unwrap().get(key) {
+                        debug!("kv key: {} flush started", key);
+
+                        if let Err(err) = store.flush() {
+                            error!("kv key: {} flush failed: {}", key, err);
+                        } else {
+                            count_flushed += 1;
+
+                            debug!("kv key: {} flush complete", key);
+                        }
+
+                        // Bump 'last flushed' time
+                        *store.last_flushed.write().unwrap() = SystemTime::now();
+                    }
+                }
+
+                // Give a bit of time to other threads before continuing
+                thread::yield_now();
+            }
+        }
+
+        info!(
+            "done scanning for kv store pool items to flush to disk (flushed: {})",
+            count_flushed
+        );
     }
 
     fn dump_action(
@@ -382,10 +447,15 @@ impl StoreKVBuilder {
 impl StoreGenericBuilder<StoreKVKey, StoreKV> for StoreKVBuilder {
     fn new(pool_key: StoreKVKey) -> Result<StoreKV, ()> {
         Self::open(pool_key.collection_hash)
-            .map(|db| StoreKV {
-                database: db,
-                last_used: Arc::new(RwLock::new(SystemTime::now())),
-                lock: RwLock::new(false),
+            .map(|db| {
+                let now = SystemTime::now();
+
+                StoreKV {
+                    database: db,
+                    last_used: Arc::new(RwLock::new(now)),
+                    last_flushed: Arc::new(RwLock::new(now)),
+                    lock: RwLock::new(false),
+                }
             })
             .or_else(|err| {
                 error!("failed opening kv: {}", err);
@@ -449,11 +519,6 @@ impl StoreKV {
 impl StoreGeneric for StoreKV {
     fn ref_last_used<'a>(&'a self) -> &'a RwLock<SystemTime> {
         &self.last_used
-    }
-
-    fn hook_pre_janitor(&self) -> Result<(), ()> {
-        // Flush all in-memory data to on-disk database (before it is closed)
-        self.flush().or(Err(()))
     }
 }
 

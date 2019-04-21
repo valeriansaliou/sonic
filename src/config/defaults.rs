@@ -51,6 +51,10 @@ pub fn store_kv_pool_inactive_after() -> u64 {
     1800
 }
 
+pub fn store_kv_database_flush_after() -> u64 {
+    900
+}
+
 pub fn store_kv_database_compress() -> bool {
     true
 }

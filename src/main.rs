@@ -172,7 +172,7 @@ fn main() {
         ChannelListen::teardown();
 
         // Perform a KV flush (ensures all in-memory changes are synced on-disk before shutdown)
-        StoreKVPool::flush();
+        StoreKVPool::flush(true);
 
         // Perform a FST consolidation (ensures all in-memory items are synced on-disk before \
         //   shutdown; otherwise we would lose all non-consolidated FST changes)

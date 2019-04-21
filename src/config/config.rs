@@ -78,6 +78,9 @@ pub struct ConfigStoreKVPool {
 
 #[derive(Deserialize)]
 pub struct ConfigStoreKVDatabase {
+    #[serde(default = "defaults::store_kv_database_flush_after")]
+    pub flush_after: u64,
+
     #[serde(default = "defaults::store_kv_database_compress")]
     pub compress: bool,
 

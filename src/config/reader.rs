@@ -40,6 +40,11 @@ impl ConfigReader {
             panic!("write_buffer for kv must not be zero");
         }
 
+        // Check 'flush_after' for KV
+        if config.store.kv.database.flush_after >= config.store.kv.pool.inactive_after {
+            panic!("flush_after for kv must be strictly lower than inactive_after");
+        }
+
         // Check 'consolidate_after' for FST
         if config.store.fst.graph.consolidate_after >= config.store.fst.pool.inactive_after {
             panic!("consolidate_after for fst must be strictly lower than inactive_after");
