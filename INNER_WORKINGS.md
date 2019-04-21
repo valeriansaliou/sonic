@@ -54,7 +54,7 @@ The KV store has a simple schema, where we associate a binary key to binary data
 
 A key is formatted as such, in binary: `[idx<1B> | bucket<4B> | route<4B>]`, which makes it 9-bytes long. The index stands for the type of key, eg. Term-To-IIDs. The bucket and what we call the route are hashed as 32 bits numbers, and appended in little-endian binary format to the key.
 
-Both IIDs and terms are stored as 32 bits numbers in binary format. 64 bits numbers could have been used instead, increasing the total number of objects that can be indexed per-bucket. Though, storing such 64 bits numbers instead of 32 bits numbers would double required storage space. As they make up most of stored space, it was important to keep them as small as possible. Those 32 bits numbers are generated using a fast and low-collision hash family called [XxHash](http://www.xxhash.com), from the OID in the case of the IID, and from the word in the case of the term hash.
+Both IIDs and terms are stored as 32 bits numbers in binary format. 64 bits numbers could have been used instead, increasing the total number of objects that can be indexed per-bucket. Though, storing such 64 bits numbers instead of 32 bits numbers would double required storage space. As they make up most of stored space, it was important to keep them as small as possible. Those 32 bits numbers are generated using a fast and low-collision hash family called [XxHash](http://www.xxhash.com), from the OID in the case of the IID, and from the word in the case of the term hash (code: [StoreTermHash](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/store/identifiers.rs#L32)).
 
 ## How do word suggestion and user typo auto-correction work?
 
