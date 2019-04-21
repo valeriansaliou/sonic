@@ -93,13 +93,6 @@ In order for a client to communicate with the search index system, one needs a p
 
 _The Sonic Channel protocol is specified in a separate document, which [you can read here](https://github.com/valeriansaliou/sonic/blob/master/PROTOCOL.md)._
 
-# Trade-Offs Sonic Makes
-
--> explain limit on block size, why this limit, etc. (configurable w/ default to 1k objects per word)
--> explain the 2^32 indexed objects limit due to IID mapping (we could have gone for 64 bits IIDs, but required storage space would have gone up 30%-40%; on big indexes this is overkill as only very specific applications would store more than 4B objects)
--> suggestion words / typos corrections are not made ready immediately (they need to be consolidated first; max time for the word to be available is set to the configured consolidate interval)
--> does a lot of disk random-access, thus it does not perform well on HDDs (which prefer sequential reads), but excels on modern SSDs
-
 # The Journey of a Query
 
 => notice: refer to lines of code in the source code (versioned at commit hash)
