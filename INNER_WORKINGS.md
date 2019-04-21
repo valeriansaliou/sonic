@@ -67,7 +67,7 @@ Given that stopwords depend on the text language, Sonic first needs to detect th
 
 As the n-gram method is better at guessing the language for small texts than the stopwords method is, we prefer it, although it is crazy slow in comparison to the stopwords method. For long-enough texts, the stopwords method becomes reliable enough, so we can use it. In either cases, if the first chosen guessing method result is judged as non-reliable, Sonic fallbacks on the other method (_code: [!detector.is_reliable()](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/lexer/token.rs#L148)_).
 
-By the way, Sonic builds up its own list of stopwords for all supported languages, [which can be found here](https://github.com/valeriansaliou/sonic/tree/master/src/stopwords) (languages are referred to via their ISO 639-3 codes). People are welcome to improve those lists by [submitting a Pull Request](https://github.com/valeriansaliou/sonic/pulls).
+By the way, Sonic builds up its own list of stopwords for all supported languages, [which can be found here](https://github.com/valeriansaliou/sonic/tree/master/src/stopwords) (languages are referred to via their ISO 639-3 codes). People are welcome to improve those lists of stopwords by [submitting a Pull Request](https://github.com/valeriansaliou/sonic/pulls).
 
 ## What is the purpose of the tasker system?
 
