@@ -58,8 +58,15 @@ Both IIDs and terms are stored as 32 bits numbers in binary format. 64 bits numb
 
 ## How do word suggestion and user typo auto-correction work?
 
--> how words are suggested / predicted
--> schema of the graph data structure
+When most users input text to a computer system using an actual keyboard, they make typos and mistakes. A nice property of a good search system should be that those typos can be forgiven and accurate search results still come up for the bogus user query. Sonic implements a data structure that lets it correct typos or autocomplete incomplete words.
+
+For instance, if our index has the word `english` but the user, for some reason, inputs `englich`, Sonic would return results for `english`. Similarly, if the user inputs an incomplete word eg. `eng`, Sonic would expand this word to `english`.
+
+The store system responsible for such a feat is the FST ([Finite-State Transducer](https://en.wikipedia.org/wiki/Finite-state_transducer)). It can be grossly compared to a graph of characters, where nodes are characters and edges connect those characters to produce words.
+
+Sonic stores a single FST file per bucket. This FST file is memory-mapped, and read directly from the disk when Sonic needs to read it. The [fst](https://crates.io/crates/fst) crate is used to implement the FST data structure.
+
+One downsize of the FST implementation that Sonic uses, is that once built, an FST is immutable. It means that in order to add a new word to the search index (for a given bucket), Sonic needs to re-build the entire FST (ie. iterate word-by-word on the existing FST and stream those words plus the added word to a new on-disk FST file). In order to do that in an efficient manner, Sonic implements an FST consolidation tasker, which stores FST changes in-memory and consolidates them to disk at periodic intervals (this interval can be configured) (code: [StoreFSTPool::consolidate](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/store/fst.rs#L173)).
 
 ## How do texts get cleaned up? (via the lexer)
 
