@@ -1,15 +1,27 @@
 Sonic Inner Workings
 ====================
 
--> intro; tell that the document was written to stimulate contributions and let anyone build their simple search engine backend if they are willing to. not that hard of a task.
--> be liberal on schemas
+This document was written with the goal of explaining the inner workings of Sonic, as well as the whys of the design choices that were made while building Sonic.
+
+Anyone reading this documentation should quickly get more familiar in how such a search index can be built from scratch, to the point that they should be able to start building their own Sonic from scratch.
 
 # The Building Blocks of a Search Index
 
 ## Basic operations of a search index
 
--> base operations a search index should provide (push, pop, query, flushes)
--> access protocol (explain why it should be light & optimized; why HTTP is bad for this purpose); refer to the explanatory section
+A search index is nothing more than a specialized database. It should expose primitives such as: query the index, push text in the index, pop text from the index, flush parts of the index.
+
+The search index server is responsible for organizing the index data in a way that makes writes and reads efficient. It makes uses of specialized data structures for some very specific operations like typos corrections. The overall goal of such a search index system is: speed, lightweightness and data compactness (ie. it should minimize the resulting output database size given a text input size).
+
+In order for a client to communicate with the search index system, one needs a protocol. Sonic uses the Sonic Channel protocol, which defines a way for clients to send commands (ie. requests) to a Sonic server over the network (via a raw TCP socket); and get responses from the Sonic server. For instance, a client may send a search query command such as `QUERY collection bucket "search query"` and get a response with search results such as `EVENT QUERY isgsHQYu result_1 result_2`.
+
+On that Sonic Channel protocol, technical choices that may seem to go against common sense were made:
+
+1. Sonic does not expose any HTTP API interface, as it adds a network and processing overhead cost we do not want to bear;
+2. Sonic only exposes a raw TCP socket with which clients interact via the Sonic Channel protocol, which was designed to be simple, lightweight and extensible;
+3. Most Sonic Channel commands are synchronous, for simplicity's sake (Redis does the same). You can still run multiple Sonic Channel connections in parallel, and enjoy increased parallelism, but on a given Sonic Channel connection, you must wait for the previous command to return before issuing the next one;
+
+The Sonic Channel protocol is specified in a separate document, which [you can read here](https://github.com/valeriansaliou/sonic/blob/master/PROTOCOL.md).
 
 ## How do result objects get indexed?
 
