@@ -60,7 +60,7 @@ Both IIDs and terms are stored as 32 bits numbers in binary format. 64 bits numb
 
 When most users input text to a computer system using an actual keyboard, they make typos and mistakes. A nice property of a good search system should be that those typos can be forgiven and accurate search results still come up for the bogus user query. Sonic implements a data structure that lets it correct typos or autocomplete incomplete words.
 
-For instance, if our index has the word `english` but the user, for some reason, inputs `englich`, Sonic would still return results for `english`. Similarly, if the user inputs an incomplete word eg. `eng`, Sonic would expand this word to `english`, if there was no or not enough exact matches for `eng` of course.
+For instance, if our index has the word `english` but the user, for some reason, inputs `englich`, Sonic would still return results for `english`. Similarly, if the user inputs an incomplete word eg. `eng`, Sonic would expand this word to `english`, if there were no or not enough exact matches for `eng` of course.
 
 The store system responsible for such a feat is the FST ([Finite-State Transducer](https://en.wikipedia.org/wiki/Finite-state_transducer)). It can be grossly compared to a graph of characters, where nodes are characters and edges connect those characters to produce words.
 
