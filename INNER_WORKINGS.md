@@ -5,7 +5,7 @@ This document was written with the goal of explaining the inner workings of Soni
 
 Anyone reading this documentation should quickly get more familiar in how such a search index can be built from scratch, to the point that they should be able to start building their own Sonic from scratch.
 
-_If you feel something is missing from this document, or if it did not help you understand a concept Sonic implements, please [open an issue](https://github.com/valeriansaliou/sonic/issues)._
+_If you feel something is missing from this document, or if it did not help you understand a concept Sonic implements, please [open an issue](https://github.com/valeriansaliou/sonic/issues) and explain precisely which part you did not get, why you think you did not get it, and how we may improve._
 
 # The Building Blocks of a Search Index
 
