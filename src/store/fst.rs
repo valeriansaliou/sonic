@@ -859,6 +859,11 @@ impl StoreGeneric for StoreFST {
     fn ref_last_used<'a>(&'a self) -> &'a RwLock<SystemTime> {
         &self.last_used
     }
+
+    fn hook_pre_janitor(&self) -> Result<(), ()> {
+        // Nothing done there.
+        Ok(())
+    }
 }
 
 impl StoreFSTActionBuilder {

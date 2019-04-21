@@ -15,6 +15,7 @@ pub trait StoreGenericKey {}
 
 pub trait StoreGeneric {
     fn ref_last_used<'a>(&'a self) -> &'a RwLock<SystemTime>;
+    fn hook_pre_janitor(&self) -> Result<(), ()>;
 }
 
 pub trait StoreGenericPool<
@@ -105,6 +106,14 @@ pub trait StoreGenericPool<
                     "found expired {} store pool item: {}; elapsed time: {}s",
                     kind, collection_bucket, last_used_elapsed
                 );
+
+                // Trigger pre-janitor hook for this store
+                if store.hook_pre_janitor().is_err() {
+                    error!(
+                        "pre-janitor hook failed for {} store pool item: {}",
+                        kind, collection_bucket
+                    );
+                }
 
                 // Notice: the bucket value needs to be cloned, as we cannot reference as value \
                 //   that will outlive referenced value once we remove it from its owner set.

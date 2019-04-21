@@ -12,8 +12,8 @@ use rocksdb::backup::{
     RestoreOptions as DBRestoreOptions,
 };
 use rocksdb::{
-    DBCompactionStyle, DBCompressionType, DBVector, Error as DBError, Options as DBOptions,
-    WriteBatch, WriteOptions, FlushOptions, DB,
+    DBCompactionStyle, DBCompressionType, DBVector, Error as DBError, FlushOptions,
+    Options as DBOptions, WriteBatch, WriteOptions, DB,
 };
 use std::fmt;
 use std::fs;
@@ -155,22 +155,20 @@ impl StoreKVPool {
     pub fn flush() {
         debug!("flushing changes on kv store pool items to disk");
 
-        // Generate shared flush options
-        let mut flush_options = FlushOptions::default();
-
-        flush_options.set_wait(true);
-
-        // Acquire access lock (in blocking write mode), and reference it in context
-        // Notice: this prevents store to be acquired from any context
         {
+            // Acquire access lock (in blocking write mode), and reference it in context
+            // Notice: this prevents store to be acquired from any context
             let _access = STORE_ACCESS_LOCK.write().unwrap();
 
             for (collection_bucket, store) in STORE_POOL.read().unwrap().iter() {
                 // Perform flush (in blocking mode)
-                if store.database.flush_opt(&flush_options).is_ok() {
+                if store.flush().is_ok() {
                     debug!("flushed kv store pool item to disk: {}", collection_bucket);
                 } else {
-                    error!("failed flushing kv store pool item to disk: {}", collection_bucket);
+                    error!(
+                        "failed flushing kv store pool item to disk: {}",
+                        collection_bucket
+                    );
                 }
             }
         }
@@ -418,6 +416,16 @@ impl StoreKV {
         self.do_write(batch)
     }
 
+    fn flush(&self) -> Result<(), DBError> {
+        // Generate flush options
+        let mut flush_options = FlushOptions::default();
+
+        flush_options.set_wait(true);
+
+        // Perform flush (in blocking mode)
+        self.database.flush_opt(&flush_options)
+    }
+
     fn do_write(&self, batch: WriteBatch) -> Result<(), DBError> {
         // Configure this write
         let mut write_options = WriteOptions::default();
@@ -441,6 +449,11 @@ impl StoreKV {
 impl StoreGeneric for StoreKV {
     fn ref_last_used<'a>(&'a self) -> &'a RwLock<SystemTime> {
         &self.last_used
+    }
+
+    fn hook_pre_janitor(&self) -> Result<(), ()> {
+        // Flush all in-memory data to on-disk database (before it is closed)
+        self.flush().or(Err(()))
     }
 }
 
