@@ -71,8 +71,14 @@ By the way, Sonic builds up its own list of stopwords for all supported language
 
 ## What is the purpose of the tasker system?
 
--> fst consolidate: explain how does it work; why tasks are being commited to fst at periodic intervals (ie. fst is immutable and memory-mapped; and thus it needs to be fully re-built on disk and bad locks are involved)
--> janitor (kv + fst cache)
+Looking at the source code of Sonic, you will find a module named `tasker` ([see here](https://github.com/valeriansaliou/sonic/tree/master/src/tasker)). This module performs background tasks, and is triggered periodically.
+
+**The tasker performs the following actions:**
+
+1. **Janitor**: it closes cached collection and bucket stores that were not used recently, freeing up memory (_code: [Tasker::tick](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/tasker/runtime.rs#L52)_);
+2. **Consolidate**: it writes in-memory FST changes to the on-disk FST data structure(_code: [Tasker::tick](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/tasker/runtime.rs#L56)_);
+
+As in all databases, a lot of locking is involved while the tasker perform heavy-duty work on a KV or FST store. Thus, when the tasker system kicks-in, stores may experience higher than expected latency for all consumers attempting to read or write to them. The tasker system has been optimized to minimize thread contention caused by locks, so the impact of those locks on Sonic consumers should be minimum.
 
 # On the Sonic Channel Protocol
 
