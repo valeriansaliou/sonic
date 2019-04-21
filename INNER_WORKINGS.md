@@ -99,7 +99,7 @@ As always, examples are the way to go to explain any complex system. This sectio
 
 Given a collection `messages` and a bucket `acme_corp` (ie. indexed messages for Acme Corp), John Doe wants to find messages that match the query text `"The robber has stolen our corporate car"`.
 
-First off, John Doe would connect to Sonic over a Sonic Channel client, for instance [node-sonic-channel](https://github.com/valeriansaliou/node-sonic-channel). Using this client, he would issue the following query: `QUERY messages acme_corp "The robber has stolen our corporate car"`.
+First off, John Doe would connect to Sonic over a Sonic Channel client, for instance [node-sonic-channel](https://github.com/valeriansaliou/node-sonic-channel). Using this client, he would issue the following query: `QUERY messages acme_corp "The robber has stolen our corporate car"` to find conversations that contain messages about a recent robbery at Acme Corp.
 
 **After receiving the raw command above, the Sonic server would, in order:**
 
