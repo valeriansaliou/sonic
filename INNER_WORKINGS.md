@@ -93,11 +93,26 @@ In order for a client to communicate with the search index system, one needs a p
 
 _The Sonic Channel protocol is specified in a separate document, which [you can read here](https://github.com/valeriansaliou/sonic/blob/master/PROTOCOL.md)._
 
-# The Journey of a Query
+# The Journey of a Search Query
 
-=> notice: refer to lines of code in the source code (versioned at commit hash)
+As always, examples are the way to go to explain any complex system. This section drafts the journey of a search query in Sonic, from receiving the search query command over Sonic Channel, to serving results to the Sonic Channel consumer.
 
--> push
--> query
--> pop
+Given a collection `messages` and a bucket `acme_corp` (ie. indexed messages for Acme Corp), John Doe wants to find messages that match the query text `"The robber has stolen our corporate car"`.
 
+First off, John Doe would connect to Sonic over a Sonic Channel client, for instance [https://github.com/valeriansaliou/node-sonic-channel](node-sonic-channel). Using this client, he would issue the following query: `QUERY messages acme_corp "The robber has stolen our corporate car"`.
+
+**After receiving the raw command above, the Sonic server would, in order:**
+
+1. Read the raw command from the Sonic Channel TCP stream buffer (_code: [Self::on_message](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/channel/handle.rs#L163)_);
+2. Route the unpacket command message to the proper command handler, which would be `ChannelCommandSearch::dispatch_query` (_code: [ChannelMessage::on](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/channel/message.rs#L39)_);
+3. Commit the search query for processing (_code: [ChannelCommandBase::commit_pending_operation](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/channel/command.rs#L428)_);
+4. Dispatch the search query to its executor (_code: [StoreOperationDispatch::dispatch](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/channel/command.rs#L351)_);
+5. Run the search executor (_code: [ExecutorSearch::search](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/executor/search.rs#L21)_);
+6. Acquire both the KV and FST stores (_code: [StoreKVPool::acquire + StoreFSTPool::acquire](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/executor/search.rs#L34)_);
+7. Perform search query text lexing, and search word-by-word, which would yield in order: `robber`, `stolen`, `corporate`, `car` (_code: [lexer.next](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/executor/search.rs#L50)_);
+8. If not enough search results are found, tries to suggest other words eg. typos corrections (_code: [fst_action.suggest_words](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/executor/search.rs#L81)_);
+9. Perform paging on found OIDs from KV store to limit results (_code: [found_iids.iter](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/executor/search.rs#L163)_);
+10. Return found OIDs from the executor (_code: [result_oids](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/executor/search.rs#L180)_);
+11. Write back the final results to the TCP stream (_code: [response_args_groups](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/channel/message.rs#L81)_);
+
+_This is it!_ John Doe would receive the following response from Sonic Channel: `EVENT QUERY isgsHQYu conversation_3459 conversation_29398`, which indicates that there are 2 conversations that contain messages matching the search text `"The robber has stolen our corporate car"`.
