@@ -46,11 +46,11 @@ When objects are pushed to the search index for a given bucket in a given collec
 
 The KV store has a simple schema, where we associate a binary key to binary data. The following types of keys exist:
 
-1. **Meta-To-Value**: state data for the bucket, eg. stores the count increment of indexed objects (data is in arbitrary format);
-2. **Term-To-IIDs**: maps a word (ie. term) to an internal identifier (ie. IID), which is essentialy a word-to-result mapping (data is an array of 32 bits numbers encoded to binary as little-endian);
-3. **OID-To-IID**: maps an object identifier (ie. OID) to an internal identifier (ie. IID), which converts an user-provided object to a compact internal object (data is a 32 bits number encoded to binary as little-endian);
-4. **IID-To-OID**: this is the reverse mapping of OID-To-IID, which lets convert an IID back to an OID (data is a variable-length UTF-8 string encoded in binary);
-5. **IID-To-Terms**: this lists all words (ie. terms) associated to an internal identifier (ie. IID) (data is an array of 32 bits numbers encoded to binary as little-endian);
+1. **Meta-To-Value**: state data for the bucket, eg. stores the count increment of indexed objects (data is in arbitrary format) (code: [StoreKeyerIdx::MetaToValue](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/store/keyer.rs#L24));
+2. **Term-To-IIDs**: maps a word (ie. term) to an internal identifier (ie. IID), which is essentialy a word-to-result mapping (data is an array of 32 bits numbers encoded to binary as little-endian) (code: [StoreKeyerIdx::TermToIIDs](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/store/keyer.rs#L25));
+3. **OID-To-IID**: maps an object identifier (ie. OID) to an internal identifier (ie. IID), which converts an user-provided object to a compact internal object (data is a 32 bits number encoded to binary as little-endian) (code: [StoreKeyerIdx::OIDToIID](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/store/keyer.rs#L26));
+4. **IID-To-OID**: this is the reverse mapping of OID-To-IID, which lets convert an IID back to an OID (data is a variable-length UTF-8 string encoded in binary) (code: [StoreKeyerIdx::IIDToOID](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/store/keyer.rs#L27));
+5. **IID-To-Terms**: this lists all words (ie. terms) associated to an internal identifier (ie. IID) (data is an array of 32 bits numbers encoded to binary as little-endian) (code: [StoreKeyerIdx::IIDToTerms](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/store/keyer.rs#L28));
 
 A key is formatted as such, in binary: `[idx<1B> | bucket<4B> | route<4B>]`, which makes it 9-bytes long. The index stands for the type of key, eg. Term-To-IIDs. The bucket and what we call the route are hashed as 32 bits numbers, and appended in little-endian binary format to the key.
 
