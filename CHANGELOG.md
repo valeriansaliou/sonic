@@ -14,10 +14,10 @@ Sonic Changelog
 
 ### New Features
 
-* Introduced a server statistics command to Sonic Channel [[@valeriansaliou](https://github.com/valeriansaliou), [#70](https://github.com/valeriansaliou/sonic/issues/70)].
-* Added the ability to disable the lexer for a command [[@valeriansaliou](https://github.com/valeriansaliou), [#108](https://github.com/valeriansaliou/sonic/issues/108)].
-* Added a backup and restore system for both KV and FST stores, which can be triggered over Sonic Channel [[@valeriansaliou](https://github.com/valeriansaliou), [#5](https://github.com/valeriansaliou/sonic/issues/5)].
-* Added the ability to disable KV store WAL (Write-Ahead Log), which helps limit write wear on heavily loaded SSD-backed servers [[@valeriansaliou](https://github.com/valeriansaliou), [#130](https://github.com/valeriansaliou/sonic/issues/130)].
+* Introduced a server statistics `INFO` command to Sonic Channel [[@valeriansaliou](https://github.com/valeriansaliou), [#70](https://github.com/valeriansaliou/sonic/issues/70)].
+* Added the ability to disable the lexer for a command with the command modifier `LANG(none)` [[@valeriansaliou](https://github.com/valeriansaliou), [#108](https://github.com/valeriansaliou/sonic/issues/108)].
+* Added a backup and restore system for both KV and FST stores, which can be triggered over Sonic Channel with `TRIGGER backup` and `TRIGGER restore` [[@valeriansaliou](https://github.com/valeriansaliou), [#5](https://github.com/valeriansaliou/sonic/issues/5)].
+* Added the ability to disable KV store WAL (Write-Ahead Log) with the `write_ahead_log` option, which helps limit write wear on heavily loaded SSD-backed servers [[@valeriansaliou](https://github.com/valeriansaliou), [#130](https://github.com/valeriansaliou/sonic/issues/130)].
 
 ## 1.1.9 (2019-03-29)
 
