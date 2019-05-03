@@ -1,6 +1,24 @@
 Sonic Changelog
 ===============
 
+## 1.2.0 (2019-05-03)
+
+### Bug Fixes
+
+* Fixed a rare deadlock occuring when 3 concurrent operations get executed on different threads for the same collection, in the following timely order: `PUSH` then `FLUSHB` then `PUSH` [[@valeriansaliou](https://github.com/valeriansaliou), [d96546b](https://github.com/valeriansaliou/sonic/commit/d96546bd9d8b79332df1106766377e4a4acebd50)].
+
+### Changes
+
+* Reworked the KV store manager to perform periodic memory flushes to disk, thus reducing startup time [[@valeriansaliou](https://github.com/valeriansaliou), [6713488](https://github.com/valeriansaliou/sonic/commit/6713488af3543bca33be6e772936f9668430ba86)].
+* Stop accepting Sonic Channel commands when shutting down Sonic [[@valeriansaliou](https://github.com/valeriansaliou), [#131](https://github.com/valeriansaliou/sonic/issues/131)].
+
+### New Features
+
+* Introduced a server statistics command to Sonic Channel [[@valeriansaliou](https://github.com/valeriansaliou), [#70](https://github.com/valeriansaliou/sonic/issues/70)].
+* Added the ability to disable the lexer for a command [[@valeriansaliou](https://github.com/valeriansaliou), [#108](https://github.com/valeriansaliou/sonic/issues/108)].
+* Added a backup and restore system for both KV and FST stores, which can be triggered over Sonic Channel [[@valeriansaliou](https://github.com/valeriansaliou), [#5](https://github.com/valeriansaliou/sonic/issues/5)].
+* Added the ability to disable KV store WAL (Write-Ahead Log), which helps limit write wear on heavily loaded SSD-backed servers [[@valeriansaliou](https://github.com/valeriansaliou), [#130](https://github.com/valeriansaliou/sonic/issues/130)].
+
 ## 1.1.9 (2019-03-29)
 
 ### Bug Fixes
