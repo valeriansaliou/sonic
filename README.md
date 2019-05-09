@@ -69,7 +69,7 @@ cargo build --release
 
 You can find the built binaries in the `./target/release` directory.
 
-_Install `clang` to be able to compile the required RocksDB dependency._
+_Install `clang`, `clang-dev`, `g++` and `llvm-dev` to be able to compile the required RocksDB dependency._
 
 **👉 Install from Cargo:**
 
