@@ -8,6 +8,7 @@
 mod macros;
 
 mod command;
+mod command_pool;
 mod format;
 mod handle;
 mod message;

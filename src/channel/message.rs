@@ -40,51 +40,101 @@ impl ChannelMessage {
         mut stream: &TcpStream,
         message_slice: &[u8],
     ) -> ChannelMessageResult {
-        let message = str::from_utf8(message_slice).unwrap_or("");
+        let mut context = ChannelMessageContext::new(&mut stream, message_slice);
 
-        debug!("got channel message: {}", message);
+        context.print_command_received_msg();
 
-        let command_start = Instant::now();
-
-        let mut result = ChannelMessageResult::Continue;
-
-        // Process response for issued command
-        let response_args_groups: Vec<ChannelCommandResponseArgs>;
-
-        if *CHANNEL_AVAILABLE.read().unwrap() != true {
-            // Server going down, reject command
-            response_args_groups =
-                vec![ChannelCommandResponse::Err(ChannelCommandError::ShuttingDown).to_args()];
-        } else {
-            // Handle response arguments to issued command
-            response_args_groups = match M::handle(&message) {
-                Ok(resp_groups) => resp_groups
-                    .iter()
-                    .map(|resp| match resp {
-                        ChannelCommandResponse::Ok
-                        | ChannelCommandResponse::Pong
-                        | ChannelCommandResponse::Pending(_)
-                        | ChannelCommandResponse::Result(_)
-                        | ChannelCommandResponse::Event(_, _, _)
-                        | ChannelCommandResponse::Void
-                        | ChannelCommandResponse::Err(_) => resp.to_args(),
-                        ChannelCommandResponse::Ended(_) => {
-                            result = ChannelMessageResult::Close;
-                            resp.to_args()
-                        }
-                    })
-                    .collect(),
-                Err(reason) => vec![ChannelCommandResponse::Err(reason).to_args()],
-            };
+        if context.channel_availability() == false {
+            context.set_response_args_groups(&vec![ChannelCommandResponse::Err(ChannelCommandError::ShuttingDown).to_args()]);
+            context.send_reponse_messages();
+            return context.result;
         }
 
-        // Serve response messages on socket
-        for response_args in response_args_groups {
+        context.handle_message::<M>();
+        context.send_reponse_messages();
+        context.print_elapsed_time();
+        context.update_statistics();
+
+        context.result
+    }
+
+    fn extract(message: &str) -> (String, SplitWhitespace) {
+        // Extract command name and arguments
+        let mut parts = message.split_whitespace();
+        let command = parts.next().unwrap_or("").to_uppercase();
+
+        debug!("will dispatch search command: {}", command);
+
+        (command, parts)
+    }
+}
+
+pub struct ChannelMessageContext<'a, TS> {
+    stream: &'a mut TS,
+    message: String,
+    command_start: Instant,
+    result: ChannelMessageResult,
+    response_args_groups: Vec<ChannelCommandResponseArgs>,
+    channel_available: bool,
+}
+
+impl<'a, TS> ChannelMessageContext<'a, TS>
+where
+    TS: Write
+{
+    pub fn new(stream: &'a mut TS, message_slice: &[u8]) -> Self {
+        let message = String::from_utf8(message_slice.to_vec()).unwrap_or(String::from(""));
+        Self {
+            stream,
+            message,
+            command_start: Instant::now(),
+            result: ChannelMessageResult::Continue,
+            response_args_groups: vec![],
+            channel_available: *CHANNEL_AVAILABLE.read().unwrap(),
+        }
+    }
+
+    pub fn print_command_received_msg(&self) {
+        debug!("received channel message: {}", self.message);
+    }
+
+    pub fn channel_availability(&self) -> bool { self.channel_available }
+
+    // Handle response arguments to issued command
+    pub fn handle_message<M: ChannelMessageMode>(&mut self) {
+        self.response_args_groups = match M::handle(&self.message) {
+            Ok(resp_groups) => resp_groups
+                .iter()
+                .map(|resp| match resp {
+                    ChannelCommandResponse::Ok
+                    | ChannelCommandResponse::Pong
+                    | ChannelCommandResponse::Pending(_)
+                    | ChannelCommandResponse::Result(_)
+                    | ChannelCommandResponse::Event(_, _, _)
+                    | ChannelCommandResponse::Void
+                    | ChannelCommandResponse::Err(_) => resp.to_args(),
+                    ChannelCommandResponse::Ended(_) => {
+                        self.result = ChannelMessageResult::Close;
+                        resp.to_args()
+                    }
+                })
+                .collect(),
+            Err(reason) => vec![ChannelCommandResponse::Err(reason).to_args()],
+        };
+    }
+
+    pub fn set_response_args_groups(&mut self, args_groups: &Vec<ChannelCommandResponseArgs>) {
+        self.response_args_groups = args_groups.clone();
+    }
+
+    // Serve response messages on socket
+    pub fn send_reponse_messages(&mut self) {
+        for response_args in self.response_args_groups.clone() {
             if !response_args.0.is_empty() {
                 if let Some(ref values) = response_args.1 {
                     let values_string = values.join(" ");
 
-                    write!(stream, "{} {}{}", response_args.0, values_string, LINE_FEED)
+                    write!(self.stream, "{} {}{}", response_args.0, values_string, LINE_FEED)
                         .expect("write failed");
 
                     debug!(
@@ -92,17 +142,19 @@ impl ChannelMessage {
                         response_args.0, values_string
                     );
                 } else {
-                    write!(stream, "{}{}", response_args.0, LINE_FEED).expect("write failed");
+                    write!(self.stream, "{}{}", response_args.0, LINE_FEED).expect("write failed");
 
                     debug!("wrote response with no values: {}", response_args.0);
                 }
             }
         }
+    }
 
-        // Measure and log time it took to execute command
-        // Notice: this is critical as to raise developer awareness on the performance bits when \
-        //   altering commands-related code, or when making changes to underlying store executors.
-        let command_took = command_start.elapsed();
+    // Measure and log time it took to execute command
+    // Notice: this is critical as to raise developer awareness on the performance bits when \
+    // altering commands-related code, or when making changes to underlying store executors.
+    pub fn print_elapsed_time(&self) {
+        let command_took = self.command_start.elapsed();
 
         if command_took.as_millis() >= COMMAND_ELAPSED_MILLIS_SLOW_WARN {
             warn!(
@@ -117,39 +169,26 @@ impl ChannelMessage {
                 command_took.as_nanos(),
             );
         }
-
-        // Update command statistics
-        {
-            // Update performance measures
-            // Notice: commands that take 0ms are not accounted for there (ie. those are usually \
-            //   commands that do no work or I/O; they would make statistics less accurate)
-            let command_took_millis = command_took.as_millis() as u32;
-
-            if command_took_millis > *COMMAND_LATENCY_WORST.read().unwrap() {
-                *COMMAND_LATENCY_WORST.write().unwrap() = command_took_millis;
-            }
-            if command_took_millis > 0
-                && (*COMMAND_LATENCY_BEST.read().unwrap() == 0
-                    || command_took_millis < *COMMAND_LATENCY_BEST.read().unwrap())
-            {
-                *COMMAND_LATENCY_BEST.write().unwrap() = command_took_millis;
-            }
-
-            // Increment total commands
-            *COMMANDS_TOTAL.write().unwrap() += 1;
-        }
-
-        result
     }
 
-    fn extract(message: &str) -> (String, SplitWhitespace) {
-        // Extract command name and arguments
-        let mut parts = message.split_whitespace();
-        let command = parts.next().unwrap_or("").to_uppercase();
+    // Update performance measures
+    // Notice: commands that take 0ms are not accounted for there (ie. those are usually \
+    //   commands that do no work or I/O; they would make statistics less accurate)
+    pub fn update_statistics(&self) {
+        let command_took_millis = self.command_start.elapsed().as_millis() as u32;
 
-        debug!("will dispatch search command: {}", command);
+        if command_took_millis > *COMMAND_LATENCY_WORST.read().unwrap() {
+            *COMMAND_LATENCY_WORST.write().unwrap() = command_took_millis;
+        }
+        if command_took_millis > 0
+            && (*COMMAND_LATENCY_BEST.read().unwrap() == 0
+                || command_took_millis < *COMMAND_LATENCY_BEST.read().unwrap())
+        {
+            *COMMAND_LATENCY_BEST.write().unwrap() = command_took_millis;
+        }
 
-        (command, parts)
+        // Increment total commands
+        *COMMANDS_TOTAL.write().unwrap() += 1;
     }
 }
 
@@ -184,5 +223,18 @@ impl ChannelMessageMode for ChannelMessageModeControl {
             "INFO" => ChannelCommandControl::dispatch_info,
             "HELP" => ChannelCommandControl::dispatch_help,
         })
+    }
+}
+
+// tests
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn channel_message_context_can_be_initialized() {
+        let mut fake_tcp: Vec<u8> = vec![];
+        assert_eq!(ChannelMessageContext::new(&mut fake_tcp, &(b"a").clone()).message, String::from("a"));
     }
 }

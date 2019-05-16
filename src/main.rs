@@ -25,6 +25,7 @@ extern crate radix;
 extern crate rand;
 extern crate regex_syntax;
 extern crate rocksdb;
+extern crate threadpool;
 extern crate toml;
 extern crate twox_hash;
 extern crate unicode_segmentation;
@@ -73,6 +74,7 @@ pub static LINE_FEED: &'static str = "\r\n";
 pub static THREAD_NAME_CHANNEL_MASTER: &'static str = "sonic-channel-master";
 pub static THREAD_NAME_CHANNEL_CLIENT: &'static str = "sonic-channel-client";
 pub static THREAD_NAME_TASKER: &'static str = "sonic-tasker";
+pub static THREAD_NAME_COMMAND_THREAD_POOL: &'static str = "sonic-command-thread-pool";
 
 macro_rules! gen_spawn_managed {
     ($name:expr, $method:ident, $thread_name:ident, $managed_fn:ident) => {
