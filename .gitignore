@@ -6,3 +6,5 @@ target/*
 
 data/store/fst/*
 data/store/kv/*
+node_modules/
+
