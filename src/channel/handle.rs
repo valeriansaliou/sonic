@@ -160,7 +160,7 @@ impl ChannelHandle {
                         while let Some(byte) = buffer.pop_front() {
                             // Commit line and start a new one?
                             if byte == BUFFER_LINE_SEPARATOR {
-                                if Self::on_message(&mode, &stream, &processed_line)
+                                if Self::on_message(&mode, &mut stream, &processed_line)
                                     == ChannelMessageResult::Close
                                 {
                                     // Should close?
@@ -251,18 +251,19 @@ impl ChannelHandle {
 
     fn on_message(
         mode: &ChannelMode,
-        stream: &TcpStream,
+        stream: &mut TcpStream,
         message_slice: &[u8],
     ) -> ChannelMessageResult {
+        let mut channel_message = ChannelMessage::new(stream, message_slice);
         match mode {
             ChannelMode::Search => {
-                ChannelMessage::on::<ChannelMessageModeSearch>(stream, message_slice)
+                channel_message.handle::<ChannelMessageModeSearch>()
             }
             ChannelMode::Ingest => {
-                ChannelMessage::on::<ChannelMessageModeIngest>(stream, message_slice)
+                channel_message.handle::<ChannelMessageModeIngest>()
             }
             ChannelMode::Control => {
-                ChannelMessage::on::<ChannelMessageModeControl>(stream, message_slice)
+                channel_message.handle::<ChannelMessageModeControl>()
             }
         }
     }

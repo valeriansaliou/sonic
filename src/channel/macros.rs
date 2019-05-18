@@ -7,7 +7,7 @@
 #[macro_export]
 macro_rules! gen_channel_message_mode_handle {
     ($message:ident, $commands:ident, { $($external:expr => $internal:expr),+, }) => {{
-        let (command, parts) = ChannelMessage::extract($message);
+        let (command, parts) = ChannelMessageUtils::extract($message);
 
         if command.is_empty() == true || $commands.contains(&command.as_str()) == true {
             match command.as_str() {

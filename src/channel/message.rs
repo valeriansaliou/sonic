@@ -18,14 +18,23 @@ use super::listen::CHANNEL_AVAILABLE;
 use super::statistics::{COMMANDS_TOTAL, COMMAND_LATENCY_BEST, COMMAND_LATENCY_WORST};
 use crate::LINE_FEED;
 
-pub struct ChannelMessage;
+pub struct ChannelMessage<'a, TS> {
+    stream: &'a mut TS,
+    message: String,
+    command_start: Instant,
+    result: ChannelMessageResult,
+    response_args_groups: Vec<ChannelCommandResponseArgs>,
+    channel_available: bool,
+}
+
+pub struct ChannelMessageUtils;
 pub struct ChannelMessageModeSearch;
 pub struct ChannelMessageModeIngest;
 pub struct ChannelMessageModeControl;
 
 const COMMAND_ELAPSED_MILLIS_SLOW_WARN: u128 = 50;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub enum ChannelMessageResult {
     Continue,
     Close,
@@ -35,50 +44,7 @@ pub trait ChannelMessageMode {
     fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError>;
 }
 
-impl ChannelMessage {
-    pub fn on<M: ChannelMessageMode>(
-        mut stream: &TcpStream,
-        message_slice: &[u8],
-    ) -> ChannelMessageResult {
-        let mut context = ChannelMessageContext::new(&mut stream, message_slice);
-
-        context.print_command_received_msg();
-
-        if context.channel_availability() == false {
-            context.set_response_args_groups(&vec![ChannelCommandResponse::Err(ChannelCommandError::ShuttingDown).to_args()]);
-            context.send_reponse_messages();
-            return context.result;
-        }
-
-        context.handle_message::<M>();
-        context.send_reponse_messages();
-        context.print_elapsed_time();
-        context.update_statistics();
-
-        context.result
-    }
-
-    fn extract(message: &str) -> (String, SplitWhitespace) {
-        // Extract command name and arguments
-        let mut parts = message.split_whitespace();
-        let command = parts.next().unwrap_or("").to_uppercase();
-
-        debug!("will dispatch search command: {}", command);
-
-        (command, parts)
-    }
-}
-
-pub struct ChannelMessageContext<'a, TS> {
-    stream: &'a mut TS,
-    message: String,
-    command_start: Instant,
-    result: ChannelMessageResult,
-    response_args_groups: Vec<ChannelCommandResponseArgs>,
-    channel_available: bool,
-}
-
-impl<'a, TS> ChannelMessageContext<'a, TS>
+impl<'a, TS> ChannelMessage<'a, TS>
 where
     TS: Write
 {
@@ -94,14 +60,31 @@ where
         }
     }
 
-    pub fn print_command_received_msg(&self) {
+    pub fn handle<M: ChannelMessageMode>(&mut self) -> ChannelMessageResult {
+        self.print_command_received_msg();
+
+        if self.channel_availability() == false {
+            self.set_response_args_groups(&vec![ChannelCommandResponse::Err(ChannelCommandError::ShuttingDown).to_args()]);
+            self.send_reponse_messages();
+            return self.result.clone();
+        }
+
+        self.handle_message::<M>();
+        self.send_reponse_messages();
+        self.print_elapsed_time();
+        self.update_statistics();
+
+        self.result.clone()
+    }
+
+    fn print_command_received_msg(&self) {
         debug!("received channel message: {}", self.message);
     }
 
-    pub fn channel_availability(&self) -> bool { self.channel_available }
+    fn channel_availability(&self) -> bool { self.channel_available }
 
     // Handle response arguments to issued command
-    pub fn handle_message<M: ChannelMessageMode>(&mut self) {
+    fn handle_message<M: ChannelMessageMode>(&mut self) {
         self.response_args_groups = match M::handle(&self.message) {
             Ok(resp_groups) => resp_groups
                 .iter()
@@ -123,12 +106,12 @@ where
         };
     }
 
-    pub fn set_response_args_groups(&mut self, args_groups: &Vec<ChannelCommandResponseArgs>) {
+    fn set_response_args_groups(&mut self, args_groups: &Vec<ChannelCommandResponseArgs>) {
         self.response_args_groups = args_groups.clone();
     }
 
     // Serve response messages on socket
-    pub fn send_reponse_messages(&mut self) {
+    fn send_reponse_messages(&mut self) {
         for response_args in self.response_args_groups.clone() {
             if !response_args.0.is_empty() {
                 if let Some(ref values) = response_args.1 {
@@ -153,7 +136,7 @@ where
     // Measure and log time it took to execute command
     // Notice: this is critical as to raise developer awareness on the performance bits when \
     // altering commands-related code, or when making changes to underlying store executors.
-    pub fn print_elapsed_time(&self) {
+    fn print_elapsed_time(&self) {
         let command_took = self.command_start.elapsed();
 
         if command_took.as_millis() >= COMMAND_ELAPSED_MILLIS_SLOW_WARN {
@@ -174,7 +157,7 @@ where
     // Update performance measures
     // Notice: commands that take 0ms are not accounted for there (ie. those are usually \
     //   commands that do no work or I/O; they would make statistics less accurate)
-    pub fn update_statistics(&self) {
+    fn update_statistics(&self) {
         let command_took_millis = self.command_start.elapsed().as_millis() as u32;
 
         if command_took_millis > *COMMAND_LATENCY_WORST.read().unwrap() {
@@ -189,6 +172,18 @@ where
 
         // Increment total commands
         *COMMANDS_TOTAL.write().unwrap() += 1;
+    }
+}
+
+impl ChannelMessageUtils {
+    pub fn extract(message: &str) -> (String, SplitWhitespace) {
+        // Extract command name and arguments
+        let mut parts = message.split_whitespace();
+        let command = parts.next().unwrap_or("").to_uppercase();
+
+        debug!("will dispatch search command: {}", command);
+
+        (command, parts)
     }
 }
 
@@ -235,6 +230,6 @@ mod tests {
     #[test]
     fn channel_message_context_can_be_initialized() {
         let mut fake_tcp: Vec<u8> = vec![];
-        assert_eq!(ChannelMessageContext::new(&mut fake_tcp, &(b"a").clone()).message, String::from("a"));
+        assert_eq!(ChannelMessage::new(&mut fake_tcp, &(b"a").clone()).message, String::from("a"));
     }
 }
