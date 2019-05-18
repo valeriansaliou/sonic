@@ -52,7 +52,7 @@ pub struct ChannelCommandControl;
 
 pub type ChannelCommandResponseArgs = (&'static str, Option<Vec<String>>);
 
-type ChannelResult = Result<Vec<ChannelCommandResponse>, ChannelCommandError>;
+type ChannelResult = Result<ChannelCommandResponse, ChannelCommandError>;
 type MetaPartsResult<'a> = Result<(&'a str, &'a str), (&'a str, &'a str)>;
 
 pub const EVENT_ID_SIZE: usize = 8;
@@ -134,14 +134,14 @@ impl ChannelCommandResponse {
 impl ChannelCommandBase {
     pub fn dispatch_ping(mut parts: SplitWhitespace) -> ChannelResult {
         match parts.next() {
-            None => Ok(vec![ChannelCommandResponse::Pong]),
+            None => Ok(ChannelCommandResponse::Pong),
             _ => Err(ChannelCommandError::InvalidFormat("PING")),
         }
     }
 
     pub fn dispatch_quit(mut parts: SplitWhitespace) -> ChannelResult {
         match parts.next() {
-            None => Ok(vec![ChannelCommandResponse::Ended("quit")]),
+            None => Ok(ChannelCommandResponse::Ended("quit")),
             _ => Err(ChannelCommandError::InvalidFormat("QUIT")),
         }
     }
@@ -154,19 +154,19 @@ impl ChannelCommandBase {
             (None, _) => {
                 let manual_list = manuals.keys().map(|k| k.to_owned()).collect::<Vec<&str>>();
 
-                Ok(vec![ChannelCommandResponse::Result(format!(
+                Ok(ChannelCommandResponse::Result(format!(
                     "manuals({})",
                     manual_list.join(", ")
-                ))])
+                )))
             }
             (Some(manual_key), next_part) => {
                 if next_part.is_none() {
                     if let Some(manual_data) = manuals.get(manual_key) {
-                        Ok(vec![ChannelCommandResponse::Result(format!(
+                        Ok(ChannelCommandResponse::Result(format!(
                             "{}({})",
                             manual_key,
                             manual_data.join(", ")
-                        ))])
+                        )))
                     } else {
                         Err(ChannelCommandError::NotFound)
                     }
@@ -316,7 +316,7 @@ impl ChannelCommandBase {
     pub fn commit_ok_operation(query_builder: QueryBuilderResult) -> ChannelResult {
         query_builder
             .and_then(|query| StoreOperationDispatch::dispatch(query))
-            .and_then(|_| Ok(vec![ChannelCommandResponse::Ok]))
+            .and_then(|_| Ok(ChannelCommandResponse::Ok))
             .or(Err(ChannelCommandError::QueryError))
     }
 
@@ -326,7 +326,7 @@ impl ChannelCommandBase {
             .or(Err(ChannelCommandError::QueryError))
             .and_then(|result| {
                 if let Some(result_inner) = result {
-                    Ok(vec![ChannelCommandResponse::Result(result_inner)])
+                    Ok(ChannelCommandResponse::Result(result_inner))
                 } else {
                     Err(ChannelCommandError::InternalError)
                 }
@@ -347,17 +347,18 @@ impl ChannelCommandBase {
         //   prevent scaling Sonic vertically, but could be made simpler for the Sonic Channel \
         //   consumer via a worker thread pool.
 
+        ////
+        // ChannelCommandResponse::Pending(query_id.to_string()),
         query_builder
             .and_then(|query| StoreOperationDispatch::dispatch(query))
             .and_then(|results| {
-                Ok(vec![
-                    ChannelCommandResponse::Pending(query_id.to_string()),
+                Ok(
                     ChannelCommandResponse::Event(
                         query_type,
                         query_id.to_string(),
                         results.unwrap_or(String::new()),
-                    ),
-                ])
+                    )
+                )
             })
             .or(Err(ChannelCommandError::QueryError))
     }
@@ -787,10 +788,10 @@ impl ChannelCommandIngest {
 impl ChannelCommandControl {
     pub fn dispatch_trigger(mut parts: SplitWhitespace) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next()) {
-            (None, _, _) => Ok(vec![ChannelCommandResponse::Result(format!(
+            (None, _, _) => Ok(ChannelCommandResponse::Result(format!(
                 "actions({})",
                 CONTROL_TRIGGER_ACTIONS.join(", ")
-            ))]),
+            ))),
             (Some(action_key), data_part, last_part) => {
                 let action_key_lower = action_key.to_lowercase();
 
@@ -800,7 +801,7 @@ impl ChannelCommandControl {
                             // Force a FST consolidate
                             StoreFSTPool::consolidate(true);
 
-                            Ok(vec![ChannelCommandResponse::Ok])
+                            Ok(ChannelCommandResponse::Ok)
                         } else {
                             Err(ChannelCommandError::InvalidFormat("TRIGGER consolidate"))
                         }
@@ -814,7 +815,7 @@ impl ChannelCommandControl {
                                 if StoreKVPool::backup(&path.join(BACKUP_KV_PATH)).is_ok()
                                     && StoreFSTPool::backup(&path.join(BACKUP_FST_PATH)).is_ok()
                                 {
-                                    Ok(vec![ChannelCommandResponse::Ok])
+                                    Ok(ChannelCommandResponse::Ok)
                                 } else {
                                     Err(ChannelCommandError::InternalError)
                                 }
@@ -831,7 +832,7 @@ impl ChannelCommandControl {
                                 if StoreKVPool::restore(&path.join(BACKUP_KV_PATH)).is_ok()
                                     && StoreFSTPool::restore(&path.join(BACKUP_FST_PATH)).is_ok()
                                 {
-                                    Ok(vec![ChannelCommandResponse::Ok])
+                                    Ok(ChannelCommandResponse::Ok)
                                 } else {
                                     Err(ChannelCommandError::InternalError)
                                 }
@@ -850,7 +851,7 @@ impl ChannelCommandControl {
             None => {
                 let statistics = ChannelStatistics::gather();
 
-                Ok(vec![ChannelCommandResponse::Result(format!(
+                Ok(ChannelCommandResponse::Result(format!(
                     "uptime({}) clients_connected({}) commands_total({}) \
                      command_latency_best({}) command_latency_worst({}) \
                      kv_open_count({}) fst_open_count({}) fst_consolidate_count({})",
@@ -862,7 +863,7 @@ impl ChannelCommandControl {
                     statistics.kv_open_count,
                     statistics.fst_open_count,
                     statistics.fst_consolidate_count
-                ))])
+                )))
             }
             _ => Err(ChannelCommandError::InvalidFormat("INFO")),
         }

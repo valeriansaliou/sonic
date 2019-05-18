@@ -5,7 +5,6 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use std::io::Write;
-use std::net::TcpStream;
 use std::str::{self, SplitWhitespace};
 use std::time::Instant;
 
@@ -23,7 +22,7 @@ pub struct ChannelMessage<'a, TS> {
     message: String,
     command_start: Instant,
     result: ChannelMessageResult,
-    response_args_groups: Vec<ChannelCommandResponseArgs>,
+    response_args: Option<ChannelCommandResponseArgs>,
     channel_available: bool,
 }
 
@@ -41,12 +40,12 @@ pub enum ChannelMessageResult {
 }
 
 pub trait ChannelMessageMode {
-    fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError>;
+    fn handle(message: &str) -> Result<ChannelCommandResponse, ChannelCommandError>;
 }
 
 impl<'a, TS> ChannelMessage<'a, TS>
 where
-    TS: Write
+    TS: Write,
 {
     pub fn new(stream: &'a mut TS, message_slice: &[u8]) -> Self {
         let message = String::from_utf8(message_slice.to_vec()).unwrap_or(String::from(""));
@@ -55,7 +54,7 @@ where
             message,
             command_start: Instant::now(),
             result: ChannelMessageResult::Continue,
-            response_args_groups: vec![],
+            response_args: None,
             channel_available: *CHANNEL_AVAILABLE.read().unwrap(),
         }
     }
@@ -64,7 +63,9 @@ where
         self.print_command_received_msg();
 
         if self.channel_availability() == false {
-            self.set_response_args_groups(&vec![ChannelCommandResponse::Err(ChannelCommandError::ShuttingDown).to_args()]);
+            self.set_response_args(
+                ChannelCommandResponse::Err(ChannelCommandError::ShuttingDown).to_args(),
+            );
             self.send_reponse_messages();
             return self.result.clone();
         }
@@ -81,54 +82,67 @@ where
         debug!("received channel message: {}", self.message);
     }
 
-    fn channel_availability(&self) -> bool { self.channel_available }
+    fn channel_availability(&self) -> bool {
+        self.channel_available
+    }
 
     // Handle response arguments to issued command
     fn handle_message<M: ChannelMessageMode>(&mut self) {
-        self.response_args_groups = match M::handle(&self.message) {
-            Ok(resp_groups) => resp_groups
-                .iter()
-                .map(|resp| match resp {
-                    ChannelCommandResponse::Ok
-                    | ChannelCommandResponse::Pong
-                    | ChannelCommandResponse::Pending(_)
-                    | ChannelCommandResponse::Result(_)
-                    | ChannelCommandResponse::Event(_, _, _)
-                    | ChannelCommandResponse::Void
-                    | ChannelCommandResponse::Err(_) => resp.to_args(),
-                    ChannelCommandResponse::Ended(_) => {
-                        self.result = ChannelMessageResult::Close;
-                        resp.to_args()
-                    }
-                })
-                .collect(),
-            Err(reason) => vec![ChannelCommandResponse::Err(reason).to_args()],
+        match M::handle(&self.message) {
+            Ok(resp) => match resp {
+                ChannelCommandResponse::Ok
+                | ChannelCommandResponse::Pong
+                | ChannelCommandResponse::Pending(_)
+                | ChannelCommandResponse::Result(_)
+                | ChannelCommandResponse::Event(_, _, _)
+                | ChannelCommandResponse::Void
+                | ChannelCommandResponse::Err(_) => {
+                    self.set_response_args(resp.to_args());
+                }
+                ChannelCommandResponse::Ended(_) => {
+                    self.result = ChannelMessageResult::Close;
+                    self.set_response_args(resp.to_args());
+                }
+            },
+            Err(reason) => {
+                self.set_response_args(ChannelCommandResponse::Err(reason).to_args());
+            }
         };
     }
 
-    fn set_response_args_groups(&mut self, args_groups: &Vec<ChannelCommandResponseArgs>) {
-        self.response_args_groups = args_groups.clone();
+    fn set_response_args(&mut self, args: ChannelCommandResponseArgs) {
+        self.response_args = Some(args);
     }
 
     // Serve response messages on socket
     fn send_reponse_messages(&mut self) {
-        for response_args in self.response_args_groups.clone() {
-            if !response_args.0.is_empty() {
-                if let Some(ref values) = response_args.1 {
-                    let values_string = values.join(" ");
+        match &self.response_args {
+            Some(response_args) => {
+                if !response_args.0.is_empty() {
+                    if let Some(ref values) = response_args.1 {
+                        let values_string = values.join(" ");
 
-                    write!(self.stream, "{} {}{}", response_args.0, values_string, LINE_FEED)
+                        write!(
+                            self.stream,
+                            "{} {}{}",
+                            response_args.0, values_string, LINE_FEED
+                        )
                         .expect("write failed");
 
-                    debug!(
-                        "wrote response with values: {} ({})",
-                        response_args.0, values_string
-                    );
-                } else {
-                    write!(self.stream, "{}{}", response_args.0, LINE_FEED).expect("write failed");
+                        debug!(
+                            "wrote response with values: {} ({})",
+                            response_args.0, values_string
+                        );
+                    } else {
+                        write!(self.stream, "{}{}", response_args.0, LINE_FEED)
+                            .expect("write failed");
 
-                    debug!("wrote response with no values: {}", response_args.0);
+                        debug!("wrote response with no values: {}", response_args.0);
+                    }
                 }
+            }
+            None => {
+                debug!("try to send empty message");
             }
         }
     }
@@ -188,7 +202,7 @@ impl ChannelMessageUtils {
 }
 
 impl ChannelMessageMode for ChannelMessageModeSearch {
-    fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
+    fn handle(message: &str) -> Result<ChannelCommandResponse, ChannelCommandError> {
         gen_channel_message_mode_handle!(message, COMMANDS_MODE_SEARCH, {
             "QUERY" => ChannelCommandSearch::dispatch_query,
             "SUGGEST" => ChannelCommandSearch::dispatch_suggest,
@@ -198,7 +212,7 @@ impl ChannelMessageMode for ChannelMessageModeSearch {
 }
 
 impl ChannelMessageMode for ChannelMessageModeIngest {
-    fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
+    fn handle(message: &str) -> Result<ChannelCommandResponse, ChannelCommandError> {
         gen_channel_message_mode_handle!(message, COMMANDS_MODE_INGEST, {
             "PUSH" => ChannelCommandIngest::dispatch_push,
             "POP" => ChannelCommandIngest::dispatch_pop,
@@ -212,7 +226,7 @@ impl ChannelMessageMode for ChannelMessageModeIngest {
 }
 
 impl ChannelMessageMode for ChannelMessageModeControl {
-    fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
+    fn handle(message: &str) -> Result<ChannelCommandResponse, ChannelCommandError> {
         gen_channel_message_mode_handle!(message, COMMANDS_MODE_CONTROL, {
             "TRIGGER" => ChannelCommandControl::dispatch_trigger,
             "INFO" => ChannelCommandControl::dispatch_info,
@@ -230,6 +244,9 @@ mod tests {
     #[test]
     fn channel_message_context_can_be_initialized() {
         let mut fake_tcp: Vec<u8> = vec![];
-        assert_eq!(ChannelMessage::new(&mut fake_tcp, &(b"a").clone()).message, String::from("a"));
+        assert_eq!(
+            ChannelMessage::new(&mut fake_tcp, &(b"a").clone()).message,
+            String::from("a")
+        );
     }
 }

@@ -11,20 +11,20 @@ macro_rules! gen_channel_message_mode_handle {
 
         if command.is_empty() == true || $commands.contains(&command.as_str()) == true {
             match command.as_str() {
-                "" => Ok(vec![ChannelCommandResponse::Void]),
+                "" => Ok(ChannelCommandResponse::Void),
                 $(
                     $external => $internal(parts),
                 )+
                 "PING" => ChannelCommandBase::dispatch_ping(parts),
                 "QUIT" => ChannelCommandBase::dispatch_quit(parts),
-                _ => Ok(vec![ChannelCommandResponse::Err(
+                _ => Ok(ChannelCommandResponse::Err(
                     ChannelCommandError::InternalError,
-                )]),
+                )),
             }
         } else {
-            Ok(vec![ChannelCommandResponse::Err(
+            Ok(ChannelCommandResponse::Err(
                 ChannelCommandError::UnknownCommand,
-            )])
+            ))
         }
     }};
 }
