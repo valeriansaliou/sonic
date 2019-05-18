@@ -30,6 +30,7 @@ extern crate toml;
 extern crate twox_hash;
 extern crate unicode_segmentation;
 extern crate whatlang;
+extern crate futures;
 
 #[cfg(feature = "alloc-jemalloc")]
 extern crate jemallocator;

@@ -10,8 +10,9 @@ use std::time::Instant;
 
 use super::command::{
     ChannelCommandBase, ChannelCommandControl, ChannelCommandError, ChannelCommandIngest,
-    ChannelCommandResponse, ChannelCommandResponseArgs, ChannelCommandSearch,
-    COMMANDS_MODE_CONTROL, COMMANDS_MODE_INGEST, COMMANDS_MODE_SEARCH,
+    ChannelCommandResponse, ChannelCommandResponseArgs, ChannelCommandSearch, ChannelResult,
+    ChannelResultAsync, ChannelResultSync, COMMANDS_MODE_CONTROL, COMMANDS_MODE_INGEST,
+    COMMANDS_MODE_SEARCH,
 };
 use super::listen::CHANNEL_AVAILABLE;
 use super::statistics::{COMMANDS_TOTAL, COMMAND_LATENCY_BEST, COMMAND_LATENCY_WORST};
@@ -40,7 +41,7 @@ pub enum ChannelMessageResult {
 }
 
 pub trait ChannelMessageMode {
-    fn handle(message: &str) -> Result<ChannelCommandResponse, ChannelCommandError>;
+    fn handle(message: &str) -> ChannelResult;
 }
 
 impl<'a, TS> ChannelMessage<'a, TS>
@@ -66,15 +67,11 @@ where
             self.set_response_args(
                 ChannelCommandResponse::Err(ChannelCommandError::ShuttingDown).to_args(),
             );
-            self.send_reponse_messages();
+            self.send_reponse_message();
             return self.result.clone();
         }
 
-        self.handle_message::<M>();
-        self.send_reponse_messages();
-        self.print_elapsed_time();
-        self.update_statistics();
-
+        self.execute_message::<M>();
         self.result.clone()
     }
 
@@ -87,21 +84,43 @@ where
     }
 
     // Handle response arguments to issued command
-    fn handle_message<M: ChannelMessageMode>(&mut self) {
-        match M::handle(&self.message) {
+    fn execute_message<M: ChannelMessageMode>(&mut self) {
+        let channel_result = M::handle(&self.message);
+        match channel_result {
+            ChannelResult::Sync(sync_res) => {
+                self.handle_sync_channel_result(sync_res);
+            }
+            ChannelResult::Async(async_res) => {
+                self.handle_async_channel_result(async_res);
+            }
+        };
+        self.send_reponse_message();
+        self.print_elapsed_time();
+        self.update_statistics();
+    }
+
+    fn handle_sync_channel_result(&mut self, sync_response: ChannelResultSync) {
+        match sync_response {
             Ok(resp) => match resp {
-                ChannelCommandResponse::Ok
-                | ChannelCommandResponse::Pong
-                | ChannelCommandResponse::Pending(_)
-                | ChannelCommandResponse::Result(_)
-                | ChannelCommandResponse::Event(_, _, _)
-                | ChannelCommandResponse::Void
-                | ChannelCommandResponse::Err(_) => {
-                    self.set_response_args(resp.to_args());
-                }
                 ChannelCommandResponse::Ended(_) => {
                     self.result = ChannelMessageResult::Close;
                     self.set_response_args(resp.to_args());
+                }
+                _ => self.set_response_args(resp.to_args()),
+            },
+            Err(reason) => self.set_response_args(ChannelCommandResponse::Err(reason).to_args()),
+        };
+    }
+
+    fn handle_async_channel_result(&mut self, async_response: ChannelResultAsync) {
+        match async_response {
+            Ok(resp) => match resp.0 {
+                ChannelCommandResponse::Ended(_) => {
+                    self.result = ChannelMessageResult::Close;
+                    self.set_response_args(resp.0.to_args());
+                }
+                _ => {
+                    self.set_response_args(resp.0.to_args());
                 }
             },
             Err(reason) => {
@@ -114,8 +133,8 @@ where
         self.response_args = Some(args);
     }
 
-    // Serve response messages on socket
-    fn send_reponse_messages(&mut self) {
+    // Send response message on socket
+    fn send_reponse_message(&mut self) {
         match &self.response_args {
             Some(response_args) => {
                 if !response_args.0.is_empty() {
@@ -202,7 +221,7 @@ impl ChannelMessageUtils {
 }
 
 impl ChannelMessageMode for ChannelMessageModeSearch {
-    fn handle(message: &str) -> Result<ChannelCommandResponse, ChannelCommandError> {
+    fn handle(message: &str) -> ChannelResult {
         gen_channel_message_mode_handle!(message, COMMANDS_MODE_SEARCH, {
             "QUERY" => ChannelCommandSearch::dispatch_query,
             "SUGGEST" => ChannelCommandSearch::dispatch_suggest,
@@ -212,7 +231,7 @@ impl ChannelMessageMode for ChannelMessageModeSearch {
 }
 
 impl ChannelMessageMode for ChannelMessageModeIngest {
-    fn handle(message: &str) -> Result<ChannelCommandResponse, ChannelCommandError> {
+    fn handle(message: &str) -> ChannelResult {
         gen_channel_message_mode_handle!(message, COMMANDS_MODE_INGEST, {
             "PUSH" => ChannelCommandIngest::dispatch_push,
             "POP" => ChannelCommandIngest::dispatch_pop,
@@ -226,7 +245,7 @@ impl ChannelMessageMode for ChannelMessageModeIngest {
 }
 
 impl ChannelMessageMode for ChannelMessageModeControl {
-    fn handle(message: &str) -> Result<ChannelCommandResponse, ChannelCommandError> {
+    fn handle(message: &str) -> ChannelResult {
         gen_channel_message_mode_handle!(message, COMMANDS_MODE_CONTROL, {
             "TRIGGER" => ChannelCommandControl::dispatch_trigger,
             "INFO" => ChannelCommandControl::dispatch_info,

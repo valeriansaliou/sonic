@@ -43,6 +43,7 @@ hashbrown = "0.3"
 linked_hash_set = "0.1"
 whatlang = "0.7"
 threadpool = "1.7.1"
+futures = "0.1.27"
 bitflags = "=1.0.4"
 
 [features]
