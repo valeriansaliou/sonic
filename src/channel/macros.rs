@@ -7,7 +7,10 @@
 #[macro_export]
 macro_rules! gen_channel_message_mode_handle {
     ($message:ident, $commands:ident, { $($external:expr => $internal:expr),+, }) => {{
-        let (command, parts) = ChannelMessageUtils::extract($message);
+        let mut parts: SplitWhitespace = $message.split_whitespace();
+        let command = parts.next().unwrap_or("").to_uppercase();
+
+        debug!("will dispatch search command: {}", command);
 
         if command.is_empty() == true || $commands.contains(&command.as_str()) == true {
             match command.as_str() {

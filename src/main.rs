@@ -5,6 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 #![cfg_attr(feature = "benchmark", feature(test))]
+#![feature(fnbox)]
 
 #[macro_use]
 extern crate log;
@@ -18,19 +19,19 @@ extern crate byteorder;
 extern crate fst;
 extern crate fst_levenshtein;
 extern crate fst_regex;
+extern crate futures;
 extern crate graceful;
 extern crate hashbrown;
 extern crate linked_hash_set;
 extern crate radix;
 extern crate rand;
+extern crate rayon;
 extern crate regex_syntax;
 extern crate rocksdb;
-extern crate threadpool;
 extern crate toml;
 extern crate twox_hash;
 extern crate unicode_segmentation;
 extern crate whatlang;
-extern crate futures;
 
 #[cfg(feature = "alloc-jemalloc")]
 extern crate jemallocator;
@@ -75,7 +76,6 @@ pub static LINE_FEED: &'static str = "\r\n";
 pub static THREAD_NAME_CHANNEL_MASTER: &'static str = "sonic-channel-master";
 pub static THREAD_NAME_CHANNEL_CLIENT: &'static str = "sonic-channel-client";
 pub static THREAD_NAME_TASKER: &'static str = "sonic-tasker";
-pub static THREAD_NAME_COMMAND_THREAD_POOL: &'static str = "sonic-command-thread-pool";
 
 macro_rules! gen_spawn_managed {
     ($name:expr, $method:ident, $thread_name:ident, $managed_fn:ident) => {

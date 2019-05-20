@@ -5,21 +5,24 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use std::io::Write;
+use std::net::TcpStream;
 use std::str::{self, SplitWhitespace};
 use std::time::Instant;
+use futures::future::Future;
 
 use super::command::{
-    ChannelCommandBase, ChannelCommandControl, ChannelCommandError, ChannelCommandIngest,
+    ChannelCommandBase, ChannelCommandControl, ChannelCommandError, ChannelCommandIngest, ChannelResultAsyncFuture,
     ChannelCommandResponse, ChannelCommandResponseArgs, ChannelCommandSearch, ChannelResult,
     ChannelResultAsync, ChannelResultSync, COMMANDS_MODE_CONTROL, COMMANDS_MODE_INGEST,
     COMMANDS_MODE_SEARCH,
 };
+use super::command_pool::COMMAND_POOL;
 use super::listen::CHANNEL_AVAILABLE;
 use super::statistics::{COMMANDS_TOTAL, COMMAND_LATENCY_BEST, COMMAND_LATENCY_WORST};
 use crate::LINE_FEED;
 
-pub struct ChannelMessage<'a, TS> {
-    stream: &'a mut TS,
+pub struct ChannelMessage<'a> {
+    stream: &'a mut TcpStream,
     message: String,
     command_start: Instant,
     result: ChannelMessageResult,
@@ -27,7 +30,6 @@ pub struct ChannelMessage<'a, TS> {
     channel_available: bool,
 }
 
-pub struct ChannelMessageUtils;
 pub struct ChannelMessageModeSearch;
 pub struct ChannelMessageModeIngest;
 pub struct ChannelMessageModeControl;
@@ -41,15 +43,15 @@ pub enum ChannelMessageResult {
 }
 
 pub trait ChannelMessageMode {
-    fn handle(message: &str) -> ChannelResult;
+    fn handle<'b>(message: &'static str) -> ChannelResult<'b>;
 }
 
-impl<'a, TS> ChannelMessage<'a, TS>
-where
-    TS: Write,
-{
-    pub fn new(stream: &'a mut TS, message_slice: &[u8]) -> Self {
-        let message = String::from_utf8(message_slice.to_vec()).unwrap_or(String::from(""));
+impl<'a> ChannelMessage<'a> {
+    pub fn new(stream: &'a mut TcpStream, message_slice: Option<&[u8]>) -> Self {
+        let message = match message_slice {
+            Some(msg_slice) => String::from_utf8(msg_slice.to_vec()).unwrap_or(String::from("")),
+            None => String::new(),
+        };
         Self {
             stream,
             message,
@@ -85,18 +87,16 @@ where
 
     // Handle response arguments to issued command
     fn execute_message<M: ChannelMessageMode>(&mut self) {
-        let channel_result = M::handle(&self.message);
+        let channel_result = M::handle(Box::leak(self.message.clone().into_boxed_str()));
+        // let _self = self;
         match channel_result {
             ChannelResult::Sync(sync_res) => {
                 self.handle_sync_channel_result(sync_res);
-            }
+            },
             ChannelResult::Async(async_res) => {
                 self.handle_async_channel_result(async_res);
-            }
+            },
         };
-        self.send_reponse_message();
-        self.print_elapsed_time();
-        self.update_statistics();
     }
 
     fn handle_sync_channel_result(&mut self, sync_response: ChannelResultSync) {
@@ -110,9 +110,12 @@ where
             },
             Err(reason) => self.set_response_args(ChannelCommandResponse::Err(reason).to_args()),
         };
+        self.send_reponse_message();
+        self.print_elapsed_time();
+        self.update_statistics();
     }
 
-    fn handle_async_channel_result(&mut self, async_response: ChannelResultAsync) {
+    fn handle_async_channel_result<'b>(&mut self, async_response: ChannelResultAsync<'b>) {
         match async_response {
             Ok(resp) => match resp.0 {
                 ChannelCommandResponse::Ended(_) => {
@@ -121,12 +124,39 @@ where
                 }
                 _ => {
                     self.set_response_args(resp.0.to_args());
+                    self.send_reponse_message();
+                    self.enqueue_async_command(resp.1);
                 }
             },
             Err(reason) => {
                 self.set_response_args(ChannelCommandResponse::Err(reason).to_args());
             }
         };
+    }
+
+    fn enqueue_async_command<'b>(
+        &mut self,
+        future_operation: ChannelResultAsyncFuture<'b>,
+    ) {
+        let command_start = self.command_start;
+        let mut stream = self.stream.try_clone().expect("clone tcp stream failed...");
+        COMMAND_POOL.enqueue(move || {
+            debug!("executing async command");
+            let mut _self = ChannelMessage::new(&mut stream, None);
+            _self.command_start = command_start;
+            let response = future_operation().wait();
+            match response {
+                Ok(resp) => match resp {
+                    _ => _self.set_response_args(resp.to_args()),
+                },
+                Err(reason) => {
+                    _self.set_response_args(ChannelCommandResponse::Err(reason).to_args())
+                }
+            };
+            _self.send_reponse_message();
+            _self.print_elapsed_time();
+            _self.update_statistics();
+        });
     }
 
     fn set_response_args(&mut self, args: ChannelCommandResponseArgs) {
@@ -208,20 +238,8 @@ where
     }
 }
 
-impl ChannelMessageUtils {
-    pub fn extract(message: &str) -> (String, SplitWhitespace) {
-        // Extract command name and arguments
-        let mut parts = message.split_whitespace();
-        let command = parts.next().unwrap_or("").to_uppercase();
-
-        debug!("will dispatch search command: {}", command);
-
-        (command, parts)
-    }
-}
-
 impl ChannelMessageMode for ChannelMessageModeSearch {
-    fn handle(message: &str) -> ChannelResult {
+    fn handle<'b>(message: &'static str) -> ChannelResult<'b> {
         gen_channel_message_mode_handle!(message, COMMANDS_MODE_SEARCH, {
             "QUERY" => ChannelCommandSearch::dispatch_query,
             "SUGGEST" => ChannelCommandSearch::dispatch_suggest,
@@ -231,7 +249,7 @@ impl ChannelMessageMode for ChannelMessageModeSearch {
 }
 
 impl ChannelMessageMode for ChannelMessageModeIngest {
-    fn handle(message: &str) -> ChannelResult {
+    fn handle<'b>(message: &'static str) -> ChannelResult<'b> {
         gen_channel_message_mode_handle!(message, COMMANDS_MODE_INGEST, {
             "PUSH" => ChannelCommandIngest::dispatch_push,
             "POP" => ChannelCommandIngest::dispatch_pop,
@@ -245,7 +263,7 @@ impl ChannelMessageMode for ChannelMessageModeIngest {
 }
 
 impl ChannelMessageMode for ChannelMessageModeControl {
-    fn handle(message: &str) -> ChannelResult {
+    fn handle<'b>(message: &'static str) -> ChannelResult<'b> {
         gen_channel_message_mode_handle!(message, COMMANDS_MODE_CONTROL, {
             "TRIGGER" => ChannelCommandControl::dispatch_trigger,
             "INFO" => ChannelCommandControl::dispatch_info,
@@ -256,16 +274,16 @@ impl ChannelMessageMode for ChannelMessageModeControl {
 
 // tests
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
 
-    #[test]
-    fn channel_message_context_can_be_initialized() {
-        let mut fake_tcp: Vec<u8> = vec![];
-        assert_eq!(
-            ChannelMessage::new(&mut fake_tcp, &(b"a").clone()).message,
-            String::from("a")
-        );
-    }
-}
+//     #[test]
+//     fn channel_message_context_can_be_initialized() {
+//         let mut fake_tcp: Vec<u8> = vec![];
+//         assert_eq!(
+//             ChannelMessage::new(&mut fake_tcp, &(b"a").clone()).message,
+//             String::from("a")
+//         );
+//     }
+// }

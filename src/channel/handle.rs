@@ -254,7 +254,7 @@ impl ChannelHandle {
         stream: &mut TcpStream,
         message_slice: &[u8],
     ) -> ChannelMessageResult {
-        let mut channel_message = ChannelMessage::new(stream, message_slice);
+        let mut channel_message = ChannelMessage::new(stream, Some(message_slice));
         match mode {
             ChannelMode::Search => {
                 channel_message.handle::<ChannelMessageModeSearch>()
