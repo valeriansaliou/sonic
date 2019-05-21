@@ -5,6 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 #![cfg_attr(feature = "benchmark", feature(test))]
+#![feature(fnbox)]
 
 #[macro_use]
 extern crate log;
@@ -18,11 +19,13 @@ extern crate byteorder;
 extern crate fst;
 extern crate fst_levenshtein;
 extern crate fst_regex;
+extern crate futures;
 extern crate graceful;
 extern crate hashbrown;
 extern crate linked_hash_set;
 extern crate radix;
 extern crate rand;
+extern crate rayon;
 extern crate regex_syntax;
 extern crate rocksdb;
 extern crate toml;

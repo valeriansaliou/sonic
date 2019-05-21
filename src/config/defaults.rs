@@ -39,6 +39,10 @@ pub fn channel_search_suggest_limit_maximum() -> u16 {
     20
 }
 
+pub fn channel_command_pool_num_threads() -> usize {
+    8
+}
+
 pub fn store_kv_path() -> PathBuf {
     PathBuf::from("./data/store/kv/")
 }

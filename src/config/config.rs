@@ -32,6 +32,9 @@ pub struct ConfigChannel {
 
     pub auth_password: Option<String>,
     pub search: ConfigChannelSearch,
+
+    #[serde(default = "defaults::channel_command_pool_num_threads")]
+    pub command_pool_num_threads: usize,
 }
 
 #[derive(Deserialize)]

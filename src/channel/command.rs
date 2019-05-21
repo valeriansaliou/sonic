@@ -4,12 +4,15 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use futures::future;
+use futures::future::FutureResult;
 use hashbrown::HashMap;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use std::path::Path;
 use std::str::{self, SplitWhitespace};
 use std::vec::Vec;
+use std::boxed::FnBox;
 
 use super::format::unescape;
 use super::statistics::ChannelStatistics;
@@ -20,7 +23,7 @@ use crate::store::kv::StoreKVPool;
 use crate::store::operation::StoreOperationDispatch;
 use crate::APP_CONF;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub enum ChannelCommandError {
     UnknownCommand,
     NotFound,
@@ -33,7 +36,7 @@ pub enum ChannelCommandError {
     InvalidMetaValue((String, String)),
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub enum ChannelCommandResponse {
     Void,
     Ok,
@@ -52,7 +55,21 @@ pub struct ChannelCommandControl;
 
 pub type ChannelCommandResponseArgs = (&'static str, Option<Vec<String>>);
 
-type ChannelResult = Result<Vec<ChannelCommandResponse>, ChannelCommandError>;
+pub enum ChannelResult<'a> {
+    Sync(ChannelResultSync),
+    Async(ChannelResultAsync<'a>),
+}
+
+pub type ChannelResultSync = Result<ChannelCommandResponse, ChannelCommandError>;
+pub type ChannelResultAsync<'a> = Result<
+    (
+        ChannelCommandResponse,
+        ChannelResultAsyncFuture<'a>,
+    ),
+    ChannelCommandError,
+>;
+pub type ChannelResultAsyncFuture<'a> = Box<dyn FnBox() -> FutureResult<ChannelCommandResponse, ChannelCommandError> + Send + 'a>;
+
 type MetaPartsResult<'a> = Result<(&'a str, &'a str), (&'a str, &'a str)>;
 
 pub const EVENT_ID_SIZE: usize = 8;
@@ -132,52 +149,52 @@ impl ChannelCommandResponse {
 }
 
 impl ChannelCommandBase {
-    pub fn dispatch_ping(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_ping<'a>(mut parts: SplitWhitespace) -> ChannelResult<'a> {
         match parts.next() {
-            None => Ok(vec![ChannelCommandResponse::Pong]),
-            _ => Err(ChannelCommandError::InvalidFormat("PING")),
+            None => ChannelResult::Sync(Ok(ChannelCommandResponse::Pong)),
+            _ => ChannelResult::Sync(Err(ChannelCommandError::InvalidFormat("PING"))),
         }
     }
 
-    pub fn dispatch_quit(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_quit<'a>(mut parts: SplitWhitespace) -> ChannelResult<'a> {
         match parts.next() {
-            None => Ok(vec![ChannelCommandResponse::Ended("quit")]),
-            _ => Err(ChannelCommandError::InvalidFormat("QUIT")),
+            None => ChannelResult::Sync(Ok(ChannelCommandResponse::Ended("quit"))),
+            _ => ChannelResult::Sync(Err(ChannelCommandError::InvalidFormat("QUIT"))),
         }
     }
 
-    pub fn generic_dispatch_help(
+    pub fn generic_dispatch_help<'a>(
         mut parts: SplitWhitespace,
         manuals: &HashMap<&str, &Vec<&str>>,
-    ) -> ChannelResult {
+    ) -> ChannelResult<'a> {
         match (parts.next(), parts.next()) {
             (None, _) => {
                 let manual_list = manuals.keys().map(|k| k.to_owned()).collect::<Vec<&str>>();
 
-                Ok(vec![ChannelCommandResponse::Result(format!(
+                ChannelResult::Sync(Ok(ChannelCommandResponse::Result(format!(
                     "manuals({})",
                     manual_list.join(", ")
-                ))])
+                ))))
             }
             (Some(manual_key), next_part) => {
                 if next_part.is_none() {
                     if let Some(manual_data) = manuals.get(manual_key) {
-                        Ok(vec![ChannelCommandResponse::Result(format!(
+                        ChannelResult::Sync(Ok(ChannelCommandResponse::Result(format!(
                             "{}({})",
                             manual_key,
                             manual_data.join(", ")
-                        ))])
+                        ))))
                     } else {
-                        Err(ChannelCommandError::NotFound)
+                        ChannelResult::Sync(Err(ChannelCommandError::NotFound))
                     }
                 } else {
-                    Err(ChannelCommandError::InvalidFormat("HELP [<manual>]?"))
+                    ChannelResult::Sync(Err(ChannelCommandError::InvalidFormat("HELP [<manual>]?")))
                 }
             }
         }
     }
 
-    pub fn parse_text_parts(parts: &mut SplitWhitespace) -> Option<String> {
+    pub fn parse_text_parts<'a>(parts: &mut SplitWhitespace) -> Option<String> {
         // Parse text parts and nest them together
         let mut text_raw = String::new();
 
@@ -313,20 +330,20 @@ impl ChannelCommandBase {
         ChannelCommandError::InvalidMetaValue((meta_key.to_owned(), meta_value.to_owned()))
     }
 
-    pub fn commit_ok_operation(query_builder: QueryBuilderResult) -> ChannelResult {
+    pub fn commit_ok_operation(query_builder: QueryBuilderResult) -> ChannelResultSync {
         query_builder
             .and_then(|query| StoreOperationDispatch::dispatch(query))
-            .and_then(|_| Ok(vec![ChannelCommandResponse::Ok]))
+            .and_then(|_| Ok(ChannelCommandResponse::Ok))
             .or(Err(ChannelCommandError::QueryError))
     }
 
-    pub fn commit_result_operation(query_builder: QueryBuilderResult) -> ChannelResult {
+    pub fn commit_result_operation(query_builder: QueryBuilderResult) -> ChannelResultSync {
         query_builder
             .and_then(|query| StoreOperationDispatch::dispatch(query))
             .or(Err(ChannelCommandError::QueryError))
             .and_then(|result| {
                 if let Some(result_inner) = result {
-                    Ok(vec![ChannelCommandResponse::Result(result_inner)])
+                    Ok(ChannelCommandResponse::Result(result_inner))
                 } else {
                     Err(ChannelCommandError::InternalError)
                 }
@@ -334,32 +351,21 @@ impl ChannelCommandBase {
     }
 
     pub fn commit_pending_operation<'a>(
+        query_id: &'static str,
         query_type: &'static str,
-        query_id: &str,
         query_builder: QueryBuilderResult<'a>,
-    ) -> ChannelResult {
-        // Idea: this could be made asynchronous in the future, if there are some latency issues \
-        //   on large Sonic deployments. The idea would be to have a number of worker threads for \
-        //   the whole running daemon, and channel threads dispatching work to those threads. This \
-        //   way Sonic can be up-scaled to N CPUs instead of 1 CPU per channel connection. Now on, \
-        //   the only way to scale Sonic executors to multiple CPUs is opening multiple parallel \
-        //   Sonic Channel connections and dispatching work evenly to each connection. It does not \
-        //   prevent scaling Sonic vertically, but could be made simpler for the Sonic Channel \
-        //   consumer via a worker thread pool.
-
-        query_builder
-            .and_then(|query| StoreOperationDispatch::dispatch(query))
-            .and_then(|results| {
-                Ok(vec![
-                    ChannelCommandResponse::Pending(query_id.to_string()),
-                    ChannelCommandResponse::Event(
-                        query_type,
-                        query_id.to_string(),
-                        results.unwrap_or(String::new()),
-                    ),
-                ])
-            })
-            .or(Err(ChannelCommandError::QueryError))
+    ) -> ChannelResult<'a> {
+        ChannelResult::Async(Ok((
+            ChannelCommandResponse::Pending(query_id.to_string()),
+            Box::new(move || match query_builder.and_then(|query| StoreOperationDispatch::dispatch(query)) {
+                Ok(results) => future::ok(ChannelCommandResponse::Event(
+                    query_type,
+                    query_id.to_string(),
+                    results.unwrap_or(String::new()),
+                )),
+                Err(_) => future::err(ChannelCommandError::QueryError),
+            },
+        ))))
     }
 
     pub fn generate_event_id() -> String {
@@ -371,7 +377,7 @@ impl ChannelCommandBase {
 }
 
 impl ChannelCommandSearch {
-    pub fn dispatch_query(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_query<'a>(mut parts: SplitWhitespace<'a>) -> ChannelResult<'a> {
         match (
             parts.next(),
             parts.next(),
@@ -411,28 +417,32 @@ impl ChannelCommandSearch {
                 }
 
                 if let Some(err) = last_meta_err {
-                    Err(err)
+                    ChannelResult::Sync(Err(err))
                 } else if query_limit < 1
                     || query_limit > APP_CONF.channel.search.query_limit_maximum
                 {
-                    Err(ChannelCommandError::PolicyReject(
+                    ChannelResult::Sync(Err(ChannelCommandError::PolicyReject(
                         "LIMIT out of minimum/maximum bounds",
-                    ))
+                    )))
                 } else {
                     debug!(
                         "will search for #{} with text: {}, limit: {}, offset: {}, locale: <{:?}>",
                         event_id, text, query_limit, query_offset, query_lang
                     );
 
+                
+                    let query_id = Box::leak(event_id.into_boxed_str());
+                    let txt = Box::leak(text.into_boxed_str());
+
                     // Commit 'search' query
                     ChannelCommandBase::commit_pending_operation(
+                        query_id,
                         "QUERY",
-                        &event_id,
                         QueryBuilder::search(
-                            &event_id,
+                            query_id,
                             collection,
                             bucket,
-                            &text,
+                            txt,
                             query_limit,
                             query_offset,
                             query_lang,
@@ -440,14 +450,14 @@ impl ChannelCommandSearch {
                     )
                 }
             }
-            _ => Err(ChannelCommandError::InvalidFormat(
+            _ => ChannelResult::Sync(Err(ChannelCommandError::InvalidFormat(
                 "QUERY <collection> <bucket> \"<terms>\" [LIMIT(<count>)]? [OFFSET(<count>)]? \
                  [LANG(<locale>)]?",
-            )),
+            ))),
         }
     }
 
-    pub fn dispatch_suggest(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_suggest<'a>(mut parts: SplitWhitespace<'a>) -> ChannelResult<'a> {
         match (
             parts.next(),
             parts.next(),
@@ -478,34 +488,43 @@ impl ChannelCommandSearch {
                 }
 
                 if let Some(err) = last_meta_err {
-                    Err(err)
+                    ChannelResult::Sync(Err(err))
                 } else if suggest_limit < 1
                     || suggest_limit > APP_CONF.channel.search.suggest_limit_maximum
                 {
-                    Err(ChannelCommandError::PolicyReject(
+                    ChannelResult::Sync(Err(ChannelCommandError::PolicyReject(
                         "LIMIT out of minimum/maximum bounds",
-                    ))
+                    )))
                 } else {
                     debug!(
                         "will suggest for #{} with text: {}, limit: {}",
                         event_id, text, suggest_limit
                     );
 
+                    let query_id = Box::leak(event_id.into_boxed_str());
+                    let txt = Box::leak(text.into_boxed_str());
+
                     // Commit 'suggest' query
                     ChannelCommandBase::commit_pending_operation(
+                        query_id,
                         "SUGGEST",
-                        &event_id,
-                        QueryBuilder::suggest(&event_id, collection, bucket, &text, suggest_limit),
+                        QueryBuilder::suggest(
+                            query_id,
+                            collection,
+                            bucket,
+                            txt,
+                            suggest_limit,
+                        ),
                     )
                 }
             }
-            _ => Err(ChannelCommandError::InvalidFormat(
+            _ => ChannelResult::Sync(Err(ChannelCommandError::InvalidFormat(
                 "SUGGEST <collection> <bucket> \"<word>\" [LIMIT(<count>)]?",
-            )),
+            ))),
         }
     }
 
-    pub fn dispatch_help(parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_help<'a>(parts: SplitWhitespace) -> ChannelResult {
         ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_SEARCH)
     }
 
@@ -602,7 +621,7 @@ impl ChannelCommandSearch {
 }
 
 impl ChannelCommandIngest {
-    pub fn dispatch_push(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_push<'a>(mut parts: SplitWhitespace) -> ChannelResult<'a> {
         match (
             parts.next(),
             parts.next(),
@@ -632,7 +651,7 @@ impl ChannelCommandIngest {
                 }
 
                 if let Some(err) = last_meta_err {
-                    Err(err)
+                    ChannelResult::Sync(Err(err))
                 } else {
                     debug!(
                         "will push for text: {} with hinted locale: <{:?}>",
@@ -640,18 +659,18 @@ impl ChannelCommandIngest {
                     );
 
                     // Commit 'push' query
-                    ChannelCommandBase::commit_ok_operation(QueryBuilder::push(
-                        collection, bucket, object, &text, push_lang,
+                    ChannelResult::Sync(ChannelCommandBase::commit_ok_operation(
+                        QueryBuilder::push(collection, bucket, object, &text, push_lang),
                     ))
                 }
             }
-            _ => Err(ChannelCommandError::InvalidFormat(
+            _ => ChannelResult::Sync(Err(ChannelCommandError::InvalidFormat(
                 "PUSH <collection> <bucket> <object> \"<text>\" [LANG(<locale>)]?",
-            )),
+            ))),
         }
     }
 
-    pub fn dispatch_pop(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_pop<'a>(mut parts: SplitWhitespace) -> ChannelResult<'a> {
         match (
             parts.next(),
             parts.next(),
@@ -667,35 +686,33 @@ impl ChannelCommandIngest {
                 debug!("ingest pop has text: {}", text);
 
                 // Make 'pop' query
-                ChannelCommandBase::commit_result_operation(QueryBuilder::pop(
-                    collection, bucket, object, &text,
+                ChannelResult::Sync(ChannelCommandBase::commit_result_operation(
+                    QueryBuilder::pop(collection, bucket, object, &text),
                 ))
             }
-            _ => Err(ChannelCommandError::InvalidFormat(
+            _ => ChannelResult::Sync(Err(ChannelCommandError::InvalidFormat(
                 "POP <collection> <bucket> <object> \"<text>\"",
-            )),
+            ))),
         }
     }
 
-    pub fn dispatch_count(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_count<'a>(mut parts: SplitWhitespace) -> ChannelResult<'a> {
         match (parts.next(), parts.next(), parts.next(), parts.next()) {
             (Some(collection), bucket_part, object_part, None) => {
                 debug!("dispatching ingest count in collection: {}", collection);
 
                 // Make 'count' query
-                ChannelCommandBase::commit_result_operation(QueryBuilder::count(
-                    collection,
-                    bucket_part,
-                    object_part,
+                ChannelResult::Sync(ChannelCommandBase::commit_result_operation(
+                    QueryBuilder::count(collection, bucket_part, object_part),
                 ))
             }
-            _ => Err(ChannelCommandError::InvalidFormat(
+            _ => ChannelResult::Sync(Err(ChannelCommandError::InvalidFormat(
                 "COUNT <collection> [<bucket> [<object>]?]?",
-            )),
+            ))),
         }
     }
 
-    pub fn dispatch_flushc(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_flushc<'a>(mut parts: SplitWhitespace) -> ChannelResult<'a> {
         match (parts.next(), parts.next()) {
             (Some(collection), None) => {
                 debug!(
@@ -704,9 +721,13 @@ impl ChannelCommandIngest {
                 );
 
                 // Make 'flushc' query
-                ChannelCommandBase::commit_result_operation(QueryBuilder::flushc(collection))
+                ChannelResult::Sync(ChannelCommandBase::commit_result_operation(
+                    QueryBuilder::flushc(collection),
+                ))
             }
-            _ => Err(ChannelCommandError::InvalidFormat("FLUSHC <collection>")),
+            _ => ChannelResult::Sync(Err(ChannelCommandError::InvalidFormat(
+                "FLUSHC <collection>",
+            ))),
         }
     }
 
@@ -719,17 +740,17 @@ impl ChannelCommandIngest {
                 );
 
                 // Make 'flushb' query
-                ChannelCommandBase::commit_result_operation(QueryBuilder::flushb(
-                    collection, bucket,
+                ChannelResult::Sync(ChannelCommandBase::commit_result_operation(
+                    QueryBuilder::flushb(collection, bucket),
                 ))
             }
-            _ => Err(ChannelCommandError::InvalidFormat(
+            _ => ChannelResult::Sync(Err(ChannelCommandError::InvalidFormat(
                 "FLUSHB <collection> <bucket>",
-            )),
+            ))),
         }
     }
 
-    pub fn dispatch_flusho(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_flusho<'a>(mut parts: SplitWhitespace) -> ChannelResult<'a> {
         match (parts.next(), parts.next(), parts.next(), parts.next()) {
             (Some(collection), Some(bucket), Some(object), None) => {
                 debug!(
@@ -738,17 +759,17 @@ impl ChannelCommandIngest {
                 );
 
                 // Make 'flusho' query
-                ChannelCommandBase::commit_result_operation(QueryBuilder::flusho(
-                    collection, bucket, object,
+                ChannelResult::Sync(ChannelCommandBase::commit_result_operation(
+                    QueryBuilder::flusho(collection, bucket, object),
                 ))
             }
-            _ => Err(ChannelCommandError::InvalidFormat(
+            _ => ChannelResult::Sync(Err(ChannelCommandError::InvalidFormat(
                 "FLUSHO <collection> <bucket> <object>",
-            )),
+            ))),
         }
     }
 
-    pub fn dispatch_help(parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_help<'a>(parts: SplitWhitespace) -> ChannelResult<'a> {
         ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_INGEST)
     }
 
@@ -785,12 +806,12 @@ impl ChannelCommandIngest {
 }
 
 impl ChannelCommandControl {
-    pub fn dispatch_trigger(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_trigger<'a>(mut parts: SplitWhitespace) -> ChannelResult<'a> {
         match (parts.next(), parts.next(), parts.next()) {
-            (None, _, _) => Ok(vec![ChannelCommandResponse::Result(format!(
+            (None, _, _) => ChannelResult::Sync(Ok(ChannelCommandResponse::Result(format!(
                 "actions({})",
                 CONTROL_TRIGGER_ACTIONS.join(", ")
-            ))]),
+            )))),
             (Some(action_key), data_part, last_part) => {
                 let action_key_lower = action_key.to_lowercase();
 
@@ -800,9 +821,11 @@ impl ChannelCommandControl {
                             // Force a FST consolidate
                             StoreFSTPool::consolidate(true);
 
-                            Ok(vec![ChannelCommandResponse::Ok])
+                            ChannelResult::Sync(Ok(ChannelCommandResponse::Ok))
                         } else {
-                            Err(ChannelCommandError::InvalidFormat("TRIGGER consolidate"))
+                            ChannelResult::Sync(Err(ChannelCommandError::InvalidFormat(
+                                "TRIGGER consolidate",
+                            )))
                         }
                     }
                     "backup" => {
@@ -814,12 +837,14 @@ impl ChannelCommandControl {
                                 if StoreKVPool::backup(&path.join(BACKUP_KV_PATH)).is_ok()
                                     && StoreFSTPool::backup(&path.join(BACKUP_FST_PATH)).is_ok()
                                 {
-                                    Ok(vec![ChannelCommandResponse::Ok])
+                                    ChannelResult::Sync(Ok(ChannelCommandResponse::Ok))
                                 } else {
-                                    Err(ChannelCommandError::InternalError)
+                                    ChannelResult::Sync(Err(ChannelCommandError::InternalError))
                                 }
                             }
-                            _ => Err(ChannelCommandError::InvalidFormat("TRIGGER backup <path>")),
+                            _ => ChannelResult::Sync(Err(ChannelCommandError::InvalidFormat(
+                                "TRIGGER backup <path>",
+                            ))),
                         }
                     }
                     "restore" => {
@@ -831,26 +856,28 @@ impl ChannelCommandControl {
                                 if StoreKVPool::restore(&path.join(BACKUP_KV_PATH)).is_ok()
                                     && StoreFSTPool::restore(&path.join(BACKUP_FST_PATH)).is_ok()
                                 {
-                                    Ok(vec![ChannelCommandResponse::Ok])
+                                    ChannelResult::Sync(Ok(ChannelCommandResponse::Ok))
                                 } else {
-                                    Err(ChannelCommandError::InternalError)
+                                    ChannelResult::Sync(Err(ChannelCommandError::InternalError))
                                 }
                             }
-                            _ => Err(ChannelCommandError::InvalidFormat("TRIGGER restore <path>")),
+                            _ => ChannelResult::Sync(Err(ChannelCommandError::InvalidFormat(
+                                "TRIGGER restore <path>",
+                            ))),
                         }
                     }
-                    _ => Err(ChannelCommandError::NotFound),
+                    _ => ChannelResult::Sync(Err(ChannelCommandError::NotFound)),
                 }
             }
         }
     }
 
-    pub fn dispatch_info(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_info<'a>(mut parts: SplitWhitespace) -> ChannelResult<'a> {
         match parts.next() {
             None => {
                 let statistics = ChannelStatistics::gather();
 
-                Ok(vec![ChannelCommandResponse::Result(format!(
+                ChannelResult::Sync(Ok(ChannelCommandResponse::Result(format!(
                     "uptime({}) clients_connected({}) commands_total({}) \
                      command_latency_best({}) command_latency_worst({}) \
                      kv_open_count({}) fst_open_count({}) fst_consolidate_count({})",
@@ -862,13 +889,13 @@ impl ChannelCommandControl {
                     statistics.kv_open_count,
                     statistics.fst_open_count,
                     statistics.fst_consolidate_count
-                ))])
+                ))))
             }
-            _ => Err(ChannelCommandError::InvalidFormat("INFO")),
+            _ => ChannelResult::Sync(Err(ChannelCommandError::InvalidFormat("INFO"))),
         }
     }
 
-    pub fn dispatch_help(parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_help<'a>(parts: SplitWhitespace) -> ChannelResult<'a> {
         ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_CONTROL)
     }
 }
