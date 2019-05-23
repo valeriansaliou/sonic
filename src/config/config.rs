@@ -4,10 +4,10 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use super::defaults;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-
-use super::defaults;
+use super::env_var;
 
 #[derive(Deserialize)]
 pub struct Config {
@@ -18,18 +18,25 @@ pub struct Config {
 
 #[derive(Deserialize)]
 pub struct ConfigServer {
-    #[serde(default = "defaults::server_log_level")]
+    #[serde(
+        default = "defaults::server_log_level",
+        deserialize_with = "env_var::str"
+    )]
     pub log_level: String,
 }
 
 #[derive(Deserialize)]
 pub struct ConfigChannel {
-    #[serde(default = "defaults::channel_inet")]
+    #[serde(
+        default = "defaults::channel_inet",
+        deserialize_with = "env_var::socket_addr"
+    )]
     pub inet: SocketAddr,
 
     #[serde(default = "defaults::channel_tcp_timeout")]
     pub tcp_timeout: u64,
 
+    #[serde(deserialize_with = "env_var::opt_str")]
     pub auth_password: Option<String>,
     pub search: ConfigChannelSearch,
 }
@@ -60,7 +67,10 @@ pub struct ConfigStore {
 
 #[derive(Deserialize)]
 pub struct ConfigStoreKV {
-    #[serde(default = "defaults::store_kv_path")]
+    #[serde(
+        default = "defaults::store_kv_path",
+        deserialize_with = "env_var::path_buf"
+    )]
     pub path: PathBuf,
 
     #[serde(default = "defaults::store_kv_retain_word_objects")]
@@ -104,7 +114,10 @@ pub struct ConfigStoreKVDatabase {
 
 #[derive(Deserialize)]
 pub struct ConfigStoreFST {
-    #[serde(default = "defaults::store_fst_path")]
+    #[serde(
+        default = "defaults::store_fst_path",
+        deserialize_with = "env_var::path_buf"
+    )]
     pub path: PathBuf,
 
     pub pool: ConfigStoreFSTPool,
