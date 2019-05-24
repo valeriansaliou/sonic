@@ -5,9 +5,9 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use super::defaults;
+use super::env_var;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use super::env_var;
 
 #[derive(Deserialize)]
 pub struct Config {
