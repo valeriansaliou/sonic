@@ -70,7 +70,7 @@ auth_password: "${env.SECRET}"
 And then you can run sonic providing a defined environment variable:
 
 ```
-$ SECRET=secretphrase sonic -c ./config.cfg
+$ SECRET=secretphrase ./sonic -c /path/to/config.cfg
 ```
 
 **It can be used only for string-like values**
