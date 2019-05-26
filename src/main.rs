@@ -34,6 +34,7 @@ extern crate whatlang;
 #[cfg(windows)]
 extern crate winapi;
 
+#[cfg(unix)]
 #[cfg(feature = "alloc-jemalloc")]
 extern crate jemallocator;
 
@@ -68,6 +69,7 @@ struct AppArgs {
     config: String,
 }
 
+#[cfg(unix)]
 #[cfg(feature = "alloc-jemalloc")]
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
