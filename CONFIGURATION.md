@@ -57,9 +57,11 @@ Sonic Configuration
 
 * `consolidate_after` (type: _integer_, allowed: seconds, default: `180`) — Time after which a graph that has pending updates should be consolidated (increase this delay if you encounter high-CPU usage issues when a consolidation task kicks-in; this value should be lower than `store.fst.pool.inactive_after`)
 
-## Environment variables
+# Environment Variables
 
-You are allowed to use **environment variables** in the config file. Please provide it as follows:
+You are allowed to use **environment variables** in the configuration file.
+
+**You can provide them as follows:**
 
 ```toml
 [channel]
@@ -67,10 +69,10 @@ You are allowed to use **environment variables** in the config file. Please prov
 auth_password: "${env.SECRET}"
 ```
 
-And then you can run sonic providing a defined environment variable:
+**Then, you can run Sonic providing a defined environment variable:**
 
-```
-$ SECRET=secretphrase ./sonic -c /path/to/config.cfg
+```bash
+SECRET=secretphrase ./sonic -c /path/to/config.cfg
 ```
 
-**It can be used only for string-like values**
+_Note that this can only be used with string-like values._
