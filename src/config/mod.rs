@@ -5,6 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 mod defaults;
+mod env_var;
 
 pub mod config;
 pub mod logger;
