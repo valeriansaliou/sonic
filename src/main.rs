@@ -23,13 +23,13 @@ extern crate hashbrown;
 extern crate linked_hash_set;
 extern crate radix;
 extern crate rand;
+extern crate regex;
 extern crate regex_syntax;
 extern crate rocksdb;
 extern crate toml;
 extern crate twox_hash;
 extern crate unicode_segmentation;
 extern crate whatlang;
-extern crate regex;
 
 #[cfg(feature = "alloc-jemalloc")]
 extern crate jemallocator;
