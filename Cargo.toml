@@ -44,9 +44,6 @@ linked_hash_set = "0.1"
 whatlang = "0.7"
 regex = "1.1"
 
-[dev-dependencies]
-bitflags = "=1.0.4"
-
 [features]
 default = ["alloc-jemalloc"]
 alloc-jemalloc = ["jemallocator"]
