@@ -59,14 +59,14 @@ Sonic Configuration
 
 # Command-Line: Environment variables
 
-You are allowed to use **environment variables** in the configuration file.
+You are allowed to use environment variables in the configuration file.
 
 **You can provide them as follows:**
 
 ```toml
 [channel]
 
-auth_password: "${env.SECRET}"
+auth_password = "${env.SECRET}"
 ```
 
 **Then, you can run Sonic providing a defined environment variable:**
