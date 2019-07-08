@@ -5,17 +5,13 @@ addons:
     packages: ["nodejs", "npm"]
 
 language: rust
-
-rust:
-  - stable
-  - beta
-  - nightly
+rust: nightly
 
 script:
   - cargo build --verbose
   - cargo test --verbose
-  - ./tests/integration/scripts/run.sh
+  - tests/integration/scripts/run.sh
 
 cache:
-  - ./cargo
-  - ./tests/integration/runner/node_modules
+  - cargo
+  - tests/integration/runner/node_modules
