@@ -56,7 +56,7 @@ Sonic Configuration
 **[store.fst.graph]**
 
 * `consolidate_after` (type: _integer_, allowed: seconds, default: `180`) — Time after which a graph that has pending updates should be consolidated (increase this delay if you encounter high-CPU usage issues when a consolidation task kicks-in; this value should be lower than `store.fst.pool.inactive_after`)
-* `max_size` (type: _integer_, allowed: numbers, default: `2048`) — Maximum size in KB of the graph file on disk, after which further words are not inserted anymore (ie. `2048` is `16MB`; the size should be a multiple of `1024`, eg. `8 * 1024 = 8192` for `8MB`; use this limit to prevent heavy graphs to be consolidating forever; this limit is enforced in pair with `store.fst.graph.max_words`, whichever is reached first)
+* `max_size` (type: _integer_, allowed: numbers, default: `2048`) — Maximum size in KB of the graph file on disk, after which further words are not inserted anymore (ie. `2048` is `2MB`; the size should be a multiple of `1024`, eg. `8 * 1024 = 8192` for `8MB`; use this limit to prevent heavy graphs to be consolidating forever; this limit is enforced in pair with `store.fst.graph.max_words`, whichever is reached first)
 * `max_words` (type: _integer_, allowed: numbers, default: `250000`) — Maximum number of words that can be held at the same time in the graph, after which further words are not inserted anymore (use this limit to prevent heavy graphs to be consolidating forever; this limit is enforced in pair with `store.fst.graph.max_size`, whichever is reached first)
 
 # Command-Line: Environment variables
