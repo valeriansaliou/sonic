@@ -557,7 +557,7 @@ impl StoreFSTPool {
                             //   words)
                             let mut old_fst_stream = old_fst.stream();
 
-                            while let Some(old_fst_word) = old_fst_stream.next() {
+                            'old: while let Some(old_fst_word) = old_fst_stream.next() {
                                 // Append new words from front? (ie. push words)
                                 // Notice: as an FST is ordered, inserts would fail if they are \
                                 //   commited out-of-order. Thus, the only way to check for \
@@ -566,14 +566,27 @@ impl StoreFSTPool {
                                     if *push_front_ref <= old_fst_word {
                                         // Pop front item and consume it
                                         if let Some(push_front) = ordered_push.pop_front() {
+                                            if StoreFSTMisc::check_over_limits(
+                                                tmp_fst_builder.bytes_written(),
+                                                count_pushed + count_moved,
+                                            ) {
+                                                // FST cannot accept more items (limits reached)
+                                                warn!("limit reached on new word from old in fst");
+
+                                                // Important: stop the main loop (limit reached)
+                                                break 'old;
+                                            }
+
                                             if let Err(err) = tmp_fst_builder.insert(push_front) {
+                                                // Could not insert word in FST
                                                 error!(
                                                     "failed inserting new word from old in fst: {}",
                                                     err
                                                 );
+                                            } else {
+                                                // Word inserted in FST
+                                                count_pushed += 1;
                                             }
-
-                                            count_pushed += 1;
 
                                             // Continue scanning next word (may also come before \
                                             //   this FST word in order)
@@ -587,11 +600,24 @@ impl StoreFSTPool {
 
                                 // Restore old word (if not popped)
                                 if !pending_pop_write.contains(old_fst_word) {
-                                    if let Err(err) = tmp_fst_builder.insert(old_fst_word) {
-                                        error!("failed inserting old word in fst: {}", err);
+                                    if StoreFSTMisc::check_over_limits(
+                                        tmp_fst_builder.bytes_written(),
+                                        count_pushed + count_moved,
+                                    ) {
+                                        // FST cannot accept more items (limits reached)
+                                        warn!("limit reached on old word in fst");
+
+                                        // Important: stop the main loop (limit reached)
+                                        break 'old;
                                     }
 
-                                    count_moved += 1;
+                                    if let Err(err) = tmp_fst_builder.insert(old_fst_word) {
+                                        // Could not move word to FST
+                                        error!("failed inserting old word in fst: {}", err);
+                                    } else {
+                                        // Word moved to FST
+                                        count_moved += 1;
+                                    }
                                 } else {
                                     count_popped += 1;
                                 }
@@ -601,14 +627,27 @@ impl StoreFSTPool {
                             // Notice: this is necessary if the FST was empty, or if we have push \
                             //   items that come after the last ordered word of the FST.
                             while let Some(push_front) = ordered_push.pop_front() {
+                                if StoreFSTMisc::check_over_limits(
+                                    tmp_fst_builder.bytes_written(),
+                                    count_pushed + count_moved,
+                                ) {
+                                    // FST cannot accept more items (limits reached)
+                                    warn!("limit reached on new word from complete in fst");
+
+                                    // Important: stop the main loop (limit reached)
+                                    break;
+                                }
+
                                 if let Err(err) = tmp_fst_builder.insert(push_front) {
+                                    // Could not insert word in FST
                                     error!(
                                         "failed inserting new word from complete in fst: {}",
                                         err
                                     );
+                                } else {
+                                    // Word inserted in FST
+                                    count_pushed += 1;
                                 }
-
-                                count_pushed += 1;
                             }
 
                             // Finish building new FST
@@ -1175,6 +1214,33 @@ impl StoreFSTMisc {
         }
 
         Ok(count)
+    }
+
+    fn check_over_limits(bytes_written: u64, words_inserted: usize) -> bool {
+        // Over bytes limit?
+        let max_size = APP_CONF.store.fst.graph.max_size * 1024;
+
+        if bytes_written >= max_size {
+            info!(
+                "fst has exceeded maximum allowed bytes: {} over limit: {}",
+                bytes_written, max_size
+            );
+
+            return true;
+        }
+
+        // Over words limit?
+        if words_inserted >= APP_CONF.store.fst.graph.max_words {
+            info!(
+                "fst has exceeded maximum allowed words: {} over limit: {}",
+                words_inserted, APP_CONF.store.fst.graph.max_words
+            );
+
+            return true;
+        }
+
+        // Not over limit
+        return false;
     }
 }
 
