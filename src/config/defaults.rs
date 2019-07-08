@@ -91,7 +91,7 @@ pub fn store_fst_graph_consolidate_after() -> u64 {
     180
 }
 
-pub fn store_fst_graph_max_size() -> usize {
+pub fn store_fst_graph_max_size() -> u64 {
     2048
 }
 
