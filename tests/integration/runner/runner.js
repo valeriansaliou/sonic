@@ -44,7 +44,7 @@ async function main(scenario) {
   let parameters = {
     host : "localhost",
     port : 1491,
-    auth : "SecretPassword"
+    auth : "password:test"
   };
 
   // Connect to Sonic Channel
