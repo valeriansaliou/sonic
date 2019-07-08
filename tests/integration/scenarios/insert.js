@@ -30,7 +30,7 @@ async function run(search, ingest) {
   }
 
   // Perform search on ingested documents
-  let response = await search.query("messages", "default", "technidefefefque");
+  let response = await search.query("messages", "default", "technique");
 
   for (const key in expected_documents) {
     if (!response.includes(key) === true) {
