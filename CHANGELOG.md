@@ -7,6 +7,7 @@ Sonic Changelog
 
 * FST graph consolidation is now able to ignore new words when the graph is over configured limits, which are set with the new `store.fst.graph.max_size` and `store.fst.graph.max_words` configuration variables [[@valeriansaliou](https://github.com/valeriansaliou), [53db9c1](https://github.com/valeriansaliou/sonic/commit/53db9c186630a6751c0a85e610cebabace1aee2b)].
 * An integration testing infrastructure has been added to the Sonic automated test suite [[@vilunov](https://github.com/vilunov), [#154](https://github.com/valeriansaliou/sonic/pull/154)].
+* Configuration values can now be sourced from environment variables, using the `${env.VARIABLE}` syntax in `config.cfg` [[@perzanko](https://github.com/perzanko), [#148](https://github.com/valeriansaliou/sonic/pull/148)].
 * Dependencies have been bumped to latest versions (namely: `rand`, `radix` and `hashbrown`) [[@valeriansaliou](https://github.com/valeriansaliou), [c1b1f54](https://github.com/valeriansaliou/sonic/commit/c1b1f54ad836df553bec0cd14f041bb34058307c)].
 
 ## 1.2.0 (2019-05-03)
