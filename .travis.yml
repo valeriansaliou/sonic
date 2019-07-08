@@ -17,5 +17,5 @@ script:
   - ./tests/integration/scripts/run.sh
 
 cache:
-  - cargo
-  - tests/integration/runner/node_modules
+  - ./cargo
+  - ./tests/integration/runner/node_modules

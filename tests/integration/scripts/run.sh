@@ -4,7 +4,8 @@
 #  Sonic
 #  Fast, lightweight and schema-less search backend
 #
-#  Copyright: 2019, Nikita Vilunov <nikitaoryol@gmail.com>
+#  Copyright: 2019, Nikita Vilunov <nikitaoryol@gmail.com>, \
+#             2019, Valerian Saliou <valerian@valeriansaliou.name>
 #  License: Mozilla Public License v2.0 (MPL v2.0)
 ##
 
@@ -12,9 +13,6 @@ ABSPATH=$(cd "$(dirname "$0")"; pwd)
 TESTSPATH="$ABSPATH/../"
 
 STATUS=0
-
-# Build Sonic
-cargo build
 
 # Run tests
 pushd "$TESTSPATH" > /dev/null
