@@ -16,4 +16,6 @@ script:
   - cargo test --verbose
   - ./tests/integration/scripts/run.sh
 
-cache: cargo
+cache:
+  - cargo
+  - tests/integration/runner/node_modules

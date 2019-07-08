@@ -5,7 +5,10 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 async function run(search) {
-    await search.ping();
+  // Perform a ping
+  await search.ping();
 }
 
-require("../runner.js")("Ping", run);
+require("../runner/runner.js")(
+  "Ping", run
+);
