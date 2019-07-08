@@ -1,3 +1,9 @@
+// Sonic
+//
+// Fast, lightweight and schema-less search backend
+// Copyright: 2019, Nikita Vilunov <nikitaoryol@gmail.com>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
 const expectedDocuments = {
     "conversation:1": "Batch normalization is a technique for improving the speed, performance, and stability of artificial neural networks",
     "conversation:2": "This scratch technique is much like the transform in some ways",

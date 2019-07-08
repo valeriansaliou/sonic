@@ -1,0 +1,23 @@
+{
+  "name": "sonic-tests-integration",
+  "description": "Sonic integration tests",
+  "version": "1.0.0",
+  "main": "runner.js",
+  "homepage": "https://github.com/valeriansaliou/sonic",
+  "license": "ISC",
+  "engineStrict": true,
+  "engines": {
+    "node": ">=10.0.0",
+    "npm": ">=6.0.0"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": {
+    "name": "Nikita Vilunov",
+    "email": "nikitaoryol@gmail.com"
+  },
+  "dependencies": {
+    "sonic-channel": "^1.2.5"
+  }
+}

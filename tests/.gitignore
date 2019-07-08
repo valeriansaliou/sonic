@@ -1,2 +1,0 @@
-data/
-node_modules/
