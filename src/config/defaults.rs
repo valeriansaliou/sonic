@@ -90,3 +90,11 @@ pub fn store_fst_pool_inactive_after() -> u64 {
 pub fn store_fst_graph_consolidate_after() -> u64 {
     180
 }
+
+pub fn store_fst_graph_max_size() -> usize {
+    2048
+}
+
+pub fn store_fst_graph_max_words() -> usize {
+    250000
+}
