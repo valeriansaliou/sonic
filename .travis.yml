@@ -5,7 +5,11 @@ addons:
     packages: ["nodejs", "npm"]
 
 language: rust
-rust: nightly
+
+rust:
+  - stable
+  - beta
+  - nightly
 
 script:
   - cargo build --verbose
