@@ -138,7 +138,7 @@ pub struct ConfigStoreFSTGraph {
     pub consolidate_after: u64,
 
     #[serde(default = "defaults::store_fst_graph_max_size")]
-    pub max_size: u64,
+    pub max_size: usize,
 
     #[serde(default = "defaults::store_fst_graph_max_words")]
     pub max_words: usize,

@@ -567,7 +567,7 @@ impl StoreFSTPool {
                                         // Pop front item and consume it
                                         if let Some(push_front) = ordered_push.pop_front() {
                                             if StoreFSTMisc::check_over_limits(
-                                                tmp_fst_builder.bytes_written(),
+                                                tmp_fst_builder.bytes_written() as usize,
                                                 count_pushed + count_moved,
                                             ) {
                                                 // FST cannot accept more items (limits reached)
@@ -601,7 +601,7 @@ impl StoreFSTPool {
                                 // Restore old word (if not popped)
                                 if !pending_pop_write.contains(old_fst_word) {
                                     if StoreFSTMisc::check_over_limits(
-                                        tmp_fst_builder.bytes_written(),
+                                        tmp_fst_builder.bytes_written() as usize,
                                         count_pushed + count_moved,
                                     ) {
                                         // FST cannot accept more items (limits reached)
@@ -628,7 +628,7 @@ impl StoreFSTPool {
                             //   items that come after the last ordered word of the FST.
                             while let Some(push_front) = ordered_push.pop_front() {
                                 if StoreFSTMisc::check_over_limits(
-                                    tmp_fst_builder.bytes_written(),
+                                    tmp_fst_builder.bytes_written() as usize,
                                     count_pushed + count_moved,
                                 ) {
                                     // FST cannot accept more items (limits reached)
@@ -1051,8 +1051,13 @@ impl StoreFSTAction {
         }
 
         // Add word in 'push' set? (only if word is not in FST)
+        // Notice: also check whether FST is over limits or not from there, to avoid stacking \
+        //   words that could never be consolidated to final FST anyway.
+        let graph_fst = self.store.graph.as_fst();
+
         if !self.store.graph.contains(&word)
             && !self.store.pending.push.read().unwrap().contains(word_bytes)
+            && !StoreFSTMisc::check_over_limits(graph_fst.size(), graph_fst.len())
         {
             self.store
                 .pending
@@ -1216,24 +1221,24 @@ impl StoreFSTMisc {
         Ok(count)
     }
 
-    fn check_over_limits(bytes_written: u64, words_inserted: usize) -> bool {
+    fn check_over_limits(bytes_count: usize, words_count: usize) -> bool {
         // Over bytes limit?
         let max_size = APP_CONF.store.fst.graph.max_size * 1024;
 
-        if bytes_written >= max_size {
+        if bytes_count >= max_size {
             info!(
                 "fst has exceeded maximum allowed bytes: {} over limit: {}",
-                bytes_written, max_size
+                bytes_count, max_size
             );
 
             return true;
         }
 
         // Over words limit?
-        if words_inserted >= APP_CONF.store.fst.graph.max_words {
+        if words_count >= APP_CONF.store.fst.graph.max_words {
             info!(
                 "fst has exceeded maximum allowed words: {} over limit: {}",
-                words_inserted, APP_CONF.store.fst.graph.max_words
+                words_count, APP_CONF.store.fst.graph.max_words
             );
 
             return true;
