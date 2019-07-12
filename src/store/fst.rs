@@ -562,40 +562,53 @@ impl StoreFSTPool {
                                 // Notice: as an FST is ordered, inserts would fail if they are \
                                 //   commited out-of-order. Thus, the only way to check for \
                                 //   order is there.
-                                while let Some(push_front_ref) = ordered_push.front() {
-                                    if *push_front_ref <= old_fst_word {
-                                        // Pop front item and consume it
-                                        if let Some(push_front) = ordered_push.pop_front() {
-                                            if StoreFSTMisc::check_over_limits(
-                                                tmp_fst_builder.bytes_written() as usize,
-                                                count_pushed + count_moved,
-                                            ) {
-                                                // FST cannot accept more items (limits reached)
-                                                warn!("limit reached on new word from old in fst");
+                                // Notice: a quick check is done before engaging in the loop, to \
+                                //   prevent any de-optimized jump instruction, as we may call \
+                                //   this code block a lot on large FSTs, and the loop should not \
+                                //   be engaged that often on stabilized FSTs (ie. mature FSTs).
+                                if let Some(push_first_ref) = ordered_push.front() {
+                                    // Engage the loop?
+                                    if *push_first_ref <= old_fst_word {
+                                        while let Some(push_front_ref) = ordered_push.front() {
+                                            if *push_front_ref <= old_fst_word {
+                                                // Pop front item and consume it
+                                                // Notice: as we validated previously that there \
+                                                //   is a front value, this unwrap is safe.
+                                                let push_front = ordered_push.pop_front().unwrap();
 
-                                                // Important: stop the main loop (limit reached)
-                                                break 'old;
+                                                if StoreFSTMisc::check_over_limits(
+                                                    tmp_fst_builder.bytes_written() as usize,
+                                                    count_pushed + count_moved,
+                                                ) {
+                                                    // FST cannot accept more items (limits reached)
+                                                    warn!("limit reached on new from old in fst");
+
+                                                    // Important: stop the main loop (limit reached)
+                                                    break 'old;
+                                                }
+
+                                                if let Err(err) = tmp_fst_builder.insert(push_front)
+                                                {
+                                                    // Could not insert word in FST
+                                                    error!(
+                                                        "failed inserting new from old in fst: {}",
+                                                        err
+                                                    );
+                                                } else {
+                                                    // Word inserted in FST
+                                                    count_pushed += 1;
+                                                }
+
+                                                // Continue scanning next word (may also come \
+                                                //   before this FST word in order)
+                                                continue;
                                             }
 
-                                            if let Err(err) = tmp_fst_builder.insert(push_front) {
-                                                // Could not insert word in FST
-                                                error!(
-                                                    "failed inserting new word from old in fst: {}",
-                                                    err
-                                                );
-                                            } else {
-                                                // Word inserted in FST
-                                                count_pushed += 1;
-                                            }
-
-                                            // Continue scanning next word (may also come before \
-                                            //   this FST word in order)
-                                            continue;
+                                            // Important: stop loop on next front item (always \
+                                            //   the same)
+                                            break;
                                         }
                                     }
-
-                                    // Important: stop loop on next front item (always the same)
-                                    break;
                                 }
 
                                 // Restore old word (if not popped)
