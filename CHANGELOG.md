@@ -1,6 +1,16 @@
 Sonic Changelog
 ===============
 
+## 1.2.2 (2019-07-12)
+
+### Bug Fixes
+
+* Fixed a regression on optional configuration values not working anymore, due to an issue in the environment variable reading system introduced in `v1.2.1` [[@valeriansaliou](https://github.com/valeriansaliou), [#155](https://github.com/valeriansaliou/sonic/issues/155)].
+
+### Changes
+
+* Optimized some aspects of FST consolidation and pending operations management [[@valeriansaliou](https://github.com/valeriansaliou), [#156](https://github.com/valeriansaliou/sonic/issues/156)].
+
 ## 1.2.1 (2019-07-08)
 
 ### Changes
