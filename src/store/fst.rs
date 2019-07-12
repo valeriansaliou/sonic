@@ -1070,6 +1070,7 @@ impl StoreFSTAction {
 
         if !self.store.graph.contains(&word)
             && !self.store.pending.push.read().unwrap().contains(word_bytes)
+            && self.store.pending.push.read().unwrap().len() < APP_CONF.store.fst.graph.max_words
             && !StoreFSTMisc::check_over_limits(graph_fst.size(), graph_fst.len())
         {
             self.store
