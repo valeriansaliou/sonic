@@ -37,8 +37,9 @@ pub struct ConfigChannel {
     #[serde(default = "defaults::channel_tcp_timeout")]
     pub tcp_timeout: u64,
 
-    #[serde(deserialize_with = "env_var::opt_str")]
+    #[serde(default, deserialize_with = "env_var::opt_str")]
     pub auth_password: Option<String>,
+
     pub search: ConfigChannelSearch,
 }
 
