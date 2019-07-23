@@ -18,9 +18,10 @@ extern crate byteorder;
 extern crate fst;
 extern crate fst_levenshtein;
 extern crate fst_regex;
-extern crate graceful;
 extern crate hashbrown;
 extern crate linked_hash_set;
+#[cfg(unix)]
+extern crate nix;
 extern crate radix;
 extern crate rand;
 extern crate regex;
@@ -30,6 +31,8 @@ extern crate toml;
 extern crate twox_hash;
 extern crate unicode_segmentation;
 extern crate whatlang;
+#[cfg(windows)]
+extern crate winapi;
 
 #[cfg(feature = "alloc-jemalloc")]
 extern crate jemallocator;
@@ -49,7 +52,6 @@ use std::thread;
 use std::time::Duration;
 
 use clap::{App, Arg};
-use graceful::SignalGuard;
 use log::LevelFilter;
 
 use channel::listen::{ChannelListen, ChannelListenBuilder};
@@ -60,6 +62,7 @@ use config::reader::ConfigReader;
 use store::fst::StoreFSTPool;
 use store::kv::StoreKVPool;
 use tasker::runtime::TaskerBuilder;
+use tasker::shutdown::ShutdownSignal;
 
 struct AppArgs {
     config: String,
@@ -151,7 +154,7 @@ fn main() {
         LevelFilter::from_str(&APP_CONF.server.log_level).expect("invalid log level"),
     );
 
-    let signal_guard = SignalGuard::new();
+    let shutdown_signal = ShutdownSignal::new();
 
     info!("starting up");
 
@@ -166,7 +169,7 @@ fn main() {
 
     info!("started");
 
-    signal_guard.at_exit(move |signal| {
+    shutdown_signal.at_exit(move |signal| {
         info!("stopping gracefully (got signal: {})", signal);
 
         // Teardown Sonic Channel
