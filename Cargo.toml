@@ -21,7 +21,6 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-jemallocator = { version = "0.3", optional = true }
 log = "0.4"
 toml = "0.5"
 clap = { version = "2.33", default-features = false }
@@ -45,6 +44,7 @@ regex = "1.1"
 
 [target.'cfg(unix)'.dependencies]
 nix = "0.14"
+jemallocator = { version = "0.3", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["minwindef", "consoleapi"] }
