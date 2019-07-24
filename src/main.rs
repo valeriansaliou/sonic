@@ -19,6 +19,9 @@ extern crate fst;
 extern crate fst_levenshtein;
 extern crate fst_regex;
 extern crate hashbrown;
+#[cfg(unix)]
+#[cfg(feature = "alloc-jemalloc")]
+extern crate jemallocator;
 extern crate linked_hash_set;
 #[cfg(unix)]
 extern crate nix;
@@ -33,10 +36,6 @@ extern crate unicode_segmentation;
 extern crate whatlang;
 #[cfg(windows)]
 extern crate winapi;
-
-#[cfg(unix)]
-#[cfg(feature = "alloc-jemalloc")]
-extern crate jemallocator;
 
 mod channel;
 mod config;
