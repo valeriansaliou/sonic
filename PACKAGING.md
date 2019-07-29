@@ -26,10 +26,10 @@ We consider here the packaging flow of Sonic version `1.0.0`, for target archite
     6. `rm -r sonic/`
     7. Publish the archive on the [releases](https://github.com/valeriansaliou/sonic/releases) page on GitHub
 
-4. **How to update Docker:**
+4. **How to update Crates:**
+    1. Publish package on Crates: `cargo publish`
+
+5. **How to update Docker:**
     1. `docker build .`
     2. `docker tag [DOCKER_IMAGE_ID] valeriansaliou/sonic:v1.0.0` (insert the built image identifier)
     3. `docker push valeriansaliou/sonic:v1.0.0`
-
-5. **How to update Crates:**
-    1. Publish package on Crates: `cargo publish`
