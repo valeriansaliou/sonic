@@ -162,7 +162,7 @@ You can find below a list of Sonic integrations provided by the community (many 
   * **[sonix](https://github.com/imerkle/sonix)** by [@imerkle](https://github.com/imerkle)
 * **Nim**:
   * **[nim-sonic-client](https://github.com/xmonader/nim-sonic-client)** by [@xmonader](https://github.com/xmonader)
-* ***.NET**:
+* **.NET**:
   * **[nsonic](https://github.com/spikensbror-dotnet/nsonic)** by [@spikensbror](https://github.com/spikensbror)
 
 _ℹ️ Cannot find the library for your programming language? Build your own and be referenced here! ([contact me](https://valeriansaliou.name/))_
