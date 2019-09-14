@@ -308,7 +308,7 @@ impl StoreFSTPool {
         path_mode: StoreFSTPathMode,
         read_path: &Path,
         write_path: &Path,
-        fn_item: &Fn(&Path, &Path, &str, &str) -> Result<(), io::Error>,
+        fn_item: &dyn Fn(&Path, &Path, &str, &str) -> Result<(), io::Error>,
     ) -> Result<(), io::Error> {
         let fst_extension = path_mode.extension();
         let fst_extension_len = fst_extension.len();

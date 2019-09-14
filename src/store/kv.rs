@@ -245,7 +245,7 @@ impl StoreKVPool {
         action: &str,
         read_path: &Path,
         write_path: &Path,
-        fn_item: &Fn(&Path, &Path, &str) -> Result<(), io::Error>,
+        fn_item: &dyn Fn(&Path, &Path, &str) -> Result<(), io::Error>,
     ) -> Result<(), io::Error> {
         // Iterate on KV collections
         for collection in fs::read_dir(read_path)? {
