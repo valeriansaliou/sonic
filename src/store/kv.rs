@@ -423,7 +423,7 @@ impl StoreKVBuilder {
 
         // Set dynamic options
         db_options.set_compression_type(if APP_CONF.store.kv.database.compress {
-            DBCompressionType::Lz4
+            DBCompressionType::Zstd
         } else {
             DBCompressionType::None
         });
