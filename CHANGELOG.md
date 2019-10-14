@@ -1,6 +1,13 @@
 Sonic Changelog
 ===============
 
+## 1.2.3 (2019-10-14)
+
+### Changes
+
+* RocksDB compression algorithm has been changed from LZ4 to Zstandard, for a slightly better compression ratio, and much better read/write performance; this will be used for new SST files only [[@valeriansaliou](https://github.com/valeriansaliou), [cd4cdfb](https://github.com/valeriansaliou/sonic/commit/cd4cdfb756ae9eccd43dc7e73d2c115b33297714)].
+* Dependencies have been bumped to latest versions (namely: `rocksdb`) [[@valeriansaliou](https://github.com/valeriansaliou), [cd4cdfb](https://github.com/valeriansaliou/sonic/commit/cd4cdfb756ae9eccd43dc7e73d2c115b33297714)].
+
 ## 1.2.2 (2019-07-12)
 
 ### Bug Fixes
