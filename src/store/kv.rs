@@ -12,13 +12,14 @@ use rocksdb::backup::{
     RestoreOptions as DBRestoreOptions,
 };
 use rocksdb::{
-    DBCompactionStyle, DBCompressionType, DBVector, Error as DBError, FlushOptions,
-    Options as DBOptions, WriteBatch, WriteOptions, DB,
+    DBCompactionStyle, DBCompressionType, Error as DBError, FlushOptions, Options as DBOptions,
+    WriteBatch, WriteOptions, DB,
 };
 use std::fmt;
 use std::fs;
 use std::io::{self, Cursor};
 use std::path::{Path, PathBuf};
+use std::str;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use std::time::SystemTime;
@@ -466,7 +467,7 @@ impl StoreGenericBuilder<StoreKVKey, StoreKV> for StoreKVBuilder {
 }
 
 impl StoreKV {
-    pub fn get(&self, key: &[u8]) -> Result<Option<DBVector>, DBError> {
+    pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, DBError> {
         self.database.get(key)
     }
 
@@ -591,7 +592,7 @@ impl<'a> StoreKVAction<'a> {
                 Ok(Some(value)) => {
                     debug!("got meta-to-value: {}", store_key);
 
-                    Ok(if let Some(value) = value.to_utf8() {
+                    Ok(if let Ok(value) = str::from_utf8(&value) {
                         match meta {
                             StoreMetaKey::IIDIncr => value
                                 .parse::<StoreObjectIID>()
@@ -811,7 +812,7 @@ impl<'a> StoreKVAction<'a> {
             debug!("store get iid-to-oid: {}", store_key);
 
             match store.get(&store_key.as_bytes()) {
-                Ok(Some(value)) => Ok(value.to_utf8().map(|value| value.to_string())),
+                Ok(Some(value)) => Ok(str::from_utf8(&value).ok().map(|value| value.to_string())),
                 Ok(None) => Ok(None),
                 Err(_) => Err(()),
             }

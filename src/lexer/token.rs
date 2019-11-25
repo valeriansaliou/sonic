@@ -365,11 +365,9 @@ mod tests {
 
     #[test]
     fn it_cleans_token_emojis() {
-        let mut token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup(None),
-            "🚀 🙋‍♂️🙋‍♂️🙋‍♂️",
-        )
-        .unwrap();
+        let mut token_cleaner =
+            TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup(None), "🚀 🙋‍♂️🙋‍♂️🙋‍♂️")
+                .unwrap();
 
         assert_eq!(token_cleaner.locale, None);
         assert_eq!(token_cleaner.next(), None);
@@ -501,19 +499,15 @@ mod benches {
 
     #[bench]
     fn bench_clean_token_chinese_build(b: &mut Bencher) {
-        b.iter(|| {
-            TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup(None), "快狐跨懒狗")
-        });
+        b.iter(|| TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup(None), "快狐跨懒狗"));
     }
 
     #[bench]
     fn bench_clean_token_chinese_exhaust(b: &mut Bencher) {
         b.iter(|| {
-            let token_cleaner = TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup(None),
-                "快狐跨懒狗",
-            )
-            .unwrap();
+            let token_cleaner =
+                TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup(None), "快狐跨懒狗")
+                    .unwrap();
 
             token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
         });

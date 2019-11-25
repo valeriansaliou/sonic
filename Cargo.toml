@@ -29,8 +29,8 @@ serde = "1.0"
 serde_derive = "1.0"
 rand = "0.7"
 unicode-segmentation = "1.2"
-radix = "0.5"
-rocksdb = { version = "0.12", features = ["zstd"] }
+radix = "0.6"
+rocksdb = { version = "0.13", features = ["zstd"] }
 fst = "0.3"
 fst-levenshtein = "0.2"
 fst-regex = "0.2"

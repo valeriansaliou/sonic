@@ -110,10 +110,7 @@ mod tests {
     fn it_gives_ranges() {
         assert_eq!(LexerRange::from("fox"), Some(RANGE_LATIN));
         assert_eq!(LexerRange::from("快狐跨懒狗"), Some(RANGE_MANDARIN));
-        assert_eq!(
-            LexerRange::from("Доброе утро."),
-            Some(RANGE_CYRILLIC)
-        );
+        assert_eq!(LexerRange::from("Доброе утро."), Some(RANGE_CYRILLIC));
     }
 
     #[test]
