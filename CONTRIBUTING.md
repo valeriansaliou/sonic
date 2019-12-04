@@ -1,11 +1,11 @@
 Sonic Contributing Guide
 ========================
 
-# 1️⃣ Get Started
+# Get Started
 
-- First of all, fork and clone this repo
-- Install Rust and Cargo (to build and test Sonic)
-- Install NPM (for integration tests)
+- First of all, fork and clone this repo;
+- Install Rust and Cargo (to build and test Sonic);
+- Install NPM (for integration tests);
 
 ## Build Sonic
 
