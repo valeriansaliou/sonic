@@ -1,36 +1,39 @@
+Sonic Contributing Guidelines
+=============================
+
 # How to get started with contributing
 
 - First of all, fork and clone this repo
-- Install Rust and Cargo
-- Install npm
+- Install Rust and Cargo (to build and test Sonic)
+- Install NPM (for integration tests)
 
-## Build
+## Build Sonic
 
-From repo root run
+From the repository root, run:
 
 ```sh
 cargo build
 ```
 
-## Start Soniq from source
+## Start Sonic
 
-From repo root run
+From the repository root, run:
 
 ```sh
 cargo run
 ```
 
-## Unit test
+## Run unit tests
 
-From repo root run
+From the repository root, run:
 
 ```sh
 cargo test
 ```
 
-## Integration test
+## Run integration tests
 
-From `<repo root>/tests/integration/scripts/` run
+From the directory: `<repository root>/tests/integration/scripts/`, run:
 
 ```sh
 ./run.sh
