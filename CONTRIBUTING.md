@@ -51,6 +51,6 @@ When writing your issue title and command, make sure to be as precise as possibl
 
 **If you would like to contribute directly by writing code, you should fork this repository and edit it right away from your GitHub namespace.**
 
-Once you are done with your work, always ensure to format your Rust code according to guidelines, via rustfmt: `rustfmt src/*.rs`
+Once you are done with your work, always ensure to format your Rust code according to guidelines, via the [rustfmt](https://github.com/rust-lang/rustfmt) utility: `rustfmt src/*.rs`
 
 When this is done, you may open a Pull Request (PR), then explain your changes and their purpose precisely. We will finally accept or comment on your Pull Request.
