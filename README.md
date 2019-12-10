@@ -160,10 +160,10 @@ You can find below a list of Sonic integrations provided by the community (many 
   * **[jsonic](https://github.com/alohaking/jsonic)** by [@alohaking](https://github.com/alohaking)
 * **Elixir**:
   * **[sonix](https://github.com/imerkle/sonix)** by [@imerkle](https://github.com/imerkle)
-* **Nim**:
-  * **[nim-sonic-client](https://github.com/xmonader/nim-sonic-client)** by [@xmonader](https://github.com/xmonader)
 * **Crystal**:
   * **[sonic-crystal](https://github.com/babelian/sonic-crystal)** by [@babelian](https://github.com/babelian)
+* **Nim**:
+  * **[nim-sonic-client](https://github.com/xmonader/nim-sonic-client)** by [@xmonader](https://github.com/xmonader)
 * **.NET**:
   * **[nsonic](https://github.com/spikensbror-dotnet/nsonic)** by [@spikensbror](https://github.com/spikensbror)
 
