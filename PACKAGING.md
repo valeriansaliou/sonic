@@ -12,7 +12,7 @@ We consider here the packaging flow of Sonic version `1.0.0`, for target archite
 
 2. **How to build Sonic for Linux on Debian:**
     1. `apt-get install -y git build-essential clang`
-    2. `curl https://sh.rustup.rs -sSf | sh` (install the `nightly` toolchain)
+    2. `curl https://sh.rustup.rs -sSf | sh` (install the `stable` toolchain)
     3. `git clone https://github.com/valeriansaliou/sonic.git`
     4. `cd sonic/`
     5. `cargo build --release`
