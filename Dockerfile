@@ -2,7 +2,9 @@ FROM rustlang/rust:nightly-slim AS build
 
 RUN apt-get update
 RUN apt-get install -y build-essential clang
+
 RUN cargo install sonic-server
+RUN strip /usr/local/cargo/bin/sonic
 
 FROM debian:stretch-slim
 
