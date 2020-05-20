@@ -187,7 +187,7 @@ Sonic supports a wide range of languages in its lexing system. If a language is 
 * 🇨🇿 Czech
 * 🇩🇰 Danish
 * 🇳🇱 Dutch
-* 🇺🇸 English
+* 🇬🇧 English
 * 🏳 Esperanto
 * 🇪🇪 Estonian
 * 🇫🇮 Finnish
