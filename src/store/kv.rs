@@ -474,7 +474,7 @@ impl StoreKV {
     pub fn put(&self, key: &[u8], data: &[u8]) -> Result<(), DBError> {
         let mut batch = WriteBatch::default();
 
-        batch.put(key, data)?;
+        batch.put(key, data);
 
         self.do_write(batch)
     }
@@ -482,7 +482,7 @@ impl StoreKV {
     pub fn delete(&self, key: &[u8]) -> Result<(), DBError> {
         let mut batch = WriteBatch::default();
 
-        batch.delete(key)?;
+        batch.delete(key);
 
         self.do_write(batch)
     }
@@ -1074,31 +1074,23 @@ impl<'a> StoreKVAction<'a> {
                 // Batch-delete keys matching range
                 let mut batch = WriteBatch::default();
 
-                if batch
-                    .delete_range(&key_prefix_start, &key_prefix_end)
-                    .is_ok()
-                {
-                    // Commit operation to database
-                    if let Err(err) = store.do_write(batch) {
-                        error!(
-                            "failed in store batch erase bucket: {} with error: {}",
-                            self.bucket.as_str(),
-                            err
-                        );
-                    } else {
-                        // Ensure last key is deleted (as RocksDB end key is exclusive; while \
-                        //   start key is inclusive, we need to ensure the end-of-range key is \
-                        //   deleted)
-                        store.delete(&key_prefix_end).ok();
+                batch.delete_range(&key_prefix_start, &key_prefix_end);
 
-                        debug!(
-                            "succeeded in store batch erase bucket: {}",
-                            self.bucket.as_str()
-                        );
-                    }
-                } else {
+                // Commit operation to database
+                if let Err(err) = store.do_write(batch) {
                     error!(
-                        "error stacking range delete in store batch erase bucket: {}",
+                        "failed in store batch erase bucket: {} with error: {}",
+                        self.bucket.as_str(),
+                        err
+                    );
+                } else {
+                    // Ensure last key is deleted (as RocksDB end key is exclusive; while \
+                    //   start key is inclusive, we need to ensure the end-of-range key is \
+                    //   deleted)
+                    store.delete(&key_prefix_end).ok();
+
+                    debug!(
+                        "succeeded in store batch erase bucket: {}",
                         self.bucket.as_str()
                     );
                 }
