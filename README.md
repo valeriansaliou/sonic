@@ -205,6 +205,7 @@ Sonic supports a wide range of languages in its lexing system. If a language is 
 * 🇰🇭 Khmer
 * 🇰🇷 Korean
 * 🏳 Kurdish
+* 🏳 Latin
 * 🇱🇻 Latvian
 * 🇱🇹 Lithuanian
 * 🇮🇳 Marathi

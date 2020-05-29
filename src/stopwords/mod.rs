@@ -46,6 +46,7 @@ pub mod khm;
 pub mod kin;
 pub mod kor;
 pub mod kur;
+pub mod lat;
 pub mod lav;
 pub mod lit;
 pub mod mai;
