@@ -125,14 +125,17 @@ impl ChannelMessage {
             //   commands that do no work or I/O; they would make statistics less accurate)
             let command_took_millis = command_took.as_millis() as u32;
 
-            if command_took_millis > *COMMAND_LATENCY_WORST.read().unwrap() {
-                *COMMAND_LATENCY_WORST.write().unwrap() = command_took_millis;
-            }
-            if command_took_millis > 0
-                && (*COMMAND_LATENCY_BEST.read().unwrap() == 0
-                    || command_took_millis < *COMMAND_LATENCY_BEST.read().unwrap())
             {
-                *COMMAND_LATENCY_BEST.write().unwrap() = command_took_millis;
+                let mut worst = COMMAND_LATENCY_WORST.write().unwrap();
+                if command_took_millis > *worst {
+                    *worst = command_took_millis;
+                }
+            }
+            {
+                let mut best = COMMAND_LATENCY_BEST.write().unwrap();
+                if command_took_millis > 0 && (*best == 0 || command_took_millis < *best) {
+                    *best = command_took_millis;
+                }
             }
 
             // Increment total commands
