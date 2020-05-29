@@ -123,16 +123,21 @@ impl ChannelMessage {
             // Update performance measures
             // Notice: commands that take 0ms are not accounted for there (ie. those are usually \
             //   commands that do no work or I/O; they would make statistics less accurate)
+            // Important: acquire write locks instead of read + write locks, as to prevent \
+            //   deadlocks (explained here: https://github.com/valeriansaliou/sonic/pull/211)
             let command_took_millis = command_took.as_millis() as u32;
 
             {
                 let mut worst = COMMAND_LATENCY_WORST.write().unwrap();
+
                 if command_took_millis > *worst {
                     *worst = command_took_millis;
                 }
             }
+
             {
                 let mut best = COMMAND_LATENCY_BEST.write().unwrap();
+
                 if command_took_millis > 0 && (*best == 0 || command_took_millis < *best) {
                     *best = command_took_millis;
                 }
