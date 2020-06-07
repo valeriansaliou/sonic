@@ -197,10 +197,11 @@ impl StoreFSTPool {
             // Notice: this prevents store to be acquired from any context
             let _access = GRAPH_ACCESS_LOCK.write().unwrap();
 
+            let graph_pool_read = GRAPH_POOL.read().unwrap();
             let graph_consolidate_read = GRAPH_CONSOLIDATE.read().unwrap();
 
             for key in &*graph_consolidate_read {
-                if let Some(store) = GRAPH_POOL.read().unwrap().get(&key) {
+                if let Some(store) = graph_pool_read.get(&key) {
                     let not_consolidated_for = store
                         .last_consolidated
                         .read()
