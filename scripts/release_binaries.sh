@@ -38,7 +38,7 @@ function release_for_architecture {
     final_tar="v$SONIC_VERSION-$1.tar.gz"
 
     rm -rf ./sonic/ && \
-        RUSTFLAGS="-C target-feature=-crt-static -C link-arg=-s" cross build --target "$2" --release && \
+        RUSTFLAGS="-C link-arg=-s" cross build --target "$2" --release && \
         mkdir ./sonic && \
         cp -p "target/$2/release/sonic" ./sonic/ && \
         cp -r ./config.cfg sonic/ && \
