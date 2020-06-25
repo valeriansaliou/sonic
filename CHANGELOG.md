@@ -1,6 +1,22 @@
 Sonic Changelog
 ===============
 
+## 1.2.4 (2020-06-25)
+
+### Bug Fixes
+
+* Fixed multiple deadlocks, which where not noticed in practice by running Sonic at scale, but that are still theoretically possible [[@BurtonQin](https://github.com/BurtonQin), [#213](https://github.com/valeriansaliou/sonic/pull/213), [#211](https://github.com/valeriansaliou/sonic/pull/211)].
+
+### Changes
+
+* Added support for Latin, which is now auto-detected from terms [[@valeriansaliou](https://github.com/valeriansaliou), [e6c5621](https://github.com/valeriansaliou/sonic/commit/e6c5621ba0fabe83b8bc060824951006b373dc3f)].
+* Added Latin stopwords [[@valeriansaliou](https://github.com/valeriansaliou), [e6c5621](https://github.com/valeriansaliou/sonic/commit/e6c5621ba0fabe83b8bc060824951006b373dc3f)].
+* Dependencies have been bumped to latest versions (namely: `rocksdb`, `radix`, `hashbrown`, `whatlang`) [[@valeriansaliou](https://github.com/valeriansaliou)].
+
+### New Features
+
+* Added a release script, with cross-compilation capabilities (currently for the `x86_64` architecture) [[@valeriansaliou](https://github.com/valeriansaliou), [961bab9](https://github.com/valeriansaliou/sonic/commit/961bab92211295e99f1f6052577fa1aeff459d0c)].
+
 ## 1.2.3 (2019-10-14)
 
 ### Changes
