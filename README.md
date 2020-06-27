@@ -109,9 +109,11 @@ Sonic will be reachable from `tcp://localhost:1491`.
 
 **👉 Install from another source (non-official):**
 
-Other installation sources are available. Those are non-official, meaning that they are not owned nor maintained by the Sonic project owners:
+Other installation sources are available:
 
 * **Homebrew (macOS)**: `brew install sonic` ([see formula](https://formulae.brew.sh/formula/sonic))
+
+_Note that those sources are non-official, meaning that they are not owned nor maintained by the Sonic project owners. The latest Sonic version available on those sources might be outdated, in comparison to the latest version available through the Sonic project._
 
 ### Configuration
 
