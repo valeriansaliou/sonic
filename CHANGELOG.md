@@ -1,6 +1,14 @@
 Sonic Changelog
 ===============
 
+## 1.3.0 (2020-06-27)
+
+### Changes
+
+* Added support for Slovak, which is now auto-detected from terms [[@valeriansaliou](https://github.com/valeriansaliou), [19412ce](https://github.com/valeriansaliou/sonic/commit/19412ce05a802ef1e6054b751faaef50cab5d36b)].
+* Added Slovak stopwords [[@valeriansaliou](https://github.com/valeriansaliou), [19412ce](https://github.com/valeriansaliou/sonic/commit/19412ce05a802ef1e6054b751faaef50cab5d36b)].
+* Dependencies have been bumped to latest versions (namely: `whatlang`) [[@valeriansaliou](https://github.com/valeriansaliou), [19412ce](https://github.com/valeriansaliou/sonic/commit/19412ce05a802ef1e6054b751faaef50cab5d36b)].
+
 ## 1.2.4 (2020-06-25)
 
 ### Bug Fixes
