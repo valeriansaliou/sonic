@@ -107,6 +107,12 @@ In the configuration file, ensure that:
 
 Sonic will be reachable from `tcp://localhost:1491`.
 
+**👉 Install from another source (non-official):**
+
+Other installation sources are available. Those are non-official, meaning that they are not owned nor maintained by the Sonic project owners:
+
+* **Homebrew (macOS)**: `brew install sonic` ([see formula](https://formulae.brew.sh/formula/sonic))
+
 ### Configuration
 
 Use the sample [config.cfg](https://github.com/valeriansaliou/sonic/blob/master/config.cfg) configuration file and adjust it to your own environment.
