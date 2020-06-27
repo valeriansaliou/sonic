@@ -15,7 +15,7 @@ Sonic Changelog
 
 ### New Features
 
-* Added a release script, with cross-compilation capabilities (currently for the `x86_64` architecture) [[@valeriansaliou](https://github.com/valeriansaliou), [961bab9](https://github.com/valeriansaliou/sonic/commit/961bab92211295e99f1f6052577fa1aeff459d0c)].
+* Added a release script, with cross-compilation capabilities (currently for the `x86_64` architecture, dynamically linked against GNU libraries) [[@valeriansaliou](https://github.com/valeriansaliou), [961bab9](https://github.com/valeriansaliou/sonic/commit/961bab92211295e99f1f6052577fa1aeff459d0c)].
 
 ## 1.2.3 (2019-10-14)
 
