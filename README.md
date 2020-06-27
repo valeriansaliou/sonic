@@ -9,7 +9,7 @@ Sonic can be used as a simple alternative to super-heavy and full-featured searc
 
 A strong attention to performance and code cleanliness has been given when designing Sonic. It aims at being crash-free, super-fast and puts minimum strain on server resources (our measurements have shown that Sonic - when under load - responds to search queries in the μs range, eats ~30MB RAM and has a low CPU footprint; [see our benchmarks](https://github.com/valeriansaliou/sonic#how-fast--lightweight-is-it)).
 
-_Tested at Rust version: `rustc 1.43.0 (4fb7144ed 2020-04-20)`_
+_Tested at Rust version: `rustc 1.44.1 (c7087fe00 2020-06-17)`_
 
 **🇫🇷 Crafted in Nantes, France.**
 
@@ -223,6 +223,7 @@ Sonic supports a wide range of languages in its lexing system. If a language is 
 * 🇵🇹 Portuguese
 * 🇮🇳 Punjabi
 * 🇷🇺 Russian
+* 🇸🇰 Slovak
 * 🇸🇮 Slovene
 * 🇸🇴 Somali
 * 🇪🇸 Spanish

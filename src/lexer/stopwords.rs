@@ -123,13 +123,14 @@ lazy_static! {
     static ref STOPWORDS_ILO: HashSet<&'static str> = make(ilo::STOPWORDS_ILO);
 }
 
-// Recursion group #9 (5 items)
+// Recursion group #9 (6 items)
 lazy_static! {
     static ref STOPWORDS_RUN: HashSet<&'static str> = make(run::STOPWORDS_RUN);
     static ref STOPWORDS_SNA: HashSet<&'static str> = make(sna::STOPWORDS_SNA);
     static ref STOPWORDS_UIG: HashSet<&'static str> = make(uig::STOPWORDS_UIG);
     static ref STOPWORDS_AFR: HashSet<&'static str> = make(afr::STOPWORDS_AFR);
     static ref STOPWORDS_LAT: HashSet<&'static str> = make(lat::STOPWORDS_LAT);
+    static ref STOPWORDS_SLK: HashSet<&'static str> = make(slk::STOPWORDS_SLK);
 }
 
 fn make<'a>(words: &[&'a str]) -> HashSet<&'a str> {
@@ -290,6 +291,7 @@ impl LexerStopWord {
             Lang::Uig => &*STOPWORDS_UIG,
             Lang::Afr => &*STOPWORDS_AFR,
             Lang::Lat => &*STOPWORDS_LAT,
+            Lang::Slk => &*STOPWORDS_SLK,
         }
     }
 
@@ -345,6 +347,7 @@ impl LexerStopWord {
                 Lang::Lav,
                 Lang::Est,
                 Lang::Lat,
+                Lang::Slk,
             ],
             Script::Cyrillic => &[
                 Lang::Rus,

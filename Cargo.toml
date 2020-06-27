@@ -39,7 +39,7 @@ twox-hash = "1.5"
 byteorder = "1.3"
 hashbrown = "0.8"
 linked_hash_set = "0.1"
-whatlang = "0.8"
+whatlang = "0.9"
 regex = "1.3"
 
 [target.'cfg(unix)'.dependencies]

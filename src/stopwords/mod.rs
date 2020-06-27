@@ -71,6 +71,7 @@ pub mod run;
 pub mod rus;
 pub mod sin;
 pub mod skr;
+pub mod slk;
 pub mod slv;
 pub mod sna;
 pub mod som;
