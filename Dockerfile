@@ -3,14 +3,16 @@ FROM rustlang/rust:nightly-buster-slim AS build
 RUN apt-get update
 RUN apt-get install -y build-essential clang
 
-RUN cargo install sonic-server
-RUN strip /usr/local/cargo/bin/sonic
+WORKDIR /app
+COPY . /app
+RUN cargo clean && cargo build --release
+RUN strip ./target/release/sonic
 
 FROM debian:buster-slim
 
 WORKDIR /usr/src/sonic
 
-COPY --from=build /usr/local/cargo/bin/sonic /usr/local/bin/sonic
+COPY --from=build /app/target/release/sonic /usr/local/bin/sonic
 
 CMD [ "sonic", "-c", "/etc/sonic.cfg" ]
 
