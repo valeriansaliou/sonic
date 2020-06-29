@@ -114,7 +114,7 @@ _The Sonic Channel Ingest mode is used for altering the search index (push, pop 
 * `<collection>`: index collection (ie. what you search in, eg. `messages`, `products`, etc.);
 * `<bucket>`: index bucket name (ie. user-specific search classifier in the collection if you have any eg. `user-1, user-2, ..`, otherwise use a common bucket name eg. `generic, default, common, ..`);
 * `<object>`: object identifier that refers to an entity in an external database, where the searched object is stored (eg. you use Sonic to index CRM contacts by name; full CRM contact data is stored in a MySQL database; in this case the object identifier in Sonic will be the MySQL primary key for the CRM contact);
-* `<text>`: search text to be indexed (can be a single word, or a longer text; within maximum length safety limits; between quotes);
+* `<text>`: search text to be indexed (can be a single word, or a longer text; within maximum length safety limits; should be quoted using `"` quotes; internal quotes should be escaped using `\"`);
 * `<locale>`: an ISO 639-3 locale code eg. `eng` for English (if set, the locale must be a valid ISO 639-3 code; if set to `none`, lexing will be disabled; if not set, the locale will be guessed from text);
 * `<manual>`: help manual to be shown (available manuals: `commands`);
 
