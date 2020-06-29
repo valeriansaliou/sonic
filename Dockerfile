@@ -5,7 +5,7 @@ RUN apt-get install -y build-essential clang
 
 WORKDIR /app
 COPY . /app
-RUN cargo clean && cargo build --release
+RUN cargo clean && cargo build --release --target x86_64-unknown-linux-gnu
 RUN strip ./target/release/sonic
 
 FROM debian:buster-slim
