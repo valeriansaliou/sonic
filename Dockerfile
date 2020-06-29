@@ -1,4 +1,4 @@
-FROM rustlang/rust:nightly-slim AS build
+FROM rustlang/rust:nightly-buster-slim AS build
 
 RUN apt-get update
 RUN apt-get install -y build-essential clang
