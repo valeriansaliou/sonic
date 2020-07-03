@@ -71,7 +71,7 @@ cargo build --release
 
 You can find the built binaries in the `./target/release` directory.
 
-_Install `clang`, `clang-dev`, `g++` and `llvm-dev` to be able to compile the required RocksDB dependency._
+_Install `build-essential`, `clang`, `libclang-dev`, `libc6-dev`, `g++` and `llvm-dev` to be able to compile the required RocksDB dependency._
 
 **👉 Install from Cargo:**
 
@@ -82,6 +82,8 @@ cargo install sonic-server
 ```
 
 Ensure that your `$PATH` is properly configured to source the Crates binaries, and then run Sonic using the `sonic` command.
+
+_Install `build-essential`, `clang`, `libclang-dev`, `libc6-dev`, `g++` and `llvm-dev` to be able to compile the required RocksDB dependency._
 
 **👉 Install from Docker Hub:**
 
