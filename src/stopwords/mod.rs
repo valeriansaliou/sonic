@@ -16,6 +16,7 @@ pub mod bel;
 pub mod ben;
 pub mod bho;
 pub mod bul;
+pub mod cat;
 pub mod ceb;
 pub mod ces;
 pub mod cmn;
