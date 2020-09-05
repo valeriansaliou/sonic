@@ -426,7 +426,7 @@ mod tests {
         );
         assert_eq!(
             LexerStopWord::guess_lang(
-                "Tots els éssers humans neixen lliures i iguals en dignitat i en drets. Són dotats de raó i de consciència",
+                "Tots els éssers humans neixen lliures i iguals en dignitat i en drets.",
                 Script::Latin
             ),
             Some(Lang::Cat)
