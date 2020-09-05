@@ -123,7 +123,7 @@ lazy_static! {
     static ref STOPWORDS_ILO: HashSet<&'static str> = make(ilo::STOPWORDS_ILO);
 }
 
-// Recursion group #9 (6 items)
+// Recursion group #9 (7 items)
 lazy_static! {
     static ref STOPWORDS_RUN: HashSet<&'static str> = make(run::STOPWORDS_RUN);
     static ref STOPWORDS_SNA: HashSet<&'static str> = make(sna::STOPWORDS_SNA);
@@ -131,6 +131,7 @@ lazy_static! {
     static ref STOPWORDS_AFR: HashSet<&'static str> = make(afr::STOPWORDS_AFR);
     static ref STOPWORDS_LAT: HashSet<&'static str> = make(lat::STOPWORDS_LAT);
     static ref STOPWORDS_SLK: HashSet<&'static str> = make(slk::STOPWORDS_SLK);
+    static ref STOPWORDS_CAT: HashSet<&'static str> = make(cat::STOPWORDS_CAT);
 }
 
 fn make<'a>(words: &[&'a str]) -> HashSet<&'a str> {
@@ -292,6 +293,7 @@ impl LexerStopWord {
             Lang::Afr => &*STOPWORDS_AFR,
             Lang::Lat => &*STOPWORDS_LAT,
             Lang::Slk => &*STOPWORDS_SLK,
+            Lang::Cat => &*STOPWORDS_CAT,
         }
     }
 
@@ -348,6 +350,7 @@ impl LexerStopWord {
                 Lang::Est,
                 Lang::Lat,
                 Lang::Slk,
+                Lang::Cat,
             ],
             Script::Cyrillic => &[
                 Lang::Rus,
@@ -395,6 +398,7 @@ mod tests {
         assert_eq!(LexerStopWord::is("fox", Some(Lang::Eng)), false);
         assert_eq!(LexerStopWord::is("bonjour", Some(Lang::Fra)), false);
         assert_eq!(LexerStopWord::is("ici", Some(Lang::Fra)), true);
+        assert_eq!(LexerStopWord::is("adéu", Some(Lang::Cat)), true);
     }
 
     #[test]
@@ -419,6 +423,13 @@ mod tests {
                 Script::Latin
             ),
             Some(Lang::Hun)
+        );
+        assert_eq!(
+            LexerStopWord::guess_lang(
+                "Tots els éssers humans neixen lliures i iguals en dignitat i en drets. Són dotats de raó i de consciència",
+                Script::Latin
+            ),
+            Some(Lang::Cat)
         );
         assert_eq!(
             LexerStopWord::guess_lang("aux", Script::Latin),
