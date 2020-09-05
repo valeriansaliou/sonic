@@ -4,7 +4,8 @@
 // Copyright: 2020, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-// Stopwords list's original author: Lluís de Yzaguirre i Maura, Laboratori de Tecnologies Lingüístiques de l'IULA-UPF (Institut de Lingüística Aplicada de la Universitat Pompeu Fabra)
+// Stopwords list's original author: Lluís de Yzaguirre i Maura, Laboratori de Tecnologies \
+//   Lingüístiques de l'IULA-UPF (Institut de Lingüística Aplicada de la Universitat Pompeu Fabra)
 
 pub static STOPWORDS_CAT: &[&'static str] = &[
     "a",
