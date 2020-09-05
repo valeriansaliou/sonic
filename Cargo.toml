@@ -37,13 +37,13 @@ fst-regex = "0.2"
 regex-syntax = "0.6"
 twox-hash = "1.5"
 byteorder = "1.3"
-hashbrown = "0.8"
+hashbrown = "0.9"
 linked_hash_set = "0.1"
 whatlang = "0.10"
 regex = "1.3"
 
 [target.'cfg(unix)'.dependencies]
-nix = "0.17"
+nix = "0.18"
 jemallocator = { version = "0.3", optional = true }
 
 [target.'cfg(windows)'.dependencies]
