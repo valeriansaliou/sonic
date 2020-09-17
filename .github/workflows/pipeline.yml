@@ -21,10 +21,10 @@ jobs:
       run: sudo apt-get install build-essential clang libclang-dev libc6-dev g++ llvm-dev
     - name: Check formatting
       run: cargo fmt --all -- --check
-    - name: Scan code
-      run: |
-        rustup component add clippy
-        cargo clippy --all-targets ${{ matrix.features }} -- -D warnings
+    # - name: Scan code
+    #   run: |
+    #     rustup component add clippy
+    #     cargo clippy --all-targets ${{ matrix.features }} -- -D warnings
     - name: Execute tests
       run: cargo test ${{ matrix.features }}
     - name: Build program
