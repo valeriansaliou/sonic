@@ -1,0 +1,127 @@
+name: pipeline
+on: push
+
+env:
+  RELEASE_FILE: RELEASE.txt
+
+jobs:
+  check:
+    name: check (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+        - name: "default"
+          features: ""
+        - name: "all"
+          features: --all-features
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install tools
+      run: sudo apt-get install build-essential clang libclang-dev libc6-dev g++ llvm-dev
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+    - name: Scan code
+      run: |
+        rustup component add clippy
+        cargo clippy --all-targets ${{ matrix.features }} -- -D warnings
+    - name: Execute tests
+      run: cargo test ${{ matrix.features }}
+    - name: Build program
+      run: cargo build ${{ matrix.features }}
+
+  # tag:
+  #   if: github.ref == 'refs/heads/master'
+  #   needs: check
+  #   name: tag and release
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v1
+  #   - name: Tag
+  #     id: tag
+  #     uses: anothrNick/github-tag-action@1.19.0
+  #     env:
+  #       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       WITH_V: false
+  #       RELEASE_BRANCHES: master
+  #       DEFAULT_BUMP: patch
+  #   - name: create release
+  #     id: create_release
+  #     uses: actions/create-release@latest
+  #     env:
+  #       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #     with:
+  #       tag_name: ${{ steps.tag.outputs.new_tag}}
+  #       release_name: ${{ steps.tag.outputs.new_tag }}
+  #       body: |
+  #         Release ${{ steps.tag.outputs.new_tag }}.
+  #       draft: false
+  #       prerelease: false
+  #   - run: printf ${{ steps.create_release.outputs.upload_url }} > ${{ env.RELEASE_FILE }}
+  #   - name: Upload release data
+  #     uses: actions/upload-artifact@v1.0.0
+  #     with:
+  #       name: RELEASE
+  #       path: ${{ env.RELEASE_FILE }}
+
+  # publish-cratesio:
+  #   needs: tag
+  #   name: crates.io
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v1
+  #   - name: Get version
+  #     id: get_version
+  #     run: echo ::set-output name=VERSION::$(git tag --points-at HEAD --sort -version:refname | head -1)
+  #   - name: Install tools
+  #     run: sudo apt-get install build-essential clang libclang-dev libc6-dev g++ llvm-dev
+  #   - name: Publish
+  #     id: publish
+  #     run: |
+  #       VERSION=${{ steps.get_version.outputs.VERSION }} make update-version && 
+  #       cargo login ${{ secrets.CRATES_IO_TOKEN }} && 
+  #       cargo publish --allow-dirty
+
+  # publish-releases:
+  #   needs: tag
+  #   name: Publish for ${{ matrix.os }}
+  #   runs-on: ${{ matrix.os }}
+  #   strategy:
+  #     matrix:
+  #       include:
+  #       - os: macos-latest
+  #         target: x86_64-apple-darwin
+  #         install: printf ok
+  #       - os: ubuntu-latest
+  #         target: x86_64-unknown-linux-gnu
+  #         run: sudo apt-get install build-essential clang libclang-dev libc6-dev g++ llvm-dev
+  #   steps:
+  #   - uses: actions/checkout@v1
+  #   - name: Get version
+  #     id: get_version
+  #     run: echo ::set-output name=VERSION::$(git tag --points-at HEAD --sort -version:refname | head -1)
+  #   - name: Download release id
+  #     uses: actions/download-artifact@v1.0.0
+  #     with:
+  #       name: RELEASE
+  #   - name: Get release data
+  #     id: get_release_data
+  #     run: echo ::set-output name=upload_url::$(cat RELEASE/${{ env.RELEASE_FILE }})
+  #   - name: install tools
+  #     run: |
+  #       ${{ matrix.install }} && 
+  #       rustup target install ${{ matrix.target }}
+  #   - name: build-${{ matrix.target }}
+  #     run: |
+  #       VERSION=${{ steps.get_version.outputs.VERSION }} make update-version && 
+  #       cargo build --release --target ${{ matrix.target }}
+  #   - name: zip
+  #     run: cd ./target/${{ matrix.target }}/release && tar -zcvf ${{ matrix.target }}.tar.gz complate
+  #   - name: upload asset
+  #     uses: svenstaro/upload-release-action@v1-release
+  #     with:
+  #       repo_token: ${{ secrets.GITHUB_TOKEN }}
+  #       file: ./target/${{ matrix.target }}/release/${{ matrix.target }}.tar.gz
+  #       asset_name: ${{ matrix.target }}.tar.gz
+  #       tag: ${{ steps.get_version.outputs.VERSION }}
+  #       overwrite: true
