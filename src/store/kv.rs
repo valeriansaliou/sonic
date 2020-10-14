@@ -436,9 +436,11 @@ impl StoreKVBuilder {
         });
 
         db_options.increase_parallelism(APP_CONF.store.kv.database.parallelism as i32);
-        db_options
-            .set_max_background_compactions(APP_CONF.store.kv.database.max_compactions as i32);
-        db_options.set_max_background_flushes(APP_CONF.store.kv.database.max_flushes as i32);
+        db_options.set_max_subcompactions(APP_CONF.store.kv.database.max_compactions as u32);
+        db_options.set_max_background_jobs(
+            (APP_CONF.store.kv.database.max_compactions + APP_CONF.store.kv.database.max_flushes)
+                as i32,
+        );
         db_options.set_write_buffer_size(APP_CONF.store.kv.database.write_buffer * 1024);
 
         db_options
