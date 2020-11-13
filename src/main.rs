@@ -6,7 +6,6 @@
 
 // Clippy lints
 #![deny(clippy::all)]
-
 #![cfg_attr(feature = "benchmark", feature(test))]
 
 #[macro_use]
@@ -35,9 +34,9 @@ use log::LevelFilter;
 
 use channel::listen::{ChannelListen, ChannelListenBuilder};
 use channel::statistics::ensure_states as ensure_states_channel_statistics;
-use config::Config;
 use config::logger::ConfigLogger;
 use config::reader::ConfigReader;
+use config::Config;
 use store::fst::StoreFSTPool;
 use store::kv::StoreKVPool;
 use tasker::runtime::TaskerBuilder;

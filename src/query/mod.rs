@@ -7,9 +7,9 @@
 pub mod builder;
 pub mod types;
 
-use types::*;
 use crate::lexer::token::TokenLexer;
 use crate::store::item::StoreItem;
+use types::*;
 
 pub enum Query<'a> {
     Search(
