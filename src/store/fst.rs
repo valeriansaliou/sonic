@@ -1262,7 +1262,7 @@ impl StoreFSTMisc {
         }
 
         // Not over limit
-        return false;
+        false
     }
 }
 
