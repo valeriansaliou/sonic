@@ -4,7 +4,7 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-pub static STOPWORDS_DAN: &[&'static str] = &[
+pub static STOPWORDS_DAN: &[&str] = &[
     "ad", "af", "aldrig", "alle", "alt", "anden", "andet", "andre", "at", "bare", "begge", "blev",
     "blive", "bliver", "da", "de", "dem", "den", "denne", "der", "deres", "det", "dette", "dig",
     "din", "dine", "disse", "dit", "dog", "du", "efter", "ej", "eller", "en", "end", "ene",

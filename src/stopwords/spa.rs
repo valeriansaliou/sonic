@@ -4,7 +4,7 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-pub static STOPWORDS_SPA: &[&'static str] = &[
+pub static STOPWORDS_SPA: &[&str] = &[
     "0",
     "1",
     "2",
