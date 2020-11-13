@@ -7,7 +7,7 @@
 // Stopwords list's original author: Lluís de Yzaguirre i Maura, Laboratori de Tecnologies \
 //   Lingüístiques de l'IULA-UPF (Institut de Lingüística Aplicada de la Universitat Pompeu Fabra)
 
-pub static STOPWORDS_CAT: &[&'static str] = &[
+pub static STOPWORDS_CAT: &[&str] = &[
     "a",
     "abans",
     "abans-d'ahir",

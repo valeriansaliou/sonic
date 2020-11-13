@@ -62,8 +62,8 @@ const TEXT_PART_ESCAPE: char = '\\';
 const META_PART_GROUP_OPEN: char = '(';
 const META_PART_GROUP_CLOSE: char = ')';
 
-static BACKUP_KV_PATH: &'static str = "kv";
-static BACKUP_FST_PATH: &'static str = "fst";
+static BACKUP_KV_PATH: &str = "kv";
+static BACKUP_FST_PATH: &str = "fst";
 
 lazy_static! {
     pub static ref COMMANDS_MODE_SEARCH: Vec<&'static str> =

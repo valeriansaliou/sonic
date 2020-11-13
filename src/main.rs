@@ -4,6 +4,9 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+// Clippy lints
+#![deny(clippy::all)]
+
 #![cfg_attr(feature = "benchmark", feature(test))]
 
 #[macro_use]
@@ -49,11 +52,11 @@ struct AppArgs {
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
-pub static LINE_FEED: &'static str = "\r\n";
+pub static LINE_FEED: &str = "\r\n";
 
-pub static THREAD_NAME_CHANNEL_MASTER: &'static str = "sonic-channel-master";
-pub static THREAD_NAME_CHANNEL_CLIENT: &'static str = "sonic-channel-client";
-pub static THREAD_NAME_TASKER: &'static str = "sonic-tasker";
+pub static THREAD_NAME_CHANNEL_MASTER: &str = "sonic-channel-master";
+pub static THREAD_NAME_CHANNEL_CLIENT: &str = "sonic-channel-client";
+pub static THREAD_NAME_TASKER: &str = "sonic-tasker";
 
 macro_rules! gen_spawn_managed {
     ($name:expr, $method:ident, $thread_name:ident, $managed_fn:ident) => {
