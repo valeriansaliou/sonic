@@ -35,7 +35,7 @@ use log::LevelFilter;
 
 use channel::listen::{ChannelListen, ChannelListenBuilder};
 use channel::statistics::ensure_states as ensure_states_channel_statistics;
-use config::config::Config;
+use config::Config;
 use config::logger::ConfigLogger;
 use config::reader::ConfigReader;
 use store::fst::StoreFSTPool;
