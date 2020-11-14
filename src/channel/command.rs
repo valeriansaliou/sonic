@@ -182,7 +182,7 @@ impl ChannelCommandBase {
         // Parse text parts and nest them together
         let mut text_raw = String::new();
 
-        while let Some(text_part) = parts.next() {
+        for text_part in parts {
             if !text_raw.is_empty() {
                 text_raw.push_str(" ");
             }

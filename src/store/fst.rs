@@ -321,50 +321,43 @@ impl StoreFSTPool {
             let collection = collection?;
 
             // Actual collection found?
-            match (collection.file_type(), collection.file_name().to_str()) {
-                (Ok(collection_file_type), Some(collection_name)) => {
-                    if collection_file_type.is_dir() {
-                        debug!("fst collection ongoing {}: {}", action, collection_name);
+            if let (Ok(collection_file_type), Some(collection_name)) =
+                (collection.file_type(), collection.file_name().to_str())
+            {
+                if collection_file_type.is_dir() {
+                    debug!("fst collection ongoing {}: {}", action, collection_name);
 
-                        // Create write folder for collection
-                        fs::create_dir_all(write_path.join(collection_name))?;
+                    // Create write folder for collection
+                    fs::create_dir_all(write_path.join(collection_name))?;
 
-                        // Iterate on FST collection buckets
-                        for bucket in fs::read_dir(read_path.join(collection_name))? {
-                            let bucket = bucket?;
+                    // Iterate on FST collection buckets
+                    for bucket in fs::read_dir(read_path.join(collection_name))? {
+                        let bucket = bucket?;
 
-                            // Actual bucket found?
-                            match (bucket.file_type(), bucket.file_name().to_str()) {
-                                (Ok(bucket_file_type), Some(bucket_file_name)) => {
-                                    let bucket_file_name_len = bucket_file_name.len();
+                        // Actual bucket found?
+                        if let (Ok(bucket_file_type), Some(bucket_file_name)) =
+                            (bucket.file_type(), bucket.file_name().to_str())
+                        {
+                            let bucket_file_name_len = bucket_file_name.len();
 
-                                    if bucket_file_type.is_file()
-                                        && bucket_file_name_len > fst_extension_len
-                                        && bucket_file_name.ends_with(fst_extension)
-                                    {
-                                        // Acquire bucket name (from full file name)
-                                        let bucket_name = &bucket_file_name
-                                            [..(bucket_file_name_len - fst_extension_len)];
+                            if bucket_file_type.is_file()
+                                && bucket_file_name_len > fst_extension_len
+                                && bucket_file_name.ends_with(fst_extension)
+                            {
+                                // Acquire bucket name (from full file name)
+                                let bucket_name =
+                                    &bucket_file_name[..(bucket_file_name_len - fst_extension_len)];
 
-                                        debug!(
-                                            "fst bucket ongoing {}: {}/{}",
-                                            action, collection_name, bucket_name
-                                        );
+                                debug!(
+                                    "fst bucket ongoing {}: {}/{}",
+                                    action, collection_name, bucket_name
+                                );
 
-                                        fn_item(
-                                            write_path,
-                                            &bucket.path(),
-                                            collection_name,
-                                            bucket_name,
-                                        )?;
-                                    }
-                                }
-                                _ => {}
+                                fn_item(write_path, &bucket.path(), collection_name, bucket_name)?;
                             }
                         }
                     }
                 }
-                _ => {}
             }
         }
 

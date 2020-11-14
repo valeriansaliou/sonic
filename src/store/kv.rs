@@ -251,15 +251,14 @@ impl StoreKVPool {
             let collection = collection?;
 
             // Actual collection found?
-            match (collection.file_type(), collection.file_name().to_str()) {
-                (Ok(collection_file_type), Some(collection_name)) => {
-                    if collection_file_type.is_dir() {
-                        debug!("kv collection ongoing {}: {}", action, collection_name);
+            if let (Ok(collection_file_type), Some(collection_name)) =
+                (collection.file_type(), collection.file_name().to_str())
+            {
+                if collection_file_type.is_dir() {
+                    debug!("kv collection ongoing {}: {}", action, collection_name);
 
-                        fn_item(write_path, &collection.path(), collection_name)?;
-                    }
+                    fn_item(write_path, &collection.path(), collection_name)?;
                 }
-                _ => {}
             }
         }
 

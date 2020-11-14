@@ -126,6 +126,7 @@ impl StoreKeyer {
 }
 
 impl StoreKeyerHasher {
+    #![allow(clippy::wrong_self_convention)]
     pub fn to_compact(part: &str) -> u32 {
         let mut hasher = XxHash32::with_seed(0);
 

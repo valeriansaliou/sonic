@@ -12,6 +12,10 @@
 )]
 // Clippy lints
 #![deny(clippy::all)]
+// I think we should to refac all places when we use new method
+// for another structure
+#![allow(clippy::new_ret_no_self)]
+
 #![cfg_attr(feature = "benchmark", feature(test))]
 
 #[macro_use]
