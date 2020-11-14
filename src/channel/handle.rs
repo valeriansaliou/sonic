@@ -39,7 +39,7 @@ const BUFFER_SIZE: usize = 20000;
 const MAX_LINE_SIZE: usize = BUFFER_SIZE + LINE_END_GAP + 1;
 const TCP_TIMEOUT_NON_ESTABLISHED: u64 = 10;
 const PROTOCOL_REVISION: u8 = 1;
-const BUFFER_LINE_SEPARATOR: u8 = '\n' as u8;
+const BUFFER_LINE_SEPARATOR: u8 = b'\n';
 
 lazy_static! {
     static ref CONNECTED_BANNER: String = format!(
