@@ -10,6 +10,7 @@ use rand::{thread_rng, Rng};
 use std::path::Path;
 use std::str::{self, SplitWhitespace};
 use std::vec::Vec;
+use std::fmt;
 
 use super::format::unescape;
 use super::statistics::ChannelStatistics;
@@ -31,6 +32,26 @@ pub enum ChannelCommandError {
     InvalidFormat(&'static str),
     InvalidMetaKey((String, String)),
     InvalidMetaValue((String, String)),
+}
+
+impl fmt::Display for ChannelCommandError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            ChannelCommandError::UnknownCommand => write!(f, "unknown_command"),
+            ChannelCommandError::NotFound => write!(f, "not_found"),
+            ChannelCommandError::QueryError => write!(f, "query_error"),
+            ChannelCommandError::InternalError => write!(f, "internal_error"),
+            ChannelCommandError::ShuttingDown => write!(f, "shutting_down"),
+            ChannelCommandError::PolicyReject(reason) => write!(f, "policy_reject({})", reason),
+            ChannelCommandError::InvalidFormat(format) => write!(f, "invalid_format({})", format),
+            ChannelCommandError::InvalidMetaKey(ref data) => {
+                write!(f, "invalid_meta_key({}[{}])", data.0, data.1)
+            }
+            ChannelCommandError::InvalidMetaValue(ref data) => {
+                write!(f, "invalid_meta_value({}[{}])", data.0, data.1)
+            }
+        }
+    }
 }
 
 #[derive(PartialEq)]
@@ -89,26 +110,6 @@ lazy_static! {
             .iter()
             .cloned()
             .collect();
-}
-
-impl ChannelCommandError {
-    pub fn to_string(&self) -> String {
-        match *self {
-            ChannelCommandError::UnknownCommand => String::from("unknown_command"),
-            ChannelCommandError::NotFound => String::from("not_found"),
-            ChannelCommandError::QueryError => String::from("query_error"),
-            ChannelCommandError::InternalError => String::from("internal_error"),
-            ChannelCommandError::ShuttingDown => String::from("shutting_down"),
-            ChannelCommandError::PolicyReject(reason) => format!("policy_reject({})", reason),
-            ChannelCommandError::InvalidFormat(format) => format!("invalid_format({})", format),
-            ChannelCommandError::InvalidMetaKey(ref data) => {
-                format!("invalid_meta_key({}[{}])", data.0, data.1)
-            }
-            ChannelCommandError::InvalidMetaValue(ref data) => {
-                format!("invalid_meta_value({}[{}])", data.0, data.1)
-            }
-        }
-    }
 }
 
 impl ChannelCommandResponse {
