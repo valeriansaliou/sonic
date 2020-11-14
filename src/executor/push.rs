@@ -85,7 +85,7 @@ impl ExecutorPush {
                             kv_action
                                 .get_iid_to_terms(iid)
                                 .unwrap_or(None)
-                                .unwrap_or(Vec::new()),
+                                .unwrap_or_default()
                         );
 
                     info!(
@@ -100,7 +100,7 @@ impl ExecutorPush {
                                 has_commits = true;
 
                                 // Add IID in first position in list for terms
-                                let mut term_iids = term_iids.unwrap_or(Vec::new());
+                                let mut term_iids = term_iids.unwrap_or_default();
 
                                 // Remove IID from list of IIDs to be popped before inserting in \
                                 //   first position?

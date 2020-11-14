@@ -4,6 +4,12 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+// Rust lints
+#![deny(
+    unstable_features,
+    unused_imports,
+    unused_qualifications
+)]
 // Clippy lints
 #![deny(clippy::all)]
 #![cfg_attr(feature = "benchmark", feature(test))]

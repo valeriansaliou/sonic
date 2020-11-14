@@ -33,7 +33,7 @@ impl ExecutorFlushO {
                         // Resolve terms associated to IID
                         let iid_terms = {
                             if let Ok(iid_terms_value) = kv_action.get_iid_to_terms(iid) {
-                                iid_terms_value.unwrap_or(Vec::new())
+                                iid_terms_value.unwrap_or_default()
                             } else {
                                 error!("failed getting flusho executor iid-to-terms");
 

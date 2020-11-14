@@ -21,7 +21,7 @@ impl QueryGenericLang {
         if value == "none" {
             Some(QueryGenericLang::Disabled)
         } else {
-            Lang::from_code(value).map(|lang| QueryGenericLang::Enabled(lang))
+            Lang::from_code(value).map(QueryGenericLang::Enabled)
         }
     }
 }

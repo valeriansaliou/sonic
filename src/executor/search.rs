@@ -52,7 +52,7 @@ impl ExecutorSearch {
                         kv_action
                             .get_term_to_iids(term_hashed)
                             .unwrap_or(None)
-                            .unwrap_or(Vec::new())
+                            .unwrap_or_default()
                             .into_iter(),
                     );
 
@@ -136,7 +136,7 @@ impl ExecutorSearch {
                     if found_iids.is_empty() {
                         found_iids = iids;
                     } else {
-                        found_iids = found_iids.intersection(&iids).map(|value| *value).collect();
+                        found_iids = found_iids.intersection(&iids).copied().collect();
                     }
 
                     debug!(
