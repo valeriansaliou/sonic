@@ -68,8 +68,8 @@ const ATOM_HASH_RADIX: usize = 16;
 
 lazy_static! {
     pub static ref STORE_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
-    static ref STORE_ACQUIRE_LOCK: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
-    static ref STORE_FLUSH_LOCK: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    static ref STORE_ACQUIRE_LOCK: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
+    static ref STORE_FLUSH_LOCK: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
     static ref STORE_POOL: Arc<RwLock<HashMap<StoreKVKey, StoreKVBox>>> =
         Arc::new(RwLock::new(HashMap::new()));
 }
