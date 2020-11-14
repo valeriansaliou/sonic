@@ -21,7 +21,7 @@ impl ExecutorSearch {
     pub fn execute<'a>(
         store: StoreItem<'a>,
         _event_id: QuerySearchID,
-        mut lexer: TokenLexer<'a>,
+        lexer: TokenLexer<'a>,
         limit: QuerySearchLimit,
         offset: QuerySearchOffset,
     ) -> Result<Option<Vec<String>>, ()> {
@@ -47,7 +47,7 @@ impl ExecutorSearch {
                 //   all resulting IIDs for each given term.
                 let mut found_iids: LinkedHashSet<StoreObjectIID> = LinkedHashSet::new();
 
-                'lexing: while let Some((term, term_hashed)) = lexer.next() {
+                'lexing: for (term, term_hashed) in lexer {
                     let mut iids = LinkedHashSet::from_iter(
                         kv_action
                             .get_term_to_iids(term_hashed)

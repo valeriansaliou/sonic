@@ -192,6 +192,7 @@ impl ChannelHandle {
     }
 
     fn ensure_start(mut stream: &TcpStream) -> Result<ChannelMode, ChannelHandleError> {
+        #[allow(clippy::never_loop)]
         loop {
             let mut read = [0; MAX_LINE_SIZE];
 
