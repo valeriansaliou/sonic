@@ -416,8 +416,8 @@ impl StoreFSTPool {
                     count_words += 1;
 
                     // Write word, and append a new line
-                    backup_fst_writer.write(word)?;
-                    backup_fst_writer.write("\n".as_bytes())?;
+                    backup_fst_writer.write_all(word)?;
+                    backup_fst_writer.write_all(b"\n")?;
                 }
 
                 info!(
