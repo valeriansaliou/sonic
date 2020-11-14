@@ -54,9 +54,7 @@ impl ExecutorPop {
                             let pop_terms: Vec<(String, StoreTermHashed)> = lexer.collect();
 
                             let iid_terms_hashed: LinkedHashSet<StoreTermHashed> =
-                                LinkedHashSet::from_iter(
-                                    iid_terms_hashed_vec.iter().copied(),
-                                );
+                                LinkedHashSet::from_iter(iid_terms_hashed_vec.iter().copied());
 
                             let remaining_terms: LinkedHashSet<StoreTermHashed> = iid_terms_hashed
                                 .difference(&LinkedHashSet::from_iter(

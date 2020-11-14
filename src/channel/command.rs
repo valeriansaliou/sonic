@@ -7,10 +7,10 @@
 use hashbrown::HashMap;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
+use std::fmt;
 use std::path::Path;
 use std::str::{self, SplitWhitespace};
 use std::vec::Vec;
-use std::fmt;
 
 use super::format::unescape;
 use super::statistics::ChannelStatistics;
@@ -371,6 +371,12 @@ impl ChannelCommandBase {
     }
 }
 
+type QueryMetaData = (
+    Option<QuerySearchLimit>,
+    Option<QuerySearchOffset>,
+    Option<QueryGenericLang>,
+);
+
 impl ChannelCommandSearch {
     pub fn dispatch_query(mut parts: SplitWhitespace) -> ChannelResult {
         match (
@@ -512,14 +518,7 @@ impl ChannelCommandSearch {
 
     fn handle_query_meta(
         meta_result: MetaPartsResult,
-    ) -> Result<
-        (
-            Option<QuerySearchLimit>,
-            Option<QuerySearchOffset>,
-            Option<QueryGenericLang>,
-        ),
-        ChannelCommandError,
-    > {
+    ) -> Result<QueryMetaData, ChannelCommandError> {
         match meta_result {
             Ok((meta_key, meta_value)) => {
                 debug!("handle query meta: {} = {}", meta_key, meta_value);

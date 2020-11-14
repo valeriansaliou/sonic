@@ -5,17 +5,12 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 // Rust lints
-#![deny(
-    unstable_features,
-    unused_imports,
-    unused_qualifications
-)]
+#![deny(unstable_features, unused_imports, unused_qualifications)]
 // Clippy lints
 #![deny(clippy::all)]
 // I think we should to refac all places when we use new method
 // for another structure
 #![allow(clippy::new_ret_no_self)]
-
 #![cfg_attr(feature = "benchmark", feature(test))]
 
 #[macro_use]

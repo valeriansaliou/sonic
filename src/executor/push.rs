@@ -85,7 +85,7 @@ impl ExecutorPush {
                             kv_action
                                 .get_iid_to_terms(iid)
                                 .unwrap_or(None)
-                                .unwrap_or_default()
+                                .unwrap_or_default(),
                         );
 
                     info!(
