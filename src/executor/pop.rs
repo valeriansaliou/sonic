@@ -55,14 +55,14 @@ impl ExecutorPop {
 
                             let iid_terms_hashed: LinkedHashSet<StoreTermHashed> =
                                 LinkedHashSet::from_iter(
-                                    iid_terms_hashed_vec.iter().map(|value| *value),
+                                    iid_terms_hashed_vec.iter().copied(),
                                 );
 
                             let remaining_terms: LinkedHashSet<StoreTermHashed> = iid_terms_hashed
                                 .difference(&LinkedHashSet::from_iter(
                                     pop_terms.iter().map(|item| item.1),
                                 ))
-                                .map(|value| *value)
+                                .copied()
                                 .collect();
 
                             debug!(
@@ -73,7 +73,7 @@ impl ExecutorPop {
                             count_popped = (iid_terms_hashed.len() - remaining_terms.len()) as u32;
 
                             if count_popped > 0 {
-                                if remaining_terms.len() == 0 {
+                                if remaining_terms.is_empty() {
                                     info!("nuke whole bucket for pop executor");
 
                                     // Flush bucket (batch operation, as it is shared w/ other \

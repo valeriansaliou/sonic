@@ -315,14 +315,14 @@ impl ChannelCommandBase {
 
     pub fn commit_ok_operation(query_builder: QueryBuilderResult) -> ChannelResult {
         query_builder
-            .and_then(|query| StoreOperationDispatch::dispatch(query))
-            .and_then(|_| Ok(vec![ChannelCommandResponse::Ok]))
+            .and_then(StoreOperationDispatch::dispatch)
+            .map(|_| vec![ChannelCommandResponse::Ok])
             .or(Err(ChannelCommandError::QueryError))
     }
 
     pub fn commit_result_operation(query_builder: QueryBuilderResult) -> ChannelResult {
         query_builder
-            .and_then(|query| StoreOperationDispatch::dispatch(query))
+            .and_then(StoreOperationDispatch::dispatch)
             .or(Err(ChannelCommandError::QueryError))
             .and_then(|result| {
                 if let Some(result_inner) = result {
@@ -348,16 +348,16 @@ impl ChannelCommandBase {
         //   consumer via a worker thread pool.
 
         query_builder
-            .and_then(|query| StoreOperationDispatch::dispatch(query))
-            .and_then(|results| {
-                Ok(vec![
+            .and_then(StoreOperationDispatch::dispatch)
+            .map(|results| {
+                vec![
                     ChannelCommandResponse::Pending(query_id.to_string()),
                     ChannelCommandResponse::Event(
                         query_type,
                         query_id.to_string(),
-                        results.unwrap_or(String::new()),
+                        results.unwrap_or_default(),
                     ),
-                ])
+                ]
             })
             .or(Err(ChannelCommandError::QueryError))
     }

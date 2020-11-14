@@ -51,7 +51,7 @@ impl ChannelMessage {
         // Process response for issued command
         let response_args_groups: Vec<ChannelCommandResponseArgs>;
 
-        if *CHANNEL_AVAILABLE.read().unwrap() != true {
+        if !(*CHANNEL_AVAILABLE.read().unwrap()) {
             // Server going down, reject command
             response_args_groups =
                 vec![ChannelCommandResponse::Err(ChannelCommandError::ShuttingDown).to_args()];

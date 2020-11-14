@@ -107,7 +107,7 @@ lazy_static! {
 }
 
 fn make<'a>(words: &[&'a str]) -> HashSet<&'a str> {
-    words.into_iter().map(|word| *word).collect()
+    words.iter().copied().collect()
 }
 
 impl LexerStopWord {

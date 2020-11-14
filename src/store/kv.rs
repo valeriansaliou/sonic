@@ -94,8 +94,7 @@ impl StoreKVPool {
         let store_pool_read = STORE_POOL.read().unwrap();
 
         if let Some(store_kv) = store_pool_read.get(&pool_key) {
-            Self::proceed_acquire_cache("kv", collection_str, pool_key, store_kv)
-                .map(|result| Some(result))
+            Self::proceed_acquire_cache("kv", collection_str, pool_key, store_kv).map(Some)
         } else {
             info!(
                 "kv store not in pool for collection: {} {}, opening it",
@@ -117,8 +116,7 @@ impl StoreKVPool {
             //   the database does not exist yet on disk and we are just looking to read data from \
             //   it)
             if can_open_db {
-                Self::proceed_acquire_open("kv", collection_str, pool_key, &*STORE_POOL)
-                    .map(|result| Some(result))
+                Self::proceed_acquire_open("kv", collection_str, pool_key, &*STORE_POOL).map(Some)
             } else {
                 Ok(None)
             }
@@ -298,17 +296,17 @@ impl StoreKVPool {
         if let Ok(collection_radix) = RadixNum::from_str(collection_name, ATOM_HASH_RADIX) {
             if let Ok(collection_hash) = collection_radix.as_decimal() {
                 let origin_kv = StoreKVBuilder::open(collection_hash as StoreKVAtom)
-                    .or(io_error!("database open failure"))?;
+                    .map_err(|_| io_error!("database open failure"))?;
 
                 // Initialize KV database backup engine
                 let mut kv_backup_engine =
                     DBBackupEngine::open(&DBBackupEngineOptions::default(), &kv_backup_path)
-                        .or(io_error!("backup engine failure"))?;
+                        .map_err(|_| io_error!("backup engine failure"))?;
 
                 // Proceed actual KV database backup
                 kv_backup_engine
                     .create_new_backup(&origin_kv)
-                    .or(io_error!("database backup failure"))?;
+                    .map_err(|_| io_error!("database backup failure"))?;
 
                 info!(
                     "kv collection: {} backed up to path: {:?}",
@@ -355,11 +353,11 @@ impl StoreKVPool {
                 // Initialize KV database backup engine
                 let mut kv_backup_engine =
                     DBBackupEngine::open(&DBBackupEngineOptions::default(), &origin_path)
-                        .or(io_error!("backup engine failure"))?;
+                        .map_err(|_| io_error!("backup engine failure"))?;
 
                 kv_backup_engine
                     .restore_from_latest_backup(&kv_path, &kv_path, &DBRestoreOptions::default())
-                    .or(io_error!("database restore failure"))?;
+                    .map_err(|_| io_error!("database restore failure"))?;
 
                 info!(
                     "kv collection: {} restored to path: {:?} from backup: {:?}",
@@ -460,10 +458,8 @@ impl StoreGenericBuilder<StoreKVKey, StoreKV> for StoreKVBuilder {
                     lock: RwLock::new(false),
                 }
             })
-            .or_else(|err| {
+            .map_err(|err| {
                 error!("failed opening kv: {}", err);
-
-                Err(())
             })
     }
 }
@@ -599,7 +595,7 @@ impl<'a> StoreKVAction<'a> {
                             StoreMetaKey::IIDIncr => value
                                 .parse::<StoreObjectIID>()
                                 .ok()
-                                .map(|value| StoreMetaValue::IIDIncr(value))
+                                .map(StoreMetaValue::IIDIncr)
                                 .or(None),
                         }
                     } else {
