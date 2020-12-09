@@ -1,26 +1,30 @@
 on: [push, pull_request]
 
 name: Test and Build
+
 jobs:
   test:
     strategy:
       matrix:
         os: [ubuntu-latest]
       fail-fast: false
+
     runs-on: ${{ matrix.os }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
-      - name: Install Rust Toolchain
+
+      - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-          override: true
-      - name: Install cargo-fmt
-        run: rustup component add rustfmt --toolchain stable
-      - name: Verify Versions
+          components: rustfmt
+
+      - name: Verify versions
         run: rustc --version && rustup --version && cargo --version
-      - name: Cache Cargo Dependencies
+
+      - name: Cache build artifacts
         id: cache-cargo
         uses: actions/cache@v2
         with:
@@ -28,11 +32,13 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cargo Build Release
-        if: steps.cache-cargo.outputs.cache-hit != 'true'
-        run: cargo build --verbose --release
-      - name: Cargo Test
-        run: cargo clean && cargo test --verbose
-      - name: rustfmt
+          key: ${{ runner.os }}-cargo
+
+      - name: Build code
+        run: cargo build
+
+      - name: Test code
+        run: cargo test
+
+      - name: Check code style
         run: cargo fmt -- --check
