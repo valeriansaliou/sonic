@@ -1,7 +1,7 @@
 Sonic
 =====
 
-[![Build Status](https://travis-ci.org/valeriansaliou/sonic.svg?branch=master)](https://travis-ci.org/valeriansaliou/sonic) [![Buy Me A Coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg)](https://www.buymeacoffee.com/valeriansaliou)
+[![Test and Build](https://github.com/valeriansaliou/sonic/workflows/Test%20and%20Build/badge.svg?branch=master)](https://github.com/valeriansaliou/sonic/actions?query=workflow%3A%22Test+and+Build%22) [![Buy Me A Coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg)](https://www.buymeacoffee.com/valeriansaliou)
 
 **Sonic is a fast, lightweight and schema-less search backend. It ingests search texts and identifier tuples that can then be queried against in a microsecond's time.**
 

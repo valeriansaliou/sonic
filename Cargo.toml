@@ -11,10 +11,6 @@ keywords = ["search", "query", "server", "index"]
 categories = ["database-implementations", "web-programming"]
 authors = ["Valerian Saliou <valerian@valeriansaliou.name>", "Baptiste Jamin <baptistejamin@gmail.com>"]
 
-[badges]
-travis-ci = { repository = "valeriansaliou/sonic", branch = "master" }
-coveralls = { repository = "valeriansaliou/sonic", branch = "master", service = "github" }
-
 [[bin]]
 name = "sonic"
 path = "src/main.rs"
