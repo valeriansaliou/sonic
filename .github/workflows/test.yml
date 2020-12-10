@@ -23,8 +23,11 @@ jobs:
           components: rustfmt
           override: true
 
+      - name: Install NodeJS
+        uses: actions/setup-node@v1
+
       - name: Verify versions
-        run: rustc --version && rustup --version && cargo --version
+        run: rustc --version && rustup --version && cargo --version && node --version && npm --version
 
       - name: Cache build artifacts
         id: cache-cargo
@@ -36,6 +39,14 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ matrix.rust-toolchain }}
 
+      - name: Cache integration artifacts
+        id: cache-integration
+        uses: actions/cache@v2
+        with:
+          path: |
+            tests/integration/runner/node_modules
+          key: ${{ runner.os }}-integration-${{ matrix.rust-toolchain }}
+
       - name: Build code
         run: cargo build
 
@@ -44,3 +55,6 @@ jobs:
 
       - name: Check code style
         run: cargo fmt -- --check
+
+      - name: Run integration tests
+        run: tests/integration/scripts/run.sh
