@@ -29,7 +29,7 @@ lazy_static! {
 lazy_static! {
     static ref STOPWORDS_UKR: HashSet<&'static str> = make(ukr::STOPWORDS_UKR);
     static ref STOPWORDS_KAT: HashSet<&'static str> = make(kat::STOPWORDS_KAT);
-    static ref STOPWORDS_ARB: HashSet<&'static str> = make(arb::STOPWORDS_ARB);
+    static ref STOPWORDS_ARA: HashSet<&'static str> = make(ara::STOPWORDS_ARA);
     static ref STOPWORDS_HIN: HashSet<&'static str> = make(hin::STOPWORDS_HIN);
     static ref STOPWORDS_JPN: HashSet<&'static str> = make(jpn::STOPWORDS_JPN);
     static ref STOPWORDS_HEB: HashSet<&'static str> = make(heb::STOPWORDS_HEB);
@@ -219,7 +219,7 @@ impl LexerStopWord {
             Lang::Deu => &*STOPWORDS_DEU,
             Lang::Ukr => &*STOPWORDS_UKR,
             Lang::Kat => &*STOPWORDS_KAT,
-            Lang::Arb => &*STOPWORDS_ARB,
+            Lang::Ara => &*STOPWORDS_ARA,
             Lang::Hin => &*STOPWORDS_HIN,
             Lang::Jpn => &*STOPWORDS_JPN,
             Lang::Heb => &*STOPWORDS_HEB,
@@ -362,7 +362,7 @@ impl LexerStopWord {
                 Lang::Tuk,
                 Lang::Mkd,
             ],
-            Script::Arabic => &[Lang::Arb, Lang::Urd, Lang::Skr, Lang::Uig, Lang::Pes],
+            Script::Arabic => &[Lang::Ara, Lang::Urd, Lang::Skr, Lang::Uig, Lang::Pes],
             Script::Devanagari => &[Lang::Hin, Lang::Mar, Lang::Mai, Lang::Bho, Lang::Nep],
             Script::Ethiopic => &[Lang::Amh, Lang::Tir],
             Script::Hebrew => &[Lang::Heb, Lang::Ydd],

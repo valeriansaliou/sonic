@@ -10,7 +10,7 @@
 pub mod afr;
 pub mod aka;
 pub mod amh;
-pub mod arb;
+pub mod ara;
 pub mod azj;
 pub mod bel;
 pub mod ben;
