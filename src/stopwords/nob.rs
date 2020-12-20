@@ -225,5 +225,5 @@ pub static STOPWORDS_NOB: &[&'static str] = &[
     "vært",
     "vöre",
     "vört",
-    "å"
+    "å",
 ];
