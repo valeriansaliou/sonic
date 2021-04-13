@@ -4,7 +4,7 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-pub static STOPWORDS_BUL: &[&'static str] = &[
+pub static STOPWORDS_BUL: &[&str] = &[
     "ð°",
     "ð°ð²ñ‚ðµð½ñ‚ð¸ñ‡ðµð½",
     "ð°ð·",

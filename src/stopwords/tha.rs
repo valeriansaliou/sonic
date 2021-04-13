@@ -4,7 +4,7 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-pub static STOPWORDS_THA: &[&'static str] = &[
+pub static STOPWORDS_THA: &[&str] = &[
     "กล่าว",
     "กว่า",
     "กัน",

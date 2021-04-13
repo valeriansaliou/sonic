@@ -66,13 +66,13 @@ pub trait StoreGenericPool<
 
                 Ok(store_box)
             }
-            Err(err) => {
+            Err(_) => {
                 error!(
                     "failed opening {} store for collection: {} (pool key: {})",
                     kind, collection_str, pool_key
                 );
 
-                Err(err)
+                Err(())
             }
         }
     }

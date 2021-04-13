@@ -4,7 +4,7 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-pub static STOPWORDS_DEU: &[&'static str] = &[
+pub static STOPWORDS_DEU: &[&str] = &[
     "a",
     "ab",
     "aber",

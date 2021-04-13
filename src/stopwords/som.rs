@@ -4,7 +4,7 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-pub static STOPWORDS_SOM: &[&'static str] = &[
+pub static STOPWORDS_SOM: &[&str] = &[
     "aad",
     "albaabkii",
     "atabo",

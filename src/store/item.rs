@@ -30,13 +30,14 @@ impl<'a> StoreItemPart<'a> {
     pub fn from_str(part: &'a str) -> Result<Self, ()> {
         let len = part.len();
 
-        if len > STORE_ITEM_PART_LEN_MIN && len <= STORE_ITEM_PART_LEN_MAX {
-            if part.chars().all(|character| character.is_ascii()) {
-                return Ok(StoreItemPart(part));
-            }
+        if len > STORE_ITEM_PART_LEN_MIN
+            && len <= STORE_ITEM_PART_LEN_MAX
+            && part.chars().all(|character| character.is_ascii())
+        {
+            Ok(StoreItemPart(part))
+        } else {
+            Err(())
         }
-
-        Err(())
     }
 
     pub fn as_str(&self) -> &'a str {

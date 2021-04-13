@@ -78,8 +78,8 @@ const ATOM_HASH_RADIX: usize = 16;
 
 lazy_static! {
     pub static ref GRAPH_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
-    static ref GRAPH_ACQUIRE_LOCK: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
-    static ref GRAPH_REBUILD_LOCK: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
+    static ref GRAPH_ACQUIRE_LOCK: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
+    static ref GRAPH_REBUILD_LOCK: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
     static ref GRAPH_POOL: Arc<RwLock<HashMap<StoreFSTKey, StoreFSTBox>>> =
         Arc::new(RwLock::new(HashMap::new()));
     static ref GRAPH_CONSOLIDATE: Arc<RwLock<HashSet<StoreFSTKey>>> =
@@ -321,50 +321,43 @@ impl StoreFSTPool {
             let collection = collection?;
 
             // Actual collection found?
-            match (collection.file_type(), collection.file_name().to_str()) {
-                (Ok(collection_file_type), Some(collection_name)) => {
-                    if collection_file_type.is_dir() {
-                        debug!("fst collection ongoing {}: {}", action, collection_name);
+            if let (Ok(collection_file_type), Some(collection_name)) =
+                (collection.file_type(), collection.file_name().to_str())
+            {
+                if collection_file_type.is_dir() {
+                    debug!("fst collection ongoing {}: {}", action, collection_name);
 
-                        // Create write folder for collection
-                        fs::create_dir_all(write_path.join(collection_name))?;
+                    // Create write folder for collection
+                    fs::create_dir_all(write_path.join(collection_name))?;
 
-                        // Iterate on FST collection buckets
-                        for bucket in fs::read_dir(read_path.join(collection_name))? {
-                            let bucket = bucket?;
+                    // Iterate on FST collection buckets
+                    for bucket in fs::read_dir(read_path.join(collection_name))? {
+                        let bucket = bucket?;
 
-                            // Actual bucket found?
-                            match (bucket.file_type(), bucket.file_name().to_str()) {
-                                (Ok(bucket_file_type), Some(bucket_file_name)) => {
-                                    let bucket_file_name_len = bucket_file_name.len();
+                        // Actual bucket found?
+                        if let (Ok(bucket_file_type), Some(bucket_file_name)) =
+                            (bucket.file_type(), bucket.file_name().to_str())
+                        {
+                            let bucket_file_name_len = bucket_file_name.len();
 
-                                    if bucket_file_type.is_file()
-                                        && bucket_file_name_len > fst_extension_len
-                                        && bucket_file_name.ends_with(fst_extension)
-                                    {
-                                        // Acquire bucket name (from full file name)
-                                        let bucket_name = &bucket_file_name
-                                            [..(bucket_file_name_len - fst_extension_len)];
+                            if bucket_file_type.is_file()
+                                && bucket_file_name_len > fst_extension_len
+                                && bucket_file_name.ends_with(fst_extension)
+                            {
+                                // Acquire bucket name (from full file name)
+                                let bucket_name =
+                                    &bucket_file_name[..(bucket_file_name_len - fst_extension_len)];
 
-                                        debug!(
-                                            "fst bucket ongoing {}: {}/{}",
-                                            action, collection_name, bucket_name
-                                        );
+                                debug!(
+                                    "fst bucket ongoing {}: {}/{}",
+                                    action, collection_name, bucket_name
+                                );
 
-                                        fn_item(
-                                            write_path,
-                                            &bucket.path(),
-                                            collection_name,
-                                            bucket_name,
-                                        )?;
-                                    }
-                                }
-                                _ => {}
+                                fn_item(write_path, &bucket.path(), collection_name, bucket_name)?;
                             }
                         }
                     }
                 }
-                _ => {}
             }
         }
 
@@ -415,7 +408,7 @@ impl StoreFSTPool {
                     collection_hash as StoreFSTAtom,
                     bucket_hash as StoreFSTAtom,
                 )
-                .or(io_error!("graph open failure"))?;
+                .map_err(|_| io_error!("graph open failure"))?;
 
                 let mut origin_fst_stream = origin_fst.stream();
 
@@ -423,8 +416,8 @@ impl StoreFSTPool {
                     count_words += 1;
 
                     // Write word, and append a new line
-                    backup_fst_writer.write(word)?;
-                    backup_fst_writer.write("\n".as_bytes())?;
+                    backup_fst_writer.write_all(word)?;
+                    backup_fst_writer.write_all(b"\n")?;
                 }
 
                 info!(
@@ -484,19 +477,19 @@ impl StoreFSTPool {
                 let fst_backup_reader = BufReader::new(File::open(&origin_path)?);
 
                 let mut fst_builder = FSTSetBuilder::new(fst_writer)
-                    .or(io_error!("graph restore builder failure"))?;
+                    .map_err(|_| io_error!("graph restore builder failure"))?;
 
                 for word in fst_backup_reader.lines() {
                     let word = word?;
 
                     fst_builder
                         .insert(word)
-                        .or(io_error!("graph restore word insert failure"))?;
+                        .map_err(|_| io_error!("graph restore word insert failure"))?;
                 }
 
                 fst_builder
                     .finish()
-                    .or(io_error!("graph restore finish failure"))?;
+                    .map_err(|_| io_error!("graph restore finish failure"))?;
 
                 info!(
                     "fst bucket: {}/{} restored to path: {:?} from backup: {:?}",
@@ -801,10 +794,8 @@ impl StoreGenericBuilder<StoreFSTKey, StoreFST> for StoreFSTBuilder {
                     last_consolidated: Arc::new(RwLock::new(now)),
                 }
             })
-            .or_else(|err| {
+            .map_err(|err| {
                 error!("failed opening fst: {}", err);
-
-                Err(())
             })
     }
 }
@@ -1262,7 +1253,7 @@ impl StoreFSTMisc {
         }
 
         // Not over limit
-        return false;
+        false
     }
 }
 
