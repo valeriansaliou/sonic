@@ -178,6 +178,8 @@ You can find below a list of Sonic integrations provided by the community (many 
   * **[nim-sonic-client](https://github.com/xmonader/nim-sonic-client)** by [@xmonader](https://github.com/xmonader)
 * **.NET**:
   * **[nsonic](https://github.com/spikensbror-dotnet/nsonic)** by [@spikensbror](https://github.com/spikensbror)
+* **Deno**:
+  * **[deno_sonic](https://github.com/erfanium/deno_sonic)** by [@erfanium](https://github.com/erfanium)
 
 _ℹ️ Cannot find the library for your programming language? Build your own and be referenced here! ([contact me](https://valeriansaliou.name/))_
 
