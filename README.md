@@ -170,6 +170,8 @@ You can find below a list of Sonic integrations provided by the community (many 
 * **Java**:
   * **[java-sonic](https://github.com/twohou/java-sonic)** by [@touhonoob](https://github.com/touhonoob)
   * **[jsonic](https://github.com/alohaking/jsonic)** by [@alohaking](https://github.com/alohaking)
+* **Deno**:
+  * **[deno-sonic](https://github.com/erfanium/deno_sonic)** by [@erfanium](https://github.com/erfanium)
 * **Elixir**:
   * **[sonix](https://github.com/imerkle/sonix)** by [@imerkle](https://github.com/imerkle)
 * **Crystal**:
@@ -178,8 +180,6 @@ You can find below a list of Sonic integrations provided by the community (many 
   * **[nim-sonic-client](https://github.com/xmonader/nim-sonic-client)** by [@xmonader](https://github.com/xmonader)
 * **.NET**:
   * **[nsonic](https://github.com/spikensbror-dotnet/nsonic)** by [@spikensbror](https://github.com/spikensbror)
-* **Deno**:
-  * **[deno_sonic](https://github.com/erfanium/deno_sonic)** by [@erfanium](https://github.com/erfanium)
 
 _ℹ️ Cannot find the library for your programming language? Build your own and be referenced here! ([contact me](https://valeriansaliou.name/))_
 
