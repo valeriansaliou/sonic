@@ -1,6 +1,18 @@
 Sonic Changelog
 ===============
 
+## 1.3.1 (2021-11-02)
+
+### Changes
+
+* Added Norwegian stopwords [[@mikalv](https://github.com/mikalv), [#236](https://github.com/valeriansaliou/sonic/pull/236)].
+* Added Catalan stopwords [[@coopanio](https://github.com/coopanio), [#227](https://github.com/valeriansaliou/sonic/pull/227)].
+* Dependencies have been bumped to latest versions (namely: `rocksdb`, `fst-levenshtein`, `fst-regex`, `hashbrown`, `whatlang`, `byteorder`, `rand`) [[@valeriansaliou](https://github.com/valeriansaliou)].
+
+### Deprecations
+
+* A few rarely used languages have been removed, following `whatlang` `v0.12.0` release, [see the notes here](https://github.com/greyblake/whatlang-rs/blob/master/CHANGELOG.md#v0120---2021-04-18) [[@valeriansaliou](https://github.com/valeriansaliou)].
+
 ## 1.3.0 (2020-06-27)
 
 ### Changes
