@@ -147,9 +147,9 @@ dependencies = [
 
 [[package]]
 name = "fst-levenshtein"
-version = "0.2.1"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e88429a6c230ef3bedcc8bc7c063252f7e82e8192571aebb56b094240a0b5e8"
+checksum = "fb3fe22f96106ccbb6d06cd738c4ae65f678811b2036ff63b736fd0814313e0b"
 dependencies = [
  "fst",
  "utf8-ranges",
@@ -157,9 +157,9 @@ dependencies = [
 
 [[package]]
 name = "fst-regex"
-version = "0.2.2"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87aca1d91eed3c128132cee31d291fd4e8492df0b742a5b1453857a4c7cedd88"
+checksum = "0a661915a88dbce93ac018dc96fe0d67cbc3bc9899eea840891ee6a1367144b1"
 dependencies = [
  "fst",
  "regex-syntax 0.3.9",
