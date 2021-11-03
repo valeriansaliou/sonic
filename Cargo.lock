@@ -494,7 +494,7 @@ checksum = "43b2853a4d09f215c24cc5489c992ce46052d359b5109343cbafbf26bc62f8a3"
 
 [[package]]
 name = "sonic-server"
-version = "1.3.0"
+version = "1.3.1"
 dependencies = [
  "byteorder",
  "clap",
