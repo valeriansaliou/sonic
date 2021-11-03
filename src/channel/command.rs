@@ -366,6 +366,7 @@ impl ChannelCommandBase {
         thread_rng()
             .sample_iter(&Alphanumeric)
             .take(EVENT_ID_SIZE)
+            .map(|value| value as char)
             .collect()
     }
 }
