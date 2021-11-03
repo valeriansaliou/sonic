@@ -59,7 +59,7 @@ Sonic is integrated in all Crisp search products on the [Crisp](https://crisp.ch
 
 ### Installation
 
-Sonic is built in Rust. To install it, either download a version from the [Sonic releases](https://github.com/valeriansaliou/sonic/releases) page, use `cargo install` or pull the source code from `master`.
+Sonic is built in Rust. To install it, use `cargo install` or pull the source code from `master`.
 
 **👉 Install from source:**
 
