@@ -11,7 +11,7 @@ Sonic Changelog
 
 ### Deprecations
 
-* A few rarely-used languages have been removed, following `whatlang` `v0.12.0` release, [see the notes here](https://github.com/greyblake/whatlang-rs/blob/master/CHANGELOG.md#v0120---2021-04-18) [[@valeriansaliou](https://github.com/valeriansaliou)].
+* A few rarely-used languages have been removed, following `whatlang` `v0.12.0` release, [see the notes here](https://github.com/greyblake/whatlang-rs/blob/master/CHANGELOG.md#v0120---2021-04-18) [[@valeriansaliou](https://github.com/valeriansaliou), [940d3c3](https://github.com/valeriansaliou/sonic/commit/940d3c3070e144a10f041fcfdf77d15548598eee)].
 
 ## 1.3.0 (2020-06-27)
 
