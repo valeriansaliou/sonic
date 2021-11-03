@@ -9,33 +9,9 @@
 #[macro_use]
 extern crate log;
 #[macro_use]
-extern crate clap;
-#[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate serde_derive;
-extern crate byteorder;
-extern crate fst;
-extern crate fst_levenshtein;
-extern crate fst_regex;
-extern crate hashbrown;
-#[cfg(unix)]
-#[cfg(feature = "alloc-jemalloc")]
-extern crate jemallocator;
-extern crate linked_hash_set;
-#[cfg(unix)]
-extern crate nix;
-extern crate radix;
-extern crate rand;
-extern crate regex;
-extern crate regex_syntax;
-extern crate rocksdb;
-extern crate toml;
-extern crate twox_hash;
-extern crate unicode_segmentation;
-extern crate whatlang;
-#[cfg(windows)]
-extern crate winapi;
 
 mod channel;
 mod config;
@@ -122,10 +98,10 @@ gen_spawn_managed!(
 gen_spawn_managed!("tasker", spawn_tasker, THREAD_NAME_TASKER, TaskerBuilder);
 
 fn make_app_args() -> AppArgs {
-    let matches = App::new(crate_name!())
-        .version(crate_version!())
-        .author(crate_authors!())
-        .about(crate_description!())
+    let matches = App::new(clap::crate_name!())
+        .version(clap::crate_version!())
+        .author(clap::crate_authors!())
+        .about(clap::crate_description!())
         .arg(
             Arg::with_name("config")
                 .short("c")
