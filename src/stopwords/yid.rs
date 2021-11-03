@@ -5,7 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 // This is an alias for HEB stopwords, but I may be mistaken there.
-pub static STOPWORDS_YDD: &[&'static str] = &[
+pub static STOPWORDS_YID: &[&'static str] = &[
     "אבל",
     "או",
     "אולי",

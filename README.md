@@ -209,7 +209,6 @@ Sonic supports a wide range of languages in its lexing system. If a language is 
 * 🇫🇷 French
 * 🇩🇪 German
 * 🇬🇷 Greek
-* 🇳🇬 Hausa
 * 🇮🇱 Hebrew
 * 🇮🇳 Hindi
 * 🇭🇺 Hungarian
@@ -219,7 +218,6 @@ Sonic supports a wide range of languages in its lexing system. If a language is 
 * 🇮🇳 Kannada
 * 🇰🇭 Khmer
 * 🇰🇷 Korean
-* 🏳 Kurdish
 * 🏳 Latin
 * 🇱🇻 Latvian
 * 🇱🇹 Lithuanian
@@ -232,10 +230,8 @@ Sonic supports a wide range of languages in its lexing system. If a language is 
 * 🇷🇺 Russian
 * 🇸🇰 Slovak
 * 🇸🇮 Slovene
-* 🇸🇴 Somali
 * 🇪🇸 Spanish
 * 🇸🇪 Swedish
-* 🇵🇭 Tagalog
 * 🇮🇳 Tamil
 * 🇹🇭 Thai
 * 🇹🇷 Turkish
@@ -243,7 +239,6 @@ Sonic supports a wide range of languages in its lexing system. If a language is 
 * 🇵🇰 Urdu
 * 🇻🇳 Vietnamese
 * 🇮🇱 Yiddish
-* 🇳🇬 Yoruba
 * 🇿🇦 Zulu
 
 ## How fast & lightweight is it?

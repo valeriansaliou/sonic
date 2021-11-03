@@ -32,10 +32,10 @@ fst-levenshtein = "0.2"
 fst-regex = "0.2"
 regex-syntax = "0.6"
 twox-hash = "1.5"
-byteorder = "1.3"
-hashbrown = "0.9"
+byteorder = "1.4"
+hashbrown = "0.11"
 linked_hash_set = "0.1"
-whatlang = "0.11"
+whatlang = "0.12"
 regex = "1.4"
 
 [target.'cfg(unix)'.dependencies]
