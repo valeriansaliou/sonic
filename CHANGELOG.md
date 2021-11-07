@@ -5,6 +5,7 @@ Sonic Changelog
 
 ### Changes
 
+* Apple Silicon is now supported [[@valeriansaliou](https://github.com/valeriansaliou)].
 * Added Norwegian stopwords [[@mikalv](https://github.com/mikalv), [#236](https://github.com/valeriansaliou/sonic/pull/236)].
 * Added Catalan stopwords [[@coopanio](https://github.com/coopanio), [#227](https://github.com/valeriansaliou/sonic/pull/227)].
 * Dependencies have been bumped to latest versions (namely: `rocksdb`, `fst-levenshtein`, `fst-regex`, `hashbrown`, `whatlang`, `byteorder`, `rand`) [[@valeriansaliou](https://github.com/valeriansaliou)].
