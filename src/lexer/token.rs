@@ -16,16 +16,12 @@ use super::stopwords::LexerStopWord;
 use crate::query::types::QueryGenericLang;
 use crate::store::identifiers::{StoreTermHash, StoreTermHashed};
 
-lazy_static! {
-    static ref JIE_BA: jieba_rs::Jieba = jieba_rs::Jieba::new();
-}
-
 pub struct TokenLexerBuilder;
 
 pub struct TokenLexer<'a> {
     mode: TokenLexerMode,
     locale: Option<Lang>,
-    words: Words<'a>,
+    words: TokenLexerWords<'a>,
     yields: HashSet<StoreTermHashed>,
 }
 
@@ -35,25 +31,18 @@ pub enum TokenLexerMode {
     NormalizeOnly,
 }
 
-enum Words<'a> {
+enum TokenLexerWords<'a> {
     UAX29(UnicodeWords<'a>),
     JieBa(IntoIter<&'a str>),
-}
-
-impl<'a> Iterator for Words<'a> {
-    type Item = &'a str;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Words::UAX29(ws) => ws.next(),
-            Words::JieBa(ws) => ws.next(),
-        }
-    }
 }
 
 const TEXT_LANG_TRUNCATE_OVER_CHARS: usize = 200;
 const TEXT_LANG_DETECT_PROCEED_OVER_CHARS: usize = 20;
 const TEXT_LANG_DETECT_NGRAM_UNDER_CHARS: usize = 60;
+
+lazy_static! {
+    static ref TOKENIZER_JIEBA: jieba_rs::Jieba = jieba_rs::Jieba::new();
+}
 
 impl TokenLexerBuilder {
     pub fn from(mode: TokenLexerMode, text: &str) -> Result<TokenLexer, ()> {
@@ -234,12 +223,10 @@ impl TokenLexerBuilder {
 
 impl<'a> TokenLexer<'a> {
     fn new(mode: TokenLexerMode, text: &'a str, locale: Option<Lang>) -> TokenLexer<'a> {
+        // Tokenize words (depending on the locale)
         let words = match locale {
-            Some(loc) if loc == Lang::Cmn => {
-                let words = JIE_BA.cut(text, false);
-                Words::JieBa(words.into_iter())
-            },
-            _ => Words::UAX29(text.unicode_words()),
+            Some(Lang::Cmn) => TokenLexerWords::JieBa(TOKENIZER_JIEBA.cut(text, false).into_iter()),
+            _ => TokenLexerWords::UAX29(text.unicode_words()),
         };
 
         TokenLexer {
@@ -315,6 +302,17 @@ impl<'a> Iterator for TokenLexer<'a> {
         }
 
         None
+    }
+}
+
+impl<'a> Iterator for TokenLexerWords<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            TokenLexerWords::UAX29(ws) => ws.next(),
+            TokenLexerWords::JieBa(ws) => ws.next(),
+        }
     }
 }
 
