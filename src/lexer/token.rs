@@ -6,6 +6,7 @@
 
 use hashbrown::HashSet;
 use std::time::Instant;
+use std::vec::IntoIter;
 use unicode_segmentation::{UnicodeSegmentation, UnicodeWords};
 use whatlang::{
     detect as lang_detect_all, detect_lang as lang_detect, detect_script as script_detect, Lang,
@@ -15,12 +16,16 @@ use super::stopwords::LexerStopWord;
 use crate::query::types::QueryGenericLang;
 use crate::store::identifiers::{StoreTermHash, StoreTermHashed};
 
+lazy_static! {
+    static ref JIE_BA: jieba_rs::Jieba = jieba_rs::Jieba::new();
+}
+
 pub struct TokenLexerBuilder;
 
 pub struct TokenLexer<'a> {
     mode: TokenLexerMode,
     locale: Option<Lang>,
-    words: UnicodeWords<'a>,
+    words: Words<'a>,
     yields: HashSet<StoreTermHashed>,
 }
 
@@ -28,6 +33,22 @@ pub struct TokenLexer<'a> {
 pub enum TokenLexerMode {
     NormalizeAndCleanup(Option<Lang>),
     NormalizeOnly,
+}
+
+enum Words<'a> {
+    UAX29(UnicodeWords<'a>),
+    JieBa(IntoIter<&'a str>),
+}
+
+impl<'a> Iterator for Words<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Words::UAX29(ws) => ws.next(),
+            Words::JieBa(ws) => ws.next(),
+        }
+    }
 }
 
 const TEXT_LANG_TRUNCATE_OVER_CHARS: usize = 200;
@@ -213,10 +234,18 @@ impl TokenLexerBuilder {
 
 impl<'a> TokenLexer<'a> {
     fn new(mode: TokenLexerMode, text: &'a str, locale: Option<Lang>) -> TokenLexer<'a> {
+        let words = match locale {
+            Some(loc) if loc == Lang::Cmn => {
+                let words = JIE_BA.cut(text, false);
+                Words::JieBa(words.into_iter())
+            },
+            _ => Words::UAX29(text.unicode_words()),
+        };
+
         TokenLexer {
             mode,
             locale,
-            words: text.unicode_words(),
+            words,
             yields: HashSet::new(),
         }
     }
