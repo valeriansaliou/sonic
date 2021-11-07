@@ -532,19 +532,24 @@ mod benches {
         });
     }
 
-    #[cfg(feature = "tokenizer-chinese")]
     #[bench]
     fn bench_clean_token_chinese_build(b: &mut Bencher) {
-        b.iter(|| TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup(None), "快狐跨懒狗"));
+        b.iter(|| {
+            TokenLexerBuilder::from(
+                TokenLexerMode::NormalizeAndCleanup(None),
+                "我们中出了一个叛徒",
+            )
+        });
     }
 
-    #[cfg(feature = "tokenizer-chinese")]
     #[bench]
     fn bench_clean_token_chinese_exhaust(b: &mut Bencher) {
         b.iter(|| {
-            let token_cleaner =
-                TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup(None), "快狐跨懒狗")
-                    .unwrap();
+            let token_cleaner = TokenLexerBuilder::from(
+                TokenLexerMode::NormalizeAndCleanup(None),
+                "我们中出了一个叛徒",
+            )
+            .unwrap();
 
             token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
         });
