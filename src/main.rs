@@ -45,7 +45,7 @@ struct AppArgs {
 }
 
 #[cfg(unix)]
-#[cfg(feature = "alloc-jemalloc")]
+#[cfg(feature = "allocator-jemalloc")]
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 

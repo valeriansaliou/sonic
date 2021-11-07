@@ -6,11 +6,13 @@
 
 use hashbrown::HashSet;
 use std::time::Instant;
-use std::vec::IntoIter;
 use unicode_segmentation::{UnicodeSegmentation, UnicodeWords};
 use whatlang::{
     detect as lang_detect_all, detect_lang as lang_detect, detect_script as script_detect, Lang,
 };
+
+#[cfg(feature = "tokenizer-chinese")]
+use std::vec::IntoIter;
 
 use super::stopwords::LexerStopWord;
 use crate::query::types::QueryGenericLang;
@@ -33,6 +35,8 @@ pub enum TokenLexerMode {
 
 enum TokenLexerWords<'a> {
     UAX29(UnicodeWords<'a>),
+
+    #[cfg(feature = "tokenizer-chinese")]
     JieBa(IntoIter<&'a str>),
 }
 
@@ -40,6 +44,7 @@ const TEXT_LANG_TRUNCATE_OVER_CHARS: usize = 200;
 const TEXT_LANG_DETECT_PROCEED_OVER_CHARS: usize = 20;
 const TEXT_LANG_DETECT_NGRAM_UNDER_CHARS: usize = 60;
 
+#[cfg(feature = "tokenizer-chinese")]
 lazy_static! {
     static ref TOKENIZER_JIEBA: jieba_rs::Jieba = jieba_rs::Jieba::new();
 }
@@ -225,7 +230,9 @@ impl<'a> TokenLexer<'a> {
     fn new(mode: TokenLexerMode, text: &'a str, locale: Option<Lang>) -> TokenLexer<'a> {
         // Tokenize words (depending on the locale)
         let words = match locale {
+            #[cfg(feature = "tokenizer-chinese")]
             Some(Lang::Cmn) => TokenLexerWords::JieBa(TOKENIZER_JIEBA.cut(text, false).into_iter()),
+
             _ => TokenLexerWords::UAX29(text.unicode_words()),
         };
 
@@ -310,8 +317,10 @@ impl<'a> Iterator for TokenLexerWords<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            TokenLexerWords::UAX29(ws) => ws.next(),
-            TokenLexerWords::JieBa(ws) => ws.next(),
+            TokenLexerWords::UAX29(token) => token.next(),
+
+            #[cfg(feature = "tokenizer-chinese")]
+            TokenLexerWords::JieBa(token) => token.next(),
         }
     }
 }
@@ -373,20 +382,19 @@ mod tests {
         assert_eq!(token_cleaner.next(), None);
     }
 
+    #[cfg(feature = "tokenizer-chinese")]
     #[test]
     fn it_cleans_token_chinese() {
         let mut token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup(None),
-            "快狐跨懒狗快狐跨懒狗",
+            "我们中出了一个叛徒",
         )
         .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Cmn));
-        assert_eq!(token_cleaner.next(), Some(("快".to_string(), 126546256)));
-        assert_eq!(token_cleaner.next(), Some(("狐".to_string(), 2879689662)));
-        assert_eq!(token_cleaner.next(), Some(("跨".to_string(), 2913342670)));
-        assert_eq!(token_cleaner.next(), Some(("懒".to_string(), 3199935961)));
-        assert_eq!(token_cleaner.next(), Some(("狗".to_string(), 3360772096)));
+        assert_eq!(token_cleaner.next(), Some(("出".to_string(), 241978070)));
+        assert_eq!(token_cleaner.next(), Some(("一个".to_string(), 2596274530)));
+        assert_eq!(token_cleaner.next(), Some(("叛徒".to_string(), 3244183759)));
         assert_eq!(token_cleaner.next(), None);
     }
 
@@ -524,11 +532,13 @@ mod benches {
         });
     }
 
+    #[cfg(feature = "tokenizer-chinese")]
     #[bench]
     fn bench_clean_token_chinese_build(b: &mut Bencher) {
         b.iter(|| TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup(None), "快狐跨懒狗"));
     }
 
+    #[cfg(feature = "tokenizer-chinese")]
     #[bench]
     fn bench_clean_token_chinese_exhaust(b: &mut Bencher) {
         b.iter(|| {

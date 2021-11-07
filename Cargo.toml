@@ -25,7 +25,7 @@ serde = "1.0"
 serde_derive = "1.0"
 rand = "0.8"
 unicode-segmentation = "1.6"
-jieba-rs = "0.6"
+jieba-rs = { version = "0.6", optional = true }
 radix = "0.6"
 rocksdb = { version = "0.17", features = ["zstd"] }
 fst = "0.3"
@@ -47,8 +47,9 @@ jemallocator = { version = "0.3", optional = true }
 winapi = { version = "0.3", features = ["minwindef", "consoleapi"] }
 
 [features]
-default = ["alloc-jemalloc"]
-alloc-jemalloc = ["jemallocator"]
+default = ["allocator-jemalloc", "tokenizer-chinese"]
+allocator-jemalloc = ["jemallocator"]
+tokenizer-chinese = ["jieba-rs"]
 benchmark = []
 
 [profile.dev]
