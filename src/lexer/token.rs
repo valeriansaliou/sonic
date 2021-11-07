@@ -384,7 +384,7 @@ mod tests {
 
     #[cfg(feature = "tokenizer-chinese")]
     #[test]
-    fn it_cleans_token_chinese() {
+    fn it_cleans_token_chinese_jieba() {
         let mut token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup(None),
             "我们中出了一个叛徒",
@@ -395,6 +395,24 @@ mod tests {
         assert_eq!(token_cleaner.next(), Some(("出".to_string(), 241978070)));
         assert_eq!(token_cleaner.next(), Some(("一个".to_string(), 2596274530)));
         assert_eq!(token_cleaner.next(), Some(("叛徒".to_string(), 3244183759)));
+        assert_eq!(token_cleaner.next(), None);
+    }
+
+    #[cfg(not(feature = "tokenizer-chinese"))]
+    #[test]
+    fn it_cleans_token_chinese_naive() {
+        let mut token_cleaner = TokenLexerBuilder::from(
+            TokenLexerMode::NormalizeAndCleanup(None),
+            "快狐跨懒狗快狐跨懒狗",
+        )
+        .unwrap();
+
+        assert_eq!(token_cleaner.locale, Some(Lang::Cmn));
+        assert_eq!(token_cleaner.next(), Some(("快".to_string(), 126546256)));
+        assert_eq!(token_cleaner.next(), Some(("狐".to_string(), 2879689662)));
+        assert_eq!(token_cleaner.next(), Some(("跨".to_string(), 2913342670)));
+        assert_eq!(token_cleaner.next(), Some(("懒".to_string(), 3199935961)));
+        assert_eq!(token_cleaner.next(), Some(("狗".to_string(), 3360772096)));
         assert_eq!(token_cleaner.next(), None);
     }
 
