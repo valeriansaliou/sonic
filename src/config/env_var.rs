@@ -84,15 +84,15 @@ mod tests {
 
     #[test]
     fn it_checks_environment_variable_patterns() {
-        assert_eq!(is_env_var("${env.XXX}"), true);
-        assert_eq!(is_env_var("${env.XXX"), false);
-        assert_eq!(is_env_var("${env.XXX}a"), false);
-        assert_eq!(is_env_var("a${env.XXX}"), false);
-        assert_eq!(is_env_var("{env.XXX}"), false);
-        assert_eq!(is_env_var("$env.XXX}"), false);
-        assert_eq!(is_env_var("${envXXX}"), false);
-        assert_eq!(is_env_var("${.XXX}"), false);
-        assert_eq!(is_env_var("${XXX}"), false);
+        assert!(is_env_var("${env.XXX}"));
+        assert!(!is_env_var("${env.XXX"));
+        assert!(!is_env_var("${env.XXX}a"));
+        assert!(!is_env_var("a${env.XXX}"));
+        assert!(!is_env_var("{env.XXX}"));
+        assert!(!is_env_var("$env.XXX}"));
+        assert!(!is_env_var("${envXXX}"));
+        assert!(!is_env_var("${.XXX}"));
+        assert!(!is_env_var("${XXX}"));
     }
 
     #[test]

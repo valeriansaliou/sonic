@@ -329,12 +329,12 @@ mod tests {
 
     #[test]
     fn it_detects_stopwords() {
-        assert_eq!(LexerStopWord::is("the", None), false);
-        assert_eq!(LexerStopWord::is("the", Some(Lang::Eng)), true);
-        assert_eq!(LexerStopWord::is("fox", Some(Lang::Eng)), false);
-        assert_eq!(LexerStopWord::is("bonjour", Some(Lang::Fra)), false);
-        assert_eq!(LexerStopWord::is("ici", Some(Lang::Fra)), true);
-        assert_eq!(LexerStopWord::is("adéu", Some(Lang::Cat)), true);
+        assert!(!LexerStopWord::is("the", None));
+        assert!(LexerStopWord::is("the", Some(Lang::Eng)));
+        assert!(!LexerStopWord::is("fox", Some(Lang::Eng)));
+        assert!(!LexerStopWord::is("bonjour", Some(Lang::Fra)));
+        assert!(LexerStopWord::is("ici", Some(Lang::Fra)));
+        assert!(LexerStopWord::is("adéu", Some(Lang::Cat)));
     }
 
     #[test]

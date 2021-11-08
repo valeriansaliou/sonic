@@ -184,7 +184,7 @@ impl ChannelCommandBase {
 
         for text_part in parts {
             if !text_raw.is_empty() {
-                text_raw.push_str(" ");
+                text_raw.push(' ');
             }
 
             text_raw.push_str(text_part);
@@ -334,10 +334,10 @@ impl ChannelCommandBase {
             })
     }
 
-    pub fn commit_pending_operation<'a>(
+    pub fn commit_pending_operation(
         query_type: &'static str,
         query_id: &str,
-        query_builder: QueryBuilderResult<'a>,
+        query_builder: QueryBuilderResult,
     ) -> ChannelResult {
         // Idea: this could be made asynchronous in the future, if there are some latency issues \
         //   on large Sonic deployments. The idea would be to have a number of worker threads for \
@@ -531,8 +531,7 @@ impl ChannelCommandSearch {
                             Ok((Some(query_limit_parsed), None, None))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
-                                &meta_key,
-                                &meta_value,
+                                meta_key, meta_value,
                             ))
                         }
                     }
@@ -542,8 +541,7 @@ impl ChannelCommandSearch {
                             Ok((None, Some(query_offset_parsed), None))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
-                                &meta_key,
-                                &meta_value,
+                                meta_key, meta_value,
                             ))
                         }
                     }
@@ -553,19 +551,17 @@ impl ChannelCommandSearch {
                             Ok((None, None, Some(query_lang_parsed)))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
-                                &meta_key,
-                                &meta_value,
+                                meta_key, meta_value,
                             ))
                         }
                     }
                     _ => Err(ChannelCommandBase::make_error_invalid_meta_key(
-                        &meta_key,
-                        &meta_value,
+                        meta_key, meta_value,
                     )),
                 }
             }
             Err(err) => Err(ChannelCommandBase::make_error_invalid_meta_key(
-                &err.0, &err.1,
+                err.0, err.1,
             )),
         }
     }
@@ -584,19 +580,17 @@ impl ChannelCommandSearch {
                             Ok(Some(suggest_limit_parsed))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
-                                &meta_key,
-                                &meta_value,
+                                meta_key, meta_value,
                             ))
                         }
                     }
                     _ => Err(ChannelCommandBase::make_error_invalid_meta_key(
-                        &meta_key,
-                        &meta_value,
+                        meta_key, meta_value,
                     )),
                 }
             }
             Err(err) => Err(ChannelCommandBase::make_error_invalid_meta_key(
-                &err.0, &err.1,
+                err.0, err.1,
             )),
         }
     }
@@ -767,19 +761,17 @@ impl ChannelCommandIngest {
                             Ok(Some(query_lang_parsed))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
-                                &meta_key,
-                                &meta_value,
+                                meta_key, meta_value,
                             ))
                         }
                     }
                     _ => Err(ChannelCommandBase::make_error_invalid_meta_key(
-                        &meta_key,
-                        &meta_value,
+                        meta_key, meta_value,
                     )),
                 }
             }
             Err(err) => Err(ChannelCommandBase::make_error_invalid_meta_key(
-                &err.0, &err.1,
+                err.0, err.1,
             )),
         }
     }

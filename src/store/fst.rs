@@ -203,7 +203,7 @@ impl StoreFSTPool {
             );
 
             for key in &*graph_consolidate_read {
-                if let Some(store) = graph_pool_read.get(&key) {
+                if let Some(store) = graph_pool_read.get(key) {
                     let not_consolidated_for = store
                         .last_consolidated
                         .read()
@@ -813,7 +813,7 @@ impl StoreFST {
         // Regex format: '{escaped_word}([{unicode_range}]*)'
         let mut regex_str = regex_escape(word);
 
-        regex_str.push_str("(");
+        regex_str.push('(');
 
         let write_result = LexerRegexRange::from(word)
             .unwrap_or_default()
@@ -902,7 +902,7 @@ impl StoreFST {
 }
 
 impl StoreGeneric for StoreFST {
-    fn ref_last_used<'a>(&'a self) -> &'a RwLock<SystemTime> {
+    fn ref_last_used(&self) -> &RwLock<SystemTime> {
         &self.last_used
     }
 }
@@ -1205,17 +1205,14 @@ impl StoreFSTMisc {
                 let fst_extension = path_mode.extension();
                 let fst_extension_len = fst_extension.len();
 
-                for entry in entries {
-                    if let Ok(entry) = entry {
-                        if let Some(entry_name) = entry.file_name().to_str() {
-                            let entry_name_len = entry_name.len();
+                for entry in entries.flatten() {
+                    if let Some(entry_name) = entry.file_name().to_str() {
+                        let entry_name_len = entry_name.len();
 
-                            // FST file found? This is a bucket.
-                            if entry_name_len > fst_extension_len
-                                && entry_name.ends_with(fst_extension)
-                            {
-                                count += 1;
-                            }
+                        // FST file found? This is a bucket.
+                        if entry_name_len > fst_extension_len && entry_name.ends_with(fst_extension)
+                        {
+                            count += 1;
                         }
                     }
                 }

@@ -515,7 +515,7 @@ impl StoreKV {
 }
 
 impl StoreGeneric for StoreKV {
-    fn ref_last_used<'a>(&'a self) -> &'a RwLock<SystemTime> {
+    fn ref_last_used(&self) -> &RwLock<SystemTime> {
         &self.last_used
     }
 }
@@ -937,7 +937,7 @@ impl<'a> StoreKVAction<'a> {
 
         // Delete OID <> IID association
         match (
-            self.delete_oid_to_iid(&oid),
+            self.delete_oid_to_iid(oid),
             self.delete_iid_to_oid(iid),
             self.delete_iid_to_terms(iid),
         ) {

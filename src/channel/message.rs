@@ -57,7 +57,7 @@ impl ChannelMessage {
                 vec![ChannelCommandResponse::Err(ChannelCommandError::ShuttingDown).to_args()];
         } else {
             // Handle response arguments to issued command
-            response_args_groups = match M::handle(&message) {
+            response_args_groups = match M::handle(message) {
                 Ok(resp_groups) => resp_groups
                     .iter()
                     .map(|resp| match resp {
