@@ -7,7 +7,7 @@
 use std::fs::File;
 use std::io::Read;
 
-use super::Config;
+use super::options::Config;
 use crate::APP_ARGS;
 
 pub struct ConfigReader;

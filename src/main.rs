@@ -36,7 +36,7 @@ use channel::listen::{ChannelListen, ChannelListenBuilder};
 use channel::statistics::ensure_states as ensure_states_channel_statistics;
 use config::logger::ConfigLogger;
 use config::reader::ConfigReader;
-use config::Config;
+use config::options::Config;
 use store::fst::StoreFSTPool;
 use store::kv::StoreKVPool;
 use tasker::runtime::TaskerBuilder;
