@@ -14,7 +14,7 @@ use std::time::SystemTime;
 pub trait StoreGenericKey {}
 
 pub trait StoreGeneric {
-    fn ref_last_used<'a>(&'a self) -> &'a RwLock<SystemTime>;
+    fn ref_last_used(&self) -> &RwLock<SystemTime>;
 }
 
 pub trait StoreGenericPool<
@@ -66,13 +66,13 @@ pub trait StoreGenericPool<
 
                 Ok(store_box)
             }
-            Err(err) => {
+            Err(_) => {
                 error!(
                     "failed opening {} store for collection: {} (pool key: {})",
                     kind, collection_str, pool_key
                 );
 
-                Err(err)
+                Err(())
             }
         }
     }

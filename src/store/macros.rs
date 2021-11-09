@@ -7,6 +7,6 @@
 #[macro_export]
 macro_rules! io_error {
     ($error:expr) => {
-        Err(io::Error::new(io::ErrorKind::Other, $error))
+        io::Error::new(io::ErrorKind::Other, $error)
     };
 }

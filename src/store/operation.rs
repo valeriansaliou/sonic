@@ -12,7 +12,7 @@ use crate::executor::pop::ExecutorPop;
 use crate::executor::push::ExecutorPush;
 use crate::executor::search::ExecutorSearch;
 use crate::executor::suggest::ExecutorSuggest;
-use crate::query::query::Query;
+use crate::query::Query;
 
 pub struct StoreOperationDispatch;
 

@@ -4,7 +4,7 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-pub static STOPWORDS_HUN: &[&'static str] = &[
+pub static STOPWORDS_HUN: &[&str] = &[
     "a",
     "abba",
     "abban",
@@ -67,7 +67,7 @@ pub static STOPWORDS_HUN: &[&'static str] = &[
     "amit",
     "amolyan",
     "amott",
-    "amã­g",
+    "amã\u{AD}g",
     "amíg",
     "annak",
     "annál",
@@ -726,7 +726,7 @@ pub static STOPWORDS_HUN: &[&'static str] = &[
     "mã¡st",
     "mã©g",
     "mã©gis",
-    "mã­g",
+    "mã\u{AD}g",
     "mã¶gã©",
     "mã¶gã©d",
     "mã¶gã©jã¼k",
@@ -917,9 +917,9 @@ pub static STOPWORDS_HUN: &[&'static str] = &[
     "szã¡zadik",
     "szã¡zat",
     "szã©pen",
-    "szã­ves",
-    "szã­vesen",
-    "szã­veskedjã©k",
+    "szã\u{AD}ves",
+    "szã\u{AD}vesen",
+    "szã\u{AD}veskedjã©k",
     "szépen",
     "szét",
     "szíves",
@@ -973,7 +973,7 @@ pub static STOPWORDS_HUN: &[&'static str] = &[
     "tã¡vol",
     "tã©ged",
     "tã©nyleg",
-    "tã­z",
+    "tã\u{AD}z",
     "tã¶bb",
     "tã¶bbi",
     "tã¶bbszã¶r",
@@ -1079,7 +1079,7 @@ pub static STOPWORDS_HUN: &[&'static str] = &[
     "ã©ves",
     "ã©vi",
     "ã©vvel",
-    "ã­gy",
+    "ã\u{AD}gy",
     "ã³ta",
     "ã¶n",
     "ã¶nbe",

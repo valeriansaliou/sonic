@@ -4,7 +4,7 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-pub static STOPWORDS_UKR: &[&'static str] = &[
+pub static STOPWORDS_UKR: &[&str] = &[
     "але",
     "ви",
     "вона",

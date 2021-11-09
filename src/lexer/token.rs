@@ -273,7 +273,7 @@ impl<'a> Iterator for TokenLexer<'a> {
     //   - Gibberish words are removed (ie. words that may just be junk) \
     //   - Stop-words are removed
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(word) = self.words.next() {
+        for word in &mut self.words {
             // Lower-case word
             // Notice: unfortunately, as Rust is unicode-aware, we need to convert the str slice \
             //   to a heap-indexed String; as lower-cased characters may change in bit size.

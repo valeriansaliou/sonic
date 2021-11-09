@@ -16,6 +16,8 @@ pub struct StoreItem<'a>(
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct StoreItemPart<'a>(&'a str);
 
+// TODO: Change variant names
+#[allow(clippy::enum_variant_names)]
 #[derive(PartialEq, Debug)]
 pub enum StoreItemError {
     InvalidCollection,
@@ -30,13 +32,14 @@ impl<'a> StoreItemPart<'a> {
     pub fn from_str(part: &'a str) -> Result<Self, ()> {
         let len = part.len();
 
-        if len > STORE_ITEM_PART_LEN_MIN && len <= STORE_ITEM_PART_LEN_MAX {
-            if part.chars().all(|character| character.is_ascii()) {
-                return Ok(StoreItemPart(part));
-            }
+        if len > STORE_ITEM_PART_LEN_MIN
+            && len <= STORE_ITEM_PART_LEN_MAX
+            && part.chars().all(|character| character.is_ascii())
+        {
+            Ok(StoreItemPart(part))
+        } else {
+            Err(())
         }
-
-        Err(())
     }
 
     pub fn as_str(&self) -> &'a str {
@@ -44,9 +47,9 @@ impl<'a> StoreItemPart<'a> {
     }
 }
 
-impl<'a> Into<&'a str> for StoreItemPart<'a> {
-    fn into(self) -> &'a str {
-        self.as_str()
+impl<'a> From<StoreItemPart<'a>> for &'a str {
+    fn from(part: StoreItemPart<'a>) -> Self {
+        part.as_str()
     }
 }
 

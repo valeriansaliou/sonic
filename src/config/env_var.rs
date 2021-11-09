@@ -18,8 +18,8 @@ where
 {
     let value = String::deserialize(deserializer)?;
 
-    match self::is_env_var(&value) {
-        true => Ok(self::get_env_var(&value)),
+    match is_env_var(&value) {
+        true => Ok(get_env_var(&value)),
         false => Ok(value),
     }
 }
@@ -32,8 +32,8 @@ where
         option.map(|wrapped: WrappedString| {
             let value = wrapped.0;
 
-            match self::is_env_var(&value) {
-                true => self::get_env_var(&value),
+            match is_env_var(&value) {
+                true => get_env_var(&value),
                 false => value,
             }
         })
@@ -46,8 +46,8 @@ where
 {
     let value = String::deserialize(deserializer)?;
 
-    match self::is_env_var(&value) {
-        true => Ok(self::get_env_var(&value).parse().unwrap()),
+    match is_env_var(&value) {
+        true => Ok(get_env_var(&value).parse().unwrap()),
         false => Ok(value.parse().unwrap()),
     }
 }
@@ -58,8 +58,8 @@ where
 {
     let value = String::deserialize(deserializer)?;
 
-    match self::is_env_var(&value) {
-        true => Ok(PathBuf::from(self::get_env_var(&value))),
+    match is_env_var(&value) {
+        true => Ok(PathBuf::from(get_env_var(&value))),
         false => Ok(PathBuf::from(value)),
     }
 }
@@ -75,7 +75,7 @@ fn get_env_var(wrapped_key: &str) -> String {
         .drain(6..(wrapped_key.len() - 1))
         .collect();
 
-    std::env::var(key.clone()).expect(&format!("env_var: variable '{}' is not set", key))
+    std::env::var(key.clone()).unwrap_or_else(|_| panic!("env_var: variable '{}' is not set", key))
 }
 
 #[cfg(test)]
@@ -84,22 +84,22 @@ mod tests {
 
     #[test]
     fn it_checks_environment_variable_patterns() {
-        assert_eq!(self::is_env_var("${env.XXX}"), true);
-        assert_eq!(self::is_env_var("${env.XXX"), false);
-        assert_eq!(self::is_env_var("${env.XXX}a"), false);
-        assert_eq!(self::is_env_var("a${env.XXX}"), false);
-        assert_eq!(self::is_env_var("{env.XXX}"), false);
-        assert_eq!(self::is_env_var("$env.XXX}"), false);
-        assert_eq!(self::is_env_var("${envXXX}"), false);
-        assert_eq!(self::is_env_var("${.XXX}"), false);
-        assert_eq!(self::is_env_var("${XXX}"), false);
+        assert!(is_env_var("${env.XXX}"));
+        assert!(!is_env_var("${env.XXX"));
+        assert!(!is_env_var("${env.XXX}a"));
+        assert!(!is_env_var("a${env.XXX}"));
+        assert!(!is_env_var("{env.XXX}"));
+        assert!(!is_env_var("$env.XXX}"));
+        assert!(!is_env_var("${envXXX}"));
+        assert!(!is_env_var("${.XXX}"));
+        assert!(!is_env_var("${XXX}"));
     }
 
     #[test]
     fn it_gets_environment_variable() {
         std::env::set_var("TEST", "test");
 
-        assert_eq!(self::get_env_var("${env.TEST}"), "test");
+        assert_eq!(get_env_var("${env.TEST}"), "test");
 
         std::env::remove_var("TEST");
     }

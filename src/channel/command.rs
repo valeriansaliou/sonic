@@ -7,6 +7,7 @@
 use hashbrown::HashMap;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
+use std::fmt;
 use std::path::Path;
 use std::str::{self, SplitWhitespace};
 use std::vec::Vec;
@@ -31,6 +32,26 @@ pub enum ChannelCommandError {
     InvalidFormat(&'static str),
     InvalidMetaKey((String, String)),
     InvalidMetaValue((String, String)),
+}
+
+impl fmt::Display for ChannelCommandError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            ChannelCommandError::UnknownCommand => write!(f, "unknown_command"),
+            ChannelCommandError::NotFound => write!(f, "not_found"),
+            ChannelCommandError::QueryError => write!(f, "query_error"),
+            ChannelCommandError::InternalError => write!(f, "internal_error"),
+            ChannelCommandError::ShuttingDown => write!(f, "shutting_down"),
+            ChannelCommandError::PolicyReject(reason) => write!(f, "policy_reject({})", reason),
+            ChannelCommandError::InvalidFormat(format) => write!(f, "invalid_format({})", format),
+            ChannelCommandError::InvalidMetaKey(ref data) => {
+                write!(f, "invalid_meta_key({}[{}])", data.0, data.1)
+            }
+            ChannelCommandError::InvalidMetaValue(ref data) => {
+                write!(f, "invalid_meta_value({}[{}])", data.0, data.1)
+            }
+        }
+    }
 }
 
 #[derive(PartialEq)]
@@ -62,8 +83,8 @@ const TEXT_PART_ESCAPE: char = '\\';
 const META_PART_GROUP_OPEN: char = '(';
 const META_PART_GROUP_CLOSE: char = ')';
 
-static BACKUP_KV_PATH: &'static str = "kv";
-static BACKUP_FST_PATH: &'static str = "fst";
+static BACKUP_KV_PATH: &str = "kv";
+static BACKUP_FST_PATH: &str = "fst";
 
 lazy_static! {
     pub static ref COMMANDS_MODE_SEARCH: Vec<&'static str> =
@@ -89,26 +110,6 @@ lazy_static! {
             .iter()
             .cloned()
             .collect();
-}
-
-impl ChannelCommandError {
-    pub fn to_string(&self) -> String {
-        match *self {
-            ChannelCommandError::UnknownCommand => String::from("unknown_command"),
-            ChannelCommandError::NotFound => String::from("not_found"),
-            ChannelCommandError::QueryError => String::from("query_error"),
-            ChannelCommandError::InternalError => String::from("internal_error"),
-            ChannelCommandError::ShuttingDown => String::from("shutting_down"),
-            ChannelCommandError::PolicyReject(reason) => format!("policy_reject({})", reason),
-            ChannelCommandError::InvalidFormat(format) => format!("invalid_format({})", format),
-            ChannelCommandError::InvalidMetaKey(ref data) => {
-                format!("invalid_meta_key({}[{}])", data.0, data.1)
-            }
-            ChannelCommandError::InvalidMetaValue(ref data) => {
-                format!("invalid_meta_value({}[{}])", data.0, data.1)
-            }
-        }
-    }
 }
 
 impl ChannelCommandResponse {
@@ -181,9 +182,9 @@ impl ChannelCommandBase {
         // Parse text parts and nest them together
         let mut text_raw = String::new();
 
-        while let Some(text_part) = parts.next() {
+        for text_part in parts {
             if !text_raw.is_empty() {
-                text_raw.push_str(" ");
+                text_raw.push(' ');
             }
 
             text_raw.push_str(text_part);
@@ -315,14 +316,14 @@ impl ChannelCommandBase {
 
     pub fn commit_ok_operation(query_builder: QueryBuilderResult) -> ChannelResult {
         query_builder
-            .and_then(|query| StoreOperationDispatch::dispatch(query))
-            .and_then(|_| Ok(vec![ChannelCommandResponse::Ok]))
+            .and_then(StoreOperationDispatch::dispatch)
+            .map(|_| vec![ChannelCommandResponse::Ok])
             .or(Err(ChannelCommandError::QueryError))
     }
 
     pub fn commit_result_operation(query_builder: QueryBuilderResult) -> ChannelResult {
         query_builder
-            .and_then(|query| StoreOperationDispatch::dispatch(query))
+            .and_then(StoreOperationDispatch::dispatch)
             .or(Err(ChannelCommandError::QueryError))
             .and_then(|result| {
                 if let Some(result_inner) = result {
@@ -333,10 +334,10 @@ impl ChannelCommandBase {
             })
     }
 
-    pub fn commit_pending_operation<'a>(
+    pub fn commit_pending_operation(
         query_type: &'static str,
         query_id: &str,
-        query_builder: QueryBuilderResult<'a>,
+        query_builder: QueryBuilderResult,
     ) -> ChannelResult {
         // Idea: this could be made asynchronous in the future, if there are some latency issues \
         //   on large Sonic deployments. The idea would be to have a number of worker threads for \
@@ -348,16 +349,16 @@ impl ChannelCommandBase {
         //   consumer via a worker thread pool.
 
         query_builder
-            .and_then(|query| StoreOperationDispatch::dispatch(query))
-            .and_then(|results| {
-                Ok(vec![
+            .and_then(StoreOperationDispatch::dispatch)
+            .map(|results| {
+                vec![
                     ChannelCommandResponse::Pending(query_id.to_string()),
                     ChannelCommandResponse::Event(
                         query_type,
                         query_id.to_string(),
-                        results.unwrap_or(String::new()),
+                        results.unwrap_or_default(),
                     ),
-                ])
+                ]
             })
             .or(Err(ChannelCommandError::QueryError))
     }
@@ -370,6 +371,12 @@ impl ChannelCommandBase {
             .collect()
     }
 }
+
+type QueryMetaData = (
+    Option<QuerySearchLimit>,
+    Option<QuerySearchOffset>,
+    Option<QueryGenericLang>,
+);
 
 impl ChannelCommandSearch {
     pub fn dispatch_query(mut parts: SplitWhitespace) -> ChannelResult {
@@ -512,14 +519,7 @@ impl ChannelCommandSearch {
 
     fn handle_query_meta(
         meta_result: MetaPartsResult,
-    ) -> Result<
-        (
-            Option<QuerySearchLimit>,
-            Option<QuerySearchOffset>,
-            Option<QueryGenericLang>,
-        ),
-        ChannelCommandError,
-    > {
+    ) -> Result<QueryMetaData, ChannelCommandError> {
         match meta_result {
             Ok((meta_key, meta_value)) => {
                 debug!("handle query meta: {} = {}", meta_key, meta_value);
@@ -531,8 +531,7 @@ impl ChannelCommandSearch {
                             Ok((Some(query_limit_parsed), None, None))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
-                                &meta_key,
-                                &meta_value,
+                                meta_key, meta_value,
                             ))
                         }
                     }
@@ -542,8 +541,7 @@ impl ChannelCommandSearch {
                             Ok((None, Some(query_offset_parsed), None))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
-                                &meta_key,
-                                &meta_value,
+                                meta_key, meta_value,
                             ))
                         }
                     }
@@ -553,19 +551,17 @@ impl ChannelCommandSearch {
                             Ok((None, None, Some(query_lang_parsed)))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
-                                &meta_key,
-                                &meta_value,
+                                meta_key, meta_value,
                             ))
                         }
                     }
                     _ => Err(ChannelCommandBase::make_error_invalid_meta_key(
-                        &meta_key,
-                        &meta_value,
+                        meta_key, meta_value,
                     )),
                 }
             }
             Err(err) => Err(ChannelCommandBase::make_error_invalid_meta_key(
-                &err.0, &err.1,
+                err.0, err.1,
             )),
         }
     }
@@ -584,19 +580,17 @@ impl ChannelCommandSearch {
                             Ok(Some(suggest_limit_parsed))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
-                                &meta_key,
-                                &meta_value,
+                                meta_key, meta_value,
                             ))
                         }
                     }
                     _ => Err(ChannelCommandBase::make_error_invalid_meta_key(
-                        &meta_key,
-                        &meta_value,
+                        meta_key, meta_value,
                     )),
                 }
             }
             Err(err) => Err(ChannelCommandBase::make_error_invalid_meta_key(
-                &err.0, &err.1,
+                err.0, err.1,
             )),
         }
     }
@@ -767,19 +761,17 @@ impl ChannelCommandIngest {
                             Ok(Some(query_lang_parsed))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
-                                &meta_key,
-                                &meta_value,
+                                meta_key, meta_value,
                             ))
                         }
                     }
                     _ => Err(ChannelCommandBase::make_error_invalid_meta_key(
-                        &meta_key,
-                        &meta_value,
+                        meta_key, meta_value,
                     )),
                 }
             }
             Err(err) => Err(ChannelCommandBase::make_error_invalid_meta_key(
-                &err.0, &err.1,
+                err.0, err.1,
             )),
         }
     }
