@@ -3,13 +3,17 @@ Sonic Changelog
 
 ## Unreleased
 
-### New Features
+### Bug Fixes
 
-* Added support for Chinese word segmentation in tokenizer (note that as this adds quite some size overhead to the final binary size, the feature `tokenizer-chinese` can be disabled when building Sonic) [[@vincascm](https://github.com/vincascm), [#209](https://github.com/valeriansaliou/sonic/pull/209)].
+* Fixed Norwegian stopwords [[@valeriansaliou](https://github.com/valeriansaliou), [#239](https://github.com/valeriansaliou/sonic/issues/239)].
 
 ### Changes
 
-* Code has been formatted according to `clippy` recommendations. This does not change the way Sonic behaves.
+* Code has been formatted according to `clippy` recommendations. This does not change the way Sonic behaves [[@pleshevskiy](https://github.com/pleshevskiy), [#233](https://github.com/valeriansaliou/sonic/pull/233)].
+
+### New Features
+
+* Added support for Chinese word segmentation in tokenizer (note that as this adds quite some size overhead to the final binary size, the feature `tokenizer-chinese` can be disabled when building Sonic) [[@vincascm](https://github.com/vincascm), [#209](https://github.com/valeriansaliou/sonic/pull/209)].
 
 ## 1.3.1 (2021-11-02)
 
