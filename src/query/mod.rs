@@ -5,5 +5,5 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 pub mod builder;
-pub mod modes;
+pub mod actions;
 pub mod types;
