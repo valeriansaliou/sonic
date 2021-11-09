@@ -5,30 +5,5 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 pub mod builder;
+pub mod modes;
 pub mod types;
-
-use crate::lexer::token::TokenLexer;
-use crate::store::item::StoreItem;
-use types::*;
-
-pub enum Query<'a> {
-    Search(
-        StoreItem<'a>,
-        QuerySearchID<'a>,
-        TokenLexer<'a>,
-        QuerySearchLimit,
-        QuerySearchOffset,
-    ),
-    Suggest(
-        StoreItem<'a>,
-        QuerySearchID<'a>,
-        TokenLexer<'a>,
-        QuerySearchLimit,
-    ),
-    Push(StoreItem<'a>, TokenLexer<'a>),
-    Pop(StoreItem<'a>, TokenLexer<'a>),
-    Count(StoreItem<'a>),
-    FlushC(StoreItem<'a>),
-    FlushB(StoreItem<'a>),
-    FlushO(StoreItem<'a>),
-}
