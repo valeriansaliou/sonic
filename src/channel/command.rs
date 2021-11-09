@@ -15,7 +15,7 @@ use std::vec::Vec;
 use super::format::unescape;
 use super::statistics::ChannelStatistics;
 use crate::query::builder::{QueryBuilder, QueryBuilderResult};
-use crate::query::types::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset};
+use crate::query::types::{QueryGenericLang, QueryMetaData, QuerySearchLimit, QuerySearchOffset};
 use crate::store::fst::StoreFSTPool;
 use crate::store::kv::StoreKVPool;
 use crate::store::operation::StoreOperationDispatch;
@@ -32,26 +32,6 @@ pub enum ChannelCommandError {
     InvalidFormat(&'static str),
     InvalidMetaKey((String, String)),
     InvalidMetaValue((String, String)),
-}
-
-impl fmt::Display for ChannelCommandError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        match self {
-            ChannelCommandError::UnknownCommand => write!(f, "unknown_command"),
-            ChannelCommandError::NotFound => write!(f, "not_found"),
-            ChannelCommandError::QueryError => write!(f, "query_error"),
-            ChannelCommandError::InternalError => write!(f, "internal_error"),
-            ChannelCommandError::ShuttingDown => write!(f, "shutting_down"),
-            ChannelCommandError::PolicyReject(reason) => write!(f, "policy_reject({})", reason),
-            ChannelCommandError::InvalidFormat(format) => write!(f, "invalid_format({})", format),
-            ChannelCommandError::InvalidMetaKey(ref data) => {
-                write!(f, "invalid_meta_key({}[{}])", data.0, data.1)
-            }
-            ChannelCommandError::InvalidMetaValue(ref data) => {
-                write!(f, "invalid_meta_value({}[{}])", data.0, data.1)
-            }
-        }
-    }
 }
 
 #[derive(PartialEq)]
@@ -371,12 +351,6 @@ impl ChannelCommandBase {
             .collect()
     }
 }
-
-type QueryMetaData = (
-    Option<QuerySearchLimit>,
-    Option<QuerySearchOffset>,
-    Option<QueryGenericLang>,
-);
 
 impl ChannelCommandSearch {
     pub fn dispatch_query(mut parts: SplitWhitespace) -> ChannelResult {
@@ -863,6 +837,26 @@ impl ChannelCommandControl {
 
     pub fn dispatch_help(parts: SplitWhitespace) -> ChannelResult {
         ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_CONTROL)
+    }
+}
+
+impl fmt::Display for ChannelCommandError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+        match self {
+            ChannelCommandError::UnknownCommand => write!(f, "unknown_command"),
+            ChannelCommandError::NotFound => write!(f, "not_found"),
+            ChannelCommandError::QueryError => write!(f, "query_error"),
+            ChannelCommandError::InternalError => write!(f, "internal_error"),
+            ChannelCommandError::ShuttingDown => write!(f, "shutting_down"),
+            ChannelCommandError::PolicyReject(reason) => write!(f, "policy_reject({})", reason),
+            ChannelCommandError::InvalidFormat(format) => write!(f, "invalid_format({})", format),
+            ChannelCommandError::InvalidMetaKey(ref data) => {
+                write!(f, "invalid_meta_key({}[{}])", data.0, data.1)
+            }
+            ChannelCommandError::InvalidMetaValue(ref data) => {
+                write!(f, "invalid_meta_value({}[{}])", data.0, data.1)
+            }
+        }
     }
 }
 
