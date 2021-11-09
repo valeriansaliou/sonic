@@ -445,7 +445,7 @@ impl StoreKVBuilder {
 }
 
 impl StoreGenericBuilder<StoreKVKey, StoreKV> for StoreKVBuilder {
-    fn new(pool_key: StoreKVKey) -> Result<StoreKV, ()> {
+    fn build(pool_key: StoreKVKey) -> Result<StoreKV, ()> {
         Self::open(pool_key.collection_hash)
             .map(|db| {
                 let now = SystemTime::now();

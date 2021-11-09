@@ -75,7 +75,7 @@ impl LexerRange {
 
 impl LexerRegexRange {
     pub fn from(text: &str) -> Option<Self> {
-        LexerRange::from(text).map(|ranges| LexerRegexRange(ranges))
+        LexerRange::from(text).map(LexerRegexRange)
     }
 
     pub fn write_to<W: fmt::Write>(&self, formatter: &mut W) -> Result<(), fmt::Error> {

@@ -51,7 +51,7 @@ pub trait StoreGenericPool<
         pool_key: K,
         pool: &Arc<RwLock<HashMap<K, Arc<S>>>>,
     ) -> Result<Arc<S>, ()> {
-        match B::new(pool_key) {
+        match B::build(pool_key) {
             Ok(store) => {
                 // Acquire a thread-safe store pool reference in write mode
                 let mut store_pool_write = pool.write().unwrap();
@@ -135,7 +135,7 @@ pub trait StoreGenericPool<
 }
 
 pub trait StoreGenericBuilder<K, S> {
-    fn new(pool_key: K) -> Result<S, ()>;
+    fn build(pool_key: K) -> Result<S, ()>;
 }
 
 pub trait StoreGenericActionBuilder {

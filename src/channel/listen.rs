@@ -20,7 +20,7 @@ lazy_static! {
 }
 
 impl ChannelListenBuilder {
-    pub fn new() -> ChannelListen {
+    pub fn build() -> ChannelListen {
         ChannelListen {}
     }
 }

@@ -781,7 +781,7 @@ impl StoreFSTBuilder {
 }
 
 impl StoreGenericBuilder<StoreFSTKey, StoreFST> for StoreFSTBuilder {
-    fn new(pool_key: StoreFSTKey) -> Result<StoreFST, ()> {
+    fn build(pool_key: StoreFSTKey) -> Result<StoreFST, ()> {
         Self::open(pool_key.collection_hash, pool_key.bucket_hash)
             .map(|graph| {
                 let now = SystemTime::now();
