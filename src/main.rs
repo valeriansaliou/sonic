@@ -5,7 +5,6 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 #![cfg_attr(feature = "benchmark", feature(test))]
-
 #![deny(unstable_features, unused_imports, unused_qualifications, clippy::all)]
 
 #[macro_use]
@@ -35,8 +34,8 @@ use log::LevelFilter;
 use channel::listen::{ChannelListen, ChannelListenBuilder};
 use channel::statistics::ensure_states as ensure_states_channel_statistics;
 use config::logger::ConfigLogger;
-use config::reader::ConfigReader;
 use config::options::Config;
+use config::reader::ConfigReader;
 use store::fst::StoreFSTPool;
 use store::kv::StoreKVPool;
 use tasker::runtime::TaskerBuilder;

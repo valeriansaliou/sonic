@@ -7,6 +7,6 @@
 mod defaults;
 mod env_var;
 
-pub mod options;
 pub mod logger;
+pub mod options;
 pub mod reader;

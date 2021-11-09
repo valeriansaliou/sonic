@@ -4,8 +4,8 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use super::types::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset};
 use super::actions::Query;
+use super::types::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset};
 use crate::lexer::token::{TokenLexerBuilder, TokenLexerMode};
 use crate::store::item::StoreItemBuilder;
 
