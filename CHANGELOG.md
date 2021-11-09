@@ -1,7 +1,7 @@
 Sonic Changelog
 ===============
 
-## Unreleased
+## 1.3.2 (2021-11-09)
 
 ### Bug Fixes
 
