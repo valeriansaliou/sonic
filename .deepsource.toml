@@ -1,11 +1,11 @@
 version = 1
 
 [[analyzers]]
-name = "shell"
+name = "rust"
 enabled = true
 
 [[analyzers]]
-name = "rust"
+name = "shell"
 enabled = true
 
 [[analyzers]]
