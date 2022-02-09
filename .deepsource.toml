@@ -4,10 +4,25 @@ version = 1
 name = "rust"
 enabled = true
 
+  [analyzers.meta]
+  msrv = "1.30.0"
+
 [[analyzers]]
 name = "shell"
 enabled = true
 
 [[analyzers]]
 name = "javascript"
+enabled = true
+
+[[analyzers]]
+name = "docker"
+enabled = true
+
+[[analyzers]]
+name = "test-coverage"
+enabled = true
+
+[[analyzers]]
+name = "secrets"
 enabled = true
