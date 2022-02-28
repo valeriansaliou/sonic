@@ -41,7 +41,7 @@ regex = "1.4"
 
 [target.'cfg(unix)'.dependencies]
 nix = "0.18"
-tikv-jemallocator = { version = "0.4.1", optional = true }
+tikv-jemallocator = { version = "0.4.3", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["minwindef", "consoleapi"] }
