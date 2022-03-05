@@ -18,6 +18,5 @@ RUN strip /app/target/release/sonic
 FROM debian:bullseye-slim
 
 COPY --from=build /app/target/release/sonic /usr/local/bin/sonic
-
 EXPOSE 1491
 CMD [ "sonic", "-c", "/etc/sonic.cfg" ]

@@ -53,9 +53,24 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GHCR_TOKEN }}
 
+      - name: Build Sonic and export compiled executable
+        uses: docker/build-push-action@v2
+        with:
+          file: build-sonic.Dockerfile
+          platforms: ${{ env.PLATFORMS }}
+          push: false
+          outputs: type=local,dest=./artifacts
+
+      - name: Publish compiled executables as build ./artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: sonic-${{ env.DATESTAMP }}
+          path: ./artifacts
+
       - name: Build and push ${{ env.IMAGE_NAME }} Docker image
         uses: docker/build-push-action@v2
         with:
+          file: build-image.Dockerfile
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME || 'nobody' }}/${{ env.IMAGE_NAME }}:dev
             ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:dev
