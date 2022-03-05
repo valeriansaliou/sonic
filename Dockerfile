@@ -1,4 +1,4 @@
-FROM rust:slim-bullseye AS build
+FROM rust:1.58.1-slim-bullseye AS build
 
 RUN apt-get update
 RUN apt-get install -y build-essential clang
