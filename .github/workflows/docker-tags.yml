@@ -1,0 +1,87 @@
+name: Build stable Docker images
+
+on:
+  # Allow manual runs.
+  workflow_dispatch:
+  # Also run on updates to this repo.
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**/*.md'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+
+env:
+  PLATFORMS: linux/arm/v6,linux/arm/v7,linux/arm64/v8,linux/amd64
+  IMAGE_NAME: sonic
+  PUSH_IMAGE: ${{ github.ref == 'refs/heads/master' }}
+  BUILD_RELEASE: true
+
+jobs:
+
+  build-images:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: 'true'
+
+      - name: Get latest non-nightly tag
+        run: |
+          git fetch --tags
+          SONIC_VERSION=$(git for-each-ref refs/tags --sort=-taggerdate --format='%(refname)' --count=1 | sed "s:refs/tags/::")
+          echo "Latest tag is ${SONIC_VERSION}."
+          echo "SONIC_VERSION=${SONIC_VERSION}" >> $GITHUB_ENV
+          echo "SONIC_COMMIT=$(git rev-parse --short ${SONIC_VERSION})" >> $GITHUB_ENV
+          git checkout ${SONIC_VERSION}
+
+      - name: Check whether ${{ env.SONIC_VERSION }} needs building
+        if: ${{ env.PUSH_IMAGE == 'true' }}
+        run: |
+          # Check whether there already is a Docker image for the current tag
+          SONIC_TAGS=$(curl -s https://registry.hub.docker.com/v1/repositories/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}/tags | jq -r ".[].name") || SERVER_TAGS="none"
+          for tag in ${SONIC_TAGS[@]}; do
+            if [[ "$tag" == "${SONIC_VERSION}" ]]; then
+              echo "Release ${tag} has already been built."
+              echo "BUILD_RELEASE=false" >> $GITHUB_ENV
+              exit
+            fi
+          done
+
+      - name: Docker Setup QEMU
+        if: ${{ env.BUILD_RELEASE == 'true' }}
+        uses: docker/setup-qemu-action@v1
+
+      - name: Docker Setup Buildx
+        if: ${{ env.BUILD_RELEASE == 'true' }}
+        uses: docker/setup-buildx-action@v1
+
+      - name: Login to DockerHub
+        if: ${{ env.PUSH_IMAGE == 'true' }}
+        uses: docker/login-action@v1 
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        if: ${{ env.PUSH_IMAGE == 'true' }}
+        uses: docker/login-action@v1 
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Build and push ${{ env.IMAGE_NAME }}:${{ env.SONIC_VERSION }} Docker image
+        if: ${{ env.BUILD_RELEASE == 'true' }}
+        uses: docker/build-push-action@v2
+        with:
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME || 'nobody' }}/${{ env.IMAGE_NAME }}:latest
+            ${{ secrets.DOCKERHUB_USERNAME || 'nobody' }}/${{ env.IMAGE_NAME }}:${{ env.SONIC_VERSION }}
+            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
+            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ env.SONIC_VERSION }}
+          platforms: ${{ env.PLATFORMS }}
+          push: ${{ env.PUSH_IMAGE }}
