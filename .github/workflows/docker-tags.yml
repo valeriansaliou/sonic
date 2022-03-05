@@ -1,4 +1,4 @@
-name: Build stable Docker images
+name: Build tagged release
 
 on:
   # Allow manual runs.
@@ -6,7 +6,7 @@ on:
   # Also run on updates to this repo.
   push:
     branches:
-      - main
+      - master
     paths-ignore:
       - '**/*.md'
   pull_request:

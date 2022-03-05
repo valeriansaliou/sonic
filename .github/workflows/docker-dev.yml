@@ -1,4 +1,4 @@
-name: Build development Docker images
+name: Build current commit
 
 on:
   # Allow manual runs.
@@ -6,7 +6,7 @@ on:
   # Also run on updates to this repo.
   push:
     branches:
-      - main
+      - master
     paths-ignore:
       - '**/*.md'
   # Run on PRs except for documentation.
