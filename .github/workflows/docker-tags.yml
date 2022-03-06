@@ -76,6 +76,7 @@ jobs:
           password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Build Sonic and export compiled executable
+        if: ${{ env.BUILD_RELEASE == 'true' }}
         uses: docker/build-push-action@v2
         with:
           platforms: ${{ env.PLATFORMS }}
