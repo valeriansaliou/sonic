@@ -116,3 +116,38 @@ jobs:
         with:
           name: sonic-${{ env.SONIC_VERSION }} (arm64)
           path: ${{ github.workspace }}/artifacts/sonic-${{ env.SONIC_VERSION }}.linux_arm64.tar.gz
+
+      - name: "[RELEASE] Create GitHub release"
+        if: ${{ env.BUILD_RELEASE == 'true' }}
+        uses: actions/create-release@v1
+        id: create_release
+        with:
+          draft: false
+          prerelease: false
+          release_name: Sonic ${{ env.SONIC_VERSION }}
+          tag_name: refs/tags/${{ env.SONIC_VERSION }}
+          body_path: CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: "[RELEASE] Upload amd64 artifact to release"
+        if: ${{ env.BUILD_RELEASE == 'true' }}
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ${{ github.workspace }}/artifacts/sonic-${{ env.SONIC_VERSION }}.linux_amd64.tar.gz
+          asset_name: sonic-${{ env.SONIC_VERSION }}.linux_amd64.tar.gz
+          asset_content_type: application/gzip
+
+      - name: "[RELEASE] Upload arm64 artifact to release"
+        if: ${{ env.BUILD_RELEASE == 'true' }}
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ${{ github.workspace }}/artifacts/sonic-${{ env.SONIC_VERSION }}.linux_arm64.tar.gz
+          asset_name: sonic-${{ env.SONIC_VERSION }}.linux_arm64.tar.gz
+          asset_content_type: application/gzip
