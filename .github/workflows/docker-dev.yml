@@ -56,10 +56,10 @@ jobs:
       - name: Build Sonic and export compiled executable
         uses: docker/build-push-action@v2
         with:
-          file: build-sonic.Dockerfile
           platforms: ${{ env.PLATFORMS }}
           push: false
           outputs: type=local,dest=./artifacts
+          target: export
 
       - name: Publish compiled executables as build ./artifacts
         uses: actions/upload-artifact@v3
@@ -70,7 +70,6 @@ jobs:
       - name: Build and push ${{ env.IMAGE_NAME }} Docker image
         uses: docker/build-push-action@v2
         with:
-          file: build-image.Dockerfile
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME || 'nobody' }}/${{ env.IMAGE_NAME }}:dev
             ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:dev
@@ -78,3 +77,4 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:dev-${{ env.DATESTAMP }}
           platforms: ${{ env.PLATFORMS }}
           push: ${{ env.PUSH_IMAGE }}
+          target: image
