@@ -76,6 +76,7 @@ jobs:
       - name: "[RELEASE] Tarball build artifacts"
         run: |
           for artifact in ${{ github.workspace }}/artifacts/*; do
+            platform=$(basename $artifact)
             tar cvzf ${{ github.workspace }}/artifacts/sonic-nightly-${{ env.DATESTAMP }}.$platform.tar.gz $artifact/*
           done
 
