@@ -75,8 +75,8 @@ jobs:
 
       - name: "[RELEASE] Tarball build artifacts"
         run: |
-          for platform in ./artifacts/*; do
-            tar cvzf ${{ github.workspace }}/artifacts/sonic-nightly-${{ env.DATESTAMP }}.$platform.tar.gz ${{ github.workspace }}/artifacts/$platform/*
+          for artifact in ${{ github.workspace }}/artifacts/*; do
+            tar cvzf ${{ github.workspace }}/artifacts/sonic-nightly-${{ env.DATESTAMP }}.$platform.tar.gz $artifact/*
           done
 
       - name: "[RELEASE] Publish amd64 artifact"

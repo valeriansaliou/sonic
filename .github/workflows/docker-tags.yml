@@ -98,8 +98,8 @@ jobs:
       - name: "[RELEASE] Tarball build artifacts"
         if: ${{ env.BUILD_RELEASE == 'true' }}
         run: |
-          for platform in ./artifacts/*; do
-            tar cvzf ${{ github.workspace }}/artifacts/sonic-${{ env.SONIC_VERSION }}.$platform.tar.gz ${{ github.workspace }}/artifacts/$platform/*
+          for artifact in ${{ github.workspace }}/artifacts/*; do
+            tar cvzf ${{ github.workspace }}/artifacts/sonic-${{ env.SONIC_VERSION }}.$platform.tar.gz $artifact/*
           done
 
       - name: "[RELEASE] Publish amd64 artifact"
