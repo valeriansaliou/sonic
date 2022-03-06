@@ -96,18 +96,21 @@ jobs:
           target: image
 
       - name: "[RELEASE] Tarball build artifacts"
+        if: ${{ env.BUILD_RELEASE == 'true' }}
         run: |
           for platform in ./artifacts/*; do
             tar cvzf ${{ github.workspace }}/artifacts/sonic-${{ env.SONIC_VERSION }}.$platform.tar.gz ${{ github.workspace }}/artifacts/$platform/*
           done
 
       - name: "[RELEASE] Publish amd64 artifact"
+        if: ${{ env.BUILD_RELEASE == 'true' }}
         uses: actions/upload-artifact@v3
         with:
           name: sonic-${{ env.SONIC_VERSION }} (amd64)
           path: ${{ github.workspace }}/artifacts/sonic-${{ env.SONIC_VERSION }}.linux_amd64.tar.gz
 
       - name: "[RELEASE] Publish arm64 artifact"
+        if: ${{ env.BUILD_RELEASE == 'true' }}
         uses: actions/upload-artifact@v3
         with:
           name: sonic-${{ env.SONIC_VERSION }} (arm64)
