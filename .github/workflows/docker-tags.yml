@@ -93,6 +93,7 @@ jobs:
         if: ${{ env.BUILD_RELEASE == 'true' }}
         uses: docker/build-push-action@v2
         with:
+          file: build-image.Dockerfile
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME || 'nobody' }}/${{ env.IMAGE_NAME }}:latest
             ${{ secrets.DOCKERHUB_USERNAME || 'nobody' }}/${{ env.IMAGE_NAME }}:${{ env.SONIC_VERSION }}
