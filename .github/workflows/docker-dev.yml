@@ -77,7 +77,9 @@ jobs:
         run: |
           for artifact in ${{ github.workspace }}/artifacts/*; do
             platform=$(basename $artifact)
-            tar czf ${{ github.workspace }}/artifacts/sonic-nightly-${{ env.DATESTAMP }}.$platform.tar.gz -C $artifact *
+            cd $artifact
+            tar czf ${{ github.workspace }}/artifacts/sonic-nightly-${{ env.DATESTAMP }}.$platform.tar.gz ./*
+            cd ${{ github.workspace }}
           done
 
       - name: "[RELEASE] Publish amd64 artifact"
