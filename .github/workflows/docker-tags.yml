@@ -100,7 +100,7 @@ jobs:
         run: |
           for artifact in ${{ github.workspace }}/artifacts/*; do
             platform=$(basename $artifact)
-            tar cvzf ${{ github.workspace }}/artifacts/sonic-${{ env.SONIC_VERSION }}.$platform.tar.gz $artifact/*
+            tar czf ${{ github.workspace }}/artifacts/sonic-${{ env.SONIC_VERSION }}.$platform.tar.gz -C $artifact *
           done
 
       - name: "[RELEASE] Publish amd64 artifact"
