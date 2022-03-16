@@ -1,6 +1,10 @@
 version = 1
 
 [[analyzers]]
+name = "shell"
+enabled = true
+
+[[analyzers]]
 name = "rust"
 enabled = true
 
@@ -8,19 +12,7 @@ enabled = true
   msrv = "1.30.0"
 
 [[analyzers]]
-name = "shell"
-enabled = true
-
-[[analyzers]]
 name = "javascript"
-enabled = true
-
-[[analyzers]]
-name = "docker"
-enabled = true
-
-[[analyzers]]
-name = "test-coverage"
 enabled = true
 
 [[analyzers]]
