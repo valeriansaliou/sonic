@@ -144,7 +144,7 @@ impl ChannelHandle {
                             // Do not continue, as there is too much pending data in the buffer. \
                             //   Most likely the client does not implement a proper back-pressure \
                             //   management system, thus we terminate it.
-                            info!("closing channel thread because of buffer overflow");
+                            error!("closing channel thread because of buffer overflow");
 
                             panic!("buffer overflow ({}/{} bytes)", buffer_len, MAX_LINE_SIZE);
                         }
@@ -183,7 +183,7 @@ impl ChannelHandle {
                     }
                 }
                 Err(err) => {
-                    info!("closing channel thread with traceback: {}", err);
+                    error!("closing channel thread with traceback: {}", err);
 
                     panic!("closing channel");
                 }
