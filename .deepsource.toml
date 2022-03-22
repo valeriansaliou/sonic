@@ -1,8 +1,11 @@
 version = 1
 
 [[analyzers]]
-name = "shell"
+name = "javascript"
 enabled = true
+
+  [analyzers.meta]
+  plugins = ["vue"]
 
 [[analyzers]]
 name = "rust"
@@ -12,9 +15,5 @@ enabled = true
   msrv = "1.30.0"
 
 [[analyzers]]
-name = "javascript"
-enabled = true
-
-[[analyzers]]
-name = "secrets"
+name = "shell"
 enabled = true
