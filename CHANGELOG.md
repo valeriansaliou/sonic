@@ -1,6 +1,19 @@
 Sonic Changelog
 ===============
 
+## Unreleased
+
+### Changes
+
+* Dependencies have been bumped to latest versions (namely: `rocksdb`, `hashbrown`, `whatlang`, `regex`) [[@valeriansaliou](https://github.com/valeriansaliou)].
+
+### New Features
+
+* Added Armenian stopwords [[@valeriansaliou](https://github.com/valeriansaliou)].
+* Added Georgian stopwords [[@valeriansaliou](https://github.com/valeriansaliou)].
+* Added Gujarati stopwords [[@valeriansaliou](https://github.com/valeriansaliou)].
+* Added Tagalog stopwords [[@valeriansaliou](https://github.com/valeriansaliou)].
+
 ## 1.3.2 (2021-11-09)
 
 ### Bug Fixes
