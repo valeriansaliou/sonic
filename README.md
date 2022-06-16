@@ -9,7 +9,7 @@ Sonic can be used as a simple alternative to super-heavy and full-featured searc
 
 A strong attention to performance and code cleanliness has been given when designing Sonic. It aims at being crash-free, super-fast and puts minimum strain on server resources (our measurements have shown that Sonic - when under load - responds to search queries in the μs range, eats ~30MB RAM and has a low CPU footprint; [see our benchmarks](https://github.com/valeriansaliou/sonic#how-fast--lightweight-is-it)).
 
-_Tested at Rust version: `rustc 1.58.1 (db9d1b20b 2022-01-20)`_
+_Tested at Rust version: `rustc 1.60.0 (7737e0b5c 2022-04-04)`_
 
 **🇫🇷 Crafted in Nantes, France.**
 
