@@ -37,7 +37,7 @@ byteorder = "1.4"
 hashbrown = "0.11"
 linked_hash_set = "0.1"
 whatlang = "0.12"
-regex = "1.4"
+regex = "1.5"
 
 [target.'cfg(unix)'.dependencies]
 nix = "0.18"
