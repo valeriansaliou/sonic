@@ -95,7 +95,7 @@ lazy_static! {
     static ref STOPWORDS_TUK: HashSet<&'static str> = make(tuk::STOPWORDS_TUK);
 }
 
-// Recursion group #7 (7 items)
+// Recursion group #7 (9 items)
 lazy_static! {
     static ref STOPWORDS_AKA: HashSet<&'static str> = make(aka::STOPWORDS_AKA);
     static ref STOPWORDS_ZUL: HashSet<&'static str> = make(zul::STOPWORDS_ZUL);
@@ -104,6 +104,8 @@ lazy_static! {
     static ref STOPWORDS_LAT: HashSet<&'static str> = make(lat::STOPWORDS_LAT);
     static ref STOPWORDS_SLK: HashSet<&'static str> = make(slk::STOPWORDS_SLK);
     static ref STOPWORDS_CAT: HashSet<&'static str> = make(cat::STOPWORDS_CAT);
+    static ref STOPWORDS_TGL: HashSet<&'static str> = make(tgl::STOPWORDS_TGL);
+    static ref STOPWORDS_HYE: HashSet<&'static str> = make(hye::STOPWORDS_HYE);
 }
 
 fn make<'a>(words: &[&'a str]) -> HashSet<&'a str> {
@@ -246,6 +248,8 @@ impl LexerStopWord {
             Lang::Lat => &*STOPWORDS_LAT,
             Lang::Slk => &*STOPWORDS_SLK,
             Lang::Cat => &*STOPWORDS_CAT,
+            Lang::Tgl => &*STOPWORDS_TGL,
+            Lang::Hye => &*STOPWORDS_HYE,
         }
     }
 
@@ -287,6 +291,7 @@ impl LexerStopWord {
                 Lang::Lat,
                 Lang::Slk,
                 Lang::Cat,
+                Lang::Tgl,
             ],
             Script::Cyrillic => &[
                 Lang::Rus,
@@ -299,6 +304,7 @@ impl LexerStopWord {
                 Lang::Mkd,
             ],
             Script::Arabic => &[Lang::Ara, Lang::Urd, Lang::Pes],
+            Script::Armenian => &[Lang::Hye],
             Script::Devanagari => &[Lang::Hin, Lang::Mar, Lang::Nep],
             Script::Ethiopic => &[Lang::Amh],
             Script::Hebrew => &[Lang::Heb, Lang::Yid],

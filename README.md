@@ -192,6 +192,7 @@ Sonic supports a wide range of languages in its lexing system. If a language is 
 
 * 🇿🇦 Afrikaans
 * 🇸🇦 Arabic
+* 🇦🇲 Armenian
 * 🇦🇿 Azerbaijani
 * 🇧🇩 Bengali
 * 🇧🇬 Bulgarian
@@ -208,8 +209,10 @@ Sonic supports a wide range of languages in its lexing system. If a language is 
 * 🇪🇪 Estonian
 * 🇫🇮 Finnish
 * 🇫🇷 French
+* 🇬🇪 Georgian
 * 🇩🇪 German
 * 🇬🇷 Greek
+* 🇮🇳 Gujarati
 * 🇮🇱 Hebrew
 * 🇮🇳 Hindi
 * 🇭🇺 Hungarian
@@ -233,6 +236,7 @@ Sonic supports a wide range of languages in its lexing system. If a language is 
 * 🇸🇮 Slovene
 * 🇪🇸 Spanish
 * 🇸🇪 Swedish
+* 🇵🇭 Tagalog
 * 🇮🇳 Tamil
 * 🇹🇭 Thai
 * 🇹🇷 Turkish

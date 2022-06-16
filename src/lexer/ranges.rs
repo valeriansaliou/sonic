@@ -15,6 +15,7 @@ pub struct LexerRegexRange(&'static [(char, char)]);
 const RANGE_LATIN: &[(char, char)] = &[('\u{0000}', '\u{024F}')];
 const RANGE_CYRILLIC: &[(char, char)] = &[('\u{0400}', '\u{052F}')];
 const RANGE_ARABIC: &[(char, char)] = &[('\u{0600}', '\u{06FF}'), ('\u{0750}', '\u{077F}')];
+const RANGE_ARMENIAN: &[(char, char)] = &[('\u{0530}', '\u{058F}')];
 const RANGE_DEVANAGARI: &[(char, char)] = &[('\u{0900}', '\u{097F}')];
 const RANGE_HIRAGANA: &[(char, char)] = &[('\u{3040}', '\u{309F}')];
 const RANGE_KATAKANA: &[(char, char)] = &[('\u{30A0}', '\u{30FF}'), ('\u{31F0}', '\u{31FF}')];
@@ -48,6 +49,7 @@ impl LexerRange {
             Script::Latin => RANGE_LATIN,
             Script::Cyrillic => RANGE_CYRILLIC,
             Script::Arabic => RANGE_ARABIC,
+            Script::Armenian => RANGE_ARMENIAN,
             Script::Devanagari => RANGE_DEVANAGARI,
             Script::Hiragana => RANGE_HIRAGANA,
             Script::Katakana => RANGE_KATAKANA,
