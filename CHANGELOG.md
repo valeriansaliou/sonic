@@ -9,6 +9,7 @@ Sonic Changelog
 
 ### New Features
 
+* The language detection system is now about 2x faster (due to the upgrade of `whatlang` past `v0.14.0`) [[@valeriansaliou](https://github.com/valeriansaliou)].
 * Added Armenian stopwords [[@valeriansaliou](https://github.com/valeriansaliou)].
 * Added Georgian stopwords [[@valeriansaliou](https://github.com/valeriansaliou)].
 * Added Gujarati stopwords [[@valeriansaliou](https://github.com/valeriansaliou)].
