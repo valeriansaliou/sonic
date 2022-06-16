@@ -215,6 +215,12 @@ name = "hashbrown"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab5ef0d4909ef3724cc8cce6ccc8572c5c817592e9285f5464f8e86f8bd3726e"
+
+[[package]]
+name = "hashbrown"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db0d4cf898abf0081f964436dc980e96670a0f36863e4b83aaacdb65c9d7ccc3"
 dependencies = [
  "ahash 0.7.6",
 ]
@@ -564,7 +570,7 @@ dependencies = [
  "fst",
  "fst-levenshtein",
  "fst-regex",
- "hashbrown 0.11.2",
+ "hashbrown 0.12.1",
  "jieba-rs",
  "lazy_static",
  "linked_hash_set",
