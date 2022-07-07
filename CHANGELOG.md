@@ -1,11 +1,12 @@
 Sonic Changelog
 ===============
 
-## Unreleased
+## 1.3.3 (2022-07-07)
 
 ### Changes
 
-* Dependencies have been bumped to latest versions (namely: `rocksdb`, `hashbrown`, `whatlang`, `regex`) [[@valeriansaliou](https://github.com/valeriansaliou)].
+* Dependencies have been bumped to latest versions (namely: `hashbrown`, `whatlang`, `regex`) [[@valeriansaliou](https://github.com/valeriansaliou)].
+* Moved the release pipeline to GitHub Actions [[@valeriansaliou](https://github.com/valeriansaliou)].
 
 ### New Features
 

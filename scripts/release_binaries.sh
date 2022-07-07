@@ -43,7 +43,7 @@ function release_for_architecture {
         mkdir ./sonic && \
         cp -p "target/$2/release/sonic" ./sonic/ && \
         cp -r ./config.cfg sonic/ && \
-        tar -czvf "$final_tar" ./sonic && \
+        tar --owner=0 --group=0 -czvf "$final_tar" ./sonic && \
         rm -r ./sonic/
     release_result=$?
 
