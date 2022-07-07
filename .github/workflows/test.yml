@@ -16,6 +16,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - name: Cache integration artifacts
+        id: cache-integration
+        uses: actions/cache@v2
+        with:
+          path: |
+            tests/integration/runner/node_modules
+          key: test-${{ runner.os }}-integration-${{ matrix.rust-toolchain }}
+
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -37,15 +45,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ matrix.rust-toolchain }}
-
-      - name: Cache integration artifacts
-        id: cache-integration
-        uses: actions/cache@v2
-        with:
-          path: |
-            tests/integration/runner/node_modules
-          key: ${{ runner.os }}-integration-${{ matrix.rust-toolchain }}
+          key: test-${{ runner.os }}-cargo-${{ matrix.rust-toolchain }}
 
       - name: Build code
         run: cargo build

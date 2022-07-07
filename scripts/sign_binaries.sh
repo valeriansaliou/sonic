@@ -34,42 +34,37 @@ if [ -z "$SONIC_VERSION" ]; then
   exit 1
 fi
 
-# Define release pipeline
-function release_for_architecture {
+# Define sign pipeline
+function sign_for_architecture {
     final_tar="v$SONIC_VERSION-$1.tar.gz"
+    gpg_signer="valerian@valeriansaliou.name"
 
-    rm -rf ./sonic/ && \
-        cross build --target "$2" --release && \
-        mkdir ./sonic && \
-        cp -p "target/$2/release/sonic" ./sonic/ && \
-        cp -r ./config.cfg sonic/ && \
-        tar -czvf "$final_tar" ./sonic && \
-        rm -r ./sonic/
-    release_result=$?
+    gpg -u "$gpg_signer" --armor --detach-sign "$final_tar"
+    sign_result=$?
 
-    if [ $release_result -eq 0 ]; then
-        echo "Result: Packed architecture: $1 to file: $final_tar"
+    if [ $sign_result -eq 0 ]; then
+        echo "Result: Signed architecture: $1 for file: $final_tar"
     fi
 
-    return $release_result
+    return $sign_result
 }
 
-# Run release tasks
+# Run sign tasks
 ABSPATH=$(cd "$(dirname "$0")"; pwd)
 BASE_DIR="$ABSPATH/../"
 
 rc=0
 
 pushd "$BASE_DIR" > /dev/null
-    echo "Executing release steps for Sonic v$SONIC_VERSION..."
+    echo "Executing sign steps for Sonic v$SONIC_VERSION..."
 
-    release_for_architecture "x86_64" "x86_64-unknown-linux-gnu"
+    sign_for_architecture "x86_64"
     rc=$?
 
     if [ $rc -eq 0 ]; then
-        echo "Success: Done executing release steps for Sonic v$SONIC_VERSION"
+        echo "Success: Done executing sign steps for Sonic v$SONIC_VERSION"
     else
-        echo "Error: Failed executing release steps for Sonic v$SONIC_VERSION"
+        echo "Error: Failed executing sign steps for Sonic v$SONIC_VERSION"
     fi
 popd > /dev/null
 

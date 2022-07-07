@@ -62,6 +62,7 @@ opt-level = 3
 lto = true
 debug = false
 debug-assertions = false
+strip = true
 
 [profile.bench]
 opt-level = 3
