@@ -19,7 +19,7 @@ doc = false
 [dependencies]
 log = "0.4"
 toml = "0.5"
-clap = { version = "2.33", default-features = false }
+clap = { version = "3.2", features = ["std", "cargo"] }
 lazy_static = "1.4"
 serde = "1.0"
 serde_derive = "1.0"
@@ -27,7 +27,7 @@ rand = "0.8"
 unicode-segmentation = "1.6"
 jieba-rs = { version = "0.6", optional = true }
 radix = "0.6"
-rocksdb = { version = "0.17", features = ["zstd"] }
+rocksdb = { version = "0.18", features = ["zstd"] }
 fst = "0.3"
 fst-levenshtein = "0.3"
 fst-regex = "0.3"
@@ -37,7 +37,7 @@ byteorder = "1.4"
 hashbrown = "0.12"
 linked_hash_set = "0.1"
 whatlang = "0.16"
-regex = "1.5"
+regex = "1.6"
 
 [target.'cfg(unix)'.dependencies]
 nix = "0.18"
