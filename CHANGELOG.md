@@ -1,6 +1,10 @@
 Sonic Changelog
 ===============
 
+## 1.3.5 (2022-07-10)
+
+* Rolled back `rocksdb` version, as the latest version does not link properly in `--release` mode [[@valeriansaliou](https://github.com/valeriansaliou)].
+
 ## 1.3.4 (2022-07-10)
 
 * Dependencies have been bumped to latest versions (namely: `rocksdb`, `clap`, `regex`) [[@valeriansaliou](https://github.com/valeriansaliou)].
