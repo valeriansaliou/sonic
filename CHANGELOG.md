@@ -1,6 +1,12 @@
 Sonic Changelog
 ===============
 
+## 1.3.4 (2022-07-10)
+
+* Dependencies have been bumped to latest versions (namely: `rocksdb`, `clap`, `regex`) [[@valeriansaliou](https://github.com/valeriansaliou)].
+
+### Changes
+
 ## 1.3.3 (2022-07-07)
 
 ### Changes
