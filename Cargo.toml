@@ -27,7 +27,7 @@ rand = "0.8"
 unicode-segmentation = "1.6"
 jieba-rs = { version = "0.6", optional = true }
 radix = "0.6"
-rocksdb = { version = "0.18", features = ["zstd"] }
+rocksdb = { version = "0.17", features = ["zstd"] }
 fst = "0.3"
 fst-levenshtein = "0.3"
 fst-regex = "0.3"
