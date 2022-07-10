@@ -13,36 +13,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Cache build artifacts
-        id: cache-cargo
-        uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cargo/bin
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: build-${{ runner.os }}-cargo-any
-
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: rustfmt
-          override: true
-
-      - name: Install cross-compilation tools (if needed)
-        run: which cross >/dev/null || cargo install cross
-
-      - name: Verify versions
-        run: rustc --version && rustup --version && cargo --version && cross --version
-
       - name: Get current tag
         id: current_tag
         uses: WyriHaximus/github-action-get-previous-tag@v1
-
-      - name: Release binaries
-        run: ./scripts/release_binaries.sh --version=${{ steps.current_tag.outputs.tag }}
 
       - name: Release new version
         uses: softprops/action-gh-release@v1
@@ -50,7 +23,6 @@ jobs:
           tag_name: ${{ steps.current_tag.outputs.tag }}
           name: Sonic ${{ steps.current_tag.outputs.tag }}
           body: "⚠️ Changelog not yet provided."
-          files: ./${{ steps.current_tag.outputs.tag }}-*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

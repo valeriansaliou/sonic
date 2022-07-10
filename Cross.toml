@@ -1,2 +1,0 @@
-[target.x86_64-unknown-linux-gnu]
-image = "valeriansaliou/sonic:cross-x86_64-unknown-linux-gnu-0.2.0"
