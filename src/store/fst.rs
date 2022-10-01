@@ -4,6 +4,7 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use fst::automaton::AlwaysMatch;
 use fst::set::Stream as FSTStream;
 use fst::{
     Automaton, Error as FSTError, IntoStreamer, Set as FSTSet, SetBuilder as FSTSetBuilder,
@@ -805,6 +806,10 @@ impl StoreFST {
         self.graph.len()
     }
 
+    pub fn get_all_stream(&self) -> FSTStream<AlwaysMatch> {
+        self.graph.into_stream()
+    }
+
     pub fn lookup_begins(&self, word: &str) -> Result<FSTStream<Regex>, ()> {
         // Notice: this regex maps over an unicode range, for speed reasons at scale. \
         //   We found out that the 'match any' syntax ('.*') was super-slow. Using the restrictive \
@@ -1186,6 +1191,22 @@ impl StoreFSTAction {
                     }
                 }
             }
+        }
+    }
+
+    pub fn list_words(&self, limit: usize, offset: usize) -> Result<Vec<String>, ()> {
+        let stream = self.store.get_all_stream();
+
+        let convert_result = stream
+            .into_strs()
+            .map(|strings| strings.into_iter().skip(offset).take(limit).collect());
+
+        match convert_result {
+            Err(e) => {
+                debug!("convertation of stream failed. Error: {}", e.to_string());
+                Err(())
+            }
+            Ok(strings) => Ok(strings),
         }
     }
 }

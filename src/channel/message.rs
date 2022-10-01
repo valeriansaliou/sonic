@@ -191,6 +191,7 @@ impl ChannelMessageMode for ChannelMessageModeControl {
             "TRIGGER" => ChannelCommandControl::dispatch_trigger,
             "INFO" => ChannelCommandControl::dispatch_info,
             "HELP" => ChannelCommandControl::dispatch_help,
+            "LIST" => ChannelCommandControl::dispatch_list,
         })
     }
 }

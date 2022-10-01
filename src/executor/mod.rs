@@ -15,3 +15,4 @@ pub mod pop;
 pub mod push;
 pub mod search;
 pub mod suggest;
+pub mod list;

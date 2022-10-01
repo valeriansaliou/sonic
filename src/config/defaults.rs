@@ -98,3 +98,7 @@ pub fn store_fst_graph_max_size() -> usize {
 pub fn store_fst_graph_max_words() -> usize {
     250000
 }
+
+pub fn control_list_limit() -> u16 {
+    100
+}

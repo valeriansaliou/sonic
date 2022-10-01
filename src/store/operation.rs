@@ -8,6 +8,7 @@ use crate::executor::count::ExecutorCount;
 use crate::executor::flushb::ExecutorFlushB;
 use crate::executor::flushc::ExecutorFlushC;
 use crate::executor::flusho::ExecutorFlushO;
+use crate::executor::list::ExecutorList;
 use crate::executor::pop::ExecutorPop;
 use crate::executor::push::ExecutorPush;
 use crate::executor::search::ExecutorSearch;
@@ -44,6 +45,9 @@ impl StoreOperationDispatch {
             Query::FlushO(store) => {
                 ExecutorFlushO::execute(store).map(|count| Some(count.to_string()))
             }
+            Query::List(store, limit, offset) => ExecutorList::execute(store, limit, offset)
+                .map(|results| results.join(" "))
+                .map(|results| Some(results)),
         }
     }
 }
