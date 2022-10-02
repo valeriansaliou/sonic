@@ -98,7 +98,7 @@ impl TokenLexerBuilder {
             //   nothing as it avoids entering the below iterator for small strings.
             // Notice: we fallback on text if the result is 'None'; as if it is 'None' there \
             //   was less characters than the truncate limit in the UTF-8 parsed text. With \
-            //   this unwrap-way, we avoid doing a 'text.chars().count()' everytime, which is \
+            //   this unwrap-way, we avoid doing a 'text.chars().count()' every time, which is \
             //   a O(N) operation, and rather guard this block with a 'text.len()' which is \
             //   a O(1) operation but which is not 100% reliable when approaching the truncate \
             //   limit. This is a trade-off, which saves quite a lot CPU cycles at scale.

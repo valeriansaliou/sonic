@@ -141,7 +141,7 @@ impl ExecutorPush {
 
                         // Push to FST graph? (this consumes the term; to avoid sub-clones)
                         if fst_action.push_word(&term) {
-                            debug!("push term commited to graph: {}", term);
+                            debug!("push term committed to graph: {}", term);
                         }
                     }
 
