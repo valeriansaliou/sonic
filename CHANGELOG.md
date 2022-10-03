@@ -107,7 +107,7 @@ Sonic Changelog
 
 ### Bug Fixes
 
-* Fixed a rare deadlock occuring when 3 concurrent operations get executed on different threads for the same collection, in the following timely order: `PUSH` then `FLUSHB` then `PUSH` [[@valeriansaliou](https://github.com/valeriansaliou), [d96546b](https://github.com/valeriansaliou/sonic/commit/d96546bd9d8b79332df1106766377e4a4acebd50)].
+* Fixed a rare deadlock occurring when 3 concurrent operations get executed on different threads for the same collection, in the following timely order: `PUSH` then `FLUSHB` then `PUSH` [[@valeriansaliou](https://github.com/valeriansaliou), [d96546b](https://github.com/valeriansaliou/sonic/commit/d96546bd9d8b79332df1106766377e4a4acebd50)].
 
 ### Changes
 
@@ -125,7 +125,7 @@ Sonic Changelog
 
 ### Bug Fixes
 
-* RocksDB has been bumped to `v5.18.3`, which fixes a dead-lock occuring in RocksDB at scale when a compaction task is ran under heavy disk writes (ie. disk flushes). This dead-lock was causing Sonic to stop responding to any command issued for the frozen collection. This dead-lock was due to a bug in RocksDB internals (not originating from Sonic itself) [[@baptistejamin](https://github.com/baptistejamin), [19c4a10](https://github.com/baptistejamin/sonic/commit/19c4a104a6d6aaed1dd9beb2e51d2639627825cd)].
+* RocksDB has been bumped to `v5.18.3`, which fixes a dead-lock occurring in RocksDB at scale when a compaction task is ran under heavy disk writes (ie. disk flushes). This dead-lock was causing Sonic to stop responding to any command issued for the frozen collection. This dead-lock was due to a bug in RocksDB internals (not originating from Sonic itself) [[@baptistejamin](https://github.com/baptistejamin), [19c4a10](https://github.com/baptistejamin/sonic/commit/19c4a104a6d6aaed1dd9beb2e51d2639627825cd)].
 
 ### Changes
 

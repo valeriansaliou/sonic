@@ -511,9 +511,9 @@ impl StoreFSTPool {
             store.pending.pop.write().unwrap(),
         );
 
-        // Do consolidate? (any change commited)
+        // Do consolidate? (any change committed)
         // Notice: if both pending sets are empty do not consolidate as there may have been a \
-        //   push then a pop of this push, nulling out any commited change.
+        //   push then a pop of this push, nulling out any committed change.
         if pending_push_write.len() > 0 || pending_pop_write.len() > 0 {
             // Read old FST (or default to empty FST)
             if let Ok(old_fst) =
@@ -556,7 +556,7 @@ impl StoreFSTPool {
                             'old: while let Some(old_fst_word) = old_fst_stream.next() {
                                 // Append new words from front? (ie. push words)
                                 // Notice: as an FST is ordered, inserts would fail if they are \
-                                //   commited out-of-order. Thus, the only way to check for \
+                                //   committed out-of-order. Thus, the only way to check for \
                                 //   order is there.
                                 // Notice: a quick check is done before engaging in the loop, to \
                                 //   prevent any de-optimized jump instruction, as we may call \
@@ -737,7 +737,7 @@ impl StoreFSTBuilder {
         if collection_bucket_path.exists() {
             // Open graph at path for collection
             // Notice: this is unsafe, as loaded memory is a memory-mapped file, that cannot be \
-            //   garanteed not to be muted while we own a read handle to it. Though, we use \
+            //   guaranteed not to be muted while we own a read handle to it. Though, we use \
             //   higher-level locking mechanisms on all callers of this method, so we are safe.
             unsafe { FSTSet::from_path(collection_bucket_path) }
         } else {
@@ -883,7 +883,7 @@ impl StoreFST {
             GRAPH_CONSOLIDATE.write().unwrap().insert(self.target);
 
             // Bump 'last consolidated' time, effectively de-bouncing consolidation to a fixed \
-            //   and predictible tick time in the future.
+            //   and predictable tick time in the future.
             let mut last_consolidated_value = self.last_consolidated.write().unwrap();
 
             *last_consolidated_value = SystemTime::now();
@@ -930,7 +930,7 @@ impl StoreGenericActionBuilder for StoreFSTActionBuilder {
 
         // Force a FST graph close (on all contained buckets)
         // Notice: we first need to scan for opened buckets in-memory, as not all FSTs may be \
-        //   commited to disk; thus some FST stores that exist in-memory may not exist on-disk.
+        //   committed to disk; thus some FST stores that exist in-memory may not exist on-disk.
         let mut bucket_atoms: Vec<StoreFSTAtom> = Vec::new();
 
         {
