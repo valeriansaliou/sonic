@@ -38,6 +38,7 @@ _The Sonic Channel Search mode is used for querying the search index. Once in th
 
 * `QUERY`: query database (syntax: `QUERY <collection> <bucket> "<terms>" [LIMIT(<count>)]? [OFFSET(<count>)]? [LANG(<locale>)]?`; time complexity: `O(1)` if enough exact word matches or `O(N)` if not enough exact matches where `N` is the number of alternate words tried, in practice it approaches `O(1)`)
 * `SUGGEST`: auto-completes word (syntax: `SUGGEST <collection> <bucket> "<word>" [LIMIT(<count>)]?`; time complexity: `O(1)`)
+* `LIST`: enumerates all words in an index (syntax: `LIST <collection> <bucket> [LIMIT(<count>)]? [OFFSET(<count>)]?`; time complexity: `O(N)` where `N` is the number of words enumerated, within provided limits)
 * `PING`: ping server (syntax: `PING`; time complexity: `O(1)`)
 * `HELP`: show help (syntax: `HELP [<manual>]?`; time complexity: `O(1)`)
 * `QUIT`: stop connection (syntax: `QUIT`; time complexity: `O(1)`)
