@@ -1,3 +1,4 @@
+
 target/*
 .DS_Store
 *~
@@ -6,3 +7,7 @@ target/*
 
 data/store/fst/*
 data/store/kv/*
+
+# direnv
+.envrc
+.direnv/
