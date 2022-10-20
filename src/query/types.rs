@@ -22,6 +22,14 @@ pub type QueryMetaData = (
     Option<QueryGenericLang>,
 );
 
+pub type ControlListAllLimit = u16;
+pub type ControlListAllOffset = u32;
+
+pub type ListAllMetaData = (
+    Option<ControlListAllLimit>,
+    Option<ControlListAllOffset>,
+);
+
 impl QueryGenericLang {
     pub fn from_value(value: &str) -> Option<QueryGenericLang> {
         if value == "none" {

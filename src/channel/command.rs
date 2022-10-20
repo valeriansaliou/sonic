@@ -15,7 +15,10 @@ use std::vec::Vec;
 use super::format::unescape;
 use super::statistics::ChannelStatistics;
 use crate::query::builder::{QueryBuilder, QueryBuilderResult};
-use crate::query::types::{QueryGenericLang, QueryMetaData, QuerySearchLimit, QuerySearchOffset};
+use crate::query::types::{
+    ControlListAllLimit, ControlListAllOffset, ListAllMetaData, QueryGenericLang, QueryMetaData,
+    QuerySearchLimit, QuerySearchOffset,
+};
 use crate::store::fst::StoreFSTPool;
 use crate::store::kv::StoreKVPool;
 use crate::store::operation::StoreOperationDispatch;
@@ -752,6 +755,47 @@ impl ChannelCommandIngest {
 }
 
 impl ChannelCommandControl {
+    fn handle_list_all_meta(
+        meta_result: MetaPartsResult,
+    ) -> Result<ListAllMetaData, ChannelCommandError> {
+        match meta_result {
+            Ok((meta_key, meta_value)) => {
+                debug!(
+                    "handle control list-all meta: {} = {}",
+                    meta_key, meta_value
+                );
+
+                match meta_key {
+                    "LIMIT" => {
+                        if let Ok(list_limit_parsed) = meta_value.parse::<ControlListAllLimit>() {
+                            Ok((Some(list_limit_parsed), None))
+                        } else {
+                            Err(ChannelCommandBase::make_error_invalid_meta_value(
+                                meta_key, meta_value,
+                            ))
+                        }
+                    }
+                    "OFFSET" => {
+                        if let Ok(query_offset_parsed) = meta_value.parse::<ControlListAllOffset>()
+                        {
+                            Ok((None, Some(query_offset_parsed)))
+                        } else {
+                            Err(ChannelCommandBase::make_error_invalid_meta_value(
+                                meta_key, meta_value,
+                            ))
+                        }
+                    }
+                    _ => Err(ChannelCommandBase::make_error_invalid_meta_key(
+                        meta_key, meta_value,
+                    )),
+                }
+            }
+            Err(err) => Err(ChannelCommandBase::make_error_invalid_meta_key(
+                err.0, err.1,
+            )),
+        }
+    }
+
     pub fn dispatch_trigger(mut parts: SplitWhitespace) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next()) {
             (None, _, _) => Ok(vec![ChannelCommandResponse::Result(format!(
@@ -837,6 +881,46 @@ impl ChannelCommandControl {
 
     pub fn dispatch_help(parts: SplitWhitespace) -> ChannelResult {
         ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_CONTROL)
+    }
+
+    pub fn dispatch_list(mut parts: SplitWhitespace) -> ChannelResult {
+        match (
+            parts.next(), // collection
+            parts.next(), // bucket
+            ChannelCommandBase::parse_text_parts(&mut parts),
+        ) {
+            (Some(collection), Some(bucket), Some(_text)) => {
+                debug!(
+                    "dispatching list of words for the collection {} on bucket: {}",
+                    collection, bucket
+                );
+                let mut last_meta_err = None;
+                let mut list_limit = APP_CONF.server.control_list_limit;
+                let mut offset: u32 = 0;
+                while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
+                {
+                    match Self::handle_list_all_meta(meta_result) {
+                        Ok(metadata) => match metadata {
+                            (Some(limit), None) => list_limit = limit,
+                            (None, Some(defined_offset)) => offset = defined_offset,
+                            _ => {}
+                        },
+                        Err(parse_err) => last_meta_err = Some(parse_err),
+                    }
+                }
+
+                if let Some(err) = last_meta_err {
+                    return Err(err);
+                }
+
+                ChannelCommandBase::commit_result_operation(QueryBuilder::list(
+                    collection, bucket, list_limit, offset,
+                ))
+            }
+            _ => Err(ChannelCommandError::InvalidFormat(
+                "LIST <collection> <bucket> [LIMIT(<count>)]? [OFFSET(<count>)]?",
+            )),
+        }
     }
 }
 

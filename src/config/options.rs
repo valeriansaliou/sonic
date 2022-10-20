@@ -24,6 +24,9 @@ pub struct ConfigServer {
         deserialize_with = "env_var::str"
     )]
     pub log_level: String,
+
+    #[serde(default = "defaults::control_list_limit")]
+    pub control_list_limit: u16,
 }
 
 #[derive(Deserialize)]
