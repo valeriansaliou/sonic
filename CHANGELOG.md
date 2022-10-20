@@ -3,7 +3,7 @@ Sonic Changelog
 
 ## 1.3.5 (2022-07-10)
 
-### Changes
+### Bug Fixes
 
 * Rolled back `rocksdb` version, as the latest version does not link properly in `--release` mode [[@valeriansaliou](https://github.com/valeriansaliou)].
 
