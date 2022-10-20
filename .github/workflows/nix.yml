@@ -1,0 +1,17 @@
+name: nix
+
+on: [pull_request, push]
+
+jobs:
+  nix-flake:
+    name: Nix packaging (flake)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Install Nix
+        uses: cachix/install-nix-action@v17
+      - name: Flake check
+        run: nix flake check --no-update-lock-file --show-trace --verbose
+      - name: Flake build
+        run: nix build --no-update-lock-file --show-trace --verbose --print-build-logs
