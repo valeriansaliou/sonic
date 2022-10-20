@@ -31,9 +31,21 @@
           BINDGEN_EXTRA_CLANG_ARGS = "-isystem ${llvmPackages.libclang.lib}/lib/clang/${lib.getVersion clang}/include";
 
           postInstall = ''
-            mkdir -p $out/share
-            cp config.cfg $out/share
+            mkdir -p $out/etc/
+            mkdir -p $out/usr/lib/systemd/system/
+
+            install -Dm444 -t $out/etc/sonic config.cfg 
+            substitute \
+              ./examples/config/systemd.service $out/usr/lib/systemd/system/sonic-server.service \
+              --replace /bin/sonic $out/bin/sonic \
+              --replace /etc/sonic.cfg $out/etc/sonic/config.cfg
           '';
+
+          meta = {
+            homepage = "https://github.com/valeriansaliou/sonic";
+            downloadPage = "https://github.com/valeriansaliou/sonic/releases";
+            license = lib.licenses.mpl20;
+          };
         };
 
     in
