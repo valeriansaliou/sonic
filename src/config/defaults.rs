@@ -39,6 +39,14 @@ pub fn channel_search_suggest_limit_maximum() -> u16 {
     20
 }
 
+pub fn channel_search_list_limit_default() -> u16 {
+    100
+}
+
+pub fn channel_search_list_limit_maximum() -> u16 {
+    500
+}
+
 pub fn store_kv_path() -> PathBuf {
     PathBuf::from("./data/store/kv/")
 }
@@ -97,8 +105,4 @@ pub fn store_fst_graph_max_size() -> usize {
 
 pub fn store_fst_graph_max_words() -> usize {
     250000
-}
-
-pub fn control_list_limit() -> u16 {
-    100
 }

@@ -7,7 +7,6 @@
 use super::actions::Query;
 use super::types::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset};
 use crate::lexer::token::{TokenLexerBuilder, TokenLexerMode};
-use crate::query::types::{ListLimit, ListOffset};
 use crate::store::item::StoreItemBuilder;
 
 pub struct QueryBuilder;
@@ -47,6 +46,19 @@ impl QueryBuilder {
             TokenLexerBuilder::from(TokenLexerMode::NormalizeOnly, terms),
         ) {
             (Ok(store), Ok(text_lexed)) => Ok(Query::Suggest(store, query_id, text_lexed, limit)),
+            _ => Err(()),
+        }
+    }
+
+    pub fn list<'a>(
+        query_id: &'a str,
+        collection: &'a str,
+        bucket: &'a str,
+        limit: QuerySearchLimit,
+        offset: QuerySearchOffset,
+    ) -> QueryBuilderResult<'a> {
+        match StoreItemBuilder::from_depth_2(collection, bucket) {
+            Ok(store) => Ok(Query::List(store, query_id, limit, offset)),
             _ => Err(()),
         }
     }
@@ -125,18 +137,6 @@ impl QueryBuilder {
             _ => Err(()),
         }
     }
-
-    pub fn list<'a>(
-        collection: &'a str,
-        bucket: &'a str,
-        limit: ListLimit,
-        offset: ListOffset,
-    ) -> QueryBuilderResult<'a> {
-        match StoreItemBuilder::from_depth_2(collection, bucket) {
-            Ok(store) => Ok(Query::List(store, limit, offset)),
-            _ => Err(()),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -156,6 +156,12 @@ mod tests {
     fn it_builds_suggest_query() {
         assert!(QueryBuilder::suggest("id1", "c:test:2", "b:test:2", "Micha", 5).is_ok());
         assert!(QueryBuilder::suggest("id2", "c:test:2", "", "Micha", 1).is_err());
+    }
+
+    #[test]
+    fn it_builds_list_query() {
+        assert!(QueryBuilder::list("id1", "c:test:2", "b:test:2", 100, 0).is_ok());
+        assert!(QueryBuilder::list("id2", "c:test:2", "", 10, 0).is_err());
     }
 
     #[test]

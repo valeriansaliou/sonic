@@ -4,8 +4,7 @@
 // Copyright: 2022, Troy Kohler <troy.kohler@zalando.de>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use crate::query::types::ListLimit;
-use crate::query::types::ListOffset;
+use crate::query::types::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
 use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::fst::StoreFSTPool;
 use crate::store::item::StoreItem;
@@ -15,20 +14,21 @@ pub struct ExecutorList;
 impl ExecutorList {
     pub fn execute(
         store: StoreItem,
-        limit: ListLimit,
-        offset: ListOffset,
+        _event_id: QuerySearchID,
+        limit: QuerySearchLimit,
+        offset: QuerySearchOffset,
     ) -> Result<Vec<String>, ()> {
         if let StoreItem(collection, Some(bucket), None) = store {
+            // Important: acquire graph access read lock, and reference it in context. This \
+            //   prevents the graph from being erased while using it in this block.
             general_fst_access_lock_read!();
 
             if let Ok(fst_store) = StoreFSTPool::acquire(collection, bucket) {
                 let fst_action = StoreFSTActionBuilder::access(fst_store);
 
-                debug!("running list, read lock is acquired");
+                debug!("running list");
 
-                let (limit_usize, offset_usize) = (limit as usize, offset as usize);
-
-                return fst_action.list_words(limit_usize, offset_usize);
+                return fst_action.list_words(limit as usize, offset as usize);
             }
         }
 

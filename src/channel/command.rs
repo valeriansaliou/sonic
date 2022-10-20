@@ -16,8 +16,7 @@ use super::format::unescape;
 use super::statistics::ChannelStatistics;
 use crate::query::builder::{QueryBuilder, QueryBuilderResult};
 use crate::query::types::{
-    ListLimit, ListMetaData, ListOffset, QueryGenericLang, QueryMetaData, QuerySearchLimit,
-    QuerySearchOffset,
+    ListMetaData, QueryGenericLang, QueryMetaData, QuerySearchLimit, QuerySearchOffset,
 };
 use crate::store::fst::StoreFSTPool;
 use crate::store::kv::StoreKVPool;
@@ -71,7 +70,7 @@ static BACKUP_FST_PATH: &str = "fst";
 
 lazy_static! {
     pub static ref COMMANDS_MODE_SEARCH: Vec<&'static str> =
-        vec!["QUERY", "SUGGEST", "PING", "HELP", "QUIT"];
+        vec!["QUERY", "SUGGEST", "LIST", "PING", "HELP", "QUIT"];
     pub static ref COMMANDS_MODE_INGEST: Vec<&'static str> =
         vec!["PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT"];
     pub static ref COMMANDS_MODE_CONTROL: Vec<&'static str> =
@@ -491,27 +490,29 @@ impl ChannelCommandSearch {
     }
 
     pub fn dispatch_list(mut parts: SplitWhitespace) -> ChannelResult {
-        match (
-            parts.next(),
-            parts.next(),
-            ChannelCommandBase::parse_text_parts(&mut parts),
-        ) {
-            (Some(collection), Some(bucket), Some(_text)) => {
+        match (parts.next(), parts.next()) {
+            (Some(collection), Some(bucket)) => {
+                // Generate command identifier
+                let event_id = ChannelCommandBase::generate_event_id();
+
                 debug!(
-                    "dispatching list of words for the collection {} on bucket: {}",
-                    collection, bucket
+                    "dispatching search list #{} on collection: {} and bucket: {}",
+                    event_id, collection, bucket
                 );
 
+                // Define list parameters
+                let (mut list_limit, mut list_offset) =
+                    (APP_CONF.channel.search.list_limit_default, 0);
+
+                // Parse meta parts (meta comes last; extract meta parts second)
                 let mut last_meta_err = None;
-                let mut list_limit = APP_CONF.server.control_list_limit;
-                let mut offset: u32 = 0;
 
                 while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
                 {
                     match Self::handle_list_meta(meta_result) {
                         Ok(metadata) => match metadata {
-                            (Some(limit), None) => list_limit = limit,
-                            (None, Some(defined_offset)) => offset = defined_offset,
+                            (Some(list_limit_parsed), None) => list_limit = list_limit_parsed,
+                            (None, Some(list_offset_parsed)) => list_offset = list_offset_parsed,
                             _ => {}
                         },
                         Err(parse_err) => last_meta_err = Some(parse_err),
@@ -519,12 +520,20 @@ impl ChannelCommandSearch {
                 }
 
                 if let Some(err) = last_meta_err {
-                    return Err(err);
+                    Err(err)
+                } else if list_limit < 1 || list_limit > APP_CONF.channel.search.list_limit_maximum
+                {
+                    Err(ChannelCommandError::PolicyReject(
+                        "LIMIT out of minimum/maximum bounds",
+                    ))
+                } else {
+                    // Commit 'list' query
+                    ChannelCommandBase::commit_pending_operation(
+                        "LIST",
+                        &event_id,
+                        QueryBuilder::list(&event_id, collection, bucket, list_limit, list_offset),
+                    )
                 }
-
-                ChannelCommandBase::commit_result_operation(QueryBuilder::list(
-                    collection, bucket, list_limit, offset,
-                ))
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "LIST <collection> <bucket> [LIMIT(<count>)]? [OFFSET(<count>)]?",
@@ -621,7 +630,8 @@ impl ChannelCommandSearch {
 
                 match meta_key {
                     "LIMIT" => {
-                        if let Ok(list_limit_parsed) = meta_value.parse::<ListLimit>() {
+                        // 'LIMIT(<count>)' where 0 <= <count> < 2^16
+                        if let Ok(list_limit_parsed) = meta_value.parse::<QuerySearchLimit>() {
                             Ok((Some(list_limit_parsed), None))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
@@ -630,8 +640,9 @@ impl ChannelCommandSearch {
                         }
                     }
                     "OFFSET" => {
-                        if let Ok(query_offset_parsed) = meta_value.parse::<ListOffset>() {
-                            Ok((None, Some(query_offset_parsed)))
+                        // 'OFFSET(<count>)' where 0 <= <count> < 2^32
+                        if let Ok(list_offset_parsed) = meta_value.parse::<QuerySearchOffset>() {
+                            Ok((None, Some(list_offset_parsed)))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
                                 meta_key, meta_value,

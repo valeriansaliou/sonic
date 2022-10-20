@@ -24,9 +24,6 @@ pub struct ConfigServer {
         deserialize_with = "env_var::str"
     )]
     pub log_level: String,
-
-    #[serde(default = "defaults::control_list_limit")]
-    pub control_list_limit: u16,
 }
 
 #[derive(Deserialize)]
@@ -62,6 +59,12 @@ pub struct ConfigChannelSearch {
 
     #[serde(default = "defaults::channel_search_suggest_limit_maximum")]
     pub suggest_limit_maximum: u16,
+
+    #[serde(default = "defaults::channel_search_list_limit_default")]
+    pub list_limit_default: u16,
+
+    #[serde(default = "defaults::channel_search_list_limit_maximum")]
+    pub list_limit_maximum: u16,
 }
 
 #[derive(Deserialize)]

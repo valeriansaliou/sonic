@@ -22,11 +22,16 @@ pub enum Query<'a> {
         TokenLexer<'a>,
         QuerySearchLimit,
     ),
+    List(
+        StoreItem<'a>,
+        QuerySearchID<'a>,
+        QuerySearchLimit,
+        QuerySearchOffset,
+    ),
     Push(StoreItem<'a>, TokenLexer<'a>),
     Pop(StoreItem<'a>, TokenLexer<'a>),
     Count(StoreItem<'a>),
     FlushC(StoreItem<'a>),
     FlushB(StoreItem<'a>),
     FlushO(StoreItem<'a>),
-    List(StoreItem<'a>, ListLimit, ListOffset),
 }

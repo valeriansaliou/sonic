@@ -806,7 +806,7 @@ impl StoreFST {
         self.graph.len()
     }
 
-    pub fn get_all_stream(&self) -> FSTStream<AlwaysMatch> {
+    pub fn as_stream(&self) -> FSTStream<AlwaysMatch> {
         self.graph.into_stream()
     }
 
@@ -1159,6 +1159,22 @@ impl StoreFSTAction {
         }
     }
 
+    pub fn list_words(&self, limit: usize, offset: usize) -> Result<Vec<String>, ()> {
+        let stream = self.store.as_stream();
+
+        // Enumerate words from FST stream
+        match stream
+            .into_strs()
+            .map(|words| words.into_iter().skip(offset).take(limit).collect())
+        {
+            Err(err) => {
+                debug!("conversion of stream failed: {}", err.to_string());
+                Err(())
+            }
+            Ok(words) => Ok(words),
+        }
+    }
+
     pub fn count_words(&self) -> usize {
         self.store.cardinality()
     }
@@ -1191,22 +1207,6 @@ impl StoreFSTAction {
                     }
                 }
             }
-        }
-    }
-
-    pub fn list_words(&self, limit: usize, offset: usize) -> Result<Vec<String>, ()> {
-        let stream = self.store.get_all_stream();
-
-        let convert_result = stream
-            .into_strs()
-            .map(|strings| strings.into_iter().skip(offset).take(limit).collect());
-
-        match convert_result {
-            Err(e) => {
-                debug!("convertation of stream failed. Error: {}", e.to_string());
-                Err(())
-            }
-            Ok(strings) => Ok(strings),
         }
     }
 }

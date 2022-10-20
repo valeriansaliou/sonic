@@ -29,6 +29,11 @@ impl StoreOperationDispatch {
                 ExecutorSuggest::execute(store, query_id, lexer, limit)
                     .map(|results| results.map(|results| results.join(" ")))
             }
+            Query::List(store, query_id, limit, offset) => {
+                ExecutorList::execute(store, query_id, limit, offset)
+                    .map(|results| results.join(" "))
+                    .map(|results| Some(results))
+            }
             Query::Push(store, lexer) => ExecutorPush::execute(store, lexer).map(|_| None),
             Query::Pop(store, lexer) => {
                 ExecutorPop::execute(store, lexer).map(|count| Some(count.to_string()))
@@ -45,9 +50,6 @@ impl StoreOperationDispatch {
             Query::FlushO(store) => {
                 ExecutorFlushO::execute(store).map(|count| Some(count.to_string()))
             }
-            Query::List(store, limit, offset) => ExecutorList::execute(store, limit, offset)
-                .map(|results| results.join(" "))
-                .map(|results| Some(results)),
         }
     }
 }
