@@ -166,6 +166,7 @@ impl ChannelMessageMode for ChannelMessageModeSearch {
         gen_channel_message_mode_handle!(message, COMMANDS_MODE_SEARCH, {
             "QUERY" => ChannelCommandSearch::dispatch_query,
             "SUGGEST" => ChannelCommandSearch::dispatch_suggest,
+            "LIST" => ChannelCommandSearch::dispatch_list,
             "HELP" => ChannelCommandSearch::dispatch_help,
         })
     }
@@ -191,7 +192,6 @@ impl ChannelMessageMode for ChannelMessageModeControl {
             "TRIGGER" => ChannelCommandControl::dispatch_trigger,
             "INFO" => ChannelCommandControl::dispatch_info,
             "HELP" => ChannelCommandControl::dispatch_help,
-            "LIST" => ChannelCommandControl::dispatch_list,
         })
     }
 }

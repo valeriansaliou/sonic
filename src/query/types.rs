@@ -16,19 +16,16 @@ pub type QuerySearchID<'a> = &'a str;
 pub type QuerySearchLimit = u16;
 pub type QuerySearchOffset = u32;
 
+pub type ListLimit = u16;
+pub type ListOffset = u32;
+
 pub type QueryMetaData = (
     Option<QuerySearchLimit>,
     Option<QuerySearchOffset>,
     Option<QueryGenericLang>,
 );
 
-pub type ControlListAllLimit = u16;
-pub type ControlListAllOffset = u32;
-
-pub type ListAllMetaData = (
-    Option<ControlListAllLimit>,
-    Option<ControlListAllOffset>,
-);
+pub type ListMetaData = (Option<ListLimit>, Option<ListOffset>);
 
 impl QueryGenericLang {
     pub fn from_value(value: &str) -> Option<QueryGenericLang> {

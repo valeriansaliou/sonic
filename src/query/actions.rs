@@ -28,9 +28,5 @@ pub enum Query<'a> {
     FlushC(StoreItem<'a>),
     FlushB(StoreItem<'a>),
     FlushO(StoreItem<'a>),
-    List(
-        StoreItem<'a>,
-        ControlListAllLimit,
-        ControlListAllOffset
-    ),
+    List(StoreItem<'a>, ListLimit, ListOffset),
 }

@@ -7,7 +7,7 @@
 use super::actions::Query;
 use super::types::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset};
 use crate::lexer::token::{TokenLexerBuilder, TokenLexerMode};
-use crate::query::types::{ControlListAllLimit, ControlListAllOffset};
+use crate::query::types::{ListLimit, ListOffset};
 use crate::store::item::StoreItemBuilder;
 
 pub struct QueryBuilder;
@@ -129,8 +129,8 @@ impl QueryBuilder {
     pub fn list<'a>(
         collection: &'a str,
         bucket: &'a str,
-        limit: ControlListAllLimit,
-        offset: ControlListAllOffset,
+        limit: ListLimit,
+        offset: ListOffset,
     ) -> QueryBuilderResult<'a> {
         match StoreItemBuilder::from_depth_2(collection, bucket) {
             Ok(store) => Ok(Query::List(store, limit, offset)),
