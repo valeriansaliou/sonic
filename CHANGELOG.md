@@ -1,6 +1,21 @@
 Sonic Changelog
 ===============
 
+## 1.4.0 (2022-10-20)
+
+### Bug Fixes
+
+* Fixed typo in README abstract [[@remram44](https://github.com/remram44), [#295](https://github.com/valeriansaliou/sonic/pull/295)].
+* Fixed typos in code and documentation [[@kianmeng](https://github.com/kianmeng), [#294](https://github.com/valeriansaliou/sonic/pull/294)].
+
+### Changes
+
+* Replaced Docker source image from Debian Slim to lighter Google distroless image [[@0x0x1](https://github.com/0x0x1), [#282](https://github.com/valeriansaliou/sonic/pull/282)].
+
+### New Features
+
+* Added an index enumeration `LIST` command to Sonic Channel [[@trkohler](https://github.com/trkohler), [#293](https://github.com/valeriansaliou/sonic/pull/293)].
+
 ## 1.3.5 (2022-07-10)
 
 ### Bug Fixes
