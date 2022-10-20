@@ -15,7 +15,7 @@ COPY . /app
 RUN cargo clean && cargo build --release --target x86_64-unknown-linux-gnu
 RUN strip ./target/x86_64-unknown-linux-gnu/release/sonic
 
-FROM debian:bullseye-slim
+FROM gcr.io/distroless/cc
 
 WORKDIR /usr/src/sonic
 
