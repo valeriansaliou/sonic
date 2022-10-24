@@ -190,61 +190,60 @@ Sonic supports a wide range of languages in its lexing system. If a language is 
 
 **The languages supported by the lexing system are:**
 
-* 🇿🇦 Afrikaans
-* 🇸🇦 Arabic
-* 🇦🇲 Armenian
-* 🇦🇿 Azerbaijani
-* 🇧🇩 Bengali
-* 🇧🇬 Bulgarian
-* 🇲🇲 Burmese
-* 🏳 Catalan
-* 🇨🇳 Chinese (Simplified)
-* 🇹🇼 Chinese (Traditional)
-* 🇭🇷 Croatian
-* 🇨🇿 Czech
-* 🇩🇰 Danish
-* 🇳🇱 Dutch
-* 🇬🇧 English
-* 🏳 Esperanto
-* 🇪🇪 Estonian
-* 🇫🇮 Finnish
-* 🇫🇷 French
-* 🇬🇪 Georgian
-* 🇩🇪 German
-* 🇬🇷 Greek
-* 🇮🇳 Gujarati
-* 🇮🇱 Hebrew
-* 🇮🇳 Hindi
-* 🇭🇺 Hungarian
-* 🇮🇩 Indonesian
-* 🇮🇹 Italian
-* 🇯🇵 Japanese
-* 🇮🇳 Kannada
-* 🇰🇭 Khmer
-* 🇰🇷 Korean
-* 🏳 Latin
-* 🇱🇻 Latvian
-* 🇱🇹 Lithuanian
-* 🇮🇳 Marathi
-* 🇳🇵 Nepali
-* 🇮🇷 Persian
-* 🇵🇱 Polish
-* 🇵🇹 Portuguese
-* 🇮🇳 Punjabi
-* 🇷🇺 Russian
-* 🇸🇰 Slovak
-* 🇸🇮 Slovene
-* 🇪🇸 Spanish
-* 🇸🇪 Swedish
-* 🇵🇭 Tagalog
-* 🇮🇳 Tamil
-* 🇹🇭 Thai
-* 🇹🇷 Turkish
-* 🇺🇦 Ukrainian
-* 🇵🇰 Urdu
-* 🇻🇳 Vietnamese
-* 🇮🇱 Yiddish
-* 🇿🇦 Zulu
+*  Afrikaans
+*  Arabic
+*  Armenian
+*  Azerbaijani
+*  Bengali
+*  Bulgarian
+*  Burmese
+*  Catalan
+*  Chinese (Simplified and Traditional)
+*  Croatian
+*  Czech
+*  Danish
+*  Dutch
+*  English
+*  Esperanto
+*  Estonian
+*  Finnish
+*  French
+*  Georgian
+*  German
+*  Greek
+*  Gujarati
+*  Hebrew
+*  Hindi
+*  Hungarian
+*  Indonesian
+*  Italian
+*  Japanese
+*  Kannada
+*  Khmer
+*  Korean
+*  Latin
+*  Latvian
+*  Lithuanian
+*  Marathi
+*  Nepali
+*  Persian
+*  Polish
+*  Portuguese
+*  Punjabi
+*  Russian
+*  Slovak
+*  Slovene
+*  Spanish
+*  Swedish
+*  Tagalog
+*  Tamil
+*  Thai
+*  Turkish
+*  Ukrainian
+*  Urdu
+*  Vietnamese
+*  Yiddish
+*  Zulu
 
 ## How fast & lightweight is it?
 
