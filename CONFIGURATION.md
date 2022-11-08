@@ -25,6 +25,10 @@ Sonic Configuration
 * `list_limit_default` (type: _integer_, allowed: numbers, default: `100`) — Default listed words limit for a list command (if the LIMIT command modifier is not used when issuing a LIST command)
 * `list_limit_maximum` (type: _integer_, allowed: numbers, default: `500`) — Maximum listed words limit for a list command (if the LIMIT command modifier is being used when issuing a LIST command)
 
+**[channel.search.stopwords]**
+
+* `${language_code}` (type: _string[]_, allowed: [supported language codes](https://github.com/valeriansaliou/sonic/tree/master/src/stopwords), default: none) — User defined stopwords for the selected language. Use it only if you want to override the preset of Sonic. Setting this value explicitly to `[]` disables stopwords at all.
+
 **[store]**
 
 **[store.kv]**
