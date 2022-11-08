@@ -8,108 +8,320 @@ use hashbrown::HashSet;
 use whatlang::{Lang, Script};
 
 use crate::stopwords::*;
+use crate::APP_CONF;
 
 pub struct LexerStopWord;
 
 // Recursion group #1 (10 items)
 lazy_static! {
-    static ref STOPWORDS_EPO: HashSet<&'static str> = make(epo::STOPWORDS_EPO);
-    static ref STOPWORDS_ENG: HashSet<&'static str> = make(eng::STOPWORDS_ENG);
-    static ref STOPWORDS_RUS: HashSet<&'static str> = make(rus::STOPWORDS_RUS);
-    static ref STOPWORDS_CMN: HashSet<&'static str> = make(cmn::STOPWORDS_CMN);
-    static ref STOPWORDS_SPA: HashSet<&'static str> = make(spa::STOPWORDS_SPA);
-    static ref STOPWORDS_POR: HashSet<&'static str> = make(por::STOPWORDS_POR);
-    static ref STOPWORDS_ITA: HashSet<&'static str> = make(ita::STOPWORDS_ITA);
-    static ref STOPWORDS_BEN: HashSet<&'static str> = make(ben::STOPWORDS_BEN);
-    static ref STOPWORDS_FRA: HashSet<&'static str> = make(fra::STOPWORDS_FRA);
-    static ref STOPWORDS_DEU: HashSet<&'static str> = make(deu::STOPWORDS_DEU);
+    static ref STOPWORDS_EPO: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.epo {
+        Some(words) => make_from_vec(words),
+        None => make(epo::STOPWORDS_EPO),
+    };
+    static ref STOPWORDS_ENG: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.eng {
+        Some(words) => make_from_vec(words),
+        None => make(eng::STOPWORDS_ENG),
+    };
+    static ref STOPWORDS_RUS: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.rus {
+        Some(words) => make_from_vec(words),
+        None => make(rus::STOPWORDS_RUS),
+    };
+    static ref STOPWORDS_CMN: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.cmn {
+        Some(words) => make_from_vec(words),
+        None => make(cmn::STOPWORDS_CMN),
+    };
+    static ref STOPWORDS_SPA: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.spa {
+        Some(words) => make_from_vec(words),
+        None => make(spa::STOPWORDS_SPA),
+    };
+    static ref STOPWORDS_POR: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.por {
+        Some(words) => make_from_vec(words),
+        None => make(por::STOPWORDS_POR),
+    };
+    static ref STOPWORDS_ITA: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.ita {
+        Some(words) => make_from_vec(words),
+        None => make(ita::STOPWORDS_ITA),
+    };
+    static ref STOPWORDS_BEN: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.ben {
+        Some(words) => make_from_vec(words),
+        None => make(ben::STOPWORDS_BEN),
+    };
+    static ref STOPWORDS_FRA: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.fra {
+        Some(words) => make_from_vec(words),
+        None => make(fra::STOPWORDS_FRA),
+    };
+    static ref STOPWORDS_DEU: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.deu {
+        Some(words) => make_from_vec(words),
+        None => make(deu::STOPWORDS_DEU),
+    };
 }
 
 // Recursion group #2 (10 items)
 lazy_static! {
-    static ref STOPWORDS_UKR: HashSet<&'static str> = make(ukr::STOPWORDS_UKR);
-    static ref STOPWORDS_KAT: HashSet<&'static str> = make(kat::STOPWORDS_KAT);
-    static ref STOPWORDS_ARA: HashSet<&'static str> = make(ara::STOPWORDS_ARA);
-    static ref STOPWORDS_HIN: HashSet<&'static str> = make(hin::STOPWORDS_HIN);
-    static ref STOPWORDS_JPN: HashSet<&'static str> = make(jpn::STOPWORDS_JPN);
-    static ref STOPWORDS_HEB: HashSet<&'static str> = make(heb::STOPWORDS_HEB);
-    static ref STOPWORDS_YID: HashSet<&'static str> = make(yid::STOPWORDS_YID);
-    static ref STOPWORDS_POL: HashSet<&'static str> = make(pol::STOPWORDS_POL);
-    static ref STOPWORDS_AMH: HashSet<&'static str> = make(amh::STOPWORDS_AMH);
-    static ref STOPWORDS_JAV: HashSet<&'static str> = make(jav::STOPWORDS_JAV);
+    static ref STOPWORDS_UKR: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.ukr {
+        Some(words) => make_from_vec(words),
+        None => make(ukr::STOPWORDS_UKR),
+    };
+    static ref STOPWORDS_KAT: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.kat {
+        Some(words) => make_from_vec(words),
+        None => make(kat::STOPWORDS_KAT),
+    };
+    static ref STOPWORDS_ARA: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.ara {
+        Some(words) => make_from_vec(words),
+        None => make(ara::STOPWORDS_ARA),
+    };
+    static ref STOPWORDS_HIN: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.hin {
+        Some(words) => make_from_vec(words),
+        None => make(hin::STOPWORDS_HIN),
+    };
+    static ref STOPWORDS_JPN: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.jpn {
+        Some(words) => words.iter().clone().map(|word| &**word).collect(),
+        None => make(jpn::STOPWORDS_JPN),
+    };
+    static ref STOPWORDS_HEB: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.heb {
+        Some(words) => make_from_vec(words),
+        None => make(heb::STOPWORDS_HEB),
+    };
+    static ref STOPWORDS_YID: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.yid {
+        Some(words) => make_from_vec(words),
+        None => make(yid::STOPWORDS_YID),
+    };
+    static ref STOPWORDS_POL: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.pol {
+        Some(words) => make_from_vec(words),
+        None => make(pol::STOPWORDS_POL),
+    };
+    static ref STOPWORDS_AMH: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.amh {
+        Some(words) => make_from_vec(words),
+        None => make(amh::STOPWORDS_AMH),
+    };
+    static ref STOPWORDS_JAV: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.jav {
+        Some(words) => make_from_vec(words),
+        None => make(jav::STOPWORDS_JAV),
+    };
 }
 
 // Recursion group #3 (10 items)
 lazy_static! {
-    static ref STOPWORDS_KOR: HashSet<&'static str> = make(kor::STOPWORDS_KOR);
-    static ref STOPWORDS_NOB: HashSet<&'static str> = make(nob::STOPWORDS_NOB);
-    static ref STOPWORDS_DAN: HashSet<&'static str> = make(dan::STOPWORDS_DAN);
-    static ref STOPWORDS_SWE: HashSet<&'static str> = make(swe::STOPWORDS_SWE);
-    static ref STOPWORDS_FIN: HashSet<&'static str> = make(fin::STOPWORDS_FIN);
-    static ref STOPWORDS_TUR: HashSet<&'static str> = make(tur::STOPWORDS_TUR);
-    static ref STOPWORDS_NLD: HashSet<&'static str> = make(nld::STOPWORDS_NLD);
-    static ref STOPWORDS_HUN: HashSet<&'static str> = make(hun::STOPWORDS_HUN);
-    static ref STOPWORDS_CES: HashSet<&'static str> = make(ces::STOPWORDS_CES);
-    static ref STOPWORDS_ELL: HashSet<&'static str> = make(ell::STOPWORDS_ELL);
+    static ref STOPWORDS_KOR: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.kor {
+        Some(words) => make_from_vec(words),
+        None => make(kor::STOPWORDS_KOR),
+    };
+    static ref STOPWORDS_NOB: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.nob {
+        Some(words) => make_from_vec(words),
+        None => make(nob::STOPWORDS_NOB),
+    };
+    static ref STOPWORDS_DAN: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.dan {
+        Some(words) => make_from_vec(words),
+        None => make(dan::STOPWORDS_DAN),
+    };
+    static ref STOPWORDS_SWE: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.swe {
+        Some(words) => make_from_vec(words),
+        None => make(swe::STOPWORDS_SWE),
+    };
+    static ref STOPWORDS_FIN: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.fin {
+        Some(words) => make_from_vec(words),
+        None => make(fin::STOPWORDS_FIN),
+    };
+    static ref STOPWORDS_TUR: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.tur {
+        Some(words) => make_from_vec(words),
+        None => make(tur::STOPWORDS_TUR),
+    };
+    static ref STOPWORDS_NLD: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.nld {
+        Some(words) => make_from_vec(words),
+        None => make(nld::STOPWORDS_NLD),
+    };
+    static ref STOPWORDS_HUN: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.hun {
+        Some(words) => make_from_vec(words),
+        None => make(hun::STOPWORDS_HUN),
+    };
+    static ref STOPWORDS_CES: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.ces {
+        Some(words) => make_from_vec(words),
+        None => make(ces::STOPWORDS_CES),
+    };
+    static ref STOPWORDS_ELL: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.ell {
+        Some(words) => make_from_vec(words),
+        None => make(ell::STOPWORDS_ELL),
+    };
 }
 
 // Recursion group #4 (10 items)
 lazy_static! {
-    static ref STOPWORDS_BUL: HashSet<&'static str> = make(bul::STOPWORDS_BUL);
-    static ref STOPWORDS_BEL: HashSet<&'static str> = make(bel::STOPWORDS_BEL);
-    static ref STOPWORDS_MAR: HashSet<&'static str> = make(mar::STOPWORDS_MAR);
-    static ref STOPWORDS_KAN: HashSet<&'static str> = make(kan::STOPWORDS_KAN);
-    static ref STOPWORDS_RON: HashSet<&'static str> = make(ron::STOPWORDS_RON);
-    static ref STOPWORDS_SLV: HashSet<&'static str> = make(slv::STOPWORDS_SLV);
-    static ref STOPWORDS_HRV: HashSet<&'static str> = make(hrv::STOPWORDS_HRV);
-    static ref STOPWORDS_SRP: HashSet<&'static str> = make(srp::STOPWORDS_SRP);
-    static ref STOPWORDS_MKD: HashSet<&'static str> = make(mkd::STOPWORDS_MKD);
-    static ref STOPWORDS_LIT: HashSet<&'static str> = make(lit::STOPWORDS_LIT);
+    static ref STOPWORDS_BUL: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.bul {
+        Some(words) => make_from_vec(words),
+        None => make(bul::STOPWORDS_BUL),
+    };
+    static ref STOPWORDS_BEL: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.bel {
+        Some(words) => make_from_vec(words),
+        None => make(bel::STOPWORDS_BEL),
+    };
+    static ref STOPWORDS_MAR: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.mar {
+        Some(words) => make_from_vec(words),
+        None => make(mar::STOPWORDS_MAR),
+    };
+    static ref STOPWORDS_KAN: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.kan {
+        Some(words) => make_from_vec(words),
+        None => make(kan::STOPWORDS_KAN),
+    };
+    static ref STOPWORDS_RON: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.ron {
+        Some(words) => make_from_vec(words),
+        None => make(ron::STOPWORDS_RON),
+    };
+    static ref STOPWORDS_SLV: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.slv {
+        Some(words) => make_from_vec(words),
+        None => make(slv::STOPWORDS_SLV),
+    };
+    static ref STOPWORDS_HRV: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.hrv {
+        Some(words) => make_from_vec(words),
+        None => make(hrv::STOPWORDS_HRV),
+    };
+    static ref STOPWORDS_SRP: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.srp {
+        Some(words) => make_from_vec(words),
+        None => make(srp::STOPWORDS_SRP),
+    };
+    static ref STOPWORDS_MKD: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.mkd {
+        Some(words) => make_from_vec(words),
+        None => make(mkd::STOPWORDS_MKD),
+    };
+    static ref STOPWORDS_LIT: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.lit {
+        Some(words) => make_from_vec(words),
+        None => make(lit::STOPWORDS_LIT),
+    };
 }
 
 // Recursion group #5 (10 items)
 lazy_static! {
-    static ref STOPWORDS_LAV: HashSet<&'static str> = make(lav::STOPWORDS_LAV);
-    static ref STOPWORDS_EST: HashSet<&'static str> = make(est::STOPWORDS_EST);
-    static ref STOPWORDS_TAM: HashSet<&'static str> = make(tam::STOPWORDS_TAM);
-    static ref STOPWORDS_VIE: HashSet<&'static str> = make(vie::STOPWORDS_VIE);
-    static ref STOPWORDS_URD: HashSet<&'static str> = make(urd::STOPWORDS_URD);
-    static ref STOPWORDS_THA: HashSet<&'static str> = make(tha::STOPWORDS_THA);
-    static ref STOPWORDS_GUJ: HashSet<&'static str> = make(guj::STOPWORDS_GUJ);
-    static ref STOPWORDS_UZB: HashSet<&'static str> = make(uzb::STOPWORDS_UZB);
-    static ref STOPWORDS_PAN: HashSet<&'static str> = make(pan::STOPWORDS_PAN);
-    static ref STOPWORDS_AZE: HashSet<&'static str> = make(aze::STOPWORDS_AZE);
+    static ref STOPWORDS_LAV: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.lav {
+        Some(words) => make_from_vec(words),
+        None => make(lav::STOPWORDS_LAV),
+    };
+    static ref STOPWORDS_EST: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.est {
+        Some(words) => make_from_vec(words),
+        None => make(est::STOPWORDS_EST),
+    };
+    static ref STOPWORDS_TAM: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.tam {
+        Some(words) => make_from_vec(words),
+        None => make(tam::STOPWORDS_TAM),
+    };
+    static ref STOPWORDS_VIE: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.vie {
+        Some(words) => make_from_vec(words),
+        None => make(vie::STOPWORDS_VIE),
+    };
+    static ref STOPWORDS_URD: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.urd {
+        Some(words) => make_from_vec(words),
+        None => make(urd::STOPWORDS_URD),
+    };
+    static ref STOPWORDS_THA: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.tha {
+        Some(words) => make_from_vec(words),
+        None => make(tha::STOPWORDS_THA),
+    };
+    static ref STOPWORDS_GUJ: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.guj {
+        Some(words) => make_from_vec(words),
+        None => make(guj::STOPWORDS_GUJ),
+    };
+    static ref STOPWORDS_UZB: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.uzb {
+        Some(words) => make_from_vec(words),
+        None => make(uzb::STOPWORDS_UZB),
+    };
+    static ref STOPWORDS_PAN: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.pan {
+        Some(words) => make_from_vec(words),
+        None => make(pan::STOPWORDS_PAN),
+    };
+    static ref STOPWORDS_AZE: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.aze {
+        Some(words) => make_from_vec(words),
+        None => make(aze::STOPWORDS_AZE),
+    };
 }
 
 // Recursion group #6 (10 items)
 lazy_static! {
-    static ref STOPWORDS_IND: HashSet<&'static str> = make(ind::STOPWORDS_IND);
-    static ref STOPWORDS_TEL: HashSet<&'static str> = make(tel::STOPWORDS_TEL);
-    static ref STOPWORDS_PES: HashSet<&'static str> = make(pes::STOPWORDS_PES);
-    static ref STOPWORDS_MAL: HashSet<&'static str> = make(mal::STOPWORDS_MAL);
-    static ref STOPWORDS_ORI: HashSet<&'static str> = make(ori::STOPWORDS_ORI);
-    static ref STOPWORDS_MYA: HashSet<&'static str> = make(mya::STOPWORDS_MYA);
-    static ref STOPWORDS_NEP: HashSet<&'static str> = make(nep::STOPWORDS_NEP);
-    static ref STOPWORDS_SIN: HashSet<&'static str> = make(sin::STOPWORDS_SIN);
-    static ref STOPWORDS_KHM: HashSet<&'static str> = make(khm::STOPWORDS_KHM);
-    static ref STOPWORDS_TUK: HashSet<&'static str> = make(tuk::STOPWORDS_TUK);
+    static ref STOPWORDS_IND: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.ind {
+        Some(words) => words.iter().clone().map(|w| &**w).collect(),
+        None => make(ind::STOPWORDS_IND),
+    };
+    static ref STOPWORDS_TEL: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.tel {
+        Some(words) => make_from_vec(words),
+        None => make(tel::STOPWORDS_TEL),
+    };
+    static ref STOPWORDS_PES: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.pes {
+        Some(words) => make_from_vec(words),
+        None => make(pes::STOPWORDS_PES),
+    };
+    static ref STOPWORDS_MAL: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.mal {
+        Some(words) => make_from_vec(words),
+        None => make(mal::STOPWORDS_MAL),
+    };
+    static ref STOPWORDS_ORI: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.ori {
+        Some(words) => make_from_vec(words),
+        None => make(ori::STOPWORDS_ORI),
+    };
+    static ref STOPWORDS_MYA: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.mya {
+        Some(words) => make_from_vec(words),
+        None => make(mya::STOPWORDS_MYA),
+    };
+    static ref STOPWORDS_NEP: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.nep {
+        Some(words) => make_from_vec(words),
+        None => make(nep::STOPWORDS_NEP),
+    };
+    static ref STOPWORDS_SIN: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.sin {
+        Some(words) => make_from_vec(words),
+        None => make(sin::STOPWORDS_SIN),
+    };
+    static ref STOPWORDS_KHM: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.khm {
+        Some(words) => make_from_vec(words),
+        None => make(khm::STOPWORDS_KHM),
+    };
+    static ref STOPWORDS_TUK: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.tuk {
+        Some(words) => make_from_vec(words),
+        None => make(tuk::STOPWORDS_TUK),
+    };
 }
 
 // Recursion group #7 (9 items)
 lazy_static! {
-    static ref STOPWORDS_AKA: HashSet<&'static str> = make(aka::STOPWORDS_AKA);
-    static ref STOPWORDS_ZUL: HashSet<&'static str> = make(zul::STOPWORDS_ZUL);
-    static ref STOPWORDS_SNA: HashSet<&'static str> = make(sna::STOPWORDS_SNA);
-    static ref STOPWORDS_AFR: HashSet<&'static str> = make(afr::STOPWORDS_AFR);
-    static ref STOPWORDS_LAT: HashSet<&'static str> = make(lat::STOPWORDS_LAT);
-    static ref STOPWORDS_SLK: HashSet<&'static str> = make(slk::STOPWORDS_SLK);
-    static ref STOPWORDS_CAT: HashSet<&'static str> = make(cat::STOPWORDS_CAT);
-    static ref STOPWORDS_TGL: HashSet<&'static str> = make(tgl::STOPWORDS_TGL);
-    static ref STOPWORDS_HYE: HashSet<&'static str> = make(hye::STOPWORDS_HYE);
+    static ref STOPWORDS_AKA: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.aka {
+        Some(words) => make_from_vec(words),
+        None => make(aka::STOPWORDS_AKA),
+    };
+    static ref STOPWORDS_ZUL: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.zul {
+        Some(words) => make_from_vec(words),
+        None => make(zul::STOPWORDS_ZUL),
+    };
+    static ref STOPWORDS_SNA: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.sna {
+        Some(words) => make_from_vec(words),
+        None => make(sna::STOPWORDS_SNA),
+    };
+    static ref STOPWORDS_AFR: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.afr {
+        Some(words) => make_from_vec(words),
+        None => make(afr::STOPWORDS_AFR),
+    };
+    static ref STOPWORDS_LAT: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.lat {
+        Some(words) => make_from_vec(words),
+        None => make(lat::STOPWORDS_LAT),
+    };
+    static ref STOPWORDS_SLK: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.slk {
+        Some(words) => make_from_vec(words),
+        None => make(slk::STOPWORDS_SLK),
+    };
+    static ref STOPWORDS_CAT: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.cat {
+        Some(words) => make_from_vec(words),
+        None => make(cat::STOPWORDS_CAT),
+    };
+    static ref STOPWORDS_TGL: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.tgl {
+        Some(words) => make_from_vec(words),
+        None => make(tgl::STOPWORDS_TGL),
+    };
+    static ref STOPWORDS_HYE: HashSet<&'static str> = match &APP_CONF.channel.search.stopwords.hye {
+        Some(words) => make_from_vec(words),
+        None => make(hye::STOPWORDS_HYE),
+    };
 }
 
 fn make<'a>(words: &[&'a str]) -> HashSet<&'a str> {
     words.iter().copied().collect()
+}
+
+fn make_from_vec<'a>(words: &'a Vec<String>) -> HashSet<&'a str> {
+    words.iter().clone().map(|word| &**word).collect()
 }
 
 impl LexerStopWord {

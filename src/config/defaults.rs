@@ -4,6 +4,7 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use super::options::ConfigChannelSearchStopwords;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
@@ -45,6 +46,10 @@ pub fn channel_search_list_limit_default() -> u16 {
 
 pub fn channel_search_list_limit_maximum() -> u16 {
     500
+}
+
+pub fn channel_search_stopwords() -> ConfigChannelSearchStopwords {
+    ConfigChannelSearchStopwords::default()
 }
 
 pub fn store_kv_path() -> PathBuf {

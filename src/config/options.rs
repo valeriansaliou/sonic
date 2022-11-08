@@ -65,6 +65,88 @@ pub struct ConfigChannelSearch {
 
     #[serde(default = "defaults::channel_search_list_limit_maximum")]
     pub list_limit_maximum: u16,
+
+    #[serde(default = "defaults::channel_search_stopwords")]
+    pub stopwords: ConfigChannelSearchStopwords,
+}
+
+#[derive(Deserialize, Default)]
+pub struct ConfigChannelSearchStopwords {
+    pub epo: Option<Vec<String>>,
+    pub eng: Option<Vec<String>>,
+    pub rus: Option<Vec<String>>,
+    pub cmn: Option<Vec<String>>,
+    pub spa: Option<Vec<String>>,
+    pub por: Option<Vec<String>>,
+    pub ita: Option<Vec<String>>,
+    pub ben: Option<Vec<String>>,
+    pub fra: Option<Vec<String>>,
+    pub deu: Option<Vec<String>>,
+
+    pub ukr: Option<Vec<String>>,
+    pub kat: Option<Vec<String>>,
+    pub ara: Option<Vec<String>>,
+    pub hin: Option<Vec<String>>,
+    pub jpn: Option<Vec<String>>,
+    pub heb: Option<Vec<String>>,
+    pub yid: Option<Vec<String>>,
+    pub pol: Option<Vec<String>>,
+    pub amh: Option<Vec<String>>,
+    pub jav: Option<Vec<String>>,
+
+    pub kor: Option<Vec<String>>,
+    pub nob: Option<Vec<String>>,
+    pub dan: Option<Vec<String>>,
+    pub swe: Option<Vec<String>>,
+    pub fin: Option<Vec<String>>,
+    pub tur: Option<Vec<String>>,
+    pub nld: Option<Vec<String>>,
+    pub hun: Option<Vec<String>>,
+    pub ces: Option<Vec<String>>,
+    pub ell: Option<Vec<String>>,
+
+    pub bul: Option<Vec<String>>,
+    pub bel: Option<Vec<String>>,
+    pub mar: Option<Vec<String>>,
+    pub kan: Option<Vec<String>>,
+    pub ron: Option<Vec<String>>,
+    pub slv: Option<Vec<String>>,
+    pub hrv: Option<Vec<String>>,
+    pub srp: Option<Vec<String>>,
+    pub mkd: Option<Vec<String>>,
+    pub lit: Option<Vec<String>>,
+
+    pub lav: Option<Vec<String>>,
+    pub est: Option<Vec<String>>,
+    pub tam: Option<Vec<String>>,
+    pub vie: Option<Vec<String>>,
+    pub urd: Option<Vec<String>>,
+    pub tha: Option<Vec<String>>,
+    pub guj: Option<Vec<String>>,
+    pub uzb: Option<Vec<String>>,
+    pub pan: Option<Vec<String>>,
+    pub aze: Option<Vec<String>>,
+
+    pub ind: Option<Vec<String>>,
+    pub tel: Option<Vec<String>>,
+    pub pes: Option<Vec<String>>,
+    pub mal: Option<Vec<String>>,
+    pub ori: Option<Vec<String>>,
+    pub mya: Option<Vec<String>>,
+    pub nep: Option<Vec<String>>,
+    pub sin: Option<Vec<String>>,
+    pub khm: Option<Vec<String>>,
+    pub tuk: Option<Vec<String>>,
+
+    pub aka: Option<Vec<String>>,
+    pub zul: Option<Vec<String>>,
+    pub sna: Option<Vec<String>>,
+    pub afr: Option<Vec<String>>,
+    pub lat: Option<Vec<String>>,
+    pub slk: Option<Vec<String>>,
+    pub cat: Option<Vec<String>>,
+    pub tgl: Option<Vec<String>>,
+    pub hye: Option<Vec<String>>,
 }
 
 #[derive(Deserialize)]
