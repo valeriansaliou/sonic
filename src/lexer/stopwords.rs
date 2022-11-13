@@ -45,7 +45,7 @@ lazy_static! {
         gen_stopwords!(&APP_CONF.channel.search.stopwords.deu, deu::STOPWORDS_DEU);
 }
 
-// Recursion group #2 (10 items) {
+// Recursion group #2 (10 items)
 lazy_static! {
     static ref STOPWORDS_UKR: HashSet<&'static str> =
         gen_stopwords!(&APP_CONF.channel.search.stopwords.ukr, ukr::STOPWORDS_UKR);
@@ -69,7 +69,7 @@ lazy_static! {
         gen_stopwords!(&APP_CONF.channel.search.stopwords.jav, jav::STOPWORDS_JAV);
 }
 
-// Recursion group #3 (10 items) {
+// Recursion group #3 (10 items)
 lazy_static! {
     static ref STOPWORDS_KOR: HashSet<&'static str> =
         gen_stopwords!(&APP_CONF.channel.search.stopwords.kor, kor::STOPWORDS_KOR);
@@ -93,8 +93,7 @@ lazy_static! {
         gen_stopwords!(&APP_CONF.channel.search.stopwords.ell, ell::STOPWORDS_ELL);
 }
 
-// Recursion group #4 (10 items) {
-
+// Recursion group #4 (10 items)
 lazy_static! {
     static ref STOPWORDS_BUL: HashSet<&'static str> =
         gen_stopwords!(&APP_CONF.channel.search.stopwords.bul, bul::STOPWORDS_BUL);
@@ -118,7 +117,7 @@ lazy_static! {
         gen_stopwords!(&APP_CONF.channel.search.stopwords.lit, lit::STOPWORDS_LIT);
 }
 
-// Recursion group #5 (10 items) {
+// Recursion group #5 (10 items)
 lazy_static! {
     static ref STOPWORDS_LAV: HashSet<&'static str> =
         gen_stopwords!(&APP_CONF.channel.search.stopwords.lav, lav::STOPWORDS_LAV);
@@ -142,7 +141,7 @@ lazy_static! {
         gen_stopwords!(&APP_CONF.channel.search.stopwords.aze, aze::STOPWORDS_AZE);
 }
 
-// Recursion group #6 (10 items) {
+// Recursion group #6 (10 items)
 lazy_static! {
     static ref STOPWORDS_IND: HashSet<&'static str> =
         gen_stopwords!(&APP_CONF.channel.search.stopwords.ind, ind::STOPWORDS_IND);
@@ -166,7 +165,7 @@ lazy_static! {
         gen_stopwords!(&APP_CONF.channel.search.stopwords.tuk, tuk::STOPWORDS_TUK);
 }
 
-// Recursion group #7 (9 items) {
+// Recursion group #7 (9 items)
 lazy_static! {
     static ref STOPWORDS_AKA: HashSet<&'static str> =
         gen_stopwords!(&APP_CONF.channel.search.stopwords.aka, aka::STOPWORDS_AKA);
