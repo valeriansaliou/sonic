@@ -17,6 +17,11 @@ jobs:
         id: current_tag
         uses: WyriHaximus/github-action-get-previous-tag@v1
 
+      - name: Release package
+        run: cargo publish --no-verify --token ${CRATES_TOKEN}
+        env:
+          CRATES_TOKEN: ${{ secrets.CRATES_TOKEN }}
+
       - name: Release new version
         uses: softprops/action-gh-release@v1
         with:
