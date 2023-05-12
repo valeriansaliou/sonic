@@ -54,11 +54,18 @@ lazy_static! {
 
 #[cfg(feature = "tokenizer-japanese")]
 lazy_static! {
-    static ref TOKENIZER_LINDERA: lindera_tokenizer::tokenizer::Tokenizer = lindera_tokenizer::tokenizer::Tokenizer::from_config(lindera_tokenizer::tokenizer::TokenizerConfig {
-        dictionary: lindera_dictionary::DictionaryConfig { kind: Some(lindera_dictionary::DictionaryKind::IPADIC), path: None },
-        user_dictionary: None,
-        mode: lindera_core::mode::Mode::Normal,
-    }).expect("unable to initialize Japanese tokenizer");
+    static ref TOKENIZER_LINDERA: lindera_tokenizer::tokenizer::Tokenizer =
+        lindera_tokenizer::tokenizer::Tokenizer::from_config(
+            lindera_tokenizer::tokenizer::TokenizerConfig {
+                dictionary: lindera_dictionary::DictionaryConfig {
+                    kind: Some(lindera_dictionary::DictionaryKind::UniDic),
+                    path: None
+                },
+                user_dictionary: None,
+                mode: lindera_core::mode::Mode::Normal,
+            }
+        )
+        .expect("unable to initialize Japanese tokenizer");
 }
 
 impl TokenLexerBuilder {
@@ -245,13 +252,11 @@ impl<'a> TokenLexer<'a> {
             #[cfg(feature = "tokenizer-chinese")]
             Some(Lang::Cmn) => TokenLexerWords::JieBa(TOKENIZER_JIEBA.cut(text, false).into_iter()),
             #[cfg(feature = "tokenizer-japanese")]
-            Some(Lang::Jpn) => {
-                match TOKENIZER_LINDERA.tokenize(text) {
-                    Ok(tokens) => TokenLexerWords::Lindera(tokens.into_iter()),
-                    Err(e) => {
-                        warn!("unable to tokenize via lindera, falling back to the built-in tokenizer: {}", e);
-                        TokenLexerWords::UAX29(text.unicode_words())
-                    }
+            Some(Lang::Jpn) => match TOKENIZER_LINDERA.tokenize(text) {
+                Ok(tokens) => TokenLexerWords::Lindera(tokens.into_iter()),
+                Err(e) => {
+                    warn!("unable to tokenize via lindera, falling back to the built-in tokenizer: {}", e);
+                    TokenLexerWords::UAX29(text.unicode_words())
                 }
             },
             _ => TokenLexerWords::UAX29(text.unicode_words()),
@@ -449,37 +454,49 @@ mod tests {
         let mut token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup(None),
             "関西国際空港限定トートバッグ",
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Jpn));
-        assert_eq!(token_cleaner.next(), Some(("関西国際空港".to_string(), 373453862)));
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("関西".to_string(), 1283572620))
+        );
+        assert_eq!(token_cleaner.next(), Some(("国際".to_string(), 2132457693)));
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("空港".to_string(), 865668138))
+        );
         assert_eq!(token_cleaner.next(), Some(("限定".to_string(), 3708465176)));
-        assert_eq!(token_cleaner.next(), Some(("トートバッグ".to_string(), 1459135288)));
+        assert_eq!(token_cleaner.next(), Some(("トート".to_string(), 881444746)));
+        assert_eq!(token_cleaner.next(), Some(("バッグ".to_string(), 3515727814)));
         assert_eq!(token_cleaner.next(), None);
 
-        let token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup(None),
-            "𠮷野家"
-        ).unwrap();
+        let token_cleaner =
+            TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup(None), "𠮷野家").unwrap();
 
         assert_eq!(token_cleaner.locale, None);
 
-        let token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup(None),
-            "ヱビスビール"
-        ).unwrap();
+        let token_cleaner =
+            TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup(None), "ヱビスビール")
+                .unwrap();
 
         assert_eq!(token_cleaner.locale, None);
 
         let mut token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup(None),
-            "𠮷野家でヱビスビールを飲んだ"
-        ).unwrap();
+            "𠮷野家でヱビスビールを飲んだ",
+        )
+        .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Jpn));
         assert_eq!(token_cleaner.next(), Some(("𠮷".to_string(), 2866455824)));
         assert_eq!(token_cleaner.next(), Some(("野家".to_string(), 1324395598)));
-        assert_eq!(token_cleaner.next(), Some(("ヱビスビール".to_string(), 1641432332)));
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("ヱビス".to_string(), 1696836208))
+        );
+        assert_eq!(token_cleaner.next(), Some(("ビール".to_string(), 3421909800)));
         assert_eq!(token_cleaner.next(), Some(("飲ん".to_string(), 3196735184)));
         assert_eq!(token_cleaner.next(), None);
     }
