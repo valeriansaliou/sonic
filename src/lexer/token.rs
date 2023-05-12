@@ -451,14 +451,36 @@ mod tests {
             "関西国際空港限定トートバッグ",
         ).unwrap();
 
-        const TOKEN_1: &str = "関西国際空港";
-        const TOKEN_2: &str = "限定";
-        const TOKEN_3: &str = "トートバッグ";
+        assert_eq!(token_cleaner.locale, Some(Lang::Jpn));
+        assert_eq!(token_cleaner.next(), Some(("関西国際空港".to_string(), 373453862)));
+        assert_eq!(token_cleaner.next(), Some(("限定".to_string(), 3708465176)));
+        assert_eq!(token_cleaner.next(), Some(("トートバッグ".to_string(), 1459135288)));
+        assert_eq!(token_cleaner.next(), None);
+
+        let token_cleaner = TokenLexerBuilder::from(
+            TokenLexerMode::NormalizeAndCleanup(None),
+            "𠮷野家"
+        ).unwrap();
+
+        assert_eq!(token_cleaner.locale, None);
+
+        let token_cleaner = TokenLexerBuilder::from(
+            TokenLexerMode::NormalizeAndCleanup(None),
+            "ヱビスビール"
+        ).unwrap();
+
+        assert_eq!(token_cleaner.locale, None);
+
+        let mut token_cleaner = TokenLexerBuilder::from(
+            TokenLexerMode::NormalizeAndCleanup(None),
+            "𠮷野家でヱビスビールを飲んだ"
+        ).unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Jpn));
-        assert_eq!(token_cleaner.next(), Some((TOKEN_1.to_string(), 373453862)));
-        assert_eq!(token_cleaner.next(), Some((TOKEN_2.to_string(), 3708465176)));
-        assert_eq!(token_cleaner.next(), Some((TOKEN_3.to_string(), 1459135288)));
+        assert_eq!(token_cleaner.next(), Some(("𠮷".to_string(), 2866455824)));
+        assert_eq!(token_cleaner.next(), Some(("野家".to_string(), 1324395598)));
+        assert_eq!(token_cleaner.next(), Some(("ヱビスビール".to_string(), 1641432332)));
+        assert_eq!(token_cleaner.next(), Some(("飲ん".to_string(), 3196735184)));
         assert_eq!(token_cleaner.next(), None);
     }
 
