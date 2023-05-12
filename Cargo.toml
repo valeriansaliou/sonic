@@ -9,7 +9,10 @@ homepage = "https://github.com/valeriansaliou/sonic"
 repository = "https://github.com/valeriansaliou/sonic.git"
 keywords = ["search", "query", "server", "index"]
 categories = ["database-implementations", "web-programming"]
-authors = ["Valerian Saliou <valerian@valeriansaliou.name>", "Baptiste Jamin <baptistejamin@gmail.com>"]
+authors = [
+  "Valerian Saliou <valerian@valeriansaliou.name>",
+  "Baptiste Jamin <baptistejamin@gmail.com>",
+]
 
 [[bin]]
 name = "sonic"
@@ -38,6 +41,9 @@ hashbrown = "0.12"
 linked_hash_set = "0.1"
 whatlang = "0.16"
 regex = "1.6"
+lindera-core = { version = "0.24.0", optional = true }
+lindera-dictionary = { version = "0.24.0", features = ["ipadic"], optional = true }
+lindera-tokenizer = { version = "0.24.0", features = ["ipadic"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
 nix = "0.18"
@@ -47,9 +53,10 @@ tikv-jemallocator = { version = "0.4", optional = true }
 winapi = { version = "0.3", features = ["minwindef", "consoleapi"] }
 
 [features]
-default = ["allocator-jemalloc", "tokenizer-chinese"]
+default = ["allocator-jemalloc", "tokenizer-chinese", "tokenizer-japanese"]
 allocator-jemalloc = ["tikv-jemallocator"]
 tokenizer-chinese = ["jieba-rs"]
+tokenizer-japanese = ["lindera-core", "lindera-dictionary", "lindera-tokenizer"]
 benchmark = []
 
 [profile.dev]

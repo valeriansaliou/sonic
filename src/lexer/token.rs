@@ -38,6 +38,9 @@ enum TokenLexerWords<'a> {
 
     #[cfg(feature = "tokenizer-chinese")]
     JieBa(IntoIter<&'a str>),
+
+    #[cfg(feature = "tokenizer-japanese")]
+    Lindera(IntoIter<lindera_tokenizer::token::Token<'a>>),
 }
 
 const TEXT_LANG_TRUNCATE_OVER_CHARS: usize = 200;
@@ -47,6 +50,15 @@ const TEXT_LANG_DETECT_NGRAM_UNDER_CHARS: usize = 60;
 #[cfg(feature = "tokenizer-chinese")]
 lazy_static! {
     static ref TOKENIZER_JIEBA: jieba_rs::Jieba = jieba_rs::Jieba::new();
+}
+
+#[cfg(feature = "tokenizer-japanese")]
+lazy_static! {
+    static ref TOKENIZER_LINDERA: lindera_tokenizer::tokenizer::Tokenizer = lindera_tokenizer::tokenizer::Tokenizer::from_config(lindera_tokenizer::tokenizer::TokenizerConfig {
+        dictionary: lindera_dictionary::DictionaryConfig { kind: Some(lindera_dictionary::DictionaryKind::IPADIC), path: None },
+        user_dictionary: None,
+        mode: lindera_core::mode::Mode::Normal,
+    }).expect("unable to initialize Japanese tokenizer");
 }
 
 impl TokenLexerBuilder {
@@ -232,7 +244,16 @@ impl<'a> TokenLexer<'a> {
         let words = match locale {
             #[cfg(feature = "tokenizer-chinese")]
             Some(Lang::Cmn) => TokenLexerWords::JieBa(TOKENIZER_JIEBA.cut(text, false).into_iter()),
-
+            #[cfg(feature = "tokenizer-japanese")]
+            Some(Lang::Jpn) => {
+                match TOKENIZER_LINDERA.tokenize(text) {
+                    Ok(tokens) => TokenLexerWords::Lindera(tokens.into_iter()),
+                    Err(e) => {
+                        warn!("unable to tokenize via lindera, falling back to the built-in tokenizer: {}", e);
+                        TokenLexerWords::UAX29(text.unicode_words())
+                    }
+                }
+            },
             _ => TokenLexerWords::UAX29(text.unicode_words()),
         };
 
@@ -321,6 +342,12 @@ impl<'a> Iterator for TokenLexerWords<'a> {
 
             #[cfg(feature = "tokenizer-chinese")]
             TokenLexerWords::JieBa(token) => token.next(),
+
+            #[cfg(feature = "tokenizer-japanese")]
+            TokenLexerWords::Lindera(token) => match token.next() {
+                Some(t) => Some(t.text),
+                None => None,
+            },
         }
     }
 }
@@ -413,6 +440,25 @@ mod tests {
         assert_eq!(token_cleaner.next(), Some(("跨".to_string(), 2913342670)));
         assert_eq!(token_cleaner.next(), Some(("懒".to_string(), 3199935961)));
         assert_eq!(token_cleaner.next(), Some(("狗".to_string(), 3360772096)));
+        assert_eq!(token_cleaner.next(), None);
+    }
+
+    #[cfg(feature = "tokenizer-japanese")]
+    #[test]
+    fn it_cleans_token_japanese_lindera() {
+        let mut token_cleaner = TokenLexerBuilder::from(
+            TokenLexerMode::NormalizeAndCleanup(None),
+            "関西国際空港限定トートバッグ",
+        ).unwrap();
+
+        const TOKEN_1: &str = "関西国際空港";
+        const TOKEN_2: &str = "限定";
+        const TOKEN_3: &str = "トートバッグ";
+
+        assert_eq!(token_cleaner.locale, Some(Lang::Jpn));
+        assert_eq!(token_cleaner.next(), Some((TOKEN_1.to_string(), 373453862)));
+        assert_eq!(token_cleaner.next(), Some((TOKEN_2.to_string(), 3708465176)));
+        assert_eq!(token_cleaner.next(), Some((TOKEN_3.to_string(), 1459135288)));
         assert_eq!(token_cleaner.next(), None);
     }
 
