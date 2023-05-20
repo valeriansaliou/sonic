@@ -25,10 +25,12 @@ _Tested at Rust version: `rustc 1.62.0 (a8314ef7d 2022-06-27)`_
 <tr>
 <td align="center"><a href="https://crisp.chat/"><img src="https://valeriansaliou.github.io/sonic/images/logo-crisp.png" width="64" /></a></td>
 <td align="center"><a href="https://scrumpy.io/"><img src="https://valeriansaliou.github.io/sonic/images/logo-scrumpy.png" width="64" /></a></td>
+<td align="center"><a href="https://calckey.org/"><img src="https://calckey.org/branding/inverse_wordmark.svg" width="64" /></a></td>
 </tr>
 <tr>
 <td align="center">Crisp</td>
 <td align="center">Scrumpy</td>
+<td align="center">Calckey</td>
 </tr>
 </table>
 
