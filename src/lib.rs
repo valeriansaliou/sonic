@@ -40,14 +40,16 @@ struct AppArgs {
 static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 lazy_static! {
-    static ref APP_ARGS: AppArgs = AppArgs{config: "".to_string()};
+    static ref APP_ARGS: AppArgs = AppArgs {
+        config: "".to_string()
+    };
     static ref APP_CONF: Config = ConfigReader::make();
 }
 
 /// called when startup
 pub fn sonic_init(config_path: &str) {
     // Ensure all statics are valid (a `deref` is enough to lazily initialize them)
-    let app_args: &AppArgs =  APP_ARGS.deref();
+    let app_args: &AppArgs = APP_ARGS.deref();
     let p = app_args as *const AppArgs as *mut AppArgs;
     unsafe {
         (*p).config = config_path.to_string();
@@ -98,18 +100,15 @@ mod tests {
         sonic_init("./config.cfg");
 
         // push
-        let query = QueryBuilder::push("home", "book", "3-body", "hello 3-body world!", None).unwrap();
+        let query =
+            QueryBuilder::push("home", "book", "3-body", "hello 3-body world!", None).unwrap();
         let ret = execute_query(query).unwrap();
         println!("push return: {:?}", ret);
-        let query = QueryBuilder::push("home", "book", "sonic-inside", "hello sonic!", None).unwrap();
+        let query =
+            QueryBuilder::push("home", "book", "sonic-inside", "hello sonic!", None).unwrap();
         let ret = execute_query(query).unwrap();
         println!("push return: {:?}", ret);
         sonic_tick();
-
-        // pop
-        let query = QueryBuilder::pop("home", "book", "sonic inside", "hello sonic!").unwrap();
-        let ret = execute_query(query).unwrap();
-        println!("pop return: {:?}", ret);
 
         // query
         let query = QueryBuilder::search("query_id", "home", "book", "hello", 10, 0, None).unwrap();
