@@ -648,6 +648,29 @@ mod benches {
     }
 
     #[bench]
+    fn bench_clean_token_english_hinted_build(b: &mut Bencher) {
+        b.iter(|| {
+            TokenLexerBuilder::from(
+                TokenLexerMode::NormalizeAndCleanup(Some(Lang::Eng)),
+                "The quick brown fox jumps over the lazy dog!",
+            )
+        });
+    }
+
+    #[bench]
+    fn bench_clean_token_english_hinted_exhaust(b: &mut Bencher) {
+        b.iter(|| {
+            let token_cleaner = TokenLexerBuilder::from(
+                TokenLexerMode::NormalizeAndCleanup(Some(Lang::Eng)),
+                "The quick brown fox jumps over the lazy dog!",
+            )
+            .unwrap();
+
+            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
+        });
+    }
+
+    #[bench]
     fn bench_clean_token_chinese_build(b: &mut Bencher) {
         b.iter(|| {
             TokenLexerBuilder::from(
@@ -671,21 +694,21 @@ mod benches {
     }
 
     #[bench]
-    fn bench_clean_token_english_hinted_build(b: &mut Bencher) {
+    fn bench_clean_token_japanese_build(b: &mut Bencher) {
         b.iter(|| {
             TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup(Some(Lang::Eng)),
-                "The quick brown fox jumps over the lazy dog!",
+                TokenLexerMode::NormalizeAndCleanup(None),
+                "関西国際空港限定トートバッグ",
             )
         });
     }
 
     #[bench]
-    fn bench_clean_token_english_hinted_exhaust(b: &mut Bencher) {
+    fn bench_clean_token_japanese_exhaust(b: &mut Bencher) {
         b.iter(|| {
             let token_cleaner = TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup(Some(Lang::Eng)),
-                "The quick brown fox jumps over the lazy dog!",
+                TokenLexerMode::NormalizeAndCleanup(None),
+                "関西国際空港限定トートバッグ",
             )
             .unwrap();
 
