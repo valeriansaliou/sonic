@@ -1,6 +1,12 @@
 Sonic Changelog
 ===============
 
+## 1.4.1 (2023-08-12)
+
+### New Features
+
+* Added support for Japanese word segmentation in tokenizer (note that as this adds quite some size overhead to the final binary size, the feature `tokenizer-japanese` can be disabled when building Sonic) [[@nmkj-io](https://github.com/nmkj-io), [#311](https://github.com/valeriansaliou/sonic/pull/311)].
+
 ## 1.4.0 (2022-10-20)
 
 ### Bug Fixes
