@@ -65,7 +65,7 @@ lazy_static! {
                 mode: lindera_core::mode::Mode::Normal,
             }
         )
-        .expect("unable to initialize Japanese tokenizer");
+        .expect("unable to initialize japanese tokenizer");
 }
 
 impl TokenLexerBuilder {
@@ -254,8 +254,9 @@ impl<'a> TokenLexer<'a> {
             #[cfg(feature = "tokenizer-japanese")]
             Some(Lang::Jpn) => match TOKENIZER_LINDERA.tokenize(text) {
                 Ok(tokens) => TokenLexerWords::Lindera(tokens.into_iter()),
-                Err(e) => {
-                    warn!("unable to tokenize via lindera, falling back to the built-in tokenizer: {}", e);
+                Err(err) => {
+                    warn!("unable to tokenize japanese, falling back: {}", err);
+
                     TokenLexerWords::UAX29(text.unicode_words())
                 }
             },
@@ -350,7 +351,7 @@ impl<'a> Iterator for TokenLexerWords<'a> {
 
             #[cfg(feature = "tokenizer-japanese")]
             TokenLexerWords::Lindera(token) => match token.next() {
-                Some(t) => Some(t.text),
+                Some(inner) => Some(inner.text),
                 None => None,
             },
         }
@@ -450,7 +451,7 @@ mod tests {
 
     #[cfg(feature = "tokenizer-japanese")]
     #[test]
-    fn it_cleans_token_japanese_lindera() {
+    fn it_cleans_token_japanese_lindera_product() {
         let mut token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup(None),
             "関西国際空港限定トートバッグ",
@@ -471,7 +472,11 @@ mod tests {
             Some(("バッグ".to_string(), 3515727814))
         );
         assert_eq!(token_cleaner.next(), None);
+    }
 
+    #[cfg(feature = "tokenizer-japanese")]
+    #[test]
+    fn it_cleans_token_japanese_lindera_food() {
         let token_cleaner =
             TokenLexerBuilder::from(TokenLexerMode::NormalizeAndCleanup(None), "𠮷野家").unwrap();
 
@@ -482,7 +487,11 @@ mod tests {
                 .unwrap();
 
         assert_eq!(token_cleaner.locale, None);
+    }
 
+    #[cfg(feature = "tokenizer-japanese")]
+    #[test]
+    fn it_cleans_token_japanese_lindera_sentence() {
         let mut token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup(None),
             "𠮷野家でヱビスビールを飲んだ",
