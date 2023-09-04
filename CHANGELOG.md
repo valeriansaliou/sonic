@@ -1,6 +1,12 @@
 Sonic Changelog
 ===============
 
+## 1.4.3 (2023-09-04)
+
+### Changes
+
+* Publish `.deb` packages for Debian 12 on `x86_64` architecture [[@valeriansaliou](https://github.com/valeriansaliou)].
+
 ## 1.4.2 (2023-09-04)
 
 ### Changes
