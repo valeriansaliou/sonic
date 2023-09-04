@@ -50,7 +50,7 @@ tikv-jemallocator = { version = "0.4", optional = true }
 winapi = { version = "0.3", features = ["minwindef", "consoleapi"] }
 
 [features]
-default = ["allocator-jemalloc", "tokenizer-chinese", "tokenizer-japanese"]
+default = ["allocator-jemalloc", "tokenizer-chinese"]
 allocator-jemalloc = ["tikv-jemallocator"]
 tokenizer-chinese = ["jieba-rs"]
 tokenizer-japanese = ["lindera-core", "lindera-dictionary", "lindera-tokenizer"]

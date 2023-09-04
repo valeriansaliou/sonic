@@ -75,6 +75,8 @@ You can find the built binaries in the `./target/release` directory.
 
 _Install `build-essential`, `clang`, `libclang-dev`, `libc6-dev`, `g++` and `llvm-dev` to be able to compile the required RocksDB dependency._
 
+Note that the following optional features can be enabled upon building Sonic: `allocator-jemalloc`, `tokenizer-chinese` and `tokenizer-japanese` (some might be already enabled by default).
+
 **👉 Install from Cargo:**
 
 You can install Sonic directly with `cargo install`:
