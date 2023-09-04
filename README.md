@@ -63,6 +63,44 @@ Sonic is built in Rust. To install it, either download a version from the [Sonic
 
 👉 _Each release binary comes with an `.asc` signature file, which can be verified using [@valeriansaliou](https://github.com/valeriansaliou) GPG public key: [:key:valeriansaliou.gpg.pub.asc](https://valeriansaliou.name/files/keys/valeriansaliou.gpg.pub.asc)._
 
+**👉 Install from packages:**
+
+Sonic provides [pre-built packages](https://packagecloud.io/valeriansaliou/sonic) for Debian-based systems (Debian, Ubuntu, etc.).
+
+**Important: Sonic only provides 64 bits packages targeting Debian 12 for now (codename: `bookworm`). You might still be able to use them on other Debian versions, as well as Ubuntu (although they rely on a specific `glibc` version that might not be available on older or newer systems).**
+
+First, add the Sonic APT repository (eg. for Debian `bookworm`):
+
+```bash
+echo "deb [signed-by=/usr/share/keyrings/valeriansaliou_sonic.gpg] https://packagecloud.io/valeriansaliou/sonic/debian/ bookworm main" > /etc/apt/sources.list.d/valeriansaliou_sonic.list
+```
+
+```bash
+curl -fsSL https://packagecloud.io/valeriansaliou/sonic/gpgkey | gpg --dearmor -o /usr/share/keyrings/valeriansaliou_sonic.gpg
+```
+
+```bash
+apt-get update
+```
+
+Then, install the Sonic package:
+
+```bash
+apt-get install sonic
+```
+
+Then, edit the pre-filled Sonic configuration file:
+
+```bash
+nano /etc/sonic.cfg
+```
+
+Finally, restart Sonic:
+
+```
+service sonic restart
+```
+
 **👉 Install from source:**
 
 If you pulled the source code from Git, you can build it using `cargo`:

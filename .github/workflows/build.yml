@@ -7,7 +7,7 @@ name: Build and Release
 
 jobs:
   build-releases:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout code
@@ -55,6 +55,24 @@ jobs:
           files: ./${{ steps.current_tag.outputs.tag }}-*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-packages:
+    needs: build-releases
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Build packages
+        run: ./scripts/build_packages.sh
+
+      - name: Push packages to Packagecloud
+        uses: faucetsdn/action-packagecloud-upload-debian-packages@v1
+        with:
+          path: ./packages
+          repo: ${{ secrets.PACKAGECLOUD_REPO }}
+          token: ${{ secrets.PACKAGECLOUD_TOKEN }}
 
   build-docker:
     runs-on: ubuntu-latest

@@ -1,0 +1,15 @@
+#!/bin/sh
+
+set -e
+
+case "$1" in
+    configure)
+        adduser --system --disabled-password --disabled-login --home /var/empty \
+                --no-create-home --quiet --group sonic && \
+        chown sonic:sonic -R /var/lib/sonic/
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0
