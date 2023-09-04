@@ -1,6 +1,12 @@
 Sonic Changelog
 ===============
 
+## 1.4.2 (2023-09-04)
+
+### Changes
+
+* Produce `glibc` builds from GitHub Actions whenever a new Sonic version gets released [[@valeriansaliou](https://github.com/valeriansaliou)].
+
 ## 1.4.1 (2023-08-12)
 
 ### New Features
