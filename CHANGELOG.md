@@ -12,6 +12,7 @@ Sonic Changelog
 ### Changes
 
 * Produce `glibc` builds from GitHub Actions whenever a new Sonic version gets released [[@valeriansaliou](https://github.com/valeriansaliou)].
+* Pull out `tokenizer-japanese` from the default features, as it x10 the final binary size [[@valeriansaliou](https://github.com/valeriansaliou)].
 
 ## 1.4.1 (2023-08-12)
 
