@@ -9,7 +9,7 @@ Sonic can be used as a simple alternative to super-heavy and full-featured searc
 
 A strong attention to performance and code cleanliness has been given when designing Sonic. It aims at being crash-free, super-fast and puts minimum strain on server resources (our measurements have shown that Sonic - when under load - responds to search queries in the μs range, eats ~30MB RAM and has a low CPU footprint; [see our benchmarks](https://github.com/valeriansaliou/sonic#how-fast--lightweight-is-it)).
 
-_Tested at Rust version: `rustc 1.62.0 (a8314ef7d 2022-06-27)`_
+_Tested at Rust version: `rustc 1.71.1 (eb26296b5 2023-08-03)`_
 
 **🇫🇷 Crafted in Nantes, France.**
 
@@ -59,7 +59,47 @@ Sonic is integrated in all Crisp search products on the [Crisp](https://crisp.ch
 
 ### Installation
 
-Sonic is built in Rust. To install it, use `cargo install` or pull the source code from `master`.
+Sonic is built in Rust. To install it, either download a version from the [Sonic releases](https://github.com/valeriansaliou/sonic/releases) page, use `cargo install` or pull the source code from `master`.
+
+👉 _Each release binary comes with an `.asc` signature file, which can be verified using [@valeriansaliou](https://github.com/valeriansaliou) GPG public key: [:key:valeriansaliou.gpg.pub.asc](https://valeriansaliou.name/files/keys/valeriansaliou.gpg.pub.asc)._
+
+**👉 Install from packages:**
+
+Sonic provides [pre-built packages](https://packagecloud.io/valeriansaliou/sonic) for Debian-based systems (Debian, Ubuntu, etc.).
+
+**Important: Sonic only provides 64 bits packages targeting Debian 12 for now (codename: `bookworm`). You might still be able to use them on other Debian versions, as well as Ubuntu (although they rely on a specific `glibc` version that might not be available on older or newer systems).**
+
+First, add the Sonic APT repository (eg. for Debian `bookworm`):
+
+```bash
+echo "deb [signed-by=/usr/share/keyrings/valeriansaliou_sonic.gpg] https://packagecloud.io/valeriansaliou/sonic/debian/ bookworm main" > /etc/apt/sources.list.d/valeriansaliou_sonic.list
+```
+
+```bash
+curl -fsSL https://packagecloud.io/valeriansaliou/sonic/gpgkey | gpg --dearmor -o /usr/share/keyrings/valeriansaliou_sonic.gpg
+```
+
+```bash
+apt-get update
+```
+
+Then, install the Sonic package:
+
+```bash
+apt-get install sonic
+```
+
+Then, edit the pre-filled Sonic configuration file:
+
+```bash
+nano /etc/sonic.cfg
+```
+
+Finally, restart Sonic:
+
+```
+service sonic restart
+```
 
 **👉 Install from source:**
 
@@ -72,6 +112,8 @@ cargo build --release
 You can find the built binaries in the `./target/release` directory.
 
 _Install `build-essential`, `clang`, `libclang-dev`, `libc6-dev`, `g++` and `llvm-dev` to be able to compile the required RocksDB dependency._
+
+Note that the following optional features can be enabled upon building Sonic: `allocator-jemalloc`, `tokenizer-chinese` and `tokenizer-japanese` (some might be already enabled by default).
 
 **👉 Install from Cargo:**
 
@@ -92,13 +134,13 @@ You might find it convenient to run Sonic via Docker. You can find the pre-built
 First, pull the `valeriansaliou/sonic` image:
 
 ```bash
-docker pull valeriansaliou/sonic:v1.4.0
+docker pull valeriansaliou/sonic:v1.4.3
 ```
 
 Then, seed it a configuration file and run it (replace `/path/to/your/sonic/config.cfg` with the path to your configuration file):
 
 ```bash
-docker run -p 1491:1491 -v /path/to/your/sonic/config.cfg:/etc/sonic.cfg -v /path/to/your/sonic/store/:/var/lib/sonic/store/ valeriansaliou/sonic:v1.4.0
+docker run -p 1491:1491 -v /path/to/your/sonic/config.cfg:/etc/sonic.cfg -v /path/to/your/sonic/store/:/var/lib/sonic/store/ valeriansaliou/sonic:v1.4.3
 ```
 
 In the configuration file, ensure that:

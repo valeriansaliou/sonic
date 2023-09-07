@@ -1,6 +1,25 @@
 Sonic Changelog
 ===============
 
+## 1.4.3 (2023-09-04)
+
+### Changes
+
+* Publish `.deb` packages for Debian 12 on `x86_64` architecture [[@valeriansaliou](https://github.com/valeriansaliou)].
+
+## 1.4.2 (2023-09-04)
+
+### Changes
+
+* Produce `glibc` builds from GitHub Actions whenever a new Sonic version gets released [[@valeriansaliou](https://github.com/valeriansaliou)].
+* Pull out `tokenizer-japanese` from the default features, as it x10 the final binary size [[@valeriansaliou](https://github.com/valeriansaliou)].
+
+## 1.4.1 (2023-08-12)
+
+### New Features
+
+* Added support for Japanese word segmentation in tokenizer (note that as this adds quite some size overhead to the final binary size, the feature `tokenizer-japanese` can be disabled when building Sonic) [[@nmkj-io](https://github.com/nmkj-io), [#311](https://github.com/valeriansaliou/sonic/pull/311)].
+
 ## 1.4.0 (2022-10-20)
 
 ### Bug Fixes

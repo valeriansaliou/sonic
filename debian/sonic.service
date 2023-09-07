@@ -6,9 +6,9 @@ After=network.target
 Type=simple
 User=sonic
 Group=sonic
-ExecStart=/bin/sonic -c /etc/sonic.cfg
+ExecStart=/usr/bin/sonic -c /etc/sonic.cfg
 Restart=on-failure
-LimitNOFILE=4096
+LimitNOFILE=infinity
 
 [Install]
 WantedBy=multi-user.target
