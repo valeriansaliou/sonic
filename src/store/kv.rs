@@ -12,8 +12,8 @@ use rocksdb::backup::{
     RestoreOptions as DBRestoreOptions,
 };
 use rocksdb::{
-    DBCompactionStyle, DBCompressionType, Env as DBEnv, Error as DBError, FlushOptions, Options as DBOptions,
-    WriteBatch, WriteOptions, DB,
+    DBCompactionStyle, DBCompressionType, Env as DBEnv, Error as DBError, FlushOptions,
+    Options as DBOptions, WriteBatch, WriteOptions, DB,
 };
 use std::fmt;
 use std::fs;
