@@ -31,6 +31,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ahash"
+version = "0.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91429305e9f0a25f6205c5b8e0d2db09e0708a7a6df0f42212bb56c32c8ac97a"
+dependencies = [
+ "cfg-if 1.0.0",
+ "once_cell",
+ "version_check",
+ "zerocopy",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -38,6 +50,12 @@ checksum = "86b8f9420f797f2d9e935edf629310eb938a0d839f984e25327f3c7eed22300c"
 dependencies = [
  "memchr",
 ]
+
+[[package]]
+name = "allocator-api2"
+version = "0.2.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0942ffc6dcaadf03badf6e6a2d0228460359d5e34b57ccdc720b7382dfbd5ec5"
 
 [[package]]
 name = "anyhow"
@@ -539,7 +557,7 @@ version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 dependencies = [
- "ahash",
+ "ahash 0.7.6",
 ]
 
 [[package]]
@@ -547,6 +565,10 @@ name = "hashbrown"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c6201b9ff9fd90a5a3bac2e56a830d0caa509576f0e503818ee82c181b3437a"
+dependencies = [
+ "ahash 0.8.6",
+ "allocator-api2",
+]
 
 [[package]]
 name = "hermit-abi"
@@ -714,9 +736,9 @@ dependencies = [
 
 [[package]]
 name = "lindera-cc-cedict-builder"
-version = "0.24.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96291938c1de2f2813afbd178eaf2a12f9a32ae9aaffd5d8c28c0730a252ea4d"
+checksum = "6f567a47e47b5420908424de2c6c5e424e3cafe588d0146bd128c0f3755758a3"
 dependencies = [
  "anyhow",
  "bincode",
@@ -733,9 +755,9 @@ dependencies = [
 
 [[package]]
 name = "lindera-core"
-version = "0.24.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b6a2a5092556cf61ff0a5e70cd1cf60fd001ae994df0d9b31b5316b40736d11"
+checksum = "a9a2440cc156a4a911a174ec68203543d1efb10df3a700a59b6bf581e453c726"
 dependencies = [
  "anyhow",
  "bincode",
@@ -750,9 +772,9 @@ dependencies = [
 
 [[package]]
 name = "lindera-decompress"
-version = "0.24.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16af153dc65d1846abc3269ed49ad8189b7e7317b0579cb0a89d0900c023edf4"
+checksum = "e077a410e61c962cb526f71b7effd62ffc607488a8f61869c937582d2ccb529b"
 dependencies = [
  "anyhow",
  "flate2",
@@ -761,9 +783,9 @@ dependencies = [
 
 [[package]]
 name = "lindera-dictionary"
-version = "0.24.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ba4107fb3e079ba509f668a55ee1b0ead127d4128a6216c9db98e2f4f793655"
+checksum = "d9f57491adf7b311a3ee87f5e4a36454df16a2ec73de4ef28b2106fac80bd782"
 dependencies = [
  "anyhow",
  "bincode",
@@ -771,6 +793,7 @@ dependencies = [
  "lindera-cc-cedict-builder",
  "lindera-core",
  "lindera-ipadic-builder",
+ "lindera-ipadic-neologd-builder",
  "lindera-ko-dic-builder",
  "lindera-unidic",
  "lindera-unidic-builder",
@@ -779,9 +802,30 @@ dependencies = [
 
 [[package]]
 name = "lindera-ipadic-builder"
-version = "0.24.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da219e23d7efc3d7f4d86d42650bc8e1d70daad4364c266bea802347b2679c82"
+checksum = "a3476ec7748aebd2eb23d496ddfce5e7e0a5c031cffcd214451043e02d029f11"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "byteorder",
+ "csv",
+ "encoding_rs",
+ "encoding_rs_io",
+ "env_logger",
+ "glob",
+ "lindera-core",
+ "lindera-decompress",
+ "log",
+ "serde",
+ "yada",
+]
+
+[[package]]
+name = "lindera-ipadic-neologd-builder"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b1c7576a02d5e4af2bf62de51790a01bc4b8bc0d0b6a6b86a46b157f5cb306d"
 dependencies = [
  "anyhow",
  "bincode",
@@ -800,9 +844,9 @@ dependencies = [
 
 [[package]]
 name = "lindera-ko-dic-builder"
-version = "0.24.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "227f9a7b8b345bdc88e83be541a34ead35f8a2a35de045107c53b2da2967e20a"
+checksum = "3e545752f6487be87b572529ad594cb3b48d2ef20821516f598b2d152d23277b"
 dependencies = [
  "anyhow",
  "bincode",
@@ -819,9 +863,9 @@ dependencies = [
 
 [[package]]
 name = "lindera-tokenizer"
-version = "0.24.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "134a2d000c6a5eca680c11402af86fd26d1807106f859a8f363ede50eb751171"
+checksum = "24a2d4606a5a4da62ac4a3680ee884a75da7f0c892dc967fc9cb983ceba39a8f"
 dependencies = [
  "bincode",
  "byteorder",
@@ -834,9 +878,9 @@ dependencies = [
 
 [[package]]
 name = "lindera-unidic"
-version = "0.24.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0153c6e3044140c93427f33cd3d79dfa56874e32552122676d67945d1deda42c"
+checksum = "388b1bdf81794b5d5b8057ce0321c58ff4b90d676b637948ccc7863ae2f43d28"
 dependencies = [
  "bincode",
  "byteorder",
@@ -850,9 +894,9 @@ dependencies = [
 
 [[package]]
 name = "lindera-unidic-builder"
-version = "0.24.0"
+version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "182646f97c0b4ef81f1c6ac9bbe7d93447b0340d1a26cfaeb41803a8a575316b"
+checksum = "cdfa3e29a22c047da57fadd960ff674b720de15a1e2fb35b5ed67f3408afb469"
 dependencies = [
  "anyhow",
  "bincode",
@@ -1331,7 +1375,7 @@ dependencies = [
  "fst",
  "fst-levenshtein",
  "fst-regex",
- "hashbrown 0.12.3",
+ "hashbrown 0.14.0",
  "jieba-rs",
  "lazy_static",
  "lindera-core",
@@ -1772,6 +1816,26 @@ name = "yada"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6d12cb7a57bbf2ab670ed9545bae3648048547f9039279a89ce000208e585c1"
+
+[[package]]
+name = "zerocopy"
+version = "0.7.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d075cf85bbb114e933343e087b92f2146bac0d55b534cbb8188becf0039948e"
+dependencies = [
+ "zerocopy-derive",
+]
+
+[[package]]
+name = "zerocopy-derive"
+version = "0.7.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86cd5ca076997b97ef09d3ad65efe811fa68c9e874cb636ccb211223a813b0c2"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "zip"

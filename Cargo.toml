@@ -33,14 +33,14 @@ fst-regex = "0.3"
 regex-syntax = "0.6"
 twox-hash = "1.5"
 byteorder = "1.4"
-hashbrown = "0.12"
+hashbrown = "0.14"
 linked_hash_set = "0.1"
 whatlang = "0.16"
 regex = "1.6"
 jieba-rs = { version = "0.6", optional = true }
-lindera-core = { version = "0.24", optional = true }
-lindera-dictionary = { version = "0.24", features = ["unidic"], optional = true }
-lindera-tokenizer = { version = "0.24", features = ["unidic"], optional = true }
+lindera-core = { version = "0.27", optional = true }
+lindera-dictionary = { version = "0.27", features = ["unidic"], optional = true }
+lindera-tokenizer = { version = "0.27", features = ["unidic"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
 nix = "0.18"
