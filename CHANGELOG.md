@@ -1,6 +1,16 @@
 Sonic Changelog
 ===============
 
+## 1.4.4 (2023-12-08)
+
+### Bug Fixes
+
+* Fixed `rocksdb` not building due to a `rust-bindgen` version which was not compatible with `clang` version 16 [[@anthonyroussel](https://github.com/anthonyroussel), [#316](https://github.com/valeriansaliou/sonic/pull/316)].
+
+### Changes
+
+* Dependencies have been bumped to latest versions (namely: `rocksdb`, `toml`, `regex-syntax`, `hashbrown`, `lindera-core`, `lindera-dictionary`, `lindera-tokenizer`) [[@valeriansaliou](https://github.com/valeriansaliou)].
+
 ## 1.4.3 (2023-09-04)
 
 ### Changes
