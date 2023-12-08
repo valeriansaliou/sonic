@@ -18,7 +18,7 @@ doc = false
 
 [dependencies]
 log = "0.4"
-toml = "0.5"
+toml = "0.8"
 clap = { version = "3.2", features = ["std", "cargo"] }
 lazy_static = "1.4"
 serde = "1.0"
@@ -30,7 +30,7 @@ rocksdb = { version = "0.21", features = ["zstd"] }
 fst = "0.3"
 fst-levenshtein = "0.3"
 fst-regex = "0.3"
-regex-syntax = "0.6"
+regex-syntax = "0.8"
 twox-hash = "1.5"
 byteorder = "1.4"
 hashbrown = "0.14"
