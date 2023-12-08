@@ -298,9 +298,13 @@ impl StoreKVPool {
                     .map_err(|_| io_error!("database open failure"))?;
 
                 // Initialize KV database backup engine
-                let backup_opts = DBBackupEngineOptions::new(&kv_backup_path).unwrap();
+                let kv_backup_options = DBBackupEngineOptions::new(&kv_backup_path)
+                    .map_err(|_| io_error!("backup engine options acquire failure"))?;
+                let kv_backup_environment = DBEnv::new()
+                    .map_err(|_| io_error!("backup engine environment acquire failure"))?;
+
                 let mut kv_backup_engine =
-                    DBBackupEngine::open(&backup_opts, &DBEnv::new().unwrap())
+                    DBBackupEngine::open(&kv_backup_options, &kv_backup_environment)
                         .map_err(|_| io_error!("backup engine failure"))?;
 
                 // Proceed actual KV database backup
@@ -351,9 +355,13 @@ impl StoreKVPool {
                 fs::create_dir_all(&kv_path)?;
 
                 // Initialize KV database backup engine
-                let backup_opts = DBBackupEngineOptions::new(&origin_path).unwrap();
+                let kv_backup_options = DBBackupEngineOptions::new(&origin_path)
+                    .map_err(|_| io_error!("backup engine options acquire failure"))?;
+                let kv_backup_environment = DBEnv::new()
+                    .map_err(|_| io_error!("backup engine environment acquire failure"))?;
+
                 let mut kv_backup_engine =
-                    DBBackupEngine::open(&backup_opts, &DBEnv::new().unwrap())
+                    DBBackupEngine::open(&kv_backup_options, &kv_backup_environment)
                         .map_err(|_| io_error!("backup engine failure"))?;
 
                 kv_backup_engine
