@@ -1,6 +1,12 @@
 Sonic Changelog
 ===============
 
+## 1.4.5 (2023-12-11)
+
+### Bug Fixes
+
+* Fixed an issue where system clock can move back to the past on a virtualized system, resulting in client threads entering a crash loop due to mutex poisoning [[@valeriansaliou](https://github.com/valeriansaliou)].
+
 ## 1.4.4 (2023-12-08)
 
 ### Bug Fixes
