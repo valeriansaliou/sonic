@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use super::generic::{
     StoreGeneric, StoreGenericActionBuilder, StoreGenericBuilder, StoreGenericPool,
@@ -205,12 +205,24 @@ impl StoreFSTPool {
 
             for key in &*graph_consolidate_read {
                 if let Some(store) = graph_pool_read.get(key) {
+                    // Important: be lenient with system clock going back to a past duration, \
+                    //   since we may be running in a virtualized environment where clock is not \
+                    //   guaranteed to be monotonic. This is done to avoid poisoning associated \
+                    //   mutexes by crashing on unwrap().
                     let not_consolidated_for = store
                         .last_consolidated
                         .read()
                         .unwrap()
                         .elapsed()
-                        .unwrap()
+                        .unwrap_or_else(|err| {
+                            error!(
+                                "fst key: {} last consolidated duration clock issue, zeroing: {}",
+                                key, err
+                            );
+
+                            // Assuming a zero seconds fallback duration
+                            Duration::from_secs(0)
+                        })
                         .as_secs();
 
                     if force || not_consolidated_for >= APP_CONF.store.fst.graph.consolidate_after {
