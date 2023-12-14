@@ -99,7 +99,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push Docker image
+      - name: Build and push Docker images (AMD64 + ARM64)
         uses: docker/build-push-action@v4
         id: build
         with:
