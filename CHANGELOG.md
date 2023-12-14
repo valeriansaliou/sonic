@@ -1,6 +1,12 @@
 Sonic Changelog
 ===============
 
+## 1.4.6 (2023-12-14)
+
+### New Features
+
+* The Docker image is now also available for the `arm64` platform, in addition to `amd64` [[@PovilasID](https://github.com/PovilasID), [#310](https://github.com/valeriansaliou/sonic/pull/310)].
+
 ## 1.4.5 (2023-12-11)
 
 ### Bug Fixes
