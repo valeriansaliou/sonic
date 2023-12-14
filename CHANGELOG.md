@@ -1,6 +1,12 @@
 Sonic Changelog
 ===============
 
+## 1.4.7 (2023-12-14)
+
+### Bug Fixes
+
+* Fixed non-working `arm64` builds due to hardcoded `x86_64-unknown-linux-gnu` Rust target in the `Dockerfile` [[@valeriansaliou](https://github.com/valeriansaliou)].
+
 ## 1.4.6 (2023-12-14)
 
 ### New Features
