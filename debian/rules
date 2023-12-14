@@ -1,7 +1,7 @@
 #!/usr/bin/make -f
 
 DISTRIBUTION = $(shell lsb_release -sr)
-VERSION = 1.4.7
+VERSION = 1.4.8
 PACKAGEVERSION = $(VERSION)-0~$(DISTRIBUTION)0
 URL = https://github.com/valeriansaliou/sonic/releases/download/v$(VERSION)/
 

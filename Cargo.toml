@@ -1,6 +1,6 @@
 [package]
 name = "sonic-server"
-version = "1.4.7"
+version = "1.4.8"
 description = "Fast, lightweight and schema-less search backend."
 readme = "README.md"
 license = "MPL-2.0"

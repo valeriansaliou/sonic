@@ -1,6 +1,12 @@
 Sonic Changelog
 ===============
 
+## 1.4.8 (2023-12-14)
+
+### Changes
+
+* Pull out the `arm64` platform from the Docker image, since it does not build in acceptable time via GitHub Actions due to using QEMU emulation (will wait that GitHub Actions provides a native `arm64` runner) [[@valeriansaliou](https://github.com/valeriansaliou)].
+
 ## 1.4.7 (2023-12-14)
 
 ### Bug Fixes
