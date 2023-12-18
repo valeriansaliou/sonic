@@ -9,7 +9,7 @@ use core::hash::Hash;
 use hashbrown::HashMap;
 use std::fmt::Display;
 use std::sync::{Arc, RwLock};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 pub trait StoreGenericKey {}
 
@@ -92,12 +92,24 @@ pub trait StoreGenericPool<
         let mut removal_register: Vec<K> = Vec::new();
 
         for (collection_bucket, store) in pool.read().unwrap().iter() {
+            // Important: be lenient with system clock going back to a past duration, since \
+            //   we may be running in a virtualized environment where clock is not guaranteed \
+            //   to be monotonic. This is done to avoid poisoning associated mutexes by \
+            //   crashing on unwrap().
             let last_used_elapsed = store
                 .ref_last_used()
                 .read()
                 .unwrap()
                 .elapsed()
-                .unwrap()
+                .unwrap_or_else(|err| {
+                    error!(
+                        "store pool item: {} last used duration clock issue, zeroing: {}",
+                        collection_bucket, err
+                    );
+
+                    // Assuming a zero seconds fallback duration
+                    Duration::from_secs(0)
+                })
                 .as_secs();
 
             if last_used_elapsed >= inactive_after {

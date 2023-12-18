@@ -12,8 +12,8 @@ use rocksdb::backup::{
     RestoreOptions as DBRestoreOptions,
 };
 use rocksdb::{
-    DBCompactionStyle, DBCompressionType, Error as DBError, FlushOptions, Options as DBOptions,
-    WriteBatch, WriteOptions, DB,
+    DBCompactionStyle, DBCompressionType, Env as DBEnv, Error as DBError, FlushOptions,
+    Options as DBOptions, WriteBatch, WriteOptions, DB,
 };
 use std::fmt;
 use std::fs;
@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use std::vec::Drain;
 
 use super::generic::{
@@ -172,12 +172,24 @@ impl StoreKVPool {
             let store_pool_read = STORE_POOL.read().unwrap();
 
             for (key, store) in &*store_pool_read {
+                // Important: be lenient with system clock going back to a past duration, since \
+                //   we may be running in a virtualized environment where clock is not guaranteed \
+                //   to be monotonic. This is done to avoid poisoning associated mutexes by \
+                //   crashing on unwrap().
                 let not_flushed_for = store
                     .last_flushed
                     .read()
                     .unwrap()
                     .elapsed()
-                    .unwrap()
+                    .unwrap_or_else(|err| {
+                        error!(
+                            "kv key: {} last flush duration clock issue, zeroing: {}",
+                            key, err
+                        );
+
+                        // Assuming a zero seconds fallback duration
+                        Duration::from_secs(0)
+                    })
                     .as_secs();
 
                 if force || not_flushed_for >= APP_CONF.store.kv.database.flush_after {
@@ -298,8 +310,13 @@ impl StoreKVPool {
                     .map_err(|_| io_error!("database open failure"))?;
 
                 // Initialize KV database backup engine
+                let kv_backup_options = DBBackupEngineOptions::new(&kv_backup_path)
+                    .map_err(|_| io_error!("backup engine options acquire failure"))?;
+                let kv_backup_environment = DBEnv::new()
+                    .map_err(|_| io_error!("backup engine environment acquire failure"))?;
+
                 let mut kv_backup_engine =
-                    DBBackupEngine::open(&DBBackupEngineOptions::default(), &kv_backup_path)
+                    DBBackupEngine::open(&kv_backup_options, &kv_backup_environment)
                         .map_err(|_| io_error!("backup engine failure"))?;
 
                 // Proceed actual KV database backup
@@ -350,8 +367,13 @@ impl StoreKVPool {
                 fs::create_dir_all(&kv_path)?;
 
                 // Initialize KV database backup engine
+                let kv_backup_options = DBBackupEngineOptions::new(&origin_path)
+                    .map_err(|_| io_error!("backup engine options acquire failure"))?;
+                let kv_backup_environment = DBEnv::new()
+                    .map_err(|_| io_error!("backup engine environment acquire failure"))?;
+
                 let mut kv_backup_engine =
-                    DBBackupEngine::open(&DBBackupEngineOptions::default(), &origin_path)
+                    DBBackupEngine::open(&kv_backup_options, &kv_backup_environment)
                         .map_err(|_| io_error!("backup engine failure"))?;
 
                 kv_backup_engine

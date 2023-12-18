@@ -1,6 +1,40 @@
 Sonic Changelog
 ===============
 
+## 1.4.8 (2023-12-14)
+
+### Changes
+
+* Pull out the `arm64` platform from the Docker image, since it does not build in acceptable time via GitHub Actions due to using QEMU emulation (will wait that GitHub Actions provides a native `arm64` runner) [[@valeriansaliou](https://github.com/valeriansaliou)].
+
+## 1.4.7 (2023-12-14)
+
+### Bug Fixes
+
+* Fixed non-working `arm64` builds due to hardcoded `x86_64-unknown-linux-gnu` Rust target in the `Dockerfile` [[@valeriansaliou](https://github.com/valeriansaliou)].
+
+## 1.4.6 (2023-12-14)
+
+### New Features
+
+* The Docker image is now also available for the `arm64` platform, in addition to `amd64` [[@PovilasID](https://github.com/PovilasID), [#310](https://github.com/valeriansaliou/sonic/pull/310)].
+
+## 1.4.5 (2023-12-11)
+
+### Bug Fixes
+
+* Fixed an issue where system clock can move back to the past on a virtualized system, resulting in client threads entering a crash loop due to mutex poisoning [[@valeriansaliou](https://github.com/valeriansaliou)].
+
+## 1.4.4 (2023-12-08)
+
+### Bug Fixes
+
+* Fixed `rocksdb` not building due to a `rust-bindgen` version which was not compatible with `clang` version 16 [[@anthonyroussel](https://github.com/anthonyroussel), [#316](https://github.com/valeriansaliou/sonic/pull/316)].
+
+### Changes
+
+* Dependencies have been bumped to latest versions (namely: `rocksdb`, `toml`, `regex-syntax`, `hashbrown`, `lindera-core`, `lindera-dictionary`, `lindera-tokenizer`) [[@valeriansaliou](https://github.com/valeriansaliou)].
+
 ## 1.4.3 (2023-09-04)
 
 ### Changes

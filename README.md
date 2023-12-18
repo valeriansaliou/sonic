@@ -9,7 +9,7 @@ Sonic can be used as a simple alternative to super-heavy and full-featured searc
 
 A strong attention to performance and code cleanliness has been given when designing Sonic. It aims at being crash-free, super-fast and puts minimum strain on server resources (our measurements have shown that Sonic - when under load - responds to search queries in the μs range, eats ~30MB RAM and has a low CPU footprint; [see our benchmarks](https://github.com/valeriansaliou/sonic#how-fast--lightweight-is-it)).
 
-_Tested at Rust version: `rustc 1.71.1 (eb26296b5 2023-08-03)`_
+_Tested at Rust version: `rustc 1.74.1 (a28077b28 2023-12-04)`_
 
 **🇫🇷 Crafted in Nantes, France.**
 
@@ -134,13 +134,13 @@ You might find it convenient to run Sonic via Docker. You can find the pre-built
 First, pull the `valeriansaliou/sonic` image:
 
 ```bash
-docker pull valeriansaliou/sonic:v1.4.3
+docker pull valeriansaliou/sonic:v1.4.8
 ```
 
 Then, seed it a configuration file and run it (replace `/path/to/your/sonic/config.cfg` with the path to your configuration file):
 
 ```bash
-docker run -p 1491:1491 -v /path/to/your/sonic/config.cfg:/etc/sonic.cfg -v /path/to/your/sonic/store/:/var/lib/sonic/store/ valeriansaliou/sonic:v1.4.3
+docker run -p 1491:1491 -v /path/to/your/sonic/config.cfg:/etc/sonic.cfg -v /path/to/your/sonic/store/:/var/lib/sonic/store/ valeriansaliou/sonic:v1.4.8
 ```
 
 In the configuration file, ensure that:
