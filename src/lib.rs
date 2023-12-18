@@ -94,7 +94,7 @@ mod tests {
 
     use super::*;
 
-    #[test]
+    #[test_log::test]
     fn test_lib() {
         // init
         sonic_init("./config.cfg");
@@ -104,6 +104,7 @@ mod tests {
             QueryBuilder::push("home", "book", "3-body", "hello 3-body world!", None).unwrap();
         let ret = execute_query(query).unwrap();
         println!("push return: {:?}", ret);
+
         let query =
             QueryBuilder::push("home", "book", "sonic-inside", "hello sonic!", None).unwrap();
         let ret = execute_query(query).unwrap();

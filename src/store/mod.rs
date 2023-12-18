@@ -13,5 +13,10 @@ mod keyer;
 pub mod fst;
 pub mod identifiers;
 pub mod item;
-pub mod kv;
 pub mod operation;
+
+#[cfg(not(feature = "redb"))]
+pub mod kv;
+#[cfg(feature = "redb")]
+#[path ="kv_redb.rs"]
+pub mod kv;
