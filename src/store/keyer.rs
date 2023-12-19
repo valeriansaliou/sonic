@@ -14,6 +14,7 @@ use super::identifiers::*;
 
 pub struct StoreKeyerBuilder;
 
+#[repr(transparent)]
 pub struct StoreKeyer {
     key: StoreKeyerKey,
 }
