@@ -88,20 +88,6 @@ pub enum RedbStoreKVError {
     TableError(#[from] redb::TableError),
 }
 
-struct StoreKeyerRange {
-    start: StoreKeyerKey,
-    end: StoreKeyerKey,
-}
-impl std::ops::RangeBounds<StoreKeyerKey> for StoreKeyerRange {
-    fn start_bound(&self) -> std::ops::Bound<&StoreKeyerKey> {
-        std::ops::Bound::Included(&self.start)
-    }
-
-    fn end_bound(&self) -> std::ops::Bound<&StoreKeyerKey> {
-        std::ops::Bound::Included(&self.end)
-    }
-}
-
 impl StoreKVPool {
     pub fn count() -> usize {
         STORE_POOL.read().unwrap().len()
@@ -339,10 +325,6 @@ impl StoreKVBuilder {
         let write_txn = db.begin_write()?;
         {
             let mut _table = write_txn.open_table(TABLE)?;
-            // let key: StoreKeyerKey = [0, 0, 0, 0, 0, 0, 0, 0, 0];
-            // let k1: &[u8] = &key;
-            // table.insert(k1, key.to_vec())?;
-            // table.remove(k1)?;
         }
         write_txn.commit()?;
 
@@ -435,12 +417,14 @@ impl StoreKV {
         key_end: StoreKeyerKey,
     ) -> Result<(), RedbStoreKVError> {
         let write_txn = self.database.begin_write()?;
-        let mut _table = write_txn.open_table(TABLE)?;
-        let _range = StoreKeyerRange {
-            start: key_start,
-            end: key_end,
-        };
-        // let v = table.drain(range)?;
+        {
+            let mut table = write_txn.open_table(TABLE)?;
+            let start: &[u8] = &key_start;
+            let end: &[u8] = &key_end;
+            let _v = table.drain::<&[u8]>((std::ops::Bound::Included(start), std::ops::Bound::Included(end)))?;
+        }
+        write_txn.commit()?;
+
         Ok(())
     }
 

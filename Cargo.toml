@@ -55,7 +55,7 @@ winapi = { version = "0.3", features = ["minwindef", "consoleapi"] }
 test-log = "0.2"
 
 [features]
-default = ["allocator-jemalloc", "tokenizer-chinese", "redb"]
+default = ["tokenizer-chinese", "redb"]
 allocator-jemalloc = ["tikv-jemallocator"]
 tokenizer-chinese = ["jieba-rs"]
 tokenizer-japanese = ["lindera-core", "lindera-dictionary", "lindera-tokenizer"]
