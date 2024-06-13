@@ -26,7 +26,9 @@ serde_derive = "1.0"
 rand = "0.8"
 unicode-segmentation = "1.6"
 radix = "0.6"
-rocksdb = { version = "0.21", features = ["zstd"] }
+rocksdb = { version = "0.21", features = ["zstd"], optional = true }
+redb = { version = "1", optional = true }
+thiserror = "1.0"
 fst = "0.3"
 fst-levenshtein = "0.3"
 fst-regex = "0.3"
@@ -44,17 +46,23 @@ lindera-tokenizer = { version = "0.27", features = ["unidic"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
 nix = "0.18"
-tikv-jemallocator = { version = "0.4", optional = true }
+tikv-jemallocator = { version = "0.5", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["minwindef", "consoleapi"] }
 
+[dev-dependencies]
+test-log = "0.2"
+
 [features]
-default = ["allocator-jemalloc", "tokenizer-chinese"]
+default = ["tokenizer-chinese", "redb"]
 allocator-jemalloc = ["tikv-jemallocator"]
 tokenizer-chinese = ["jieba-rs"]
 tokenizer-japanese = ["lindera-core", "lindera-dictionary", "lindera-tokenizer"]
 benchmark = []
+
+rocksdb = ["dep:rocksdb"]
+redb = ["dep:redb"]
 
 [profile.dev]
 opt-level = 0
