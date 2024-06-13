@@ -11,8 +11,6 @@ use std::fmt::Display;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
-pub trait StoreGenericKey {}
-
 pub trait StoreGeneric {
     fn ref_last_used(&self) -> &RwLock<SystemTime>;
 }

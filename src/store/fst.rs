@@ -687,7 +687,7 @@ impl StoreFSTPool {
                                 );
 
                                 // Proceed temporary FST to final FST path rename
-                                if std::fs::rename(&bucket_tmp_path, &bucket_final_path).is_ok() {
+                                if fs::rename(&bucket_tmp_path, &bucket_final_path).is_ok() {
                                     info!("done consolidate fst at path: {:?}", bucket_final_path);
                                 } else {
                                     error!(
