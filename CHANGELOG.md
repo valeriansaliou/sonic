@@ -1,6 +1,12 @@
 Sonic Changelog
 ===============
 
+## 1.4.9 (2024-06-16)
+
+### Changes
+
+* Update Rust code style to conform to new `rustc` requirements (preventing builds on `rustc 1.79.0` and further) [[@jaseemabid](https://github.com/jaseemabid), [#321](https://github.com/valeriansaliou/sonic/pull/321)].
+
 ## 1.4.8 (2023-12-14)
 
 ### Changes
