@@ -22,6 +22,9 @@ WORKDIR /usr/src/sonic
 
 COPY --from=build /app/target/release/sonic /usr/local/bin/sonic
 
+RUN ln -s /run/sonic/sonic.cfg /etc/sonic.cfg
+VOLUME /run/sonic
+
 CMD [ "sonic", "-c", "/etc/sonic.cfg" ]
 
 EXPOSE 1491
