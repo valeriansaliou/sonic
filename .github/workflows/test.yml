@@ -18,7 +18,7 @@ jobs:
 
       - name: Cache build artifacts
         id: cache-cargo
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -28,7 +28,7 @@ jobs:
 
       - name: Cache integration artifacts
         id: cache-integration
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: |
             tests/integration/runner/node_modules
