@@ -8,15 +8,51 @@
 #  License: Mozilla Public License v2.0 (MPL v2.0)
 ##
 
+# Detect system architecture
+detect_architecture() {
+    arch=$(uname -m)
+    os=$(uname -s | tr '[:upper:]' '[:lower:]')
+    case $arch in
+        aarch64)
+            if [[ "$os" == "mingw"* || "$os" == "cygwin"* ]]; then
+                TARGET_ARCH="aarch64-pc-windows-msvc"
+            else
+                TARGET_ARCH="aarch64-linux-android"
+            fi
+            ;;
+        x86_64)
+            if [[ "$os" == "mingw"* || "$os" == "cygwin"* ]]; then
+                TARGET_ARCH="x86_64-pc-windows-msvc"
+            else
+                TARGET_ARCH="x86_64-unknown-linux-gnu"
+            fi
+            ;;
+        armv7l)
+            TARGET_ARCH="armv7-unknown-linux-gnueabihf"
+            ;;
+        i686)
+            if [[ "$os" == "mingw"* || "$os" == "cygwin"* ]]; then
+                TARGET_ARCH="i686-pc-windows-msvc"
+            else
+                TARGET_ARCH="i686-unknown-linux-gnu"
+            fi
+            ;;
+        *)
+            echo "Unsupported architecture or OS: $arch on $os"
+            exit 1
+            ;;
+    esac
+    echo "Detected architecture: $arch on $os -> $TARGET_ARCH"
+}
+
 # Read arguments
 while [ "$1" != "" ]; do
-    argument_key=`echo $1 | awk -F= '{print $1}'`
-    argument_value=`echo $1 | awk -F= '{print $2}'`
-
+    argument_key=$(echo $1 | awk -F= '{print $1}')
+    argument_value=$(echo $1 | awk -F= '{print $2}')
     case $argument_key in
         -v | --version)
             # Notice: strip any leading 'v' to the version number
-            SONIC_VERSION="${argument_value/v}"
+            SONIC_VERSION="${argument_value/v/}"
             ;;
         *)
             echo "Unknown argument received: '$argument_key'"
@@ -30,7 +66,6 @@ done
 # Ensure release version is provided
 if [ -z "$SONIC_VERSION" ]; then
   echo "No Sonic release version was provided, please provide it using '--version'"
-
   exit 1
 fi
 
@@ -41,7 +76,11 @@ function release_for_architecture {
     rm -rf ./sonic/ && \
         cargo build --target "$3" --release && \
         mkdir ./sonic && \
-        cp -p "target/$3/release/sonic" ./sonic/ && \
+        if [[ "$3" == *"windows-msvc"* ]]; then
+            cp -p "target/$3/release/sonic.exe" ./sonic/ 
+        else
+            cp -p "target/$3/release/sonic" ./sonic/
+        fi
         cp -r ./config.cfg sonic/ && \
         tar --owner=0 --group=0 -czvf "$final_tar" ./sonic && \
         rm -r ./sonic/
@@ -54,6 +93,9 @@ function release_for_architecture {
     return $release_result
 }
 
+# Detect architecture
+detect_architecture
+
 # Run release tasks
 ABSPATH=$(cd "$(dirname "$0")"; pwd)
 BASE_DIR="$ABSPATH/../"
@@ -61,16 +103,15 @@ BASE_DIR="$ABSPATH/../"
 rc=0
 
 pushd "$BASE_DIR" > /dev/null
-    echo "Executing release steps for Sonic v$SONIC_VERSION..."
+echo "Executing release steps for Sonic v$SONIC_VERSION..."
+release_for_architecture "$TARGET_ARCH" "gnu" "$TARGET_ARCH"
+rc=$?
 
-    release_for_architecture "x86_64" "gnu" "x86_64-unknown-linux-gnu"
-    rc=$?
-
-    if [ $rc -eq 0 ]; then
-        echo "Success: Done executing release steps for Sonic v$SONIC_VERSION"
-    else
-        echo "Error: Failed executing release steps for Sonic v$SONIC_VERSION"
-    fi
+if [ $rc -eq 0 ]; then
+    echo "Success: Done executing release steps for Sonic v$SONIC_VERSION"
+else
+    echo "Error: Failed executing release steps for Sonic v$SONIC_VERSION"
+fi
 popd > /dev/null
 
 exit $rc
