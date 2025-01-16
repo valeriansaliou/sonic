@@ -76,7 +76,11 @@ function release_for_architecture {
     rm -rf ./sonic/ && \
         cargo build --target "$3" --release && \
         mkdir ./sonic && \
-        cp -p "target/$3/release/sonic" ./sonic/ && \
+        if [[ "$3" == *"windows-msvc"* ]]; then
+            cp -p "target/$3/release/sonic.exe" ./sonic/ 
+        else
+            cp -p "target/$3/release/sonic" ./sonic/
+        fi
         cp -r ./config.cfg sonic/ && \
         tar --owner=0 --group=0 -czvf "$final_tar" ./sonic && \
         rm -r ./sonic/
