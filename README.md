@@ -215,6 +215,8 @@ You can find below a list of Sonic integrations provided by the community (many 
   * **[jsonic](https://github.com/alohaking/jsonic)** by [@alohaking](https://github.com/alohaking)
 * **Deno**:
   * **[deno-sonic](https://github.com/erfanium/deno_sonic)** by [@erfanium](https://github.com/erfanium)
+* **Bun**:
+  * **[sonic-bun](https://github.com/emilianscheel/sonic-bun)** by [@emilianscheel](https://github.com/emilianscheel)
 * **Elixir**:
   * **[sonix](https://github.com/imerkle/sonix)** by [@imerkle](https://github.com/imerkle)
 * **Crystal**:
