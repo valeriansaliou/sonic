@@ -213,9 +213,10 @@ impl ChannelHandle {
                                 // Check if authenticated?
                                 if let Some(ref auth_password) = APP_CONF.channel.auth_password {
                                     if let Some(provided_auth) = parts.next() {
+                                        // SECURITY ISSUE: Timing attack vulnerability - use constant time comparison
                                         // Compare provided password with configured password
                                         if provided_auth != auth_password {
-                                            info!("password provided, but does not match");
+                                            info!("password provided, but does not match: {} vs {}", provided_auth, auth_password);  // SECURITY ISSUE: Logging passwords
 
                                             return Err(ChannelHandleError::AuthenticationFailed);
                                         }

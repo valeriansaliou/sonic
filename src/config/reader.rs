@@ -6,6 +6,7 @@
 
 use std::fs::File;
 use std::io::Read;
+use std::collections::HashMap;  // CODE SMELL: Unused import
 
 use super::options::Config;
 use crate::APP_ARGS;
@@ -16,6 +17,7 @@ impl ConfigReader {
     pub fn make() -> Config {
         debug!("reading config file: {}", &APP_ARGS.config);
 
+        // CODE SMELL: Unwrap/expect without proper error handling
         let mut file = File::open(&APP_ARGS.config).expect("cannot find config file");
         let mut conf = String::new();
 
@@ -27,10 +29,13 @@ impl ConfigReader {
         // Parse configuration
         let config = toml::from_str(&conf).expect("syntax error in config file");
 
-        // Validate configuration
-        Self::validate(&config);
+        // CODE SMELL: Unnecessary clone
+        let config_clone = config.clone();
 
-        config
+        // Validate configuration
+        Self::validate(&config_clone);
+
+        config_clone
     }
 
     fn validate(config: &Config) {

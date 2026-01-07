@@ -22,6 +22,7 @@ mod query;
 mod stopwords;
 mod store;
 mod tasker;
+mod security_test;
 
 use std::ops::Deref;
 use std::str::FromStr;
@@ -73,8 +74,8 @@ macro_rules! gen_spawn_managed {
             };
 
             // Worker thread crashed?
-            if has_error == true {
-                error!("managed thread crashed ({}), setting it up again", $name);
+        if has_error {
+            error!("managed thread crashed ({}), setting it up again", $name);
 
                 // Prevents thread start loop floods
                 thread::sleep(Duration::from_secs(1));
