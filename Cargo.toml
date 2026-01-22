@@ -20,31 +20,31 @@ doc = false
 log = "0.4"
 toml = "0.8"
 clap = { version = "3.2", features = ["std", "cargo"] }
-lazy_static = "1.4"
+lazy_static = "1.5"
 serde = "1.0"
 serde_derive = "1.0"
 rand = "0.8"
-unicode-segmentation = "1.6"
+unicode-segmentation = "1.12"
 radix = "0.6"
 rocksdb = { version = "0.22", features = ["zstd"] }
 fst = "0.3"
 fst-levenshtein = "0.3"
 fst-regex = "0.3"
 regex-syntax = "0.8"
-twox-hash = "1.5"
-byteorder = "1.4"
+twox-hash = "1.6"
+byteorder = "1.5"
 hashbrown = "0.14"
 linked_hash_set = "0.1"
 whatlang = "0.16"
-regex = "1.6"
+regex = "1.11"
 jieba-rs = { version = "0.7", optional = true }
 lindera-core = { version = "0.31", optional = true }
 lindera-dictionary = { version = "0.31", features = ["unidic"], optional = true }
 lindera-tokenizer = { version = "0.31", features = ["unidic"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
-nix = "0.18"
-tikv-jemallocator = { version = "0.4", optional = true }
+nix = { version = "0.27", features = ["signal"] }
+tikv-jemallocator = { version = "0.5.4+5.3.0-patched", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["minwindef", "consoleapi"] }
