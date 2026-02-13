@@ -54,7 +54,7 @@ impl<'a> From<StoreItemPart<'a>> for &'a str {
 }
 
 impl StoreItemBuilder {
-    pub fn from_depth_1(collection: &str) -> Result<StoreItem, StoreItemError> {
+    pub fn from_depth_1(collection: &str) -> Result<StoreItem<'_>, StoreItemError> {
         // Validate & box collection
         if let Ok(collection_item) = StoreItemPart::from_str(collection) {
             Ok(StoreItem(collection_item, None, None))

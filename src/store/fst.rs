@@ -818,11 +818,11 @@ impl StoreFST {
         self.graph.len()
     }
 
-    pub fn as_stream(&self) -> FSTStream<AlwaysMatch> {
+    pub fn as_stream(&self) -> FSTStream<'_, AlwaysMatch> {
         self.graph.into_stream()
     }
 
-    pub fn lookup_begins(&self, word: &str) -> Result<FSTStream<Regex>, ()> {
+    pub fn lookup_begins(&self, word: &str) -> Result<FSTStream<'_, Regex>, ()> {
         // Notice: this regex maps over an unicode range, for speed reasons at scale. \
         //   We found out that the 'match any' syntax ('.*') was super-slow. Using the restrictive \
         //   syntax below divided the cost of eg. a search query by 2. The regex below has been \
@@ -865,7 +865,7 @@ impl StoreFST {
         &self,
         word: &str,
         max_factor: Option<u32>,
-    ) -> Result<FSTStream<Levenshtein>, ()> {
+    ) -> Result<FSTStream<'_, Levenshtein>, ()> {
         // Allow more typos in word as the word gets longer, up to a maximum limit
         let mut typo_factor = match word.len() {
             1 | 2 | 3 => 0,
