@@ -43,7 +43,7 @@ lindera-dictionary = { version = "0.31", features = ["unidic"], optional = true 
 lindera-tokenizer = { version = "0.31", features = ["unidic"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
-nix = "0.18"
+nix = { version = "0.31.1", features = ["signal"] }
 tikv-jemallocator = { version = "0.4", optional = true }
 
 [target.'cfg(windows)'.dependencies]
