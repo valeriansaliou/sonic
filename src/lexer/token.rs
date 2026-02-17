@@ -69,7 +69,7 @@ lazy_static! {
 }
 
 impl TokenLexerBuilder {
-    pub fn from(mode: TokenLexerMode, text: &str) -> Result<TokenLexer, ()> {
+    pub fn from(mode: TokenLexerMode, text: &str) -> Result<TokenLexer<'_>, ()> {
         let locale = match mode {
             TokenLexerMode::NormalizeAndCleanup(None) => {
                 // Detect text language (current lexer mode asks for a cleanup)

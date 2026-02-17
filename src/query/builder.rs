@@ -113,7 +113,7 @@ impl QueryBuilder {
         }
     }
 
-    pub fn flushc(collection: &str) -> QueryBuilderResult {
+    pub fn flushc(collection: &str) -> QueryBuilderResult<'_> {
         match StoreItemBuilder::from_depth_1(collection) {
             Ok(store) => Ok(Query::FlushC(store)),
             _ => Err(()),
