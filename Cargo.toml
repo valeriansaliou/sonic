@@ -47,7 +47,7 @@ nix = { version = "0.31.1", features = ["signal"] }
 tikv-jemallocator = { version = "0.4", optional = true }
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["minwindef", "consoleapi"] }
+windows-sys = { version = "0.59", features = ["Win32_System_Console"] }
 
 [features]
 default = ["allocator-jemalloc", "tokenizer-chinese"]

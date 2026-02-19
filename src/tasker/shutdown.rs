@@ -13,18 +13,18 @@ mod platform {
     use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
     use std::sync::Mutex;
 
-    use winapi::shared::minwindef::{BOOL, DWORD, TRUE};
-    use winapi::um::consoleapi::SetConsoleCtrlHandler;
+    use windows_sys::Win32::Foundation::{BOOL, TRUE};
+    use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
 
     lazy_static! {
-        static ref CHANNEL: (SyncSender<DWORD>, Mutex<Receiver<DWORD>>) = {
+        static ref CHANNEL: (SyncSender<u32>, Mutex<Receiver<u32>>) = {
             let channel = sync_channel(0);
 
             (channel.0, Mutex::new(channel.1))
         };
     }
 
-    unsafe extern "system" fn handler(event: DWORD) -> BOOL {
+    unsafe extern "system" fn handler(event: u32) -> BOOL {
         CHANNEL.0.send(event).unwrap();
         CHANNEL.0.send(0).unwrap();
 
