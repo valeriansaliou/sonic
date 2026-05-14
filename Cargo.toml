@@ -44,7 +44,7 @@ lindera-tokenizer = { version = "0.31", features = ["unidic"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", features = ["signal"] }
-tikv-jemallocator = { version = "0.4", optional = true }
+tikv-jemallocator = { version = "0.6", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_System_Console"] }
