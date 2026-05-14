@@ -4,7 +4,6 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-#[macro_export]
 macro_rules! executor_ensure_op {
     ($operation:expr) => {
         match $operation {
@@ -14,7 +13,6 @@ macro_rules! executor_ensure_op {
     };
 }
 
-#[macro_export]
 macro_rules! executor_kv_lock_read {
     ($store:ident) => {
         let kv_store_reference = $store.clone();
@@ -25,7 +23,6 @@ macro_rules! executor_kv_lock_read {
     };
 }
 
-#[macro_export]
 macro_rules! executor_kv_lock_write {
     ($store:ident) => {
         let kv_store_reference = $store.clone();
@@ -36,7 +33,6 @@ macro_rules! executor_kv_lock_write {
     };
 }
 
-#[macro_export]
 macro_rules! general_kv_access_lock_read {
     () => {
         use crate::store::kv::STORE_ACCESS_LOCK;
@@ -45,7 +41,6 @@ macro_rules! general_kv_access_lock_read {
     };
 }
 
-#[macro_export]
 macro_rules! general_kv_access_lock_write {
     () => {
         use crate::store::kv::STORE_ACCESS_LOCK;
@@ -54,7 +49,6 @@ macro_rules! general_kv_access_lock_write {
     };
 }
 
-#[macro_export]
 macro_rules! general_fst_access_lock_read {
     () => {
         use crate::store::fst::GRAPH_ACCESS_LOCK;
@@ -63,7 +57,6 @@ macro_rules! general_fst_access_lock_read {
     };
 }
 
-#[macro_export]
 macro_rules! general_fst_access_lock_write {
     () => {
         use crate::store::fst::GRAPH_ACCESS_LOCK;

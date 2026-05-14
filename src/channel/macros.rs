@@ -4,7 +4,6 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-#[macro_export]
 macro_rules! gen_channel_message_mode_handle {
     ($message:ident, $commands:ident, { $($external:expr => $internal:expr),+, }) => {{
         let (command, parts) = ChannelMessage::extract($message);

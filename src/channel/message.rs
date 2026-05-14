@@ -49,6 +49,7 @@ impl ChannelMessage {
         let mut result = ChannelMessageResult::Continue;
 
         // Process response for issued command
+        #[allow(clippy::needless_late_init)]
         let response_args_groups: Vec<ChannelCommandResponseArgs>;
 
         if !(*CHANNEL_AVAILABLE.read().unwrap()) {

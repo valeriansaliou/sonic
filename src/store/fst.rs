@@ -319,6 +319,7 @@ impl StoreFSTPool {
         );
     }
 
+    #[allow(clippy::type_complexity)]
     fn dump_action(
         action: &str,
         path_mode: StoreFSTPathMode,
@@ -527,7 +528,7 @@ impl StoreFSTPool {
         // Do consolidate? (any change committed)
         // Notice: if both pending sets are empty do not consolidate as there may have been a \
         //   push then a pop of this push, nulling out any committed change.
-        if pending_push_write.len() > 0 || pending_pop_write.len() > 0 {
+        if !(pending_push_write.is_empty() && pending_pop_write.is_empty()) {
             // Read old FST (or default to empty FST)
             if let Ok(old_fst) =
                 StoreFSTBuilder::open(store.target.collection_hash, store.target.bucket_hash)
@@ -868,9 +869,9 @@ impl StoreFST {
     ) -> Result<FSTStream<'_, Levenshtein>, ()> {
         // Allow more typos in word as the word gets longer, up to a maximum limit
         let mut typo_factor = match word.len() {
-            1 | 2 | 3 => 0,
-            4 | 5 | 6 => 1,
-            7 | 8 | 9 => 2,
+            1..=3 => 0,
+            4..=6 => 1,
+            7..=9 => 2,
             _ => 3,
         };
 
