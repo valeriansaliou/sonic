@@ -48,14 +48,14 @@ jobs:
           node --version
           npm --version
 
+      - name: Check code style
+        run: cargo fmt --check
+
       - name: Build code
         run: cargo build --locked
 
       - name: Test code
         run: cargo test --locked
-
-      - name: Check code style
-        run: cargo fmt -- --check
 
       - name: Run integration tests
         run: tests/integration/scripts/run.sh
