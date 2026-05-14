@@ -18,6 +18,7 @@ pub mod bul;
 pub mod cat;
 pub mod ces;
 pub mod cmn;
+pub mod cym;
 pub mod dan;
 pub mod deu;
 pub mod ell;

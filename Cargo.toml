@@ -35,7 +35,7 @@ twox-hash = "2"
 byteorder = "1"
 hashbrown = "0.17"
 linked_hash_set = "0.1"
-whatlang = "0.16"
+whatlang = "0.18"
 regex = "1"
 jieba-rs = { version = "0.7", optional = true }
 lindera-core = { version = "0.31", optional = true }
