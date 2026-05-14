@@ -11,11 +11,11 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Cache build artifacts
         id: cache-cargo
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
             ~/.cargo/bin
@@ -35,7 +35,7 @@ jobs:
 
       - name: Get current tag
         id: current_tag
-        uses: WyriHaximus/github-action-get-previous-tag@v2
+        uses: WyriHaximus/github-action-get-previous-tag@61819f33034117e6c686e6a31dba995a85afc9de # v2.0.0
 
       - name: Release package
         run: cargo publish --no-verify --token ${CRATES_TOKEN}
@@ -46,7 +46,7 @@ jobs:
         run: ./scripts/release_binaries.sh --version=${{ steps.current_tag.outputs.tag }}
 
       - name: Release new version
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           tag_name: ${{ steps.current_tag.outputs.tag }}
           name: Sonic ${{ steps.current_tag.outputs.tag }}
@@ -61,13 +61,13 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Build packages
         run: ./scripts/build_packages.sh
 
       - name: Push packages to Packagecloud
-        uses: faucetsdn/action-packagecloud-upload-debian-packages@v1
+        uses: faucetsdn/action-packagecloud-upload-debian-packages@89b1e7201d7f9df94e3f360d9cb77134dd5ffc05 # v1
         with:
           path: ./packages
           repo: ${{ secrets.PACKAGECLOUD_REPO }}
@@ -78,22 +78,22 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Acquire Docker image metadata
         id: metadata
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
         with:
           images: valeriansaliou/sonic
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         id: build
         with:
           context: .
