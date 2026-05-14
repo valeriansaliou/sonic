@@ -48,6 +48,13 @@ jobs:
           node --version
           npm --version
 
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      # NOTE: Run `cargo deny` first to reduce the risk of supply-chain attack.
+      - name: Lint dependency graph
+        run: cargo deny check
+
       - name: Check code style
         run: cargo fmt --check
 
