@@ -48,10 +48,10 @@ jobs:
         run: rustc --version && rustup --version && cargo --version && node --version && npm --version
 
       - name: Build code
-        run: cargo build
+        run: cargo build --locked
 
       - name: Test code
-        run: cargo test
+        run: cargo test --locked
 
       - name: Check code style
         run: cargo fmt -- --check
