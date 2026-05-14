@@ -18,7 +18,7 @@ doc = false
 
 [dependencies]
 log = "0.4"
-toml = "0.8"
+toml = "1"
 clap = { version = "4", features = ["std", "cargo"] }
 lazy_static = "1"
 serde = "1"
