@@ -7,13 +7,13 @@
 use linked_hash_set::LinkedHashSet;
 use std::iter::FromIterator;
 
+use crate::APP_CONF;
 use crate::lexer::token::TokenLexer;
 use crate::query::types::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
 use crate::store::fst::{StoreFSTActionBuilder, StoreFSTPool};
 use crate::store::identifiers::{StoreObjectIID, StoreTermHash};
 use crate::store::item::StoreItem;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVPool};
-use crate::APP_CONF;
 
 pub struct ExecutorSearch;
 

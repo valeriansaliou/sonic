@@ -12,8 +12,8 @@ use rocksdb::backup::{
     RestoreOptions as DBRestoreOptions,
 };
 use rocksdb::{
-    DBCompactionStyle, DBCompressionType, Env as DBEnv, Error as DBError, FlushOptions,
-    Options as DBOptions, WriteBatch, WriteOptions, DB,
+    DB, DBCompactionStyle, DBCompressionType, Env as DBEnv, Error as DBError, FlushOptions,
+    Options as DBOptions, WriteBatch, WriteOptions,
 };
 use std::fmt;
 use std::fs;
@@ -1217,9 +1217,11 @@ mod tests {
             StoreKVActionBuilder::access(StoreItemPart::from_str("b:test:3").unwrap(), store);
 
         assert!(action.get_meta_to_value(StoreMetaKey::IIDIncr).is_ok());
-        assert!(action
-            .set_meta_to_value(StoreMetaKey::IIDIncr, StoreMetaValue::IIDIncr(1))
-            .is_ok());
+        assert!(
+            action
+                .set_meta_to_value(StoreMetaKey::IIDIncr, StoreMetaValue::IIDIncr(1))
+                .is_ok()
+        );
 
         assert!(action.get_term_to_iids(1).is_ok());
         assert!(action.set_term_to_iids(1, &[0, 1, 2]).is_ok());

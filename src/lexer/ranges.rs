@@ -5,7 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use std::fmt;
-use whatlang::{detect_script, Script};
+use whatlang::{Script, detect_script};
 
 struct LexerRange;
 

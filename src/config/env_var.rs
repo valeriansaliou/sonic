@@ -97,10 +97,10 @@ mod tests {
 
     #[test]
     fn it_gets_environment_variable() {
-        std::env::set_var("TEST", "test");
+        unsafe { std::env::set_var("TEST", "test") };
 
         assert_eq!(get_env_var("${env.TEST}"), "test");
 
-        std::env::remove_var("TEST");
+        unsafe { std::env::remove_var("TEST") };
     }
 }

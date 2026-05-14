@@ -96,8 +96,10 @@ impl ExecutorPop {
 
                                                 if pop_term_iids.is_empty() {
                                                     // IIDs list was empty, delete whole key
-                                                    executor_ensure_op!(kv_action
-                                                        .delete_term_to_iids(*pop_term_hashed));
+                                                    executor_ensure_op!(
+                                                        kv_action
+                                                            .delete_term_to_iids(*pop_term_hashed)
+                                                    );
 
                                                     // Pop from FST graph (does not exist anymore)
                                                     if fst_action.pop_word(pop_term) {
@@ -108,11 +110,12 @@ impl ExecutorPop {
                                                     }
                                                 } else {
                                                     // Re-build IIDs list w/o current IID
-                                                    executor_ensure_op!(kv_action
-                                                        .set_term_to_iids(
+                                                    executor_ensure_op!(
+                                                        kv_action.set_term_to_iids(
                                                             *pop_term_hashed,
                                                             &pop_term_iids,
-                                                        ));
+                                                        )
+                                                    );
                                                 }
                                             } else {
                                                 error!(

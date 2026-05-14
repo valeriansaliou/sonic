@@ -166,14 +166,16 @@ mod tests {
 
     #[test]
     fn it_builds_push_query() {
-        assert!(QueryBuilder::push(
-            "c:test:3",
-            "b:test:3",
-            "o:test:3",
-            "My name is Michael Dake. I'm ordering in the US.",
-            None
-        )
-        .is_ok());
+        assert!(
+            QueryBuilder::push(
+                "c:test:3",
+                "b:test:3",
+                "o:test:3",
+                "My name is Michael Dake. I'm ordering in the US.",
+                None
+            )
+            .is_ok()
+        );
         assert!(
             QueryBuilder::push("c:test:3", "", "o:test:3", "My name is Michael Dake.", None)
                 .is_err()
