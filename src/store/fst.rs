@@ -1181,7 +1181,7 @@ impl StoreFSTAction {
             .map(|words| words.into_iter().skip(offset).take(limit).collect())
         {
             Err(err) => {
-                debug!("conversion of stream failed: {}", err.to_string());
+                debug!("conversion of stream failed: {}", err);
                 Err(())
             }
             Ok(words) => Ok(words),
