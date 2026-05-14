@@ -104,7 +104,7 @@ service sonic restart
 If you pulled the source code from Git, you can build it using `cargo`:
 
 ```bash
-cargo build --release
+cargo build --locked --release
 ```
 
 You can find the built binaries in the `./target/release` directory.

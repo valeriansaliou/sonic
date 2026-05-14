@@ -12,7 +12,7 @@ Sonic Contributing Guide
 From the repository root, run:
 
 ```sh
-cargo build
+cargo build --locked
 ```
 
 ## Start Sonic

@@ -39,7 +39,7 @@ function release_for_architecture {
     final_tar="v$SONIC_VERSION-$1-$2.tar.gz"
 
     rm -rf ./sonic/ && \
-        cargo build --target "$3" --release && \
+        cargo build --target "$3" --locked --release && \
         mkdir ./sonic && \
         cp -p "target/$3/release/sonic" ./sonic/ && \
         cp -r ./config.cfg sonic/ && \

@@ -13,7 +13,7 @@ RUN rustc --version && \
 WORKDIR /app
 COPY . /app
 
-RUN cargo clean && cargo build --release
+RUN cargo clean && cargo build --locked --release
 RUN strip ./target/release/sonic
 
 FROM gcr.io/distroless/cc
