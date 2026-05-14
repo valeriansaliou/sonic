@@ -51,6 +51,9 @@ jobs:
       - name: Check code style
         run: cargo fmt --check
 
+      - name: Lint code
+        run: cargo clippy
+
       - name: Build code
         run: cargo build --locked
 
