@@ -1044,7 +1044,7 @@ impl<'a> StoreKVAction<'a> {
             let (k_meta_to_value, k_term_to_iids, k_oid_to_iid, k_iid_to_oid, k_iid_to_terms) = (
                 StoreKeyerBuilder::meta_to_value(self.bucket.as_str(), &StoreMetaKey::IIDIncr),
                 StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), 0),
-                StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), &String::new()),
+                StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), ""),
                 StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), 0),
                 StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), 0),
             );

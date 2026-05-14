@@ -52,8 +52,7 @@ impl ExecutorSearch {
                         kv_action
                             .get_term_to_iids(term_hashed)
                             .unwrap_or(None)
-                            .unwrap_or_default()
-                            .into_iter(),
+                            .unwrap_or_default(),
                     );
 
                     // No IIDs? Try to complete with a suggested alternate word

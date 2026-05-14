@@ -32,7 +32,7 @@ impl StoreOperationDispatch {
             Query::List(store, query_id, limit, offset) => {
                 ExecutorList::execute(store, query_id, limit, offset)
                     .map(|results| results.join(" "))
-                    .map(|results| Some(results))
+                    .map(Some)
             }
             Query::Push(store, lexer) => ExecutorPush::execute(store, lexer).map(|_| None),
             Query::Pop(store, lexer) => {

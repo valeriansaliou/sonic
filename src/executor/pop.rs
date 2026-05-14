@@ -124,7 +124,7 @@ impl ExecutorPop {
 
                                     // Bump IID-to-Terms list
                                     let remaining_terms_vec: Vec<StoreTermHashed> =
-                                        Vec::from_iter(remaining_terms.into_iter());
+                                        Vec::from_iter(remaining_terms);
 
                                     executor_ensure_op!(
                                         kv_action.set_iid_to_terms(iid, &remaining_terms_vec)
