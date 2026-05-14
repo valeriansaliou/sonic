@@ -41,7 +41,12 @@ jobs:
           components: rustfmt
 
       - name: Verify versions
-        run: rustc --version && rustup --version && cargo --version && node --version && npm --version
+        run: |-
+          rustc --version
+          rustup --version 2>/dev/null
+          cargo --version
+          node --version
+          npm --version
 
       - name: Build code
         run: cargo build --locked
