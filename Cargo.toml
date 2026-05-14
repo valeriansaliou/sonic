@@ -23,7 +23,7 @@ clap = { version = "4", features = ["std", "cargo"] }
 lazy_static = "1"
 serde = "1"
 serde_derive = "1"
-rand = "0.8"
+rand = "0.10"
 unicode-segmentation = "1"
 radix = "0.6"
 rocksdb = { version = "0.24", features = ["zstd"] }

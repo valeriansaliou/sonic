@@ -5,8 +5,8 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use hashbrown::HashMap;
-use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
+use rand::distr::Alphanumeric;
+use rand::RngExt;
 use std::fmt;
 use std::path::Path;
 use std::str::{self, SplitWhitespace};
@@ -346,7 +346,7 @@ impl ChannelCommandBase {
     }
 
     pub fn generate_event_id() -> String {
-        thread_rng()
+        rand::rng()
             .sample_iter(&Alphanumeric)
             .take(EVENT_ID_SIZE)
             .map(|value| value as char)
