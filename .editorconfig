@@ -10,11 +10,11 @@ indent_size = 2
 insert_final_newline = true
 trim_trailing_whitespace = true
 
-[*.{yml,yaml}]
+[*.{yml,yaml,sh}]
 indent_style = space
 indent_size = 2
 
-[*.{rs,toml,sh}]
+[*.{rs,toml}]
 indent_style = space
 indent_size = 4
 
