@@ -1,7 +1,6 @@
-Sonic Protocol
-==============
+# Sonic Protocol
 
-# ⚡️ Sonic Channel
+## ⚡️ Sonic Channel
 
 **Sonic Channel is the protocol used to perform searches and ingest index data. You can also use it for Sonic administration operations. Sonic listens on TCP port 1491 by default.**
 

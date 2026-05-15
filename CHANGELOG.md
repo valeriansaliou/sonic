@@ -1,5 +1,6 @@
-Sonic Changelog
-===============
+# Sonic Changelog
+
+<!-- markdownlint-disable no-duplicate-heading -->
 
 ## [Unreleased]
 

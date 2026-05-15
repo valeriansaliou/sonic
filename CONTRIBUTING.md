@@ -1,7 +1,6 @@
-Sonic Contributing Guide
-========================
+# Sonic Contributing Guide
 
-# Get Started
+## Get Started
 
 - First of all, fork and clone this repo;
 - Install Rust and Cargo (to build and test Sonic);
@@ -54,7 +53,7 @@ Note that before opening an issue, you should always search for other similar is
 
 When writing your issue title and command, make sure to be as precise as possible, giving away the maximum amount of details (even if you have a feeling some details are useless, they might make debugging or understanding easier for us).
 
-# Submit Your Code
+## Submit Your Code
 
 **If you would like to contribute directly by writing code, you should fork this repository and edit it right away from your GitHub namespace.**
 
