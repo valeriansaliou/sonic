@@ -286,6 +286,7 @@ Sonic supports a wide range of languages in its lexing system. If a language is 
 * 🇺🇦 Ukrainian
 * 🇵🇰 Urdu
 * 🇻🇳 Vietnamese
+* 🏴󠁧󠁢󠁷󠁬󠁳󠁿 Welsh
 * 🇮🇱 Yiddish
 * 🇿🇦 Zulu
 
