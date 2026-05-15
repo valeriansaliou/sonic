@@ -2,6 +2,9 @@
 # to find all keys and their usage.
 version: "3"
 
+env:
+  SELF: task {{ .ALIAS | default .TASK }} --
+
 tasks:
   ci:
     desc: Runs all CI checks.
@@ -11,3 +14,8 @@ tasks:
       - cargo build --locked
       - cargo test --locked
       - tests/integration/scripts/run.sh
+
+  release:
+    desc: Makes a new release (git tag). CD will build and release the binary.
+    silent: true
+    cmd: ./scripts/make_release.sh {{ .CLI_ARGS }}
