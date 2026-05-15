@@ -6,6 +6,7 @@ Sonic Contributing Guide
 - First of all, fork and clone this repo;
 - Install Rust and Cargo (to build and test Sonic);
 - Install NPM (for integration tests);
+- [Install Task](https://taskfile.dev/docs/installation) (for a better Developer Experience);
 
 ## Build Sonic
 
@@ -39,7 +40,13 @@ From the directory: `<repository root>/tests/integration/scripts/`, run:
 ./run.sh
 ```
 
-# Report Issues & Request Features
+## Run all CI tests
+
+```sh
+task ci
+```
+
+## Report Issues & Request Features
 
 **If you encounter an issue with Sonic, or would like to request a feature to be implemented, please do [open an issue](https://github.com/valeriansaliou/sonic/issues/new).**
 

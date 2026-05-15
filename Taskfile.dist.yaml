@@ -1,0 +1,13 @@
+# See <https://taskfile.dev/usage> and <https://taskfile.dev/reference/schema>
+# to find all keys and their usage.
+version: "3"
+
+tasks:
+  ci:
+    desc: Runs all CI checks.
+    cmds:
+      - cargo fmt --check
+      - cargo clippy
+      - cargo build --locked
+      - cargo test --locked
+      - tests/integration/scripts/run.sh
