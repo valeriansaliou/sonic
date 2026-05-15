@@ -6,6 +6,10 @@ env:
   SELF: task {{ .ALIAS | default .TASK }} --
 
 tasks:
+  integration-test:
+    desc: Runs integration tests.
+    cmd: tests/integration/scripts/run.sh
+
   ci:
     desc: Runs all CI checks.
     cmds:

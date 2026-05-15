@@ -75,7 +75,13 @@ fn get_env_var(wrapped_key: &str) -> String {
         .drain(6..(wrapped_key.len() - 1))
         .collect();
 
-    std::env::var(key.clone()).unwrap_or_else(|_| panic!("env_var: variable '{}' is not set", key))
+    // NOTE: While we could deprecate the `${env.*}` syntax now that Sonic has
+    //   first-class support for environment variables, it would force people
+    //   to use the Sonic naming convention and potentially duplicate some
+    //   variables. For better UX, let’s keep it that way. It doesn’t require
+    //   dependencies nor bloat the code so it’s acceptable.
+
+    std::env::var(&key).unwrap_or_else(|_| panic!("env_var: variable '{key}' is not set"))
 }
 
 #[cfg(test)]

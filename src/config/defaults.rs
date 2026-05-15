@@ -2,107 +2,42 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use std::net::SocketAddr;
-use std::path::PathBuf;
+pub fn defaults() -> &'static str {
+    r#"
+    [server]
+    log_level = "error"
 
-pub fn server_log_level() -> String {
-    "error".to_string()
-}
+    [channel]
+    inet = "[::1]:1491"
+    tcp_timeout = 300
+    search.query_limit_default = 10
+    search.query_limit_maximum = 100
+    search.query_alternates_try = 4
+    search.suggest_limit_default = 5
+    search.suggest_limit_maximum = 20
+    search.list_limit_default = 100
+    search.list_limit_maximum = 500
 
-pub fn channel_inet() -> SocketAddr {
-    "[::1]:1491".parse().unwrap()
-}
+    [store.kv]
+    path = "./data/store/kv/"
+    retain_word_objects = 1000
+    pool.inactive_after = 1800
+    database.flush_after = 900
+    database.compress = true
+    database.parallelism = 2
+    database.max_compactions = 1
+    database.max_flushes = 1
+    database.write_buffer = 16384
+    database.write_ahead_log = true
 
-pub fn channel_tcp_timeout() -> u64 {
-    300
-}
-
-pub fn channel_search_query_limit_default() -> u16 {
-    10
-}
-
-pub fn channel_search_query_limit_maximum() -> u16 {
-    100
-}
-
-pub fn channel_search_query_alternates_try() -> usize {
-    4
-}
-
-pub fn channel_search_suggest_limit_default() -> u16 {
-    5
-}
-
-pub fn channel_search_suggest_limit_maximum() -> u16 {
-    20
-}
-
-pub fn channel_search_list_limit_default() -> u16 {
-    100
-}
-
-pub fn channel_search_list_limit_maximum() -> u16 {
-    500
-}
-
-pub fn store_kv_path() -> PathBuf {
-    PathBuf::from("./data/store/kv/")
-}
-
-pub fn store_kv_retain_word_objects() -> usize {
-    1000
-}
-
-pub fn store_kv_pool_inactive_after() -> u64 {
-    1800
-}
-
-pub fn store_kv_database_flush_after() -> u64 {
-    900
-}
-
-pub fn store_kv_database_compress() -> bool {
-    true
-}
-
-pub fn store_kv_database_parallelism() -> u16 {
-    2
-}
-
-pub fn store_kv_database_max_compactions() -> u16 {
-    1
-}
-
-pub fn store_kv_database_max_flushes() -> u16 {
-    1
-}
-
-pub fn store_kv_database_write_buffer() -> usize {
-    16384
-}
-
-pub fn store_kv_database_write_ahead_log() -> bool {
-    true
-}
-
-pub fn store_fst_path() -> PathBuf {
-    PathBuf::from("./data/store/fst/")
-}
-
-pub fn store_fst_pool_inactive_after() -> u64 {
-    300
-}
-
-pub fn store_fst_graph_consolidate_after() -> u64 {
-    180
-}
-
-pub fn store_fst_graph_max_size() -> usize {
-    2048
-}
-
-pub fn store_fst_graph_max_words() -> usize {
-    250000
+    [store.fst]
+    path = "./data/store/fst/"
+    pool.inactive_after = 300
+    graph.consolidate_after = 180
+    graph.max_size = 2048
+    graph.max_words = 250000
+    "#
 }

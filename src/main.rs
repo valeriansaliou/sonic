@@ -107,6 +107,8 @@ gen_spawn_managed!(
 );
 gen_spawn_managed!("tasker", spawn_tasker, THREAD_NAME_TASKER, TaskerBuilder);
 
+const DEFAULT_CONFIG_FILE_PATH: &str = "./config.cfg";
+
 fn make_app_args() -> AppArgs {
     let matches = Command::new(clap::crate_name!())
         .version(clap::crate_version!())
@@ -117,7 +119,7 @@ fn make_app_args() -> AppArgs {
                 .short('c')
                 .long("config")
                 .help("Path to configuration file")
-                .default_value("./config.cfg"),
+                .default_value(DEFAULT_CONFIG_FILE_PATH),
         )
         .get_matches();
 
