@@ -1,0 +1,50 @@
+[graph]
+targets = []
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "MPL-2.0",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.8
+exceptions = []
+
+[advisories]
+maximum-db-staleness = "P2W"
+unmaintained = "all"
+yanked = "deny"
+ignore = [
+    # NOTE: `memmap` is unmaintained, but `fst` still depends on it
+    #   and we can’t just bump.
+    "RUSTSEC-2020-0077",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+workspace-default-features = "allow"
+external-default-features = "allow"
+deny = [
+    { crate = "openssl", use-instead = "rustls" },
+    { crate = "openssl-sys", use-instead = "rustls" },
+    { crate = "libssh2-sys", reason = "reduce supply-chain exposure" },
+    { crate = "windows", reason = "bloated and unnecessary", use-instead = "ideally inline bindings; practically, windows-sys" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+required-git-spec = "rev"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

@@ -1,0 +1,5 @@
+default: true
+
+heading-style: { "style": "atx" }
+line-length: false
+no-inline-html: false

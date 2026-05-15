@@ -30,8 +30,8 @@ use super::generic::{
     StoreGeneric, StoreGenericActionBuilder, StoreGenericBuilder, StoreGenericPool,
 };
 use super::keyer::StoreKeyerHasher;
-use crate::lexer::ranges::LexerRegexRange;
 use crate::APP_CONF;
+use crate::lexer::ranges::LexerRegexRange;
 
 pub struct StoreFSTPool;
 pub struct StoreFSTBuilder;
@@ -1181,7 +1181,7 @@ impl StoreFSTAction {
             .map(|words| words.into_iter().skip(offset).take(limit).collect())
         {
             Err(err) => {
-                debug!("conversion of stream failed: {}", err.to_string());
+                debug!("conversion of stream failed: {}", err);
                 Err(())
             }
             Ok(words) => Ok(words),

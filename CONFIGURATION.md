@@ -1,7 +1,6 @@
-Sonic Configuration
-===================
+# Sonic Configuration
 
-# File: config.cfg
+## File: config.cfg
 
 **All available configuration options are commented below, with allowed values:**
 
@@ -61,7 +60,7 @@ Sonic Configuration
 * `max_size` (type: _integer_, allowed: numbers, default: `2048`) — Maximum size in KB of the graph file on disk, after which further words are not inserted anymore (ie. `2048` is `2MB`; the size should be a multiple of `1024`, eg. `8 * 1024 = 8192` for `8MB`; use this limit to prevent heavy graphs to be consolidating forever; this limit is enforced in pair with `store.fst.graph.max_words`, whichever is reached first)
 * `max_words` (type: _integer_, allowed: numbers, default: `250000`) — Maximum number of words that can be held at the same time in the graph, after which further words are not inserted anymore (use this limit to prevent heavy graphs to be consolidating forever; this limit is enforced in pair with `store.fst.graph.max_size`, whichever is reached first)
 
-# Command-Line: Environment variables
+## Command-Line: Environment variables
 
 You are allowed to use environment variables in the configuration file.
 

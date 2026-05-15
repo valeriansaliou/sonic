@@ -1,5 +1,4 @@
-Sonic Inner Workings
-====================
+# Sonic Inner Workings
 
 This document was written with the goal of explaining the inner workings of Sonic, as well as the whys of the design choices that were made while building Sonic.
 
@@ -7,9 +6,9 @@ Anyone reading this documentation should quickly get more familiar in how such a
 
 _If you feel something is missing from this document, or if it did not help you understand a concept Sonic implements, please [open an issue](https://github.com/valeriansaliou/sonic/issues/new) and explain precisely which part you did not get and why you think you did not get it._
 
-# The Building Blocks of a Search Index
+## The Building Blocks of a Search Index
 
-## Basics of a search index
+### Basics of a search index
 
 A search index is nothing more than a specialized database. It should expose primitives such as: query the index, push text in the index, pop text from the index, flush parts of the index.
 
@@ -23,7 +22,7 @@ It is worth nothing that any project initiated as of 2019 should make use of mod
 
 In order to address the above, Sonic is capable to run queries over multiple CPUs in parallel. It leverages SSDs fast random I/O by using RocksDB as its main key-value store. It also avoids eating all available RAM by storing most data on-disk (via memory mapping), which is not an issue anymore as of 2019, as SSDs have low I/O latency and can sustain an unlimited number of reads over their lifetimes. Though, as writes are Achilles' heel of SSD disks, Sonic aims at minimizing writes and buffers a lot of those writes in RAM, which are committed to disk at periodic intervals. This should maximize the lifespan of the SSD disk under heavy index write load. Unfortunately, the side-effect of doing this is that in case of server power loss, non-committed writes will vanish.
 
-## How do result objects get indexed?
+### How do result objects get indexed?
 
 Sonic stores result objects in a key-value database (abbreviated KV), powered by RocksDB.
 
@@ -45,7 +44,7 @@ A key is formatted as such, in binary: `[idx<1B> | bucket<4B> | route<4B>]` (_co
 
 Both IIDs and terms are stored as 32 bits numbers in binary format. 64 bits numbers could have been used instead, increasing the total number of objects that can be indexed per-bucket. Though, storing such 64 bits numbers instead of 32 bits numbers would double required storage space. As they make up most of stored space, it was important to keep them as small as possible. Those 32 bits numbers are generated using a fast and low-collision hash family called [XxHash](http://www.xxhash.com), from the OID in the case of the IID, and from the word in the case of the term hash (_code: [StoreTermHash](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/store/identifiers.rs#L32)_).
 
-## How do word suggestion and user typo auto-correction work?
+### How do word suggestion and user typo auto-correction work?
 
 When most users input text to a computer system using an actual keyboard, they make typos and mistakes. A nice property of a good search system should be that those typos can be forgiven and accurate search results still come up for the bogus user query. Sonic implements a data structure that lets it correct typos or autocomplete incomplete words.
 
@@ -57,7 +56,7 @@ Sonic stores a single FST file per bucket. This FST file is memory-mapped, and r
 
 One downside of the FST implementation that Sonic uses, is that once built, an FST is immutable. It means that in order to add a new word to the search index (for a given bucket), Sonic needs to re-build the entire FST (ie. iterate word-by-word on the existing FST and stream those words plus the added word to a new on-disk FST file). In order to do that in an efficient manner, Sonic implements an FST consolidation tasker, which stores FST changes in-memory and consolidates them to disk at periodic intervals (this interval can be configured) (_code: [StoreFSTPool::consolidate](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/store/fst.rs#L173)_).
 
-## How do texts get cleaned up? (via the lexer)
+### How do texts get cleaned up? (via the lexer)
 
 Any text that gets pushed to Sonic needs to be normalized (eg. lower-cased) and cleaned up (eg. remove stopwords) before it can be added to the index. This task is handled by the lexer system, also called [tokenizer](https://en.wikipedia.org/wiki/Lexical_analysis#Tokenization).
 
@@ -69,7 +68,7 @@ As the n-gram method is better at guessing the language for small texts than the
 
 By the way, Sonic builds up its own list of stopwords for all supported languages, [which can be found here](https://github.com/valeriansaliou/sonic/tree/master/src/stopwords) (languages are referred to via their ISO 639-3 codes). People are welcome to improve those lists of stopwords by [submitting a Pull Request](https://github.com/valeriansaliou/sonic/pulls).
 
-## What is the purpose of the tasker system?
+### What is the purpose of the tasker system?
 
 Looking at the source code of Sonic, you will find a module named `tasker` ([see here](https://github.com/valeriansaliou/sonic/tree/master/src/tasker)). This module performs background tasks, and is triggered periodically.
 
@@ -80,7 +79,7 @@ Looking at the source code of Sonic, you will find a module named `tasker` ([see
 
 As in all databases, a lot of locking is involved while the tasker is performing heavy-duty work on a KV or FST store. Thus, when the tasker system kicks-in, stores may experience higher than expected latency for all consumers attempting to read or write to them. The tasker system has been optimized to minimize thread contention caused by locks, so the impact of those locks on Sonic consumers should be minimum.
 
-# On the Sonic Channel Protocol
+## On the Sonic Channel Protocol
 
 In order for a client to communicate with the search index system, one needs a protocol. Sonic uses the Sonic Channel protocol, which defines a way for clients to send commands (ie. requests) to a Sonic server over the network (via a raw TCP socket); and get responses from the Sonic server. For instance, a client may send a search query command such as `QUERY collection bucket "search query"` and get a response with search results such as `EVENT QUERY isgsHQYu result_1 result_2`.
 
@@ -93,7 +92,7 @@ In order for a client to communicate with the search index system, one needs a p
 
 _The Sonic Channel protocol is specified in a separate document, which [you can read here](https://github.com/valeriansaliou/sonic/blob/master/PROTOCOL.md)._
 
-# The Journey of a Search Query
+## The Journey of a Search Query
 
 As always, examples are the way to go to explain any complex system. This section drafts the journey of a search query in Sonic, from receiving the search query command over Sonic Channel, to serving results to the Sonic Channel consumer.
 

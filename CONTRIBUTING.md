@@ -1,11 +1,11 @@
-Sonic Contributing Guide
-========================
+# Sonic Contributing Guide
 
-# Get Started
+## Get Started
 
 - First of all, fork and clone this repo;
 - Install Rust and Cargo (to build and test Sonic);
 - Install NPM (for integration tests);
+- [Install Task](https://taskfile.dev/docs/installation) (for a better Developer Experience);
 
 ## Build Sonic
 
@@ -39,7 +39,13 @@ From the directory: `<repository root>/tests/integration/scripts/`, run:
 ./run.sh
 ```
 
-# Report Issues & Request Features
+## Run all CI tests
+
+```sh
+task ci
+```
+
+## Report Issues & Request Features
 
 **If you encounter an issue with Sonic, or would like to request a feature to be implemented, please do [open an issue](https://github.com/valeriansaliou/sonic/issues/new).**
 
@@ -47,7 +53,7 @@ Note that before opening an issue, you should always search for other similar is
 
 When writing your issue title and command, make sure to be as precise as possible, giving away the maximum amount of details (even if you have a feeling some details are useless, they might make debugging or understanding easier for us).
 
-# Submit Your Code
+## Submit Your Code
 
 **If you would like to contribute directly by writing code, you should fork this repository and edit it right away from your GitHub namespace.**
 

@@ -113,12 +113,16 @@ impl ChannelHandle {
 
         assert!(stream.set_nodelay(true).is_ok());
 
-        assert!(stream
-            .set_read_timeout(Some(Duration::new(tcp_timeout, 0)))
-            .is_ok());
-        assert!(stream
-            .set_write_timeout(Some(Duration::new(tcp_timeout, 0)))
-            .is_ok());
+        assert!(
+            stream
+                .set_read_timeout(Some(Duration::new(tcp_timeout, 0)))
+                .is_ok()
+        );
+        assert!(
+            stream
+                .set_write_timeout(Some(Duration::new(tcp_timeout, 0)))
+                .is_ok()
+        );
     }
 
     fn handle_stream(mode: ChannelMode, mut stream: TcpStream) {

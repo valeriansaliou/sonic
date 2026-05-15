@@ -8,7 +8,7 @@ use hashbrown::HashSet;
 use std::time::Instant;
 use unicode_segmentation::{UnicodeSegmentation, UnicodeWords};
 use whatlang::{
-    detect as lang_detect_all, detect_lang as lang_detect, detect_script as script_detect, Lang,
+    Lang, detect as lang_detect_all, detect_lang as lang_detect, detect_script as script_detect,
 };
 
 #[cfg(feature = "tokenizer-chinese")]

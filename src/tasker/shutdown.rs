@@ -10,8 +10,8 @@ mod platform {
     //   Windows support upon the original `graceful` crate; find the fork at: \
     //   https://github.com/Git0Shuai/graceful
 
-    use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
     use std::sync::Mutex;
+    use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 
     use windows_sys::Win32::Foundation::{BOOL, TRUE};
     use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
@@ -59,7 +59,7 @@ mod platform {
     // Notice: the following module is inspired from `graceful`, which can be found at: \
     //   https://github.com/0x1997/graceful
 
-    use nix::sys::signal::{SigSet, SIGINT, SIGQUIT, SIGTERM};
+    use nix::sys::signal::{SIGINT, SIGQUIT, SIGTERM, SigSet};
 
     pub struct ShutdownSignal(SigSet);
 

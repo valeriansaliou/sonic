@@ -1,5 +1,4 @@
-Sonic
-=====
+# Sonic
 
 [![Test and Build](https://github.com/valeriansaliou/sonic/workflows/Test%20and%20Build/badge.svg?branch=master)](https://github.com/valeriansaliou/sonic/actions?query=workflow%3A%22Test+and+Build%22) [![Build and Release](https://github.com/valeriansaliou/sonic/workflows/Build%20and%20Release/badge.svg)](https://github.com/valeriansaliou/sonic/actions?query=workflow%3A%22Build+and+Release%22) [![dependency status](https://deps.rs/repo/github/valeriansaliou/sonic/status.svg)](https://deps.rs/repo/github/valeriansaliou/sonic) [![Buy Me A Coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg)](https://www.buymeacoffee.com/valeriansaliou)
 
@@ -9,7 +8,7 @@ Sonic can be used as a simple alternative to super-heavy and full-featured searc
 
 A strong attention to performance and code cleanliness has been given when designing Sonic. It aims at being crash-free, super-fast and puts minimum strain on server resources (our measurements have shown that Sonic - when under load - responds to search queries in the μs range, eats ~30MB RAM and has a low CPU footprint; [see our benchmarks](https://github.com/valeriansaliou/sonic#how-fast--lightweight-is-it)).
 
-_Tested at Rust version: `rustc 1.74.1 (a28077b28 2023-12-04)`_
+_Tested at Rust version: `rustc 1.95.0 (59807616e 2026-04-14)`_
 
 **🇫🇷 Crafted in Nantes, France.**
 
@@ -23,8 +22,8 @@ _Tested at Rust version: `rustc 1.74.1 (a28077b28 2023-12-04)`_
 
 <table>
 <tr>
-<td align="center"><a href="https://crisp.chat/"><img src="https://valeriansaliou.github.io/sonic/images/logo-crisp.png" width="64" /></a></td>
-<td align="center"><a href="https://scrumpy.io/"><img src="https://valeriansaliou.github.io/sonic/images/logo-scrumpy.png" width="64" /></a></td>
+<td align="center"><a href="https://crisp.chat/"><img src="https://valeriansaliou.github.io/sonic/images/logo-crisp.png" width="64" alt="Crisp logo" /></a></td>
+<td align="center"><a href="https://scrumpy.io/"><img src="https://valeriansaliou.github.io/sonic/images/logo-scrumpy.png" width="64" alt="Scrumpy logo" /></a></td>
 </tr>
 <tr>
 <td align="center">Crisp</td>
@@ -95,7 +94,7 @@ nano /etc/sonic.cfg
 
 Finally, restart Sonic:
 
-```
+```bash
 service sonic restart
 ```
 
@@ -287,6 +286,7 @@ Sonic supports a wide range of languages in its lexing system. If a language is 
 * 🇺🇦 Ukrainian
 * 🇵🇰 Urdu
 * 🇻🇳 Vietnamese
+* 🏴󠁧󠁢󠁷󠁬󠁳󠁿 Welsh
 * 🇮🇱 Yiddish
 * 🇿🇦 Zulu
 

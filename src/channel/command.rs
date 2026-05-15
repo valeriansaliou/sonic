@@ -5,8 +5,8 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use hashbrown::HashMap;
-use rand::distr::Alphanumeric;
 use rand::RngExt;
+use rand::distr::Alphanumeric;
 use std::fmt;
 use std::path::Path;
 use std::str::{self, SplitWhitespace};
@@ -14,6 +14,7 @@ use std::vec::Vec;
 
 use super::format::unescape;
 use super::statistics::ChannelStatistics;
+use crate::APP_CONF;
 use crate::query::builder::{QueryBuilder, QueryBuilderResult};
 use crate::query::types::{
     ListMetaData, QueryGenericLang, QueryMetaData, QuerySearchLimit, QuerySearchOffset,
@@ -21,7 +22,6 @@ use crate::query::types::{
 use crate::store::fst::StoreFSTPool;
 use crate::store::kv::StoreKVPool;
 use crate::store::operation::StoreOperationDispatch;
-use crate::APP_CONF;
 
 #[derive(PartialEq)]
 pub enum ChannelCommandError {
@@ -71,8 +71,9 @@ static BACKUP_FST_PATH: &str = "fst";
 lazy_static! {
     pub static ref COMMANDS_MODE_SEARCH: Vec<&'static str> =
         vec!["QUERY", "SUGGEST", "LIST", "PING", "HELP", "QUIT"];
-    pub static ref COMMANDS_MODE_INGEST: Vec<&'static str> =
-        vec!["PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT"];
+    pub static ref COMMANDS_MODE_INGEST: Vec<&'static str> = vec![
+        "PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT"
+    ];
     pub static ref COMMANDS_MODE_CONTROL: Vec<&'static str> =
         vec!["TRIGGER", "INFO", "PING", "HELP", "QUIT"];
     pub static ref CONTROL_TRIGGER_ACTIONS: Vec<&'static str> =
@@ -941,10 +942,10 @@ impl fmt::Display for ChannelCommandError {
             ChannelCommandError::ShuttingDown => write!(f, "shutting_down"),
             ChannelCommandError::PolicyReject(reason) => write!(f, "policy_reject({})", reason),
             ChannelCommandError::InvalidFormat(format) => write!(f, "invalid_format({})", format),
-            ChannelCommandError::InvalidMetaKey(ref data) => {
+            ChannelCommandError::InvalidMetaKey(data) => {
                 write!(f, "invalid_meta_key({}[{}])", data.0, data.1)
             }
-            ChannelCommandError::InvalidMetaValue(ref data) => {
+            ChannelCommandError::InvalidMetaValue(data) => {
                 write!(f, "invalid_meta_value({}[{}])", data.0, data.1)
             }
         }

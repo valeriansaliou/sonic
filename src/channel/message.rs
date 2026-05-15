@@ -10,12 +10,12 @@ use std::str::{self, SplitWhitespace};
 use std::time::Instant;
 
 use super::command::{
-    ChannelCommandBase, ChannelCommandControl, ChannelCommandError, ChannelCommandIngest,
-    ChannelCommandResponse, ChannelCommandResponseArgs, ChannelCommandSearch,
-    COMMANDS_MODE_CONTROL, COMMANDS_MODE_INGEST, COMMANDS_MODE_SEARCH,
+    COMMANDS_MODE_CONTROL, COMMANDS_MODE_INGEST, COMMANDS_MODE_SEARCH, ChannelCommandBase,
+    ChannelCommandControl, ChannelCommandError, ChannelCommandIngest, ChannelCommandResponse,
+    ChannelCommandResponseArgs, ChannelCommandSearch,
 };
 use super::listen::CHANNEL_AVAILABLE;
-use super::statistics::{COMMANDS_TOTAL, COMMAND_LATENCY_BEST, COMMAND_LATENCY_WORST};
+use super::statistics::{COMMAND_LATENCY_BEST, COMMAND_LATENCY_WORST, COMMANDS_TOTAL};
 use crate::LINE_FEED;
 
 pub struct ChannelMessage;

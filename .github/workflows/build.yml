@@ -28,10 +28,12 @@ jobs:
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master on 2026-05-14
         with:
           toolchain: stable
-          components: rustfmt
 
       - name: Verify versions
-        run: rustc --version && rustup --version && cargo --version
+        run: |-
+          rustc --version
+          rustup --version 2>/dev/null
+          cargo --version
 
       - name: Get current tag
         id: current_tag

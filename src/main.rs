@@ -9,6 +9,7 @@
     clippy::inline_always, // Do not use unless benchmarked (explicit allow).
 )]
 #![allow(
+    clippy::collapsible_if, // Style preference.
     clippy::explicit_auto_deref, // Style preference.
     clippy::needless_as_bytes, // Style preference. Better make those things explicit.
     clippy::needless_borrow, // Style preference.

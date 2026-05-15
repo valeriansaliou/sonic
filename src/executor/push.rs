@@ -7,12 +7,12 @@
 use linked_hash_set::LinkedHashSet;
 use std::iter::FromIterator;
 
+use crate::APP_CONF;
 use crate::lexer::token::TokenLexer;
 use crate::store::fst::{StoreFSTActionBuilder, StoreFSTPool};
 use crate::store::identifiers::{StoreMetaKey, StoreMetaValue, StoreTermHashed};
 use crate::store::item::StoreItem;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVPool};
-use crate::APP_CONF;
 
 pub struct ExecutorPush;
 
@@ -124,8 +124,10 @@ impl ExecutorPush {
                                     // Drain overflowing IIDs (ie. oldest ones that overflow)
                                     let term_iids_drain = term_iids.drain(truncate_limit..);
 
-                                    executor_ensure_op!(kv_action
-                                        .batch_truncate_object(term_hashed, term_iids_drain));
+                                    executor_ensure_op!(
+                                        kv_action
+                                            .batch_truncate_object(term_hashed, term_iids_drain)
+                                    );
                                 }
 
                                 executor_ensure_op!(

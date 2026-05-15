@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 ##
 #  Sonic
@@ -22,25 +22,24 @@ pushd "$TESTSPATH" > /dev/null
   popd
 
   # Run each test scenario
-  for scenario in $(find ./scenarios/ -name "*.js")
-  do
-      [[ -d ./instance/data/ ]] && rm -r ./instance/data/
+  for scenario in $(find ./scenarios/ -name "*.js"); do
+    [[ -d ./instance/data/ ]] && rm -r ./instance/data/
 
-      # Run sonic from a clean state
-      pushd "./instance/" > /dev/null
-        cargo run -- --config config.cfg &
-        SONIC_PID=$!
-        sleep 2
-      popd
+    # Run sonic from a clean state
+    pushd "./instance/" > /dev/null
+      cargo run -- --config config.cfg &
+      SONIC_PID=$!
+      sleep 2
+    popd
 
-      # Run scenario
-      node $scenario
+    # Run scenario
+    node $scenario
 
-      [[ $? -eq 0 ]] || STATUS=1
+    [[ $? -eq 0 ]] || STATUS=1
 
-      # Stop Sonic
-      kill $SONIC_PID
-      wait $SONIC_PID
+    # Stop Sonic
+    kill $SONIC_PID
+    wait $SONIC_PID
   done
 
   [[ -d ./instance/data/ ]] && rm -r ./instance/data/
