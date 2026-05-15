@@ -8,6 +8,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         rust-toolchain: [stable]
+      # Do not cancel all jobs on failure.
       fail-fast: false
 
     runs-on: ${{ matrix.os }}
