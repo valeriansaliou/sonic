@@ -2,10 +2,8 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
-
-use std::fs::File;
-use std::io::Read;
 
 use super::options::Config;
 use crate::APP_ARGS;
@@ -14,20 +12,41 @@ pub struct ConfigReader;
 
 impl ConfigReader {
     pub fn make() -> Config {
-        debug!("reading config file: {}", &APP_ARGS.config);
+        let config_path = &APP_ARGS.config;
 
-        let mut file = File::open(&APP_ARGS.config).expect("cannot find config file");
-        let mut conf = String::new();
+        // Abort if the user specified a config path that does not exist.
+        if config_path != crate::DEFAULT_CONFIG_FILE_PATH
+            && !std::path::Path::new(config_path).exists()
+        {
+            panic!("Cannot find config file at '{config_path}'");
+        }
 
-        file.read_to_string(&mut conf)
-            .expect("cannot read config file");
+        debug!("reading config file: {config_path}");
 
-        debug!("read config file: {}", &APP_ARGS.config);
+        // Read configuration.
+        let raw_config: config::Config = config::Config::builder()
+            // Start from defaults.
+            .add_source(config::File::from_str(
+                super::defaults::defaults(),
+                config::FileFormat::Toml,
+            ))
+            // Merge static configuration (from file).
+            .add_source(config::File::new(config_path, config::FileFormat::Toml).required(false))
+            // Merge environment overrides.
+            .add_source(
+                config::Environment::with_prefix("SONIC")
+                    .separator("__")
+                    .prefix_separator("_"),
+            )
+            .build()
+            .expect("error reading config");
 
-        // Parse configuration
-        let config = toml::from_str(&conf).expect("syntax error in config file");
+        // Parse configuration.
+        let config = raw_config
+            .try_deserialize::<Config>()
+            .expect("syntax error in config");
 
-        // Validate configuration
+        // Validate configuration.
         Self::validate(&config);
 
         config

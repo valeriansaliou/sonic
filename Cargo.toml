@@ -19,7 +19,6 @@ doc = false
 
 [dependencies]
 log = "0.4"
-toml = "1"
 clap = { version = "4", features = ["std", "cargo"] }
 lazy_static = "1"
 serde = "1"
@@ -42,6 +41,7 @@ jieba-rs = { version = "0.9", optional = true }
 lindera-core = { version = "0.31", optional = true }
 lindera-dictionary = { version = "0.31", features = ["unidic"], optional = true }
 lindera-tokenizer = { version = "0.31", features = ["unidic"], optional = true }
+config = { version = "0.15", default-features = false, features = ["toml"] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", features = ["signal"] }
