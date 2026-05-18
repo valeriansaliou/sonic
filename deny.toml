@@ -42,6 +42,44 @@ deny = [
     { crate = "windows", reason = "bloated and unnecessary", use-instead = "ideally inline bindings; practically, windows-sys" },
 ]
 
+[bans.build]
+# WARN: Before updating this list, e.g. when bumping deps, you should have a
+#   look at what has changed in the build script (to reduce the risk of
+#   supply-chain attack).
+allow-build-scripts = [
+    "bindgen@0.72.1",
+    "bzip2-sys@0.1.13+1.0.8",
+    "clang-sys@1.8.1",
+    "crc32fast@1.5.0",
+    "getrandom@0.3.4",
+    "getrandom@0.4.2",
+    "libc@0.2.186",
+    "librocksdb-sys@0.17.3+10.4.2",
+    "libz-sys@1.1.28",
+    "lz4-sys@1.11.1+lz4-1.10.0",
+    "nix@0.31.3",
+    "proc-macro2@1.0.106",
+    "quote@1.0.45",
+    "serde@1.0.228",
+    "serde_core@1.0.228",
+    "tikv-jemalloc-sys@0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7",
+    "winapi-i686-pc-windows-gnu@0.4.0",
+    "winapi-x86_64-pc-windows-gnu@0.4.0",
+    "winapi@0.3.9",
+    "wit-bindgen@0.51.0",
+    "wit-bindgen@0.57.1",
+    "zerocopy@0.8.48",
+    "zstd-safe@7.2.4",
+    "zstd-sys@2.0.16+zstd.1.5.7",
+]
+executables = "allow"
+interpreted = "allow"
+script-extensions = []
+enable-builtin-globs = false
+include-dependencies = false
+include-workspace = false
+include-archives = false
+
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
