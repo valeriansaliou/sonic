@@ -54,7 +54,7 @@ jobs:
 
       # NOTE: Run `cargo deny` first to reduce the risk of supply-chain attack.
       - name: Lint dependency graph
-        run: cargo deny check
+        run: cargo deny check --show-stats
 
       - name: Check code style
         run: cargo fmt --check
