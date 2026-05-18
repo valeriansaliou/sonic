@@ -10,7 +10,11 @@ homepage = "https://github.com/valeriansaliou/sonic"
 repository = "https://github.com/valeriansaliou/sonic.git"
 keywords = ["search", "query", "server", "index"]
 categories = ["database-implementations", "web-programming"]
-authors = ["Valerian Saliou <valerian@valeriansaliou.name>", "Baptiste Jamin <baptistejamin@gmail.com>"]
+authors = [
+    "Valerian Saliou <valerian@valeriansaliou.name>",
+    "Baptiste Jamin <baptistejamin@gmail.com>",
+    "Rémi Bardon <remi@remibardon.name>",
+]
 
 [[bin]]
 name = "sonic"
