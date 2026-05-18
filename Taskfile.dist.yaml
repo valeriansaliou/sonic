@@ -13,6 +13,7 @@ tasks:
   ci:
     desc: Runs all CI checks.
     cmds:
+      - task: lint:deps
       - cargo fmt --check
       - cargo clippy
       - cargo build --locked
@@ -23,6 +24,13 @@ tasks:
     desc: Makes a new release (git tag). CD will build and release the binary.
     silent: true
     cmd: ./scripts/make_release.sh {{ .CLI_ARGS }}
+
+  lint:deps:
+    desc: Lints the dependency graph (checks for advisories, unwanted licenses, untrusted sources…).
+    cmd: cargo deny check --show-stats
+    preconditions:
+      - sh: command -v cargo-deny >/dev/null
+        msg: "`cargo deny` is required. Install using `cargo install cargo-deny --locked`."
 
   lint:md:
     desc: Lints Markdown files. You can pass a rule name to check it individually.
