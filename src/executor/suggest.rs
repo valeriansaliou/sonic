@@ -2,17 +2,17 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::lexer::token::TokenLexer;
 use crate::query::types::{QuerySearchID, QuerySearchLimit};
-use crate::store::fst::{StoreFSTActionBuilder, StoreFSTPool};
+use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::item::StoreItem;
 
-pub struct ExecutorSuggest;
-
-impl ExecutorSuggest {
-    pub fn execute<'a>(
+impl super::Executor {
+    pub fn suggest<'a>(
+        &self,
         store: StoreItem<'a>,
         _event_id: QuerySearchID,
         mut lexer: TokenLexer<'a>,
@@ -23,7 +23,7 @@ impl ExecutorSuggest {
             //   prevents the graph from being erased while using it in this block.
             general_fst_access_lock_read!();
 
-            if let Ok(fst_store) = StoreFSTPool::acquire(collection, bucket) {
+            if let Ok(fst_store) = self.fst_pool.acquire(collection, bucket) {
                 let fst_action = StoreFSTActionBuilder::access(fst_store);
 
                 if let (Some(word), None) = (lexer.next(), lexer.next()) {

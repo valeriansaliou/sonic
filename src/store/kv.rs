@@ -2,6 +2,7 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
@@ -31,19 +32,30 @@ use super::generic::{
 use super::identifiers::*;
 use super::item::StoreItemPart;
 use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher, StoreKeyerKey, StoreKeyerPrefix};
-use crate::APP_CONF;
 
-pub struct StoreKVPool;
-pub struct StoreKVBuilder;
+// NOTE: This type cannot be generic over a lifetime as spawning threads would
+//   force it to be `'static`.
+#[derive(Clone)]
+pub struct StoreKVPool {
+    pool: Arc<RwLock<HashMap<StoreKVKey, StoreKVBox>>>,
+    kv_store_config: Arc<crate::config::ConfigStoreKV>,
+}
+
+pub struct StoreKVBuilder {
+    kv_store_config: Arc<crate::config::ConfigStoreKV>,
+}
 
 pub struct StoreKV {
     database: DB,
     last_used: Arc<RwLock<SystemTime>>,
     last_flushed: Arc<RwLock<SystemTime>>,
     pub lock: RwLock<bool>,
+    kv_store_config: Arc<crate::config::ConfigStoreKV>,
 }
 
-pub struct StoreKVActionBuilder;
+pub struct StoreKVActionBuilder<'build> {
+    pub kv_pool: &'build StoreKVPool,
+}
 
 pub struct StoreKVAction<'a> {
     store: Option<StoreKVBox>,
@@ -70,16 +82,22 @@ lazy_static! {
     pub static ref STORE_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
     static ref STORE_ACQUIRE_LOCK: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
     static ref STORE_FLUSH_LOCK: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
-    static ref STORE_POOL: Arc<RwLock<HashMap<StoreKVKey, StoreKVBox>>> =
-        Arc::new(RwLock::new(HashMap::new()));
 }
 
 impl StoreKVPool {
-    pub fn count() -> usize {
-        STORE_POOL.read().unwrap().len()
+    pub fn new(kv_store_config: Arc<crate::config::ConfigStoreKV>) -> Self {
+        Self {
+            pool: Arc::default(),
+            kv_store_config,
+        }
+    }
+
+    pub fn count(&self) -> usize {
+        self.pool.read().unwrap().len()
     }
 
     pub fn acquire<'a, T: Into<&'a str>>(
+        &self,
         mode: StoreKVAcquireMode,
         collection: T,
     ) -> Result<Option<StoreKVBox>, ()> {
@@ -91,7 +109,7 @@ impl StoreKVPool {
         let _acquire = STORE_ACQUIRE_LOCK.lock().unwrap();
 
         // Acquire a thread-safe store pool reference in read mode
-        let store_pool_read = STORE_POOL.read().unwrap();
+        let store_pool_read = self.pool.read().unwrap();
 
         if let Some(store_kv) = store_pool_read.get(&pool_key) {
             Self::proceed_acquire_cache("kv", collection_str, pool_key, store_kv).map(Some)
@@ -107,54 +125,77 @@ impl StoreKVPool {
 
             // Check if can open database?
             let can_open_db = if mode == StoreKVAcquireMode::OpenOnly {
-                StoreKVBuilder::path(pool_key.collection_hash).exists()
+                self.kv_store_config.path(pool_key.collection_hash).exists()
             } else {
                 true
+            };
+
+            let builder = StoreKVBuilder {
+                kv_store_config: Arc::clone(&self.kv_store_config),
             };
 
             // Open KV database? (ie. we do not need to create a new KV database file tree if \
             //   the database does not exist yet on disk and we are just looking to read data from \
             //   it)
             if can_open_db {
-                Self::proceed_acquire_open("kv", collection_str, pool_key, &*STORE_POOL).map(Some)
+                Self::proceed_acquire_open("kv", collection_str, pool_key, &self.pool, &builder)
+                    .map(Some)
             } else {
                 Ok(None)
             }
         }
     }
 
-    pub fn janitor() {
+    fn close(&self, collection_hash: StoreKVAtom) {
+        debug!(
+            "closing key-value database for collection: <{:x?}>",
+            collection_hash
+        );
+
+        let mut store_pool_write = self.pool.write().unwrap();
+
+        let collection_target = StoreKVKey::from_atom(collection_hash);
+
+        store_pool_write.remove(&collection_target);
+    }
+
+    pub fn janitor(&self) {
         Self::proceed_janitor(
             "kv",
-            &*STORE_POOL,
-            APP_CONF.store.kv.pool.inactive_after,
+            &self.pool,
+            self.kv_store_config.pool.inactive_after,
             &*STORE_ACCESS_LOCK,
         )
     }
 
-    pub fn backup(path: &Path) -> Result<(), io::Error> {
+    pub fn backup(&self, path: &Path) -> Result<(), io::Error> {
         debug!("backing up all kv stores to path: {:?}", path);
 
         // Create backup directory (full path)
         fs::create_dir_all(path)?;
 
         // Proceed dump action (backup)
-        Self::dump_action("backup", &*APP_CONF.store.kv.path, path, &Self::backup_item)
+        self.dump_action(
+            "backup",
+            &self.kv_store_config.path,
+            path,
+            &Self::backup_item,
+        )
     }
 
-    pub fn restore(path: &Path) -> Result<(), io::Error> {
+    pub fn restore(&self, path: &Path) -> Result<(), io::Error> {
         debug!("restoring all kv stores from path: {:?}", path);
 
         // Proceed dump action (restore)
-        Self::dump_action(
+        self.dump_action(
             "restore",
             path,
-            &*APP_CONF.store.kv.path,
+            &self.kv_store_config.path,
             &Self::restore_item,
         )
     }
 
-    pub fn flush(force: bool) {
+    pub fn flush(&self, force: bool) {
         debug!("scanning for kv store pool items to flush to disk");
 
         // Acquire flush lock, and reference it in context
@@ -169,7 +210,7 @@ impl StoreKVPool {
             // Notice: this prevents store to be acquired from any context
             let _access = STORE_ACCESS_LOCK.write().unwrap();
 
-            let store_pool_read = STORE_POOL.read().unwrap();
+            let store_pool_read = self.pool.read().unwrap();
 
             for (key, store) in &*store_pool_read {
                 // Important: be lenient with system clock going back to a past duration, since \
@@ -192,7 +233,7 @@ impl StoreKVPool {
                     })
                     .as_secs();
 
-                if force || not_flushed_for >= APP_CONF.store.kv.database.flush_after {
+                if force || not_flushed_for >= self.kv_store_config.database.flush_after {
                     info!(
                         "kv key: {} not flushed for: {} seconds, may flush",
                         key, not_flushed_for
@@ -225,7 +266,7 @@ impl StoreKVPool {
                     // Notice: this prevents store to be acquired from any context
                     let _access = STORE_ACCESS_LOCK.write().unwrap();
 
-                    if let Some(store) = STORE_POOL.read().unwrap().get(key) {
+                    if let Some(store) = self.pool.read().unwrap().get(key) {
                         debug!("kv key: {} flush started", key);
 
                         if let Err(err) = store.flush() {
@@ -252,11 +293,13 @@ impl StoreKVPool {
         );
     }
 
+    #[allow(clippy::type_complexity)]
     fn dump_action(
+        &self,
         action: &str,
         read_path: &Path,
         write_path: &Path,
-        fn_item: &dyn Fn(&Path, &Path, &str) -> Result<(), io::Error>,
+        fn_item: &dyn Fn(&Self, &Path, &Path, &str) -> Result<(), io::Error>,
     ) -> Result<(), io::Error> {
         // Iterate on KV collections
         for collection in fs::read_dir(read_path)? {
@@ -269,7 +312,7 @@ impl StoreKVPool {
                 if collection_file_type.is_dir() {
                     debug!("kv collection ongoing {}: {}", action, collection_name);
 
-                    fn_item(write_path, &collection.path(), collection_name)?;
+                    fn_item(self, write_path, &collection.path(), collection_name)?;
                 }
             }
         }
@@ -278,6 +321,7 @@ impl StoreKVPool {
     }
 
     fn backup_item(
+        &self,
         backup_path: &Path,
         _origin_path: &Path,
         collection_name: &str,
@@ -306,8 +350,11 @@ impl StoreKVPool {
         //   them as proper integers)
         if let Ok(collection_radix) = RadixNum::from_str(collection_name, ATOM_HASH_RADIX) {
             if let Ok(collection_hash) = collection_radix.as_decimal() {
-                let origin_kv = StoreKVBuilder::open(collection_hash as StoreKVAtom)
-                    .map_err(|_| io_error!("database open failure"))?;
+                let origin_kv = StoreKVBuilder {
+                    kv_store_config: Arc::clone(&self.kv_store_config),
+                }
+                .open(collection_hash as StoreKVAtom)
+                .map_err(|_| io_error!("database open failure"))?;
 
                 // Initialize KV database backup engine
                 let kv_backup_options = DBBackupEngineOptions::new(&kv_backup_path)
@@ -335,6 +382,7 @@ impl StoreKVPool {
     }
 
     fn restore_item(
+        &self,
         _backup_path: &Path,
         origin_path: &Path,
         collection_name: &str,
@@ -353,10 +401,10 @@ impl StoreKVPool {
         if let Ok(collection_radix) = RadixNum::from_str(collection_name, ATOM_HASH_RADIX) {
             if let Ok(collection_hash) = collection_radix.as_decimal() {
                 // Force a KV store close
-                StoreKVBuilder::close(collection_hash as StoreKVAtom);
+                self.close(collection_hash as StoreKVAtom);
 
                 // Generate path to KV
-                let kv_path = StoreKVBuilder::path(collection_hash as StoreKVAtom);
+                let kv_path = self.kv_store_config.path(collection_hash as StoreKVAtom);
 
                 // Remove existing KV database data?
                 if kv_path.exists() {
@@ -394,42 +442,23 @@ impl StoreKVPool {
 impl StoreGenericPool<StoreKVKey, StoreKV, StoreKVBuilder> for StoreKVPool {}
 
 impl StoreKVBuilder {
-    fn open(collection_hash: StoreKVAtom) -> Result<DB, DBError> {
+    fn open(&self, collection_hash: StoreKVAtom) -> Result<DB, DBError> {
         debug!(
             "opening key-value database for collection: <{:x?}>",
             collection_hash
         );
 
         // Configure database options
-        let db_options = Self::configure();
+        let db_options = self.configure();
 
         // Open database at path for collection
-        DB::open(&db_options, Self::path(collection_hash))
+        DB::open(&db_options, self.kv_store_config.path(collection_hash))
     }
 
-    fn close(collection_hash: StoreKVAtom) {
-        debug!(
-            "closing key-value database for collection: <{:x?}>",
-            collection_hash
-        );
-
-        let mut store_pool_write = STORE_POOL.write().unwrap();
-
-        let collection_target = StoreKVKey::from_atom(collection_hash);
-
-        store_pool_write.remove(&collection_target);
-    }
-
-    fn path(collection_hash: StoreKVAtom) -> PathBuf {
-        APP_CONF
-            .store
-            .kv
-            .path
-            .join(format!("{:x?}", collection_hash))
-    }
-
-    fn configure() -> DBOptions {
+    fn configure(&self) -> DBOptions {
         debug!("configuring key-value database");
+
+        let db_conf = &self.kv_store_config.database;
 
         // Make database options
         let mut db_options = DBOptions::default();
@@ -442,33 +471,36 @@ impl StoreKVBuilder {
         db_options.set_max_write_buffer_number(2);
 
         // Set dynamic options
-        db_options.set_compression_type(if APP_CONF.store.kv.database.compress {
+        db_options.set_compression_type(if db_conf.compress {
             DBCompressionType::Zstd
         } else {
             DBCompressionType::None
         });
 
-        db_options.set_max_open_files(if let Some(value) = APP_CONF.store.kv.database.max_files {
+        db_options.set_max_open_files(if let Some(value) = db_conf.max_files {
             value as i32
         } else {
             -1
         });
 
-        db_options.increase_parallelism(APP_CONF.store.kv.database.parallelism as i32);
-        db_options.set_max_subcompactions(APP_CONF.store.kv.database.max_compactions as u32);
-        db_options.set_max_background_jobs(
-            (APP_CONF.store.kv.database.max_compactions + APP_CONF.store.kv.database.max_flushes)
-                as i32,
-        );
-        db_options.set_write_buffer_size(APP_CONF.store.kv.database.write_buffer * 1024);
+        db_options.increase_parallelism(db_conf.parallelism as i32);
+        db_options.set_max_subcompactions(db_conf.max_compactions as u32);
+        db_options.set_max_background_jobs((db_conf.max_compactions + db_conf.max_flushes) as i32);
+        db_options.set_write_buffer_size(db_conf.write_buffer * 1024);
 
         db_options
     }
 }
 
+impl crate::config::ConfigStoreKV {
+    fn path(&self, collection_hash: StoreKVAtom) -> PathBuf {
+        self.path.join(format!("{:x?}", collection_hash))
+    }
+}
+
 impl StoreGenericBuilder<StoreKVKey, StoreKV> for StoreKVBuilder {
-    fn build(pool_key: StoreKVKey) -> Result<StoreKV, ()> {
-        Self::open(pool_key.collection_hash)
+    fn build(&self, pool_key: StoreKVKey) -> Result<StoreKV, ()> {
+        self.open(pool_key.collection_hash)
             .map(|db| {
                 let now = SystemTime::now();
 
@@ -477,6 +509,7 @@ impl StoreGenericBuilder<StoreKVKey, StoreKV> for StoreKVBuilder {
                     last_used: Arc::new(RwLock::new(now)),
                     last_flushed: Arc::new(RwLock::new(now)),
                     lock: RwLock::new(false),
+                    kv_store_config: Arc::clone(&self.kv_store_config),
                 }
             })
             .map_err(|err| {
@@ -521,7 +554,7 @@ impl StoreKV {
         let mut write_options = WriteOptions::default();
 
         // WAL disabled?
-        if !APP_CONF.store.kv.database.write_ahead_log {
+        if !self.kv_store_config.database.write_ahead_log {
             debug!("ignoring wal for kv write");
 
             write_options.disable_wal(true);
@@ -542,13 +575,13 @@ impl StoreGeneric for StoreKV {
     }
 }
 
-impl StoreKVActionBuilder {
+impl<'build> StoreKVActionBuilder<'build> {
     pub fn access(bucket: StoreItemPart, store: Option<StoreKVBox>) -> StoreKVAction {
         Self::build(bucket, store)
     }
 
-    pub fn erase<'a, T: Into<&'a str>>(collection: T, bucket: Option<T>) -> Result<u32, ()> {
-        Self::dispatch_erase("kv", collection, bucket)
+    pub fn erase<'a, T: Into<&'a str>>(&self, collection: T, bucket: Option<T>) -> Result<u32, ()> {
+        self.dispatch_erase("kv", collection, bucket)
     }
 
     fn build(bucket: StoreItemPart, store: Option<StoreKVBox>) -> StoreKVAction {
@@ -556,13 +589,13 @@ impl StoreKVActionBuilder {
     }
 }
 
-impl StoreGenericActionBuilder for StoreKVActionBuilder {
-    fn proceed_erase_collection(collection_str: &str) -> Result<u32, ()> {
+impl<'build> StoreGenericActionBuilder for StoreKVActionBuilder<'build> {
+    fn proceed_erase_collection(&self, collection_str: &str) -> Result<u32, ()> {
         let collection_atom = StoreKeyerHasher::to_compact(collection_str);
-        let collection_path = StoreKVBuilder::path(collection_atom);
+        let collection_path = self.kv_pool.kv_store_config.path(collection_atom);
 
         // Force a KV store close
-        StoreKVBuilder::close(collection_atom);
+        self.kv_pool.close(collection_atom);
 
         if collection_path.exists() {
             debug!(
@@ -590,7 +623,7 @@ impl StoreGenericActionBuilder for StoreKVActionBuilder {
         }
     }
 
-    fn proceed_erase_bucket(_collection: &str, _bucket: &str) -> Result<u32, ()> {
+    fn proceed_erase_bucket(&self, _collection: &str, _bucket: &str) -> Result<u32, ()> {
         // This one is not implemented, as we need to acquire the collection; which would cause \
         //   a party-killer dead-lock.
         Err(())
@@ -1191,17 +1224,27 @@ mod tests {
 
     #[test]
     fn it_acquires_database() {
-        assert!(StoreKVPool::acquire(StoreKVAcquireMode::Any, "c:test:1").is_ok());
+        let kv_store_config = test_kv_store_config();
+        let kv_pool = StoreKVPool::new(kv_store_config);
+
+        assert!(kv_pool.acquire(StoreKVAcquireMode::Any, "c:test:1").is_ok());
     }
 
     #[test]
     fn it_janitors_database() {
-        StoreKVPool::janitor();
+        let kv_store_config = test_kv_store_config();
+        let kv_pool = StoreKVPool::new(kv_store_config);
+
+        kv_pool.janitor();
     }
 
     #[test]
     fn it_proceeds_primitives() {
-        let store = StoreKVPool::acquire(StoreKVAcquireMode::Any, "c:test:2")
+        let kv_store_config = test_kv_store_config();
+        let kv_pool = StoreKVPool::new(kv_store_config);
+
+        let store = kv_pool
+            .acquire(StoreKVAcquireMode::Any, "c:test:2")
             .unwrap()
             .unwrap();
 
@@ -1212,7 +1255,12 @@ mod tests {
 
     #[test]
     fn it_proceeds_actions() {
-        let store = StoreKVPool::acquire(StoreKVAcquireMode::Any, "c:test:3").unwrap();
+        let kv_store_config = test_kv_store_config();
+        let kv_pool = StoreKVPool::new(kv_store_config);
+
+        let store = kv_pool
+            .acquire(StoreKVAcquireMode::Any, "c:test:3")
+            .unwrap();
         let action =
             StoreKVActionBuilder::access(StoreItemPart::from_str("b:test:3").unwrap(), store);
 
@@ -1273,6 +1321,20 @@ mod tests {
             StoreKVAction::decode_u32_list(&[90, 177, 0, 0]),
             Ok(vec![45402])
         );
+    }
+
+    fn test_kv_store_config() -> Arc<crate::config::ConfigStoreKV> {
+        Arc::new(
+            config::Config::builder()
+                .add_source(config::File::from_str(
+                    crate::config::defaults(),
+                    config::FileFormat::Toml,
+                ))
+                .build()
+                .unwrap()
+                .get::<crate::config::ConfigStoreKV>("store.kv")
+                .unwrap(),
+        )
     }
 }
 

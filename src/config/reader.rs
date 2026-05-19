@@ -27,7 +27,7 @@ impl ConfigReader {
         let raw_config: config::Config = config::Config::builder()
             // Start from defaults.
             .add_source(config::File::from_str(
-                super::defaults::defaults(),
+                super::defaults(),
                 config::FileFormat::Toml,
             ))
             // Merge static configuration (from file).

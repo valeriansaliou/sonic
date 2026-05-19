@@ -16,12 +16,22 @@ use super::command::{
 };
 use super::listen::CHANNEL_AVAILABLE;
 use super::statistics::{COMMAND_LATENCY_BEST, COMMAND_LATENCY_WORST, COMMANDS_TOTAL};
+use crate::Executor;
 use crate::LINE_FEED;
+use crate::config::ConfigChannelSearch;
 
 pub struct ChannelMessage;
-pub struct ChannelMessageModeSearch;
-pub struct ChannelMessageModeIngest;
-pub struct ChannelMessageModeControl;
+
+pub struct ChannelMessageModeSearch<'this> {
+    pub executor: &'this Executor,
+    pub search_config: &'this ConfigChannelSearch,
+}
+pub struct ChannelMessageModeIngest<'this> {
+    pub executor: &'this Executor,
+}
+pub struct ChannelMessageModeControl<'this> {
+    pub executor: &'this Executor,
+}
 
 const COMMAND_ELAPSED_MILLIS_SLOW_WARN: u128 = 50;
 
@@ -32,14 +42,9 @@ pub enum ChannelMessageResult {
 }
 
 pub trait ChannelMessageMode {
-    fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError>;
-}
+    fn handle(&self, message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError>;
 
-impl ChannelMessage {
-    pub fn on<M: ChannelMessageMode>(
-        mut stream: &TcpStream,
-        message_slice: &[u8],
-    ) -> ChannelMessageResult {
+    fn on(&self, mut stream: &TcpStream, message_slice: &[u8]) -> ChannelMessageResult {
         let message = str::from_utf8(message_slice).unwrap_or("");
 
         debug!("got channel message: {}", message);
@@ -58,7 +63,7 @@ impl ChannelMessage {
                 vec![ChannelCommandResponse::Err(ChannelCommandError::ShuttingDown).to_args()];
         } else {
             // Handle response arguments to issued command
-            response_args_groups = match M::handle(message) {
+            response_args_groups = match self.handle(message) {
                 Ok(resp_groups) => resp_groups
                     .iter()
                     .map(|resp| match resp {
@@ -150,7 +155,9 @@ impl ChannelMessage {
 
         result
     }
+}
 
+impl ChannelMessage {
     fn extract(message: &str) -> (String, SplitWhitespace<'_>) {
         // Extract command name and arguments
         let mut parts = message.split_whitespace();
@@ -162,9 +169,9 @@ impl ChannelMessage {
     }
 }
 
-impl ChannelMessageMode for ChannelMessageModeSearch {
-    fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
-        gen_channel_message_mode_handle!(message, COMMANDS_MODE_SEARCH, {
+impl<'this> ChannelMessageMode for ChannelMessageModeSearch<'this> {
+    fn handle(&self, message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
+        gen_channel_message_mode_handle!(message, COMMANDS_MODE_SEARCH, self, {
             "QUERY" => ChannelCommandSearch::dispatch_query,
             "SUGGEST" => ChannelCommandSearch::dispatch_suggest,
             "LIST" => ChannelCommandSearch::dispatch_list,
@@ -173,9 +180,9 @@ impl ChannelMessageMode for ChannelMessageModeSearch {
     }
 }
 
-impl ChannelMessageMode for ChannelMessageModeIngest {
-    fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
-        gen_channel_message_mode_handle!(message, COMMANDS_MODE_INGEST, {
+impl<'this> ChannelMessageMode for ChannelMessageModeIngest<'this> {
+    fn handle(&self, message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
+        gen_channel_message_mode_handle!(message, COMMANDS_MODE_INGEST, self, {
             "PUSH" => ChannelCommandIngest::dispatch_push,
             "POP" => ChannelCommandIngest::dispatch_pop,
             "COUNT" => ChannelCommandIngest::dispatch_count,
@@ -187,9 +194,9 @@ impl ChannelMessageMode for ChannelMessageModeIngest {
     }
 }
 
-impl ChannelMessageMode for ChannelMessageModeControl {
-    fn handle(message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
-        gen_channel_message_mode_handle!(message, COMMANDS_MODE_CONTROL, {
+impl<'this> ChannelMessageMode for ChannelMessageModeControl<'this> {
+    fn handle(&self, message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
+        gen_channel_message_mode_handle!(message, COMMANDS_MODE_CONTROL, self, {
             "TRIGGER" => ChannelCommandControl::dispatch_trigger,
             "INFO" => ChannelCommandControl::dispatch_info,
             "HELP" => ChannelCommandControl::dispatch_help,

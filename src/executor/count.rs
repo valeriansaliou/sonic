@@ -2,18 +2,16 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use crate::store::fst::StoreFSTPool;
 use crate::store::fst::{StoreFSTActionBuilder, StoreFSTMisc};
 use crate::store::item::StoreItem;
+use crate::store::kv::StoreKVAcquireMode;
 use crate::store::kv::StoreKVActionBuilder;
-use crate::store::kv::{StoreKVAcquireMode, StoreKVPool};
 
-pub struct ExecutorCount;
-
-impl ExecutorCount {
-    pub fn execute(store: StoreItem) -> Result<u32, ()> {
+impl super::Executor {
+    pub fn count(&self, store: StoreItem) -> Result<u32, ()> {
         match store {
             // Count terms in (collection, bucket, object) from KV
             StoreItem(collection, Some(bucket), Some(object)) => {
@@ -21,7 +19,9 @@ impl ExecutorCount {
                 //   prevents the database from being erased while using it in this block.
                 general_kv_access_lock_read!();
 
-                if let Ok(kv_store) = StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection)
+                if let Ok(kv_store) = self
+                    .kv_pool
+                    .acquire(StoreKVAcquireMode::OpenOnly, collection)
                 {
                     // Important: acquire bucket store read lock
                     executor_kv_lock_read!(kv_store);
@@ -54,7 +54,7 @@ impl ExecutorCount {
                 //   prevents the graph from being erased while using it in this block.
                 general_fst_access_lock_read!();
 
-                if let Ok(fst_store) = StoreFSTPool::acquire(collection, bucket) {
+                if let Ok(fst_store) = self.fst_pool.acquire(collection, bucket) {
                     let fst_action = StoreFSTActionBuilder::access(fst_store);
 
                     Ok(fst_action.count_words() as u32)
@@ -64,7 +64,8 @@ impl ExecutorCount {
             }
             // Count buckets in (collection) from FS
             StoreItem(collection, None, None) => {
-                StoreFSTMisc::count_collection_buckets(collection).map(|count| count as u32)
+                StoreFSTMisc::count_collection_buckets(collection, &self.app_conf.store.fst)
+                    .map(|count| count as u32)
             }
             _ => Err(()),
         }

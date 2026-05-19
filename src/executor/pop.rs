@@ -2,21 +2,20 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use linked_hash_set::LinkedHashSet;
 use std::iter::FromIterator;
 
 use crate::lexer::token::TokenLexer;
-use crate::store::fst::{StoreFSTActionBuilder, StoreFSTPool};
+use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::identifiers::StoreTermHashed;
 use crate::store::item::StoreItem;
-use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVPool};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
-pub struct ExecutorPop;
-
-impl ExecutorPop {
-    pub fn execute<'a>(store: StoreItem<'a>, lexer: TokenLexer<'a>) -> Result<u32, ()> {
+impl super::Executor {
+    pub fn pop<'a>(&self, store: StoreItem<'a>, lexer: TokenLexer<'a>) -> Result<u32, ()> {
         if let StoreItem(collection, Some(bucket), Some(object)) = store {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
@@ -24,8 +23,9 @@ impl ExecutorPop {
             general_fst_access_lock_read!();
 
             if let (Ok(kv_store), Ok(fst_store)) = (
-                StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection),
-                StoreFSTPool::acquire(collection, bucket),
+                self.kv_pool
+                    .acquire(StoreKVAcquireMode::OpenOnly, collection),
+                self.fst_pool.acquire(collection, bucket),
             ) {
                 // Important: acquire bucket store write lock
                 executor_kv_lock_write!(kv_store);

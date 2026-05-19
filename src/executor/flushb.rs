@@ -2,16 +2,15 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::item::StoreItem;
-use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVPool};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
-pub struct ExecutorFlushB;
-
-impl ExecutorFlushB {
-    pub fn execute(store: StoreItem) -> Result<u32, ()> {
+impl super::Executor {
+    pub fn flushb(&self, store: StoreItem) -> Result<u32, ()> {
         if let StoreItem(collection, Some(bucket), None) = store {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
@@ -19,7 +18,10 @@ impl ExecutorFlushB {
             general_kv_access_lock_read!();
             general_fst_access_lock_write!();
 
-            if let Ok(kv_store) = StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection) {
+            if let Ok(kv_store) = self
+                .kv_pool
+                .acquire(StoreKVAcquireMode::OpenOnly, collection)
+            {
                 // Important: acquire bucket store write lock
                 executor_kv_lock_write!(kv_store);
 
@@ -37,7 +39,11 @@ impl ExecutorFlushB {
                     //   erasing a bucket requires a database lock, which would incur a dead-lock, \
                     //   thus we need to perform the erasure from there.
                     if let Ok(erase_count) = kv_action.batch_erase_bucket() {
-                        if StoreFSTActionBuilder::erase(collection, Some(bucket)).is_ok() {
+                        let fst_action_builder = StoreFSTActionBuilder {
+                            fst_store_config: &self.app_conf.store.fst,
+                        };
+
+                        if fst_action_builder.erase(collection, Some(bucket)).is_ok() {
                             debug!("done with bucket erasure");
 
                             return Ok(erase_count);

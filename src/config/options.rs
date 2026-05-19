@@ -7,6 +7,7 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use super::env_var;
 
@@ -14,7 +15,7 @@ use super::env_var;
 pub struct Config {
     pub server: ConfigServer,
 
-    pub channel: ConfigChannel,
+    pub channel: Arc<ConfigChannel>,
 
     pub store: ConfigStore,
 }
@@ -57,9 +58,9 @@ pub struct ConfigChannelSearch {
 
 #[derive(Deserialize)]
 pub struct ConfigStore {
-    pub kv: ConfigStoreKV,
+    pub kv: Arc<ConfigStoreKV>,
 
-    pub fst: ConfigStoreFST,
+    pub fst: Arc<ConfigStoreFST>,
 }
 
 #[derive(Deserialize)]

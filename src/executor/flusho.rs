@@ -2,21 +2,23 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::store::item::StoreItem;
-use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVPool};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
-pub struct ExecutorFlushO;
-
-impl ExecutorFlushO {
-    pub fn execute(store: StoreItem) -> Result<u32, ()> {
+impl super::Executor {
+    pub fn flusho(&self, store: StoreItem) -> Result<u32, ()> {
         if let StoreItem(collection, Some(bucket), Some(object)) = store {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
             general_kv_access_lock_read!();
 
-            if let Ok(kv_store) = StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection) {
+            if let Ok(kv_store) = self
+                .kv_pool
+                .acquire(StoreKVAcquireMode::OpenOnly, collection)
+            {
                 // Important: acquire bucket store write lock
                 executor_kv_lock_write!(kv_store);
 

@@ -2,6 +2,7 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use std::collections::VecDeque;
@@ -9,18 +10,22 @@ use std::io::{ErrorKind, Read, Write};
 use std::net::TcpStream;
 use std::result::Result;
 use std::str;
+use std::sync::Arc;
 use std::time::Duration;
 
 use super::message::{
-    ChannelMessage, ChannelMessageModeControl, ChannelMessageModeIngest, ChannelMessageModeSearch,
+    ChannelMessageModeControl, ChannelMessageModeIngest, ChannelMessageModeSearch,
     ChannelMessageResult,
 };
 use super::mode::ChannelMode;
 use super::statistics::CLIENTS_CONNECTED;
-use crate::APP_CONF;
+use crate::Executor;
 use crate::LINE_FEED;
 
-pub struct ChannelHandle;
+pub struct ChannelHandle {
+    pub channel_config: Arc<crate::config::ConfigChannel>,
+    pub executor: Executor,
+}
 
 enum ChannelHandleError {
     Closed,
@@ -66,9 +71,9 @@ impl ChannelHandleError {
 }
 
 impl ChannelHandle {
-    pub fn client(mut stream: TcpStream) {
+    pub fn client(&self, mut stream: TcpStream) {
         // Configure stream (non-established)
-        ChannelHandle::configure_stream(&stream, false);
+        self.configure_stream(&stream, false);
 
         // Send connected banner
         write!(stream, "{}{}", *CONNECTED_BANNER, LINE_FEED).expect("write failed");
@@ -77,10 +82,10 @@ impl ChannelHandle {
         *CLIENTS_CONNECTED.write().unwrap() += 1;
 
         // Ensure channel mode is set
-        match Self::ensure_start(&stream) {
+        match self.ensure_start(&stream) {
             Ok(mode) => {
                 // Configure stream (established)
-                ChannelHandle::configure_stream(&stream, true);
+                self.configure_stream(&stream, true);
 
                 // Send started acknowledgement (with environment variables)
                 write!(
@@ -93,7 +98,7 @@ impl ChannelHandle {
                 )
                 .expect("write failed");
 
-                Self::handle_stream(mode, stream);
+                self.handle_stream(mode, stream);
             }
             Err(err) => {
                 write!(stream, "ENDED {}{}", err.to_str(), LINE_FEED).expect("write failed");
@@ -104,9 +109,9 @@ impl ChannelHandle {
         *CLIENTS_CONNECTED.write().unwrap() -= 1;
     }
 
-    fn configure_stream(stream: &TcpStream, is_established: bool) {
+    fn configure_stream(&self, stream: &TcpStream, is_established: bool) {
         let tcp_timeout = if is_established {
-            APP_CONF.channel.tcp_timeout
+            self.channel_config.tcp_timeout
         } else {
             TCP_TIMEOUT_NON_ESTABLISHED
         };
@@ -125,7 +130,7 @@ impl ChannelHandle {
         );
     }
 
-    fn handle_stream(mode: ChannelMode, mut stream: TcpStream) {
+    fn handle_stream(&self, mode: ChannelMode, mut stream: TcpStream) {
         // Initialize packet buffer
         let mut buffer: VecDeque<u8> = VecDeque::with_capacity(MAX_LINE_SIZE);
 
@@ -164,7 +169,7 @@ impl ChannelHandle {
                         while let Some(byte) = buffer.pop_front() {
                             // Commit line and start a new one?
                             if byte == BUFFER_LINE_SEPARATOR {
-                                if Self::on_message(&mode, &stream, &processed_line)
+                                if self.on_message(&mode, &stream, &processed_line)
                                     == ChannelMessageResult::Close
                                 {
                                     // Should close?
@@ -195,7 +200,7 @@ impl ChannelHandle {
         }
     }
 
-    fn ensure_start(mut stream: &TcpStream) -> Result<ChannelMode, ChannelHandleError> {
+    fn ensure_start(&self, mut stream: &TcpStream) -> Result<ChannelMode, ChannelHandleError> {
         #[allow(clippy::never_loop)]
         loop {
             let mut read = [0; MAX_LINE_SIZE];
@@ -215,7 +220,7 @@ impl ChannelHandle {
                             // Extract mode
                             if let Ok(mode) = ChannelMode::from_str(res_mode) {
                                 // Check if authenticated?
-                                if let Some(ref auth_password) = APP_CONF.channel.auth_password {
+                                if let Some(ref auth_password) = self.channel_config.auth_password {
                                     if let Some(provided_auth) = parts.next() {
                                         // Compare provided password with configured password
                                         if provided_auth != auth_password {
@@ -255,20 +260,27 @@ impl ChannelHandle {
     }
 
     fn on_message(
+        &self,
         mode: &ChannelMode,
         stream: &TcpStream,
         message_slice: &[u8],
     ) -> ChannelMessageResult {
+        use crate::channel::message::ChannelMessageMode as _;
+
         match mode {
-            ChannelMode::Search => {
-                ChannelMessage::on::<ChannelMessageModeSearch>(stream, message_slice)
+            ChannelMode::Search => ChannelMessageModeSearch {
+                executor: &self.executor,
+                search_config: &self.channel_config.search,
             }
-            ChannelMode::Ingest => {
-                ChannelMessage::on::<ChannelMessageModeIngest>(stream, message_slice)
+            .on(stream, message_slice),
+            ChannelMode::Ingest => ChannelMessageModeIngest {
+                executor: &self.executor,
             }
-            ChannelMode::Control => {
-                ChannelMessage::on::<ChannelMessageModeControl>(stream, message_slice)
+            .on(stream, message_slice),
+            ChannelMode::Control => ChannelMessageModeControl {
+                executor: &self.executor,
             }
+            .on(stream, message_slice),
         }
     }
 }

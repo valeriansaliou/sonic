@@ -2,22 +2,20 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use linked_hash_set::LinkedHashSet;
 use std::iter::FromIterator;
 
-use crate::APP_CONF;
 use crate::lexer::token::TokenLexer;
-use crate::store::fst::{StoreFSTActionBuilder, StoreFSTPool};
+use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::identifiers::{StoreMetaKey, StoreMetaValue, StoreTermHashed};
 use crate::store::item::StoreItem;
-use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVPool};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
-pub struct ExecutorPush;
-
-impl ExecutorPush {
-    pub fn execute<'a>(store: StoreItem<'a>, lexer: TokenLexer<'a>) -> Result<(), ()> {
+impl super::Executor {
+    pub fn push<'a>(&self, store: StoreItem<'a>, lexer: TokenLexer<'a>) -> Result<(), ()> {
         if let StoreItem(collection, Some(bucket), Some(object)) = store {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
@@ -25,8 +23,8 @@ impl ExecutorPush {
             general_fst_access_lock_read!();
 
             if let (Ok(kv_store), Ok(fst_store)) = (
-                StoreKVPool::acquire(StoreKVAcquireMode::Any, collection),
-                StoreFSTPool::acquire(collection, bucket),
+                self.kv_pool.acquire(StoreKVAcquireMode::Any, collection),
+                self.fst_pool.acquire(collection, bucket),
             ) {
                 // Important: acquire bucket store write lock
                 executor_kv_lock_write!(kv_store);
@@ -113,7 +111,7 @@ impl ExecutorPush {
                                 term_iids.insert(0, iid);
 
                                 // Truncate IIDs linked to term? (ie. storage is too long)
-                                let truncate_limit = APP_CONF.store.kv.retain_word_objects;
+                                let truncate_limit = self.app_conf.store.kv.retain_word_objects;
 
                                 if term_iids.len() > truncate_limit {
                                     info!(
@@ -142,7 +140,7 @@ impl ExecutorPush {
                         }
 
                         // Push to FST graph? (this consumes the term; to avoid sub-clones)
-                        if fst_action.push_word(&term) {
+                        if fst_action.push_word(&term, &self.app_conf.store.fst) {
                             debug!("push term committed to graph: {}", term);
                         }
                     }
