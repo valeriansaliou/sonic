@@ -13,12 +13,11 @@ use std::path::Path;
 use std::str::{self, SplitWhitespace};
 use std::vec::Vec;
 
-use sonic::Executor;
-use sonic::query::builder::{QueryBuilder, QueryBuilderResult};
-use sonic::query::types::{
+use sonic::query::{
     ListMetaData, QueryGenericLang, QueryMetaData, QuerySearchLimit, QuerySearchOffset,
 };
 use sonic::store::operation::StoreOperationDispatch;
+use sonic::{Executor, Query};
 
 use super::format::unescape;
 use super::message::{
@@ -300,29 +299,17 @@ impl ChannelCommandBase {
         ChannelCommandError::InvalidMetaValue((meta_key.to_owned(), meta_value.to_owned()))
     }
 
-    pub fn commit_ok_operation(
-        query_builder: QueryBuilderResult,
-        executor: &Executor,
-    ) -> ChannelResult {
-        match query_builder {
-            Ok(query_builder) => match StoreOperationDispatch::dispatch(query_builder, executor) {
-                Ok(_) => Ok(vec![ChannelCommandResponse::Ok]),
-                Err(()) => Err(ChannelCommandError::QueryError),
-            },
+    pub fn commit_ok_operation(query: Query, executor: &Executor) -> ChannelResult {
+        match StoreOperationDispatch::dispatch(query, executor) {
+            Ok(_) => Ok(vec![ChannelCommandResponse::Ok]),
             Err(()) => Err(ChannelCommandError::QueryError),
         }
     }
 
-    pub fn commit_result_operation(
-        query_builder: QueryBuilderResult,
-        executor: &Executor,
-    ) -> ChannelResult {
-        match query_builder {
-            Ok(query_builder) => match StoreOperationDispatch::dispatch(query_builder, executor) {
-                Ok(Some(result_inner)) => Ok(vec![ChannelCommandResponse::Result(result_inner)]),
-                Ok(None) => Err(ChannelCommandError::InternalError),
-                Err(()) => Err(ChannelCommandError::QueryError),
-            },
+    pub fn commit_result_operation(query: Query, executor: &Executor) -> ChannelResult {
+        match StoreOperationDispatch::dispatch(query, executor) {
+            Ok(Some(result_inner)) => Ok(vec![ChannelCommandResponse::Result(result_inner)]),
+            Ok(None) => Err(ChannelCommandError::InternalError),
             Err(()) => Err(ChannelCommandError::QueryError),
         }
     }
@@ -330,7 +317,7 @@ impl ChannelCommandBase {
     pub fn commit_pending_operation(
         query_type: &'static str,
         query_id: &str,
-        query_builder: QueryBuilderResult,
+        query: Query,
         executor: &Executor,
     ) -> ChannelResult {
         // Idea: this could be made asynchronous in the future, if there are some latency issues \
@@ -342,18 +329,15 @@ impl ChannelCommandBase {
         //   prevent scaling Sonic vertically, but could be made simpler for the Sonic Channel \
         //   consumer via a worker thread pool.
 
-        match query_builder {
-            Ok(query_builder) => match StoreOperationDispatch::dispatch(query_builder, executor) {
-                Ok(results) => Ok(vec![
-                    ChannelCommandResponse::Pending(query_id.to_string()),
-                    ChannelCommandResponse::Event(
-                        query_type,
-                        query_id.to_string(),
-                        results.unwrap_or_default(),
-                    ),
-                ]),
-                Err(()) => Err(ChannelCommandError::QueryError),
-            },
+        match StoreOperationDispatch::dispatch(query, executor) {
+            Ok(results) => Ok(vec![
+                ChannelCommandResponse::Pending(query_id.to_string()),
+                ChannelCommandResponse::Event(
+                    query_type,
+                    query_id.to_string(),
+                    results.unwrap_or_default(),
+                ),
+            ]),
             Err(()) => Err(ChannelCommandError::QueryError),
         }
     }
@@ -422,19 +406,22 @@ impl ChannelCommandSearch {
                         event_id, text, query_limit, query_offset, query_lang
                     );
 
+                    let query = Query::search(
+                        &event_id,
+                        collection,
+                        bucket,
+                        &text,
+                        query_limit,
+                        query_offset,
+                        query_lang,
+                    )
+                    .map_err(|()| ChannelCommandError::QueryError)?;
+
                     // Commit 'search' query
                     ChannelCommandBase::commit_pending_operation(
                         "QUERY",
                         &event_id,
-                        QueryBuilder::search(
-                            &event_id,
-                            collection,
-                            bucket,
-                            &text,
-                            query_limit,
-                            query_offset,
-                            query_lang,
-                        ),
+                        query,
                         ctx.executor,
                     )
                 }
@@ -493,11 +480,14 @@ impl ChannelCommandSearch {
                         event_id, text, suggest_limit
                     );
 
+                    let query = Query::suggest(&event_id, collection, bucket, &text, suggest_limit)
+                        .map_err(|()| ChannelCommandError::QueryError)?;
+
                     // Commit 'suggest' query
                     ChannelCommandBase::commit_pending_operation(
                         "SUGGEST",
                         &event_id,
-                        QueryBuilder::suggest(&event_id, collection, bucket, &text, suggest_limit),
+                        query,
                         ctx.executor,
                     )
                 }
@@ -547,11 +537,14 @@ impl ChannelCommandSearch {
                         "LIMIT out of minimum/maximum bounds",
                     ))
                 } else {
+                    let query = Query::list(&event_id, collection, bucket, list_limit, list_offset)
+                        .map_err(|()| ChannelCommandError::QueryError)?;
+
                     // Commit 'list' query
                     ChannelCommandBase::commit_pending_operation(
                         "LIST",
                         &event_id,
-                        QueryBuilder::list(&event_id, collection, bucket, list_limit, list_offset),
+                        query,
                         ctx.executor,
                     )
                 }
@@ -723,11 +716,11 @@ impl ChannelCommandIngest {
                         text, push_lang
                     );
 
+                    let query = Query::push(collection, bucket, object, &text, push_lang)
+                        .map_err(|()| ChannelCommandError::QueryError)?;
+
                     // Commit 'push' query
-                    ChannelCommandBase::commit_ok_operation(
-                        QueryBuilder::push(collection, bucket, object, &text, push_lang),
-                        ctx.executor,
-                    )
+                    ChannelCommandBase::commit_ok_operation(query, ctx.executor)
                 }
             }
             _ => Err(ChannelCommandError::InvalidFormat(
@@ -754,11 +747,11 @@ impl ChannelCommandIngest {
                 );
                 debug!("ingest pop has text: {}", text);
 
+                let query = Query::pop(collection, bucket, object, &text)
+                    .map_err(|()| ChannelCommandError::QueryError)?;
+
                 // Make 'pop' query
-                ChannelCommandBase::commit_result_operation(
-                    QueryBuilder::pop(collection, bucket, object, &text),
-                    ctx.executor,
-                )
+                ChannelCommandBase::commit_result_operation(query, ctx.executor)
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "POP <collection> <bucket> <object> \"<text>\"",
@@ -774,11 +767,11 @@ impl ChannelCommandIngest {
             (Some(collection), bucket_part, object_part, None) => {
                 debug!("dispatching ingest count in collection: {}", collection);
 
+                let query = Query::count(collection, bucket_part, object_part)
+                    .map_err(|()| ChannelCommandError::QueryError)?;
+
                 // Make 'count' query
-                ChannelCommandBase::commit_result_operation(
-                    QueryBuilder::count(collection, bucket_part, object_part),
-                    ctx.executor,
-                )
+                ChannelCommandBase::commit_result_operation(query, ctx.executor)
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "COUNT <collection> [<bucket> [<object>]?]?",
@@ -797,11 +790,11 @@ impl ChannelCommandIngest {
                     collection
                 );
 
+                let query =
+                    Query::flushc(collection).map_err(|()| ChannelCommandError::QueryError)?;
+
                 // Make 'flushc' query
-                ChannelCommandBase::commit_result_operation(
-                    QueryBuilder::flushc(collection),
-                    ctx.executor,
-                )
+                ChannelCommandBase::commit_result_operation(query, ctx.executor)
             }
             _ => Err(ChannelCommandError::InvalidFormat("FLUSHC <collection>")),
         }
@@ -818,11 +811,11 @@ impl ChannelCommandIngest {
                     collection, bucket
                 );
 
+                let query = Query::flushb(collection, bucket)
+                    .map_err(|()| ChannelCommandError::QueryError)?;
+
                 // Make 'flushb' query
-                ChannelCommandBase::commit_result_operation(
-                    QueryBuilder::flushb(collection, bucket),
-                    ctx.executor,
-                )
+                ChannelCommandBase::commit_result_operation(query, ctx.executor)
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "FLUSHB <collection> <bucket>",
@@ -841,11 +834,11 @@ impl ChannelCommandIngest {
                     collection, bucket, object
                 );
 
+                let query = Query::flusho(collection, bucket, object)
+                    .map_err(|()| ChannelCommandError::QueryError)?;
+
                 // Make 'flusho' query
-                ChannelCommandBase::commit_result_operation(
-                    QueryBuilder::flusho(collection, bucket, object),
-                    ctx.executor,
-                )
+                ChannelCommandBase::commit_result_operation(query, ctx.executor)
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "FLUSHO <collection> <bucket> <object>",

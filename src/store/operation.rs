@@ -5,8 +5,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use crate::Executor;
-use crate::query::actions::Query;
+use crate::{Executor, Query};
 
 pub struct StoreOperationDispatch;
 

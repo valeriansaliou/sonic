@@ -2,8 +2,41 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-pub mod actions;
-pub mod builder;
-pub mod types;
+mod builder;
+mod types;
+
+use crate::lexer::token::TokenLexer;
+use crate::store::item::StoreItem;
+
+pub use self::types::*;
+
+pub enum Query<'a> {
+    Search(
+        StoreItem<'a>,
+        QuerySearchID<'a>,
+        TokenLexer<'a>,
+        QuerySearchLimit,
+        QuerySearchOffset,
+    ),
+    Suggest(
+        StoreItem<'a>,
+        QuerySearchID<'a>,
+        TokenLexer<'a>,
+        QuerySearchLimit,
+    ),
+    List(
+        StoreItem<'a>,
+        QuerySearchID<'a>,
+        QuerySearchLimit,
+        QuerySearchOffset,
+    ),
+    Push(StoreItem<'a>, TokenLexer<'a>),
+    Pop(StoreItem<'a>, TokenLexer<'a>),
+    Count(StoreItem<'a>),
+    FlushC(StoreItem<'a>),
+    FlushB(StoreItem<'a>),
+    FlushO(StoreItem<'a>),
+}

@@ -79,7 +79,7 @@ type StoreKVBox = Arc<StoreKV>;
 const ATOM_HASH_RADIX: usize = 16;
 
 lazy_static! {
-    pub static ref STORE_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
+    pub(crate) static ref STORE_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
     static ref STORE_ACQUIRE_LOCK: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
     static ref STORE_FLUSH_LOCK: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
 }
@@ -1328,7 +1328,7 @@ mod tests {
         Arc::new(
             config::Config::builder()
                 .add_source(config::File::from_str(
-                    crate::config::defaults(),
+                    crate::config::tests::defaults_toml(),
                     config::FileFormat::Toml,
                 ))
                 .build()

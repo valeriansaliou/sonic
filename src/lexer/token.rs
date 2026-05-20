@@ -15,7 +15,7 @@ use whatlang::{
 use std::vec::IntoIter;
 
 use super::stopwords::LexerStopWord;
-use crate::query::types::QueryGenericLang;
+use crate::query::QueryGenericLang;
 use crate::store::identifiers::{StoreTermHash, StoreTermHashed};
 
 pub struct TokenLexerBuilder;

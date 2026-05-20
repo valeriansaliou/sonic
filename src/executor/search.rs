@@ -9,7 +9,7 @@ use linked_hash_set::LinkedHashSet;
 use std::iter::FromIterator;
 
 use crate::lexer::token::TokenLexer;
-use crate::query::types::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
+use crate::query::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
 use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::identifiers::{StoreObjectIID, StoreTermHash};
 use crate::store::item::StoreItem;

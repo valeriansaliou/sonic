@@ -10,15 +10,15 @@ use std::sync::Arc;
 #[macro_use]
 mod macros;
 
-pub mod count;
-pub mod flushb;
-pub mod flushc;
-pub mod flusho;
-pub mod list;
-pub mod pop;
-pub mod push;
-pub mod search;
-pub mod suggest;
+mod count;
+mod flushb;
+mod flushc;
+mod flusho;
+mod list;
+mod pop;
+mod push;
+mod search;
+mod suggest;
 
 pub struct Executor {
     pub app_conf: Arc<crate::Config>,

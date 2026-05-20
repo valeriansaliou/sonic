@@ -6,6 +6,11 @@ env:
   SELF: task {{ .ALIAS | default .TASK }} --
 
 tasks:
+  doc:open:
+    desc: Build and open Cargo docs.
+    aliases: [doc]
+    cmd: cargo doc --no-deps --lib --open
+
   integration-test:
     desc: Runs integration tests.
     cmd: tests/integration/scripts/run.sh
@@ -44,3 +49,13 @@ tasks:
     preconditions:
       - sh: command -v markdownlint-cli2 >/dev/null
         msg: "`markdownlint-cli2` is required. See <https://github.com/DavidAnson/markdownlint-cli2#install>."
+
+  dev:doc:
+    desc: Rebuild Cargo docs on source file changes.
+    aliases: [doc:watch]
+    preconditions:
+      - sh: command -v cargo-watch >/dev/null 2>&1
+        msg: "Install `cargo-watch` using `cargo install cargo-watch`."
+    cmds:
+      - task: doc:open
+      - cmd: cargo watch -x 'doc --no-deps --lib'

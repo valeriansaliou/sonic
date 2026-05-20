@@ -6,7 +6,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::lexer::token::TokenLexer;
-use crate::query::types::{QuerySearchID, QuerySearchLimit};
+use crate::query::{QuerySearchID, QuerySearchLimit};
 use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::item::StoreItem;
 

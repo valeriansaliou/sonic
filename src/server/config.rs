@@ -5,6 +5,43 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+pub fn defaults_toml() -> &'static str {
+    r#"
+    [server]
+    log_level = "error"
+
+    [channel]
+    inet = "[::1]:1491"
+    tcp_timeout = 300
+    search.query_limit_default = 10
+    search.query_limit_maximum = 100
+    search.query_alternates_try = 4
+    search.suggest_limit_default = 5
+    search.suggest_limit_maximum = 20
+    search.list_limit_default = 100
+    search.list_limit_maximum = 500
+
+    [store.kv]
+    path = "./data/store/kv/"
+    retain_word_objects = 1000
+    pool.inactive_after = 1800
+    database.flush_after = 900
+    database.compress = true
+    database.parallelism = 2
+    database.max_compactions = 1
+    database.max_flushes = 1
+    database.write_buffer = 16384
+    database.write_ahead_log = true
+
+    [store.fst]
+    path = "./data/store/fst/"
+    pool.inactive_after = 300
+    graph.consolidate_after = 180
+    graph.max_size = 2048
+    graph.max_words = 250000
+    "#
+}
+
 pub fn read_config(app_args: &crate::AppArgs) -> Config {
     let config_path = &app_args.config;
 
@@ -20,7 +57,7 @@ pub fn read_config(app_args: &crate::AppArgs) -> Config {
     let raw_config: config::Config = config::Config::builder()
         // Start from defaults.
         .add_source(config::File::from_str(
-            sonic::config::defaults(),
+            defaults_toml(),
             config::FileFormat::Toml,
         ))
         // Merge static configuration (from file).
@@ -57,6 +94,6 @@ pub struct Config {
 
 #[derive(serde::Deserialize)]
 pub struct ConfigServer {
-    #[serde(deserialize_with = "sonic::config::serde::env_var::str")]
+    #[serde(deserialize_with = "sonic::util::serde::env_var::str")]
     pub log_level: String,
 }

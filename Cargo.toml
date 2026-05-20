@@ -19,7 +19,7 @@ authors = [
 [lib]
 name = "sonic"
 path = "src/lib.rs"
-doc = false
+doc = true
 
 [[bin]]
 name = "sonic"

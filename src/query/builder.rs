@@ -2,19 +2,16 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use super::actions::Query;
+use super::Query;
 use super::types::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset};
 use crate::lexer::token::{TokenLexerBuilder, TokenLexerMode};
 use crate::store::item::StoreItemBuilder;
 
-pub struct QueryBuilder;
-
-pub type QueryBuilderResult<'a> = Result<Query<'a>, ()>;
-
-impl QueryBuilder {
-    pub fn search<'a>(
+impl<'a> Query<'a> {
+    pub fn search(
         query_id: &'a str,
         collection: &'a str,
         bucket: &'a str,
@@ -22,7 +19,7 @@ impl QueryBuilder {
         limit: QuerySearchLimit,
         offset: QuerySearchOffset,
         lang: Option<QueryGenericLang>,
-    ) -> QueryBuilderResult<'a> {
+    ) -> Result<Self, ()> {
         match (
             StoreItemBuilder::from_depth_2(collection, bucket),
             TokenLexerBuilder::from(TokenLexerMode::from_query_lang(lang), terms),
@@ -34,13 +31,13 @@ impl QueryBuilder {
         }
     }
 
-    pub fn suggest<'a>(
+    pub fn suggest(
         query_id: &'a str,
         collection: &'a str,
         bucket: &'a str,
         terms: &'a str,
         limit: QuerySearchLimit,
-    ) -> QueryBuilderResult<'a> {
+    ) -> Result<Self, ()> {
         match (
             StoreItemBuilder::from_depth_2(collection, bucket),
             TokenLexerBuilder::from(TokenLexerMode::NormalizeOnly, terms),
@@ -50,26 +47,26 @@ impl QueryBuilder {
         }
     }
 
-    pub fn list<'a>(
+    pub fn list(
         query_id: &'a str,
         collection: &'a str,
         bucket: &'a str,
         limit: QuerySearchLimit,
         offset: QuerySearchOffset,
-    ) -> QueryBuilderResult<'a> {
+    ) -> Result<Self, ()> {
         match StoreItemBuilder::from_depth_2(collection, bucket) {
             Ok(store) => Ok(Query::List(store, query_id, limit, offset)),
             _ => Err(()),
         }
     }
 
-    pub fn push<'a>(
+    pub fn push(
         collection: &'a str,
         bucket: &'a str,
         object: &'a str,
         text: &'a str,
         lang: Option<QueryGenericLang>,
-    ) -> QueryBuilderResult<'a> {
+    ) -> Result<Self, ()> {
         match (
             StoreItemBuilder::from_depth_3(collection, bucket, object),
             TokenLexerBuilder::from(TokenLexerMode::from_query_lang(lang), text),
@@ -79,12 +76,12 @@ impl QueryBuilder {
         }
     }
 
-    pub fn pop<'a>(
+    pub fn pop(
         collection: &'a str,
         bucket: &'a str,
         object: &'a str,
         text: &'a str,
-    ) -> QueryBuilderResult<'a> {
+    ) -> Result<Self, ()> {
         match (
             StoreItemBuilder::from_depth_3(collection, bucket, object),
             TokenLexerBuilder::from(TokenLexerMode::NormalizeOnly, text),
@@ -94,11 +91,11 @@ impl QueryBuilder {
         }
     }
 
-    pub fn count<'a>(
+    pub fn count(
         collection: &'a str,
         bucket: Option<&'a str>,
         object: Option<&'a str>,
-    ) -> QueryBuilderResult<'a> {
+    ) -> Result<Self, ()> {
         let store_result = match (bucket, object) {
             (Some(bucket_inner), Some(object_inner)) => {
                 StoreItemBuilder::from_depth_3(collection, bucket_inner, object_inner)
@@ -113,25 +110,21 @@ impl QueryBuilder {
         }
     }
 
-    pub fn flushc(collection: &str) -> QueryBuilderResult<'_> {
+    pub fn flushc(collection: &'a str) -> Result<Self, ()> {
         match StoreItemBuilder::from_depth_1(collection) {
             Ok(store) => Ok(Query::FlushC(store)),
             _ => Err(()),
         }
     }
 
-    pub fn flushb<'a>(collection: &'a str, bucket: &'a str) -> QueryBuilderResult<'a> {
+    pub fn flushb(collection: &'a str, bucket: &'a str) -> Result<Self, ()> {
         match StoreItemBuilder::from_depth_2(collection, bucket) {
             Ok(store) => Ok(Query::FlushB(store)),
             _ => Err(()),
         }
     }
 
-    pub fn flusho<'a>(
-        collection: &'a str,
-        bucket: &'a str,
-        object: &'a str,
-    ) -> QueryBuilderResult<'a> {
+    pub fn flusho(collection: &'a str, bucket: &'a str, object: &'a str) -> Result<Self, ()> {
         match StoreItemBuilder::from_depth_3(collection, bucket, object) {
             Ok(store) => Ok(Query::FlushO(store)),
             _ => Err(()),
@@ -145,29 +138,26 @@ mod tests {
 
     #[test]
     fn it_builds_search_query() {
-        assert!(
-            QueryBuilder::search("id1", "c:test:1", "b:test:1", "Michael Dake", 10, 20, None)
-                .is_ok()
-        );
-        assert!(QueryBuilder::search("id2", "c:test:1", "", "Michael Dake", 1, 0, None).is_err());
+        assert!(Query::search("id1", "c:test:1", "b:test:1", "Michael Dake", 10, 20, None).is_ok());
+        assert!(Query::search("id2", "c:test:1", "", "Michael Dake", 1, 0, None).is_err());
     }
 
     #[test]
     fn it_builds_suggest_query() {
-        assert!(QueryBuilder::suggest("id1", "c:test:2", "b:test:2", "Micha", 5).is_ok());
-        assert!(QueryBuilder::suggest("id2", "c:test:2", "", "Micha", 1).is_err());
+        assert!(Query::suggest("id1", "c:test:2", "b:test:2", "Micha", 5).is_ok());
+        assert!(Query::suggest("id2", "c:test:2", "", "Micha", 1).is_err());
     }
 
     #[test]
     fn it_builds_list_query() {
-        assert!(QueryBuilder::list("id1", "c:test:2", "b:test:2", 100, 0).is_ok());
-        assert!(QueryBuilder::list("id2", "c:test:2", "", 10, 0).is_err());
+        assert!(Query::list("id1", "c:test:2", "b:test:2", 100, 0).is_ok());
+        assert!(Query::list("id2", "c:test:2", "", 10, 0).is_err());
     }
 
     #[test]
     fn it_builds_push_query() {
         assert!(
-            QueryBuilder::push(
+            Query::push(
                 "c:test:3",
                 "b:test:3",
                 "o:test:3",
@@ -176,41 +166,38 @@ mod tests {
             )
             .is_ok()
         );
-        assert!(
-            QueryBuilder::push("c:test:3", "", "o:test:3", "My name is Michael Dake.", None)
-                .is_err()
-        );
+        assert!(Query::push("c:test:3", "", "o:test:3", "My name is Michael Dake.", None).is_err());
     }
 
     #[test]
     fn it_builds_pop_query() {
-        assert!(QueryBuilder::pop("c:test:4", "b:test:4", "o:test:4", "ordering US").is_ok());
-        assert!(QueryBuilder::pop("c:test:4", "", "o:test:4", "ordering US").is_err());
+        assert!(Query::pop("c:test:4", "b:test:4", "o:test:4", "ordering US").is_ok());
+        assert!(Query::pop("c:test:4", "", "o:test:4", "ordering US").is_err());
     }
 
     #[test]
     fn it_builds_count_query() {
-        assert!(QueryBuilder::count("c:test:5", None, None).is_ok());
-        assert!(QueryBuilder::count("c:test:5", Some("b:test:5"), None).is_ok());
-        assert!(QueryBuilder::count("c:test:5", Some("b:test:5"), Some("o:test:5")).is_ok());
-        assert!(QueryBuilder::count("c:test:5", Some(""), Some("o:test:5")).is_err());
+        assert!(Query::count("c:test:5", None, None).is_ok());
+        assert!(Query::count("c:test:5", Some("b:test:5"), None).is_ok());
+        assert!(Query::count("c:test:5", Some("b:test:5"), Some("o:test:5")).is_ok());
+        assert!(Query::count("c:test:5", Some(""), Some("o:test:5")).is_err());
     }
 
     #[test]
     fn it_builds_flushc_query() {
-        assert!(QueryBuilder::flushc("c:test:6").is_ok());
-        assert!(QueryBuilder::flushc("").is_err());
+        assert!(Query::flushc("c:test:6").is_ok());
+        assert!(Query::flushc("").is_err());
     }
 
     #[test]
     fn it_builds_flushb_query() {
-        assert!(QueryBuilder::flushb("c:test:7", "b:test:7").is_ok());
-        assert!(QueryBuilder::flushb("c:test:7", "").is_err());
+        assert!(Query::flushb("c:test:7", "b:test:7").is_ok());
+        assert!(Query::flushb("c:test:7", "").is_err());
     }
 
     #[test]
     fn it_builds_flusho_query() {
-        assert!(QueryBuilder::flusho("c:test:8", "b:test:8", "o:test:8").is_ok());
-        assert!(QueryBuilder::flusho("c:test:8", "b:test:8", "").is_err());
+        assert!(Query::flusho("c:test:8", "b:test:8", "o:test:8").is_ok());
+        assert!(Query::flusho("c:test:8", "b:test:8", "").is_err());
     }
 }

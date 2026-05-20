@@ -25,11 +25,13 @@ extern crate log;
 extern crate lazy_static;
 
 pub mod config;
-mod executor;
+pub mod executor;
 mod lexer;
 pub mod query;
 mod stopwords;
 pub mod store;
+pub mod util;
 
 pub use self::config::Config;
 pub use self::executor::Executor;
+pub use self::query::Query;
