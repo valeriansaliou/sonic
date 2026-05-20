@@ -5,7 +5,13 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-#![deny(unstable_features, unused_imports, unused_qualifications, clippy::all)]
+#![deny(
+    clippy::all,
+    dead_code,
+    unstable_features,
+    unused_imports,
+    unused_qualifications
+)]
 #![warn(
     clippy::inline_always, // Do not use unless benchmarked (explicit allow).
 )]

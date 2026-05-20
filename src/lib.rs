@@ -5,11 +5,15 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-#![deny(unstable_features, unused_qualifications, clippy::all)]
+#![deny(
+    clippy::all,
+    dead_code,
+    unstable_features,
+    unused_imports,
+    unused_qualifications
+)]
 #![warn(
     clippy::inline_always, // Do not use unless benchmarked (explicit allow).
-    clippy::result_unit_err, // TODO: Re-enable (deny).
-    dead_code, // Ideally we’d deny this but at the moment the public API is messy.
 )]
 #![allow(
     clippy::collapsible_if, // Style preference.
@@ -17,6 +21,7 @@
     clippy::needless_as_bytes, // Style preference. Better make those things explicit.
     clippy::needless_borrow, // Style preference.
     clippy::needless_borrows_for_generic_args, // Style preference.
+    clippy::result_unit_err, // TODO: Re-enable (deny).
 )]
 
 #[macro_use]
