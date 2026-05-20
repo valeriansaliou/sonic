@@ -37,6 +37,9 @@ tasks:
   lint:deps:
     desc: Lints the dependency graph (checks for advisories, unwanted licenses, untrusted sources…).
     cmd: cargo deny check --show-stats
+    sources:
+      - Cargo.toml
+      - Cargo.lock
     preconditions:
       - sh: command -v cargo-deny >/dev/null
         msg: "`cargo deny` is required. Install using `cargo install cargo-deny --locked`."
