@@ -21,16 +21,9 @@
 extern crate log;
 #[macro_use]
 extern crate lazy_static;
-#[macro_use]
-extern crate serde_derive;
 
 mod channel;
-mod config;
-mod executor;
-mod lexer;
-mod query;
-mod stopwords;
-mod store;
+mod server;
 mod tasker;
 
 use std::ops::Deref;
@@ -44,14 +37,13 @@ use log::LevelFilter;
 
 use channel::listen::{ChannelListen, ChannelListenBuilder};
 use channel::statistics::ensure_states as ensure_states_channel_statistics;
-use config::logger::ConfigLogger;
-use config::options::Config;
-use config::reader::ConfigReader;
-use executor::Executor;
-use store::fst::StoreFSTPool;
-use store::kv::StoreKVPool;
+use sonic::store::fst::StoreFSTPool;
+use sonic::store::kv::StoreKVPool;
 use tasker::runtime::TaskerBuilder;
 use tasker::shutdown::ShutdownSignal;
+
+use crate::server::config::read_config;
+use crate::server::logger::ConfigLogger;
 
 struct AppArgs {
     config: String,
@@ -98,7 +90,7 @@ fn make_app_args() -> AppArgs {
 }
 
 fn main() {
-    let app_conf = ConfigReader::make();
+    let app_conf = read_config(&APP_ARGS);
 
     let _logger = ConfigLogger::init(
         LevelFilter::from_str(&app_conf.server.log_level).expect("invalid log level"),
@@ -112,8 +104,8 @@ fn main() {
     ensure_states();
 
     // Create connection pools (does not open any connection yet)
-    let kv_pool = StoreKVPool::new(Arc::clone(&app_conf.store.kv));
-    let fst_pool = StoreFSTPool::new(Arc::clone(&app_conf.store.fst));
+    let kv_pool = StoreKVPool::new(Arc::clone(&app_conf.sonic.store.kv));
+    let fst_pool = StoreFSTPool::new(Arc::clone(&app_conf.sonic.store.fst));
 
     // Spawn tasker (background thread)
     thread::spawn(spawn_tasker(kv_pool.clone(), fst_pool.clone()));
@@ -122,7 +114,7 @@ fn main() {
     thread::spawn(spawn_channel(
         kv_pool.clone(),
         fst_pool.clone(),
-        app_conf.into(),
+        app_conf.sonic.into(),
     ));
 
     info!("started");
@@ -184,7 +176,7 @@ where
 fn spawn_channel(
     kv_pool: StoreKVPool,
     fst_pool: StoreFSTPool,
-    app_conf: Arc<Config>,
+    app_conf: Arc<sonic::Config>,
 ) -> impl FnOnce() {
     let builder = ChannelListenBuilder {
         app_conf,

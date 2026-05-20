@@ -9,6 +9,9 @@ use std::net::TcpStream;
 use std::str::{self, SplitWhitespace};
 use std::time::Instant;
 
+use sonic::Executor;
+use sonic::config::ConfigChannelSearch;
+
 use super::command::{
     COMMANDS_MODE_CONTROL, COMMANDS_MODE_INGEST, COMMANDS_MODE_SEARCH, ChannelCommandBase,
     ChannelCommandControl, ChannelCommandError, ChannelCommandIngest, ChannelCommandResponse,
@@ -16,9 +19,7 @@ use super::command::{
 };
 use super::listen::CHANNEL_AVAILABLE;
 use super::statistics::{COMMAND_LATENCY_BEST, COMMAND_LATENCY_WORST, COMMANDS_TOTAL};
-use crate::Executor;
 use crate::LINE_FEED;
-use crate::config::ConfigChannelSearch;
 
 pub struct ChannelMessage;
 

@@ -1645,7 +1645,6 @@ dependencies = [
  "regex-syntax 0.8.10",
  "rocksdb",
  "serde",
- "serde_derive",
  "tikv-jemallocator",
  "twox-hash",
  "unicode-segmentation",

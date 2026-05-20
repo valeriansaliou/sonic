@@ -8,8 +8,8 @@ use std::ops::Deref;
 use std::sync::RwLock;
 use std::time::Instant;
 
-use crate::store::fst::StoreFSTPool;
-use crate::store::kv::StoreKVPool;
+use sonic::store::fst::StoreFSTPool;
+use sonic::store::kv::StoreKVPool;
 
 lazy_static! {
     static ref START_TIME: Instant = Instant::now();

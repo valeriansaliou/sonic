@@ -10,20 +10,21 @@ use std::process;
 use std::sync::{Arc, RwLock};
 use std::thread;
 
+use sonic::store::fst::StoreFSTPool;
+use sonic::store::kv::StoreKVPool;
+
 use super::handle::ChannelHandle;
 use crate::THREAD_NAME_CHANNEL_CLIENT;
-use crate::store::fst::StoreFSTPool;
-use crate::store::kv::StoreKVPool;
 
 #[derive(Clone)]
 pub struct ChannelListenBuilder {
-    pub app_conf: Arc<crate::Config>,
+    pub app_conf: Arc<sonic::Config>,
     pub kv_pool: StoreKVPool,
     pub fst_pool: StoreFSTPool,
 }
 
 pub struct ChannelListen {
-    app_conf: Arc<crate::Config>,
+    app_conf: Arc<sonic::Config>,
     kv_pool: StoreKVPool,
     fst_pool: StoreFSTPool,
 }
@@ -53,7 +54,7 @@ impl ChannelListen {
                         Ok(stream) => {
                             let handle = ChannelHandle {
                                 channel_config: Arc::clone(&self.app_conf.channel),
-                                executor: crate::Executor {
+                                executor: sonic::Executor {
                                     app_conf: Arc::clone(&self.app_conf),
                                     kv_pool: self.kv_pool.clone(),
                                     fst_pool: self.fst_pool.clone(),

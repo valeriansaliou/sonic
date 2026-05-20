@@ -13,17 +13,18 @@ use std::str;
 use std::sync::Arc;
 use std::time::Duration;
 
+use sonic::Executor;
+
 use super::message::{
     ChannelMessageModeControl, ChannelMessageModeIngest, ChannelMessageModeSearch,
     ChannelMessageResult,
 };
 use super::mode::ChannelMode;
 use super::statistics::CLIENTS_CONNECTED;
-use crate::Executor;
 use crate::LINE_FEED;
 
 pub struct ChannelHandle {
-    pub channel_config: Arc<crate::config::ConfigChannel>,
+    pub channel_config: Arc<sonic::config::ConfigChannel>,
     pub executor: Executor,
 }
 

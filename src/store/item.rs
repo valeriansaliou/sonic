@@ -29,6 +29,7 @@ const STORE_ITEM_PART_LEN_MIN: usize = 0;
 const STORE_ITEM_PART_LEN_MAX: usize = 128;
 
 impl<'a> StoreItemPart<'a> {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(part: &'a str) -> Result<Self, ()> {
         let len = part.len();
 

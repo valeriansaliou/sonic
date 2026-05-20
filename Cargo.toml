@@ -16,6 +16,11 @@ authors = [
     "Rémi Bardon <remi@remibardon.name>",
 ]
 
+[lib]
+name = "sonic"
+path = "src/lib.rs"
+doc = false
+
 [[bin]]
 name = "sonic"
 path = "src/main.rs"
@@ -25,8 +30,7 @@ doc = false
 log = "0.4"
 clap = { version = "4", features = ["std", "cargo"] }
 lazy_static = "1"
-serde = { version = "1", features = ["rc"] }
-serde_derive = "1"
+serde = { version = "1", features = ["derive", "rc"] }
 rand = "0.10"
 unicode-segmentation = "1"
 radix = "0.6"

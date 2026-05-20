@@ -8,8 +8,8 @@
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::store::fst::StoreFSTPool;
-use crate::store::kv::StoreKVPool;
+use sonic::store::fst::StoreFSTPool;
+use sonic::store::kv::StoreKVPool;
 
 #[derive(Clone)]
 pub struct TaskerBuilder {

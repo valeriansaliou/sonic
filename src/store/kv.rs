@@ -1205,6 +1205,7 @@ impl StoreKVKey {
         StoreKVKey { collection_hash }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(collection_str: &str) -> StoreKVKey {
         StoreKVKey {
             collection_hash: StoreKeyerHasher::to_compact(collection_str),

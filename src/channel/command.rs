@@ -13,17 +13,18 @@ use std::path::Path;
 use std::str::{self, SplitWhitespace};
 use std::vec::Vec;
 
+use sonic::Executor;
+use sonic::query::builder::{QueryBuilder, QueryBuilderResult};
+use sonic::query::types::{
+    ListMetaData, QueryGenericLang, QueryMetaData, QuerySearchLimit, QuerySearchOffset,
+};
+use sonic::store::operation::StoreOperationDispatch;
+
 use super::format::unescape;
 use super::message::{
     ChannelMessageModeControl, ChannelMessageModeIngest, ChannelMessageModeSearch,
 };
 use super::statistics::ChannelStatistics;
-use crate::Executor;
-use crate::query::builder::{QueryBuilder, QueryBuilderResult};
-use crate::query::types::{
-    ListMetaData, QueryGenericLang, QueryMetaData, QuerySearchLimit, QuerySearchOffset,
-};
-use crate::store::operation::StoreOperationDispatch;
 
 #[derive(PartialEq)]
 pub enum ChannelCommandError {

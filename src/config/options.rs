@@ -9,21 +9,15 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use super::env_var;
+use serde::Deserialize;
+
+use super::serde::env_var;
 
 #[derive(Deserialize)]
 pub struct Config {
-    pub server: ConfigServer,
-
     pub channel: Arc<ConfigChannel>,
 
     pub store: ConfigStore,
-}
-
-#[derive(Deserialize)]
-pub struct ConfigServer {
-    #[serde(deserialize_with = "env_var::str")]
-    pub log_level: String,
 }
 
 #[derive(Deserialize)]
