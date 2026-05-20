@@ -1,4 +1,8 @@
-on: [push, pull_request]
+on:
+  push:
+    branches: [master]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 name: Test and Build
 
