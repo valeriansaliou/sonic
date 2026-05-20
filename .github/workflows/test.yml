@@ -49,8 +49,11 @@ jobs:
           node --version
           npm --version
 
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@aaa84a43aec4955a42c5ffc65d258961e39f276e # v1.19.1
+
       - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
+        run: cargo binstall cargo-deny@0.19.6 --no-confirm
 
       # NOTE: Run `cargo deny` first to reduce the risk of supply-chain attack.
       - name: Lint dependency graph
