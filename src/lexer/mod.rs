@@ -7,4 +7,6 @@
 mod stopwords;
 
 pub mod ranges;
-pub mod token;
+mod token;
+
+pub use self::token::*;

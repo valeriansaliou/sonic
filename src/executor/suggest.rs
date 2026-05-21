@@ -5,7 +5,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use crate::lexer::token::TokenLexer;
+use crate::lexer::TokenLexer;
 use crate::query::{QuerySearchID, QuerySearchLimit};
 use crate::store::StoreItem;
 use crate::store::fst::StoreFSTActionBuilder;

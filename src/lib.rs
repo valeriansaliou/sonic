@@ -31,7 +31,7 @@ extern crate lazy_static;
 
 pub mod config;
 pub mod executor;
-mod lexer;
+pub mod lexer;
 pub mod query;
 mod stopwords;
 pub mod store;

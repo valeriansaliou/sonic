@@ -8,7 +8,7 @@
 mod builder;
 mod types;
 
-use crate::lexer::token::TokenLexer;
+use crate::lexer::TokenLexer;
 use crate::store::StoreItem;
 
 pub use self::types::*;
