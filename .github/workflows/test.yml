@@ -1,8 +1,21 @@
 on:
   push:
     branches: [master]
+    # Do not run the workflow if the project hasn't changed.
+    paths: &source_paths
+      - "src/**"
+      - "tests/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      # We changed some configuration:
+      - "deny.toml"
+      # We changed how the workflow is ran:
+      - ".github/workflows/test.yml"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    # Do not run the workflow if the project hasn't changed.
+    paths: *source_paths
 
 name: Lint and Test
 
