@@ -7,8 +7,8 @@
 
 use crate::lexer::token::TokenLexer;
 use crate::query::{QuerySearchID, QuerySearchLimit};
+use crate::store::StoreItem;
 use crate::store::fst::StoreFSTActionBuilder;
-use crate::store::item::StoreItem;
 
 impl super::Executor {
     pub fn suggest<'a>(

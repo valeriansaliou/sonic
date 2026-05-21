@@ -5,8 +5,8 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use crate::store::StoreItem;
 use crate::store::fst::StoreFSTActionBuilder;
-use crate::store::item::StoreItem;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
 impl super::Executor {

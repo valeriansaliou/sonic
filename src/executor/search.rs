@@ -10,9 +10,9 @@ use std::iter::FromIterator;
 
 use crate::lexer::token::TokenLexer;
 use crate::query::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
+use crate::store::StoreItem;
 use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::identifiers::{StoreObjectIID, StoreTermHash};
-use crate::store::item::StoreItem;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
 impl super::Executor {

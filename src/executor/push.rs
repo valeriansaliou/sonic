@@ -9,9 +9,9 @@ use linked_hash_set::LinkedHashSet;
 use std::iter::FromIterator;
 
 use crate::lexer::token::TokenLexer;
+use crate::store::StoreItem;
 use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::identifiers::{StoreMetaKey, StoreMetaValue, StoreTermHashed};
-use crate::store::item::StoreItem;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
 impl super::Executor {

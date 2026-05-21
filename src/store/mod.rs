@@ -12,6 +12,8 @@ mod keyer;
 
 pub mod fst;
 pub mod identifiers;
-pub mod item;
+mod item;
 pub mod kv;
 pub mod operation;
+
+pub use self::item::*;

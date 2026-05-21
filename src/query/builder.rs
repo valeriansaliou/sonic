@@ -8,7 +8,7 @@
 use super::Query;
 use super::types::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset};
 use crate::lexer::token::{TokenLexerBuilder, TokenLexerMode};
-use crate::store::item::StoreItemBuilder;
+use crate::store::StoreItemBuilder;
 
 impl<'a> Query<'a> {
     pub fn search(
