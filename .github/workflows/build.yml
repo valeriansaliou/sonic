@@ -52,7 +52,7 @@ jobs:
         with:
           tag_name: ${{ steps.current_tag.outputs.tag }}
           name: Sonic ${{ steps.current_tag.outputs.tag }}
-          body: "⚠️ Changelog not yet provided."
+          body: See [CHANGELOG.md](https://github.com/valeriansaliou/sonic/blob/master/CHANGELOG.md).
           files: ./${{ steps.current_tag.outputs.tag }}-*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
