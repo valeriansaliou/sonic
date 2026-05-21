@@ -13,12 +13,12 @@ use crate::store::fst::StoreFSTActionBuilder;
 impl super::Executor {
     pub fn suggest<'a>(
         &self,
-        store: StoreItem<'a>,
+        item: StoreItem<'a>,
         _event_id: QuerySearchID,
         mut lexer: TokenLexer<'a>,
         limit: QuerySearchLimit,
     ) -> Result<Option<Vec<String>>, ()> {
-        if let StoreItem(collection, Some(bucket), None) = store {
+        if let StoreItem(collection, Some(bucket), None) = item {
             // Important: acquire graph access read lock, and reference it in context. This \
             //   prevents the graph from being erased while using it in this block.
             general_fst_access_lock_read!();

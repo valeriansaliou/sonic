@@ -12,12 +12,12 @@ use crate::store::fst::StoreFSTActionBuilder;
 impl super::Executor {
     pub fn list(
         &self,
-        store: StoreItem,
+        item: StoreItem,
         _event_id: QuerySearchID,
         limit: QuerySearchLimit,
         offset: QuerySearchOffset,
     ) -> Result<Vec<String>, ()> {
-        if let StoreItem(collection, Some(bucket), None) = store {
+        if let StoreItem(collection, Some(bucket), None) = item {
             // Important: acquire graph access read lock, and reference it in context. This \
             //   prevents the graph from being erased while using it in this block.
             general_fst_access_lock_read!();

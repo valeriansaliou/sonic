@@ -10,11 +10,11 @@ use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::kv::StoreKVActionBuilder;
 
 impl super::Executor {
-    pub fn flushc(&self, store: StoreItem) -> Result<u32, ()> {
+    pub fn flushc(&self, item: StoreItem) -> Result<u32, ()> {
         // Important: do not acquire the store from there, as otherwise it will remain open \
         //   even if dropped in the inner function, as this caller would still own a reference to \
         //   it.
-        if let StoreItem(collection, None, None) = store {
+        if let StoreItem(collection, None, None) = item {
             // Acquire KV + FST locks in write mode, as we will erase them, we need to prevent any \
             //   other consumer to use them.
             general_kv_access_lock_write!();

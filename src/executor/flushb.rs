@@ -10,8 +10,8 @@ use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
 impl super::Executor {
-    pub fn flushb(&self, store: StoreItem) -> Result<u32, ()> {
-        if let StoreItem(collection, Some(bucket), None) = store {
+    pub fn flushb(&self, item: StoreItem) -> Result<u32, ()> {
+        if let StoreItem(collection, Some(bucket), None) = item {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
             // Notice: acquire FST lock in write mode, as we will erase it.

@@ -9,8 +9,8 @@ use crate::store::StoreItem;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
 impl super::Executor {
-    pub fn flusho(&self, store: StoreItem) -> Result<u32, ()> {
-        if let StoreItem(collection, Some(bucket), Some(object)) = store {
+    pub fn flusho(&self, item: StoreItem) -> Result<u32, ()> {
+        if let StoreItem(collection, Some(bucket), Some(object)) = item {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
             general_kv_access_lock_read!();

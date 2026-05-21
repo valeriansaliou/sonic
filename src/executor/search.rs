@@ -18,13 +18,13 @@ use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 impl super::Executor {
     pub fn search<'a>(
         &self,
-        store: StoreItem<'a>,
+        item: StoreItem<'a>,
         _event_id: QuerySearchID,
         lexer: TokenLexer<'a>,
         limit: QuerySearchLimit,
         offset: QuerySearchOffset,
     ) -> Result<Option<Vec<String>>, ()> {
-        if let StoreItem(collection, Some(bucket), None) = store {
+        if let StoreItem(collection, Some(bucket), None) = item {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
             general_kv_access_lock_read!();

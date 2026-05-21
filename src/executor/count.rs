@@ -11,8 +11,8 @@ use crate::store::kv::StoreKVAcquireMode;
 use crate::store::kv::StoreKVActionBuilder;
 
 impl super::Executor {
-    pub fn count(&self, store: StoreItem) -> Result<u32, ()> {
-        match store {
+    pub fn count(&self, item: StoreItem) -> Result<u32, ()> {
+        match item {
             // Count terms in (collection, bucket, object) from KV
             StoreItem(collection, Some(bucket), Some(object)) => {
                 // Important: acquire database access read lock, and reference it in context. This \
