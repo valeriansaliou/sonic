@@ -95,7 +95,7 @@ fi
 # from those which users shouldn’t have to worry about (i.e. internal stuff).
 # NOTE: `^` also helps not strating with `-`, which `grep` would read as an
 #   argument. Make sure to escape the leading `-` if you ever remove the `^`.
-MEANINGLESS_COMMIT_REGEX='^- (ci|tools|docs|chore):'
+MEANINGLESS_COMMIT_REGEX='^- (ci|tools|docs|chore|test):'
 
 cat <<EOF > temp
 New commits:
