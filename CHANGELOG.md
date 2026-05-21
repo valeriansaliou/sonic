@@ -8,6 +8,39 @@
        It’s used by `task release` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/v1.4.9...HEAD
 
+### Removals
+
+- Stop GPG-signing binaries, since it consumes human time when releasing (in `05b8ddb`)
+
+### Changes
+
+- Dependency updates (fixes CVEs):
+  - Bump `clap` from `3` to `4` (in `00a373d`)
+  - Bump `hashbrown` from `0.14` to `0.17` (in `47663c6`)
+  - Bump `jieba-rs` from `0.6` to `0.9` (in `69f3c08`, `c096f4f`)
+  - Bump `lindera` from `0.27` to `0.31` (in `b0acdc3`)
+  - Bump `nix` from `0.18` to `0.31` (in `28e2d2c`)
+  - Bump `rand` from `0.8` to `0.10` (in `6e9577f`)
+  - Bump `rocksdb` from `0.21` to `0.24` (in `dd3a0e8`, `266af2f`)
+  - Bump `tikv-jemallocator` from `0.4` to `0.6` (in `e391f3a`)
+  - Bump `toml` from `0.8` to `1` (in `49317f2`)
+  - Bump `twox-hash` from `1` to `2` (in `714dae4`)
+  - Bump `whatlang` from `0.16` to `0.18` (in `38a2ed6`)
+  - Use `windows-sys` instead of `winapi` (in `26d45f6`, `f0195b7`)
+  - Relax some dependency version requirements (in `966cdf7`)
+  - Run `cargo update` to fix CVEs (in `c50a16c`, `c83278c`)
+  - Run `cargo upgrade --pinned` (in `9bee794`)
+  - ci: Update third-party actions (in `722bfec`, `93f0e67`)
+  - ci: Pin third-party actions (in `8449b15`)
+  - ci: Build and release using locked dependency versions (in `630ac52`)
+
+### New Features
+
+- Stopwords:
+  - Add Malayalam (MAL) stopwords (in `e3ec190`)
+  - Add Serbian (SRP) stopwords (in `b0c1f66`, `a2bf0c5`)
+- config: Support environment-based configuration (in `cc99461`)
+
 ## 1.4.9 (2024-06-16)
 
 ### Changes
