@@ -1,17 +1,103 @@
 on:
   push:
     branches: [master]
+    # Do not run the workflow if the project hasn't changed.
+    paths: &source_paths
+      - "src/**"
+      - "tests/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      # We changed some configuration:
+      - "deny.toml"
+      # We changed how the workflow is ran:
+      - ".github/workflows/test.yml"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    # Do not run the workflow if the project hasn't changed.
+    paths: *source_paths
 
-name: Test and Build
+name: Lint and Test
+
+env:
+  DEFAULT_RUST_TOOLCHAIN: &default_rust_toolchain stable
+  DEFAULT_RUNNER: &default_runner ubuntu-latest
 
 jobs:
+  # Before everything else, validate the supply chain to ensure we don’t run
+  # malicious build scripts for example. It’s not bulletproof, but it mitigates
+  # some risk. It also forces to bump dependencies if one has a known
+  # vulnerability, before running anyhting else.
+  validate-supply-chain:
+    name: Validate supply chain
+
+    runs-on: *default_runner
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@aaa84a43aec4955a42c5ffc65d258961e39f276e # v1.19.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master on 2026-05-14
+        with:
+          toolchain: *default_rust_toolchain
+
+      - name: Install cargo-deny
+        run: cargo binstall cargo-deny@0.19.6 --no-confirm
+
+      # NOTE: Run `cargo deny` first to reduce the risk of supply-chain attack.
+      - name: Lint dependency graph
+        run: cargo deny check --show-stats
+
+  lint:
+    name: Lint
+    needs: validate-supply-chain
+
+    runs-on: *default_runner
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Cache build artifacts
+        id: cache-lint
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: lint-${{ env.DEFAULT_RUNNER }}-cargo-${{ env.DEFAULT_RUST_TOOLCHAIN }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master on 2026-05-14
+        with:
+          toolchain: *default_rust_toolchain
+          components: rustfmt
+
+      - name: Verify versions
+        run: |-
+          rustc --version
+          rustup --version 2>/dev/null
+          cargo --version
+
+      - name: Check code style
+        run: cargo fmt --check
+
+      - name: Lint code
+        run: cargo clippy
+
   test:
+    name: Test
+    needs: validate-supply-chain
+
     strategy:
       matrix:
-        os: [ubuntu-latest]
-        rust-toolchain: [stable]
+        os: [*default_runner]
+        rust-toolchain: [*default_rust_toolchain]
       # Do not cancel all jobs on failure.
       fail-fast: false
 
@@ -43,7 +129,6 @@ jobs:
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master on 2026-05-14
         with:
           toolchain: ${{ matrix.rust-toolchain }}
-          components: rustfmt
 
       - name: Verify versions
         run: |-
@@ -52,22 +137,6 @@ jobs:
           cargo --version
           node --version
           npm --version
-
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@aaa84a43aec4955a42c5ffc65d258961e39f276e # v1.19.1
-
-      - name: Install cargo-deny
-        run: cargo binstall cargo-deny@0.19.6 --no-confirm
-
-      # NOTE: Run `cargo deny` first to reduce the risk of supply-chain attack.
-      - name: Lint dependency graph
-        run: cargo deny check --show-stats
-
-      - name: Check code style
-        run: cargo fmt --check
-
-      - name: Lint code
-        run: cargo clippy
 
       - name: Build code
         run: cargo build --locked
