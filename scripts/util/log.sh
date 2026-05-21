@@ -7,6 +7,13 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")"/colors.sh
 
+log_success_() {
+  printf "${I_BOLD}%b${I_RESET} %s\n" "${C_GREEN}Success:${C_RESET}" "$*"
+}
+log_success() {
+  echo "$@" | while IFS= read -r line; do log_success_ "$line"; done
+}
+
 log_info_() {
   printf "${I_BOLD}%b${I_RESET} %s\n" "${C_BLUE}Info:${C_RESET}" "$*"
 }

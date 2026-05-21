@@ -73,11 +73,15 @@ to_tag() {
   echo "v${version/v}"
 }
 
+UPDATED_FILES=()
 # A simplified `sed` command that works on both macOS and Linux.
+# Also stores updated files in a list for later use.
 replace() {
   local find="${1:?}"
   local replace="${2:?}"
   local file="${3:?}"
+
+  UPDATED_FILES+=("${file:?}")
 
   # NOTE: `//$'\n'/\\n` allows escaping newlines.
   local pattern="s@${find}@${replace//$'\n'/\\n}@gm"
@@ -87,9 +91,7 @@ replace() {
 
   perl -i -pe "$pattern" "$file" || { log_error "Pattern '$find' did not match anything in '$file')."; return 1; }
 }
-UPDATED_FILES=()
 replace_version() {
-  UPDATED_FILES+=("${2:?}")
   replace "${1:?}" "\${1}${NEW_VERSION:?}\${2}" "${2:?}"
 }
 
@@ -186,6 +188,7 @@ update_all_versions() {
 
   log_info "Updating '$(basename "${CARGO_LOCK_FILE:?}")'…"
   cargo check
+  UPDATED_FILES+=("${CARGO_LOCK_FILE:?}")
 
   log_info "Updating '$(basename "${CHANGELOG_FILE:?}")'…"
   replace "compare/$(to_tag "${VERSION:?}")...HEAD" "$(cat <<EOF
@@ -221,6 +224,6 @@ push_new_tag() {
   log_info "Pushing tag…"
   git push ${FORCE_PUSH:+-f} --atomic origin "${GIT_BRANCH:?}" "$(to_tag "${NEW_VERSION:?}")"
 
-  success "Successfully created and pushed tag '$(to_tag "${NEW_VERSION:?}")'"
+  log_success "Successfully created and pushed tag '$(to_tag "${NEW_VERSION:?}")'"
 }
 push_new_tag
