@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
-name: Test and Build
+name: Lint and Test
 
 env:
   DEFAULT_RUST_TOOLCHAIN: &default_rust_toolchain stable
