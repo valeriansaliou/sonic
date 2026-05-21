@@ -2,9 +2,16 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-#![deny(unstable_features, unused_imports, unused_qualifications, clippy::all)]
+#![deny(
+    clippy::all,
+    dead_code,
+    unstable_features,
+    unused_imports,
+    unused_qualifications
+)]
 #![warn(
     clippy::inline_always, // Do not use unless benchmarked (explicit allow).
 )]
@@ -20,20 +27,14 @@
 extern crate log;
 #[macro_use]
 extern crate lazy_static;
-#[macro_use]
-extern crate serde_derive;
 
 mod channel;
-mod config;
-mod executor;
-mod lexer;
-mod query;
-mod stopwords;
-mod store;
+mod server;
 mod tasker;
 
 use std::ops::Deref;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -42,13 +43,13 @@ use log::LevelFilter;
 
 use channel::listen::{ChannelListen, ChannelListenBuilder};
 use channel::statistics::ensure_states as ensure_states_channel_statistics;
-use config::logger::ConfigLogger;
-use config::options::Config;
-use config::reader::ConfigReader;
-use store::fst::StoreFSTPool;
-use store::kv::StoreKVPool;
+use sonic::store::fst::StoreFSTPool;
+use sonic::store::kv::StoreKVPool;
 use tasker::runtime::TaskerBuilder;
 use tasker::shutdown::ShutdownSignal;
+
+use crate::server::config::read_config;
+use crate::server::logger::ConfigLogger;
 
 struct AppArgs {
     config: String,
@@ -65,47 +66,9 @@ pub static THREAD_NAME_CHANNEL_MASTER: &str = "sonic-channel-master";
 pub static THREAD_NAME_CHANNEL_CLIENT: &str = "sonic-channel-client";
 pub static THREAD_NAME_TASKER: &str = "sonic-tasker";
 
-macro_rules! gen_spawn_managed {
-    ($name:expr, $method:ident, $thread_name:ident, $managed_fn:ident) => {
-        fn $method() {
-            debug!("spawn managed thread: {}", $name);
-
-            let worker = thread::Builder::new()
-                .name($thread_name.to_string())
-                .spawn(|| $managed_fn::build().run());
-
-            // Block on worker thread (join it)
-            let has_error = if let Ok(worker_thread) = worker {
-                worker_thread.join().is_err()
-            } else {
-                true
-            };
-
-            // Worker thread crashed?
-            if has_error == true {
-                error!("managed thread crashed ({}), setting it up again", $name);
-
-                // Prevents thread start loop floods
-                thread::sleep(Duration::from_secs(1));
-
-                $method();
-            }
-        }
-    };
-}
-
 lazy_static! {
     static ref APP_ARGS: AppArgs = make_app_args();
-    static ref APP_CONF: Config = ConfigReader::make();
 }
-
-gen_spawn_managed!(
-    "channel",
-    spawn_channel,
-    THREAD_NAME_CHANNEL_MASTER,
-    ChannelListenBuilder
-);
-gen_spawn_managed!("tasker", spawn_tasker, THREAD_NAME_TASKER, TaskerBuilder);
 
 const DEFAULT_CONFIG_FILE_PATH: &str = "./config.cfg";
 
@@ -132,17 +95,11 @@ fn make_app_args() -> AppArgs {
     }
 }
 
-fn ensure_states() {
-    // Ensure all statics are valid (a `deref` is enough to lazily initialize them)
-    let (_, _) = (APP_ARGS.deref(), APP_CONF.deref());
-
-    // Ensure per-module states
-    ensure_states_channel_statistics();
-}
-
 fn main() {
+    let app_conf = read_config(&APP_ARGS);
+
     let _logger = ConfigLogger::init(
-        LevelFilter::from_str(&APP_CONF.server.log_level).expect("invalid log level"),
+        LevelFilter::from_str(&app_conf.server.log_level).expect("invalid log level"),
     );
 
     let shutdown_signal = ShutdownSignal::new();
@@ -152,11 +109,19 @@ fn main() {
     // Ensure all states are bound
     ensure_states();
 
+    // Create connection pools (does not open any connection yet)
+    let kv_pool = StoreKVPool::new(Arc::clone(&app_conf.sonic.store.kv));
+    let fst_pool = StoreFSTPool::new(Arc::clone(&app_conf.sonic.store.fst));
+
     // Spawn tasker (background thread)
-    thread::spawn(spawn_tasker);
+    thread::spawn(spawn_tasker(kv_pool.clone(), fst_pool.clone()));
 
     // Spawn channel (foreground thread)
-    thread::spawn(spawn_channel);
+    thread::spawn(spawn_channel(
+        kv_pool.clone(),
+        fst_pool.clone(),
+        app_conf.sonic.into(),
+    ));
 
     info!("started");
 
@@ -167,12 +132,77 @@ fn main() {
         ChannelListen::teardown();
 
         // Perform a KV flush (ensures all in-memory changes are synced on-disk before shutdown)
-        StoreKVPool::flush(true);
+        kv_pool.flush(true);
 
         // Perform a FST consolidation (ensures all in-memory items are synced on-disk before \
         //   shutdown; otherwise we would lose all non-consolidated FST changes)
-        StoreFSTPool::consolidate(true);
+        fst_pool.consolidate(true);
 
         info!("stopped");
     });
+}
+
+fn ensure_states() {
+    // Ensure all statics are valid (a `deref` is enough to lazily initialize them)
+    let _ = APP_ARGS.deref();
+
+    // Ensure per-module states
+    ensure_states_channel_statistics();
+}
+
+fn spawn_managed_thread<F, T>(name: &'static str, thread_name: &'static str, task: F)
+where
+    F: Fn() -> T + Clone,
+    F: Send + 'static,
+    T: Send + 'static,
+{
+    debug!("spawn managed thread: {name}");
+
+    let worker = thread::Builder::new()
+        .name(thread_name.to_string())
+        .spawn(task.clone());
+
+    // Block on worker thread (join it)
+    let has_error = if let Ok(worker_thread) = worker {
+        worker_thread.join().is_err()
+    } else {
+        true
+    };
+
+    if has_error {
+        error!("managed thread crashed ({name}), setting it up again");
+
+        // Prevents thread start loop floods
+        thread::sleep(Duration::from_secs(1));
+
+        spawn_managed_thread(name, thread_name, task);
+    }
+}
+
+fn spawn_channel(
+    kv_pool: StoreKVPool,
+    fst_pool: StoreFSTPool,
+    app_conf: Arc<sonic::Config>,
+) -> impl FnOnce() {
+    let builder = ChannelListenBuilder {
+        app_conf,
+        kv_pool,
+        fst_pool,
+    };
+
+    move || {
+        spawn_managed_thread("channel", THREAD_NAME_CHANNEL_MASTER, move || {
+            builder.build().run();
+        })
+    }
+}
+
+fn spawn_tasker(kv_pool: StoreKVPool, fst_pool: StoreFSTPool) -> impl FnOnce() {
+    let builder = TaskerBuilder { kv_pool, fst_pool };
+
+    move || {
+        spawn_managed_thread("tasker", THREAD_NAME_TASKER, move || {
+            builder.build().run();
+        })
+    }
 }

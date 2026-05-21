@@ -2,6 +2,7 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use fst::automaton::AlwaysMatch;
@@ -30,11 +31,18 @@ use super::generic::{
     StoreGeneric, StoreGenericActionBuilder, StoreGenericBuilder, StoreGenericPool,
 };
 use super::keyer::StoreKeyerHasher;
-use crate::APP_CONF;
 use crate::lexer::ranges::LexerRegexRange;
 
-pub struct StoreFSTPool;
-pub struct StoreFSTBuilder;
+// NOTE: This type cannot be generic over a lifetime as spawning threads would
+//   force it to be `'static`.
+#[derive(Clone)]
+pub struct StoreFSTPool {
+    fst_store_config: Arc<crate::config::ConfigStoreFST>,
+}
+
+pub struct StoreFSTBuilder<'build> {
+    fst_store_config: &'build crate::config::ConfigStoreFST,
+}
 
 pub struct StoreFST {
     graph: FSTSet,
@@ -50,7 +58,9 @@ pub struct StoreFSTPending {
     push: Arc<RwLock<HashSet<Vec<u8>>>>,
 }
 
-pub struct StoreFSTActionBuilder;
+pub struct StoreFSTActionBuilder<'build> {
+    pub fst_store_config: &'build crate::config::ConfigStoreFST,
+}
 
 pub struct StoreFSTAction {
     store: StoreFSTBox,
@@ -78,7 +88,7 @@ const WORD_LIMIT_LENGTH: usize = 40;
 const ATOM_HASH_RADIX: usize = 16;
 
 lazy_static! {
-    pub static ref GRAPH_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
+    pub(crate) static ref GRAPH_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
     static ref GRAPH_ACQUIRE_LOCK: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
     static ref GRAPH_REBUILD_LOCK: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
     static ref GRAPH_POOL: Arc<RwLock<HashMap<StoreFSTKey, StoreFSTBox>>> =
@@ -98,6 +108,10 @@ impl StoreFSTPathMode {
 }
 
 impl StoreFSTPool {
+    pub fn new(fst_store_config: Arc<crate::config::ConfigStoreFST>) -> Self {
+        Self { fst_store_config }
+    }
+
     pub fn count() -> (usize, usize) {
         (
             GRAPH_POOL.read().unwrap().len(),
@@ -105,7 +119,11 @@ impl StoreFSTPool {
         )
     }
 
-    pub fn acquire<'a, T: Into<&'a str>>(collection: T, bucket: T) -> Result<StoreFSTBox, ()> {
+    pub fn acquire<'a, T: Into<&'a str>>(
+        &self,
+        collection: T,
+        bucket: T,
+    ) -> Result<StoreFSTBox, ()> {
         let (collection_str, bucket_str) = (collection.into(), bucket.into());
 
         let pool_key = StoreFSTKey::from_str(collection_str, bucket_str);
@@ -129,49 +147,53 @@ impl StoreFSTPool {
             //   when acquiring the RWLock in write mode in this block.
             drop(graph_pool_read);
 
-            Self::proceed_acquire_open("fst", collection_str, pool_key, &*GRAPH_POOL)
+            let builder = StoreFSTBuilder {
+                fst_store_config: &self.fst_store_config,
+            };
+
+            Self::proceed_acquire_open("fst", collection_str, pool_key, &*GRAPH_POOL, &builder)
         }
     }
 
-    pub fn janitor() {
+    pub fn janitor(&self) {
         Self::proceed_janitor(
             "fst",
             &*GRAPH_POOL,
-            APP_CONF.store.fst.pool.inactive_after,
+            self.fst_store_config.pool.inactive_after,
             &*GRAPH_ACCESS_LOCK,
         )
     }
 
-    pub fn backup(path: &Path) -> Result<(), io::Error> {
+    pub fn backup(&self, path: &Path) -> Result<(), io::Error> {
         debug!("backing up all fst stores to path: {:?}", path);
 
         // Create backup directory (full path)
         fs::create_dir_all(path)?;
 
         // Proceed dump action (backup)
-        Self::dump_action(
+        self.dump_action(
             "backup",
             StoreFSTPathMode::Permanent,
-            &*APP_CONF.store.fst.path,
+            &self.fst_store_config.path,
             path,
             &Self::backup_item,
         )
     }
 
-    pub fn restore(path: &Path) -> Result<(), io::Error> {
+    pub fn restore(&self, path: &Path) -> Result<(), io::Error> {
         debug!("restoring all fst stores from path: {:?}", path);
 
         // Proceed dump action (restore)
-        Self::dump_action(
+        self.dump_action(
             "restore",
             StoreFSTPathMode::Backup,
             path,
-            &*APP_CONF.store.fst.path,
+            &self.fst_store_config.path,
             &Self::restore_item,
         )
     }
 
-    pub fn consolidate(force: bool) {
+    pub fn consolidate(&self, force: bool) {
         debug!("scanning for fst store pool items to consolidate");
 
         // Notice: we do not consolidate all items at each tick, we try to even out multiple \
@@ -225,7 +247,9 @@ impl StoreFSTPool {
                         })
                         .as_secs();
 
-                    if force || not_consolidated_for >= APP_CONF.store.fst.graph.consolidate_after {
+                    if force
+                        || not_consolidated_for >= self.fst_store_config.graph.consolidate_after
+                    {
                         info!(
                             "fst key: {} not consolidated for: {} seconds, may consolidate",
                             key, not_consolidated_for
@@ -279,7 +303,7 @@ impl StoreFSTPool {
                     let do_close = if let Some(store) = GRAPH_POOL.read().unwrap().get(key) {
                         debug!("fst key: {} consolidate started", key);
 
-                        let consolidate_counts = Self::consolidate_item(store);
+                        let consolidate_counts = self.consolidate_item(store);
 
                         count_moved += consolidate_counts.1;
                         count_pushed += consolidate_counts.2;
@@ -321,11 +345,12 @@ impl StoreFSTPool {
 
     #[allow(clippy::type_complexity)]
     fn dump_action(
+        &self,
         action: &str,
         path_mode: StoreFSTPathMode,
         read_path: &Path,
         write_path: &Path,
-        fn_item: &dyn Fn(&Path, &Path, &str, &str) -> Result<(), io::Error>,
+        fn_item: &dyn Fn(&Self, &Path, &Path, &str, &str) -> Result<(), io::Error>,
     ) -> Result<(), io::Error> {
         let fst_extension = path_mode.extension();
         let fst_extension_len = fst_extension.len();
@@ -367,7 +392,13 @@ impl StoreFSTPool {
                                     action, collection_name, bucket_name
                                 );
 
-                                fn_item(write_path, &bucket.path(), collection_name, bucket_name)?;
+                                fn_item(
+                                    self,
+                                    write_path,
+                                    &bucket.path(),
+                                    collection_name,
+                                    bucket_name,
+                                )?;
                             }
                         }
                     }
@@ -379,6 +410,7 @@ impl StoreFSTPool {
     }
 
     fn backup_item(
+        &self,
         backup_path: &Path,
         _origin_path: &Path,
         collection_name: &str,
@@ -421,6 +453,7 @@ impl StoreFSTPool {
                 let origin_fst = StoreFSTBuilder::open(
                     collection_hash as StoreFSTAtom,
                     bucket_hash as StoreFSTAtom,
+                    &self.fst_store_config,
                 )
                 .map_err(|_| io_error!("graph open failure"))?;
 
@@ -445,6 +478,7 @@ impl StoreFSTPool {
     }
 
     fn restore_item(
+        &self,
         _backup_path: &Path,
         origin_path: &Path,
         collection_name: &str,
@@ -475,7 +509,7 @@ impl StoreFSTPool {
                 );
 
                 // Generate path to FST
-                let fst_path = StoreFSTBuilder::path(
+                let fst_path = self.fst_store_config.path(
                     StoreFSTPathMode::Permanent,
                     collection_hash as StoreFSTAtom,
                     Some(bucket_hash as StoreFSTAtom),
@@ -515,7 +549,7 @@ impl StoreFSTPool {
         Ok(())
     }
 
-    fn consolidate_item(store: &StoreFSTBox) -> (bool, usize, usize, usize) {
+    fn consolidate_item(&self, store: &StoreFSTBox) -> (bool, usize, usize, usize) {
         let (mut should_close, mut count_moved, mut count_pushed, mut count_popped) =
             (false, 0, 0, 0);
 
@@ -530,11 +564,13 @@ impl StoreFSTPool {
         //   push then a pop of this push, nulling out any committed change.
         if !(pending_push_write.is_empty() && pending_pop_write.is_empty()) {
             // Read old FST (or default to empty FST)
-            if let Ok(old_fst) =
-                StoreFSTBuilder::open(store.target.collection_hash, store.target.bucket_hash)
-            {
+            if let Ok(old_fst) = StoreFSTBuilder::open(
+                store.target.collection_hash,
+                store.target.bucket_hash,
+                &self.fst_store_config,
+            ) {
                 // Initialize the new FST (temporary)
-                let bucket_tmp_path = StoreFSTBuilder::path(
+                let bucket_tmp_path = self.fst_store_config.path(
                     StoreFSTPathMode::Temporary,
                     store.target.collection_hash,
                     Some(store.target.bucket_hash),
@@ -589,6 +625,7 @@ impl StoreFSTPool {
                                                 if StoreFSTMisc::check_over_limits(
                                                     tmp_fst_builder.bytes_written() as usize,
                                                     count_pushed + count_moved,
+                                                    &self.fst_store_config.graph,
                                                 ) {
                                                     // FST cannot accept more items (limits reached)
                                                     warn!("limit reached on new from old in fst");
@@ -626,6 +663,7 @@ impl StoreFSTPool {
                                     if StoreFSTMisc::check_over_limits(
                                         tmp_fst_builder.bytes_written() as usize,
                                         count_pushed + count_moved,
+                                        &self.fst_store_config.graph,
                                     ) {
                                         // FST cannot accept more items (limits reached)
                                         warn!("limit reached on old word in fst");
@@ -653,6 +691,7 @@ impl StoreFSTPool {
                                 if StoreFSTMisc::check_over_limits(
                                     tmp_fst_builder.bytes_written() as usize,
                                     count_pushed + count_moved,
+                                    &self.fst_store_config.graph,
                                 ) {
                                     // FST cannot accept more items (limits reached)
                                     warn!("limit reached on new word from complete in fst");
@@ -681,7 +720,7 @@ impl StoreFSTPool {
                                 // Replace old FST with new FST (this nukes the old FST)
                                 // Notice: there is no need to re-open the new FST, as it will be \
                                 //   automatically opened on its next access.
-                                let bucket_final_path = StoreFSTBuilder::path(
+                                let bucket_final_path = self.fst_store_config.path(
                                     StoreFSTPathMode::Permanent,
                                     store.target.collection_hash,
                                     Some(store.target.bucket_hash),
@@ -733,16 +772,20 @@ impl StoreFSTPool {
     }
 }
 
-impl StoreGenericPool<StoreFSTKey, StoreFST, StoreFSTBuilder> for StoreFSTPool {}
+impl<'build> StoreGenericPool<StoreFSTKey, StoreFST, StoreFSTBuilder<'build>> for StoreFSTPool {}
 
-impl StoreFSTBuilder {
-    fn open(collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) -> Result<FSTSet, FSTError> {
+impl<'build> StoreFSTBuilder<'build> {
+    fn open(
+        collection_hash: StoreFSTAtom,
+        bucket_hash: StoreFSTAtom,
+        fst_store_config: &crate::config::ConfigStoreFST,
+    ) -> Result<FSTSet, FSTError> {
         debug!(
             "opening finite-state transducer graph for collection: <{:x?}> and bucket: <{:x?}>",
             collection_hash, bucket_hash
         );
 
-        let collection_bucket_path = Self::path(
+        let collection_bucket_path = fst_store_config.path(
             StoreFSTPathMode::Permanent,
             collection_hash,
             Some(bucket_hash),
@@ -774,17 +817,16 @@ impl StoreFSTBuilder {
         GRAPH_POOL.write().unwrap().remove(&bucket_target);
         GRAPH_CONSOLIDATE.write().unwrap().remove(&bucket_target);
     }
+}
 
+impl crate::config::ConfigStoreFST {
     fn path(
+        &self,
         mode: StoreFSTPathMode,
         collection_hash: StoreFSTAtom,
         bucket_hash: Option<StoreFSTAtom>,
     ) -> PathBuf {
-        let mut final_path = APP_CONF
-            .store
-            .fst
-            .path
-            .join(format!("{:x?}", collection_hash));
+        let mut final_path = self.path.join(format!("{:x?}", collection_hash));
 
         if let Some(bucket_hash) = bucket_hash {
             final_path = final_path.join(format!("{:x?}{}", bucket_hash, mode.extension()));
@@ -794,23 +836,27 @@ impl StoreFSTBuilder {
     }
 }
 
-impl StoreGenericBuilder<StoreFSTKey, StoreFST> for StoreFSTBuilder {
-    fn build(pool_key: StoreFSTKey) -> Result<StoreFST, ()> {
-        Self::open(pool_key.collection_hash, pool_key.bucket_hash)
-            .map(|graph| {
-                let now = SystemTime::now();
+impl<'build> StoreGenericBuilder<StoreFSTKey, StoreFST> for StoreFSTBuilder<'build> {
+    fn build(&self, pool_key: StoreFSTKey) -> Result<StoreFST, ()> {
+        Self::open(
+            pool_key.collection_hash,
+            pool_key.bucket_hash,
+            self.fst_store_config,
+        )
+        .map(|graph| {
+            let now = SystemTime::now();
 
-                StoreFST {
-                    graph,
-                    target: pool_key,
-                    pending: StoreFSTPending::default(),
-                    last_used: Arc::new(RwLock::new(now)),
-                    last_consolidated: Arc::new(RwLock::new(now)),
-                }
-            })
-            .map_err(|err| {
-                error!("failed opening fst: {}", err);
-            })
+            StoreFST {
+                graph,
+                target: pool_key,
+                pending: StoreFSTPending::default(),
+                last_used: Arc::new(RwLock::new(now)),
+                last_consolidated: Arc::new(RwLock::new(now)),
+            }
+        })
+        .map_err(|err| {
+            error!("failed opening fst: {}", err);
+        })
     }
 }
 
@@ -925,13 +971,13 @@ impl StoreGeneric for StoreFST {
     }
 }
 
-impl StoreFSTActionBuilder {
+impl<'build> StoreFSTActionBuilder<'build> {
     pub fn access(store: StoreFSTBox) -> StoreFSTAction {
         Self::build(store)
     }
 
-    pub fn erase<'a, T: Into<&'a str>>(collection: T, bucket: Option<T>) -> Result<u32, ()> {
-        Self::dispatch_erase("fst", collection, bucket)
+    pub fn erase<'a, T: Into<&'a str>>(&self, collection: T, bucket: Option<T>) -> Result<u32, ()> {
+        self.dispatch_erase("fst", collection, bucket)
     }
 
     fn build(store: StoreFSTBox) -> StoreFSTAction {
@@ -939,12 +985,12 @@ impl StoreFSTActionBuilder {
     }
 }
 
-impl StoreGenericActionBuilder for StoreFSTActionBuilder {
-    fn proceed_erase_collection(collection_str: &str) -> Result<u32, ()> {
+impl<'build> StoreGenericActionBuilder for StoreFSTActionBuilder<'build> {
+    fn proceed_erase_collection(&self, collection_str: &str) -> Result<u32, ()> {
         let path_mode = StoreFSTPathMode::Permanent;
 
         let collection_atom = StoreKeyerHasher::to_compact(collection_str);
-        let collection_path = StoreFSTBuilder::path(path_mode, collection_atom, None);
+        let collection_path = self.fst_store_config.path(path_mode, collection_atom, None);
 
         // Force a FST graph close (on all contained buckets)
         // Notice: we first need to scan for opened buckets in-memory, as not all FSTs may be \
@@ -1013,7 +1059,7 @@ impl StoreGenericActionBuilder for StoreFSTActionBuilder {
         }
     }
 
-    fn proceed_erase_bucket(collection_str: &str, bucket_str: &str) -> Result<u32, ()> {
+    fn proceed_erase_bucket(&self, collection_str: &str, bucket_str: &str) -> Result<u32, ()> {
         debug!(
             "sub-erase on fst bucket: {} for collection: {}",
             bucket_str, collection_str
@@ -1024,7 +1070,7 @@ impl StoreGenericActionBuilder for StoreFSTActionBuilder {
             StoreKeyerHasher::to_compact(bucket_str),
         );
 
-        let bucket_path = StoreFSTBuilder::path(
+        let bucket_path = self.fst_store_config.path(
             StoreFSTPathMode::Permanent,
             collection_atom,
             Some(bucket_atom),
@@ -1062,7 +1108,7 @@ impl StoreGenericActionBuilder for StoreFSTActionBuilder {
 }
 
 impl StoreFSTAction {
-    pub fn push_word(&self, word: &str) -> bool {
+    pub fn push_word(&self, word: &str, fst_store_config: &crate::config::ConfigStoreFST) -> bool {
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(word) {
             return false;
@@ -1082,8 +1128,12 @@ impl StoreFSTAction {
 
         if !self.store.graph.contains(&word)
             && !self.store.pending.push.read().unwrap().contains(word_bytes)
-            && self.store.pending.push.read().unwrap().len() < APP_CONF.store.fst.graph.max_words
-            && !StoreFSTMisc::check_over_limits(graph_fst.size(), graph_fst.len())
+            && self.store.pending.push.read().unwrap().len() < fst_store_config.graph.max_words
+            && !StoreFSTMisc::check_over_limits(
+                graph_fst.size(),
+                graph_fst.len(),
+                &fst_store_config.graph,
+            )
         {
             self.store
                 .pending
@@ -1225,13 +1275,16 @@ impl StoreFSTAction {
 }
 
 impl StoreFSTMisc {
-    pub fn count_collection_buckets<'a, T: Into<&'a str>>(collection: T) -> Result<usize, ()> {
+    pub fn count_collection_buckets<'a, T: Into<&'a str>>(
+        collection: T,
+        fst_store_config: &crate::config::ConfigStoreFST,
+    ) -> Result<usize, ()> {
         let mut count = 0;
 
         let path_mode = StoreFSTPathMode::Permanent;
 
         let collection_atom = StoreKeyerHasher::to_compact(collection.into());
-        let collection_path = StoreFSTBuilder::path(path_mode, collection_atom, None);
+        let collection_path = fst_store_config.path(path_mode, collection_atom, None);
 
         if collection_path.exists() {
             // Scan collection directory for contained buckets (count them)
@@ -1260,9 +1313,13 @@ impl StoreFSTMisc {
         Ok(count)
     }
 
-    fn check_over_limits(bytes_count: usize, words_count: usize) -> bool {
+    fn check_over_limits(
+        bytes_count: usize,
+        words_count: usize,
+        fst_graph_config: &crate::config::ConfigStoreFSTGraph,
+    ) -> bool {
         // Over bytes limit?
-        let max_size = APP_CONF.store.fst.graph.max_size * 1024;
+        let max_size = fst_graph_config.max_size * 1024;
 
         if bytes_count >= max_size {
             info!(
@@ -1274,10 +1331,10 @@ impl StoreFSTMisc {
         }
 
         // Over words limit?
-        if words_count >= APP_CONF.store.fst.graph.max_words {
+        if words_count >= fst_graph_config.max_words {
             info!(
                 "fst has exceeded maximum allowed words: {} over limit: {}",
-                words_count, APP_CONF.store.fst.graph.max_words
+                words_count, fst_graph_config.max_words
             );
 
             return true;
@@ -1316,18 +1373,41 @@ mod tests {
 
     #[test]
     fn it_acquires_graph() {
-        assert!(StoreFSTPool::acquire("c:test:1", "b:test:1").is_ok());
+        let fst_store_config = test_fst_store_config();
+        let fst_pool = StoreFSTPool::new(fst_store_config);
+
+        assert!(fst_pool.acquire("c:test:1", "b:test:1").is_ok());
     }
 
     #[test]
     fn it_janitors_graph() {
-        StoreFSTPool::janitor();
+        let fst_store_config = test_fst_store_config();
+        let fst_pool = StoreFSTPool::new(fst_store_config);
+
+        fst_pool.janitor();
     }
 
     #[test]
     fn it_proceeds_primitives() {
-        let store = StoreFSTPool::acquire("c:test:2", "b:test:2").unwrap();
+        let fst_store_config = test_fst_store_config();
+        let fst_pool = StoreFSTPool::new(fst_store_config);
+
+        let store = fst_pool.acquire("c:test:2", "b:test:2").unwrap();
 
         assert!(store.lookup_typos("valerien", None).is_ok());
+    }
+
+    fn test_fst_store_config() -> Arc<crate::config::ConfigStoreFST> {
+        Arc::new(
+            config::Config::builder()
+                .add_source(config::File::from_str(
+                    crate::config::tests::defaults_toml(),
+                    config::FileFormat::Toml,
+                ))
+                .build()
+                .unwrap()
+                .get::<crate::config::ConfigStoreFST>("store.fst")
+                .unwrap(),
+        )
     }
 }

@@ -2,17 +2,16 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2022, Troy Kohler <troy.kohler@zalando.de>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use crate::query::types::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
+use crate::query::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
 use crate::store::fst::StoreFSTActionBuilder;
-use crate::store::fst::StoreFSTPool;
 use crate::store::item::StoreItem;
 
-pub struct ExecutorList;
-
-impl ExecutorList {
-    pub fn execute(
+impl super::Executor {
+    pub fn list(
+        &self,
         store: StoreItem,
         _event_id: QuerySearchID,
         limit: QuerySearchLimit,
@@ -23,7 +22,7 @@ impl ExecutorList {
             //   prevents the graph from being erased while using it in this block.
             general_fst_access_lock_read!();
 
-            if let Ok(fst_store) = StoreFSTPool::acquire(collection, bucket) {
+            if let Ok(fst_store) = self.fst_pool.acquire(collection, bucket) {
                 let fst_action = StoreFSTActionBuilder::access(fst_store);
 
                 debug!("running list");

@@ -2,22 +2,34 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::store::fst::StoreFSTPool;
-use crate::store::kv::StoreKVPool;
+use sonic::store::fst::StoreFSTPool;
+use sonic::store::kv::StoreKVPool;
 
-pub struct TaskerBuilder;
-pub struct Tasker;
+#[derive(Clone)]
+pub struct TaskerBuilder {
+    pub kv_pool: StoreKVPool,
+    pub fst_pool: StoreFSTPool,
+}
+
+pub struct Tasker {
+    kv_pool: StoreKVPool,
+    fst_pool: StoreFSTPool,
+}
 
 const TASKER_TICK_INTERVAL: Duration = Duration::from_secs(10);
 
 impl TaskerBuilder {
-    pub fn build() -> Tasker {
-        Tasker {}
+    pub fn build(&self) -> Tasker {
+        Tasker {
+            kv_pool: self.kv_pool.clone(),
+            fst_pool: self.fst_pool.clone(),
+        }
     }
 }
 
@@ -33,7 +45,7 @@ impl Tasker {
 
             let tick_start = Instant::now();
 
-            Self::tick();
+            self.tick();
 
             let tick_took = tick_start.elapsed();
 
@@ -45,15 +57,15 @@ impl Tasker {
         }
     }
 
-    fn tick() {
+    fn tick(&self) {
         // Proceed all tick actions
 
         // #1: Janitors
-        StoreKVPool::janitor();
-        StoreFSTPool::janitor();
+        self.kv_pool.janitor();
+        self.fst_pool.janitor();
 
         // #2: Others
-        StoreKVPool::flush(false);
-        StoreFSTPool::consolidate(false);
+        self.kv_pool.flush(false);
+        self.fst_pool.consolidate(false);
     }
 }

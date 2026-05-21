@@ -10,7 +10,16 @@ homepage = "https://github.com/valeriansaliou/sonic"
 repository = "https://github.com/valeriansaliou/sonic.git"
 keywords = ["search", "query", "server", "index"]
 categories = ["database-implementations", "web-programming"]
-authors = ["Valerian Saliou <valerian@valeriansaliou.name>", "Baptiste Jamin <baptistejamin@gmail.com>"]
+authors = [
+    "Valerian Saliou <valerian@valeriansaliou.name>",
+    "Baptiste Jamin <baptistejamin@gmail.com>",
+    "Rémi Bardon <remi@remibardon.name>",
+]
+
+[lib]
+name = "sonic"
+path = "src/lib.rs"
+doc = true
 
 [[bin]]
 name = "sonic"
@@ -21,8 +30,7 @@ doc = false
 log = "0.4"
 clap = { version = "4", features = ["std", "cargo"] }
 lazy_static = "1"
-serde = "1"
-serde_derive = "1"
+serde = { version = "1", features = ["derive", "rc"] }
 rand = "0.10"
 unicode-segmentation = "1"
 radix = "0.6"

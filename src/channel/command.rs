@@ -2,6 +2,7 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use hashbrown::HashMap;
@@ -12,16 +13,17 @@ use std::path::Path;
 use std::str::{self, SplitWhitespace};
 use std::vec::Vec;
 
-use super::format::unescape;
-use super::statistics::ChannelStatistics;
-use crate::APP_CONF;
-use crate::query::builder::{QueryBuilder, QueryBuilderResult};
-use crate::query::types::{
+use sonic::query::{
     ListMetaData, QueryGenericLang, QueryMetaData, QuerySearchLimit, QuerySearchOffset,
 };
-use crate::store::fst::StoreFSTPool;
-use crate::store::kv::StoreKVPool;
-use crate::store::operation::StoreOperationDispatch;
+use sonic::store::operation::StoreOperationDispatch;
+use sonic::{Executor, Query};
+
+use super::format::unescape;
+use super::message::{
+    ChannelMessageModeControl, ChannelMessageModeIngest, ChannelMessageModeSearch,
+};
+use super::statistics::ChannelStatistics;
 
 #[derive(PartialEq)]
 pub enum ChannelCommandError {
@@ -297,30 +299,26 @@ impl ChannelCommandBase {
         ChannelCommandError::InvalidMetaValue((meta_key.to_owned(), meta_value.to_owned()))
     }
 
-    pub fn commit_ok_operation(query_builder: QueryBuilderResult) -> ChannelResult {
-        query_builder
-            .and_then(StoreOperationDispatch::dispatch)
-            .map(|_| vec![ChannelCommandResponse::Ok])
-            .or(Err(ChannelCommandError::QueryError))
+    pub fn commit_ok_operation(query: Query, executor: &Executor) -> ChannelResult {
+        match StoreOperationDispatch::dispatch(query, executor) {
+            Ok(_) => Ok(vec![ChannelCommandResponse::Ok]),
+            Err(()) => Err(ChannelCommandError::QueryError),
+        }
     }
 
-    pub fn commit_result_operation(query_builder: QueryBuilderResult) -> ChannelResult {
-        query_builder
-            .and_then(StoreOperationDispatch::dispatch)
-            .or(Err(ChannelCommandError::QueryError))
-            .and_then(|result| {
-                if let Some(result_inner) = result {
-                    Ok(vec![ChannelCommandResponse::Result(result_inner)])
-                } else {
-                    Err(ChannelCommandError::InternalError)
-                }
-            })
+    pub fn commit_result_operation(query: Query, executor: &Executor) -> ChannelResult {
+        match StoreOperationDispatch::dispatch(query, executor) {
+            Ok(Some(result_inner)) => Ok(vec![ChannelCommandResponse::Result(result_inner)]),
+            Ok(None) => Err(ChannelCommandError::InternalError),
+            Err(()) => Err(ChannelCommandError::QueryError),
+        }
     }
 
     pub fn commit_pending_operation(
         query_type: &'static str,
         query_id: &str,
-        query_builder: QueryBuilderResult,
+        query: Query,
+        executor: &Executor,
     ) -> ChannelResult {
         // Idea: this could be made asynchronous in the future, if there are some latency issues \
         //   on large Sonic deployments. The idea would be to have a number of worker threads for \
@@ -331,19 +329,17 @@ impl ChannelCommandBase {
         //   prevent scaling Sonic vertically, but could be made simpler for the Sonic Channel \
         //   consumer via a worker thread pool.
 
-        query_builder
-            .and_then(StoreOperationDispatch::dispatch)
-            .map(|results| {
-                vec![
-                    ChannelCommandResponse::Pending(query_id.to_string()),
-                    ChannelCommandResponse::Event(
-                        query_type,
-                        query_id.to_string(),
-                        results.unwrap_or_default(),
-                    ),
-                ]
-            })
-            .or(Err(ChannelCommandError::QueryError))
+        match StoreOperationDispatch::dispatch(query, executor) {
+            Ok(results) => Ok(vec![
+                ChannelCommandResponse::Pending(query_id.to_string()),
+                ChannelCommandResponse::Event(
+                    query_type,
+                    query_id.to_string(),
+                    results.unwrap_or_default(),
+                ),
+            ]),
+            Err(()) => Err(ChannelCommandError::QueryError),
+        }
     }
 
     pub fn generate_event_id() -> String {
@@ -356,7 +352,10 @@ impl ChannelCommandBase {
 }
 
 impl ChannelCommandSearch {
-    pub fn dispatch_query(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_query(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeSearch,
+    ) -> ChannelResult {
         match (
             parts.next(),
             parts.next(),
@@ -373,7 +372,7 @@ impl ChannelCommandSearch {
 
                 // Define query parameters
                 let (mut query_limit, mut query_offset, mut query_lang) =
-                    (APP_CONF.channel.search.query_limit_default, 0, None);
+                    (ctx.search_config.query_limit_default, 0, None);
 
                 // Parse meta parts (meta comes after text; extract meta parts second)
                 let mut last_meta_err = None;
@@ -397,9 +396,7 @@ impl ChannelCommandSearch {
 
                 if let Some(err) = last_meta_err {
                     Err(err)
-                } else if query_limit < 1
-                    || query_limit > APP_CONF.channel.search.query_limit_maximum
-                {
+                } else if query_limit < 1 || query_limit > ctx.search_config.query_limit_maximum {
                     Err(ChannelCommandError::PolicyReject(
                         "LIMIT out of minimum/maximum bounds",
                     ))
@@ -409,19 +406,23 @@ impl ChannelCommandSearch {
                         event_id, text, query_limit, query_offset, query_lang
                     );
 
+                    let query = Query::search(
+                        &event_id,
+                        collection,
+                        bucket,
+                        &text,
+                        query_limit,
+                        query_offset,
+                        query_lang,
+                    )
+                    .map_err(|()| ChannelCommandError::QueryError)?;
+
                     // Commit 'search' query
                     ChannelCommandBase::commit_pending_operation(
                         "QUERY",
                         &event_id,
-                        QueryBuilder::search(
-                            &event_id,
-                            collection,
-                            bucket,
-                            &text,
-                            query_limit,
-                            query_offset,
-                            query_lang,
-                        ),
+                        query,
+                        ctx.executor,
                     )
                 }
             }
@@ -432,7 +433,10 @@ impl ChannelCommandSearch {
         }
     }
 
-    pub fn dispatch_suggest(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_suggest(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeSearch,
+    ) -> ChannelResult {
         match (
             parts.next(),
             parts.next(),
@@ -448,7 +452,7 @@ impl ChannelCommandSearch {
                 );
 
                 // Define suggest parameters
-                let mut suggest_limit = APP_CONF.channel.search.suggest_limit_default;
+                let mut suggest_limit = ctx.search_config.suggest_limit_default;
 
                 // Parse meta parts (meta comes after text; extract meta parts second)
                 let mut last_meta_err = None;
@@ -465,7 +469,7 @@ impl ChannelCommandSearch {
                 if let Some(err) = last_meta_err {
                     Err(err)
                 } else if suggest_limit < 1
-                    || suggest_limit > APP_CONF.channel.search.suggest_limit_maximum
+                    || suggest_limit > ctx.search_config.suggest_limit_maximum
                 {
                     Err(ChannelCommandError::PolicyReject(
                         "LIMIT out of minimum/maximum bounds",
@@ -476,11 +480,15 @@ impl ChannelCommandSearch {
                         event_id, text, suggest_limit
                     );
 
+                    let query = Query::suggest(&event_id, collection, bucket, &text, suggest_limit)
+                        .map_err(|()| ChannelCommandError::QueryError)?;
+
                     // Commit 'suggest' query
                     ChannelCommandBase::commit_pending_operation(
                         "SUGGEST",
                         &event_id,
-                        QueryBuilder::suggest(&event_id, collection, bucket, &text, suggest_limit),
+                        query,
+                        ctx.executor,
                     )
                 }
             }
@@ -490,7 +498,10 @@ impl ChannelCommandSearch {
         }
     }
 
-    pub fn dispatch_list(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_list(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeSearch,
+    ) -> ChannelResult {
         match (parts.next(), parts.next()) {
             (Some(collection), Some(bucket)) => {
                 // Generate command identifier
@@ -502,8 +513,7 @@ impl ChannelCommandSearch {
                 );
 
                 // Define list parameters
-                let (mut list_limit, mut list_offset) =
-                    (APP_CONF.channel.search.list_limit_default, 0);
+                let (mut list_limit, mut list_offset) = (ctx.search_config.list_limit_default, 0);
 
                 // Parse meta parts (meta comes last; extract meta parts second)
                 let mut last_meta_err = None;
@@ -522,17 +532,20 @@ impl ChannelCommandSearch {
 
                 if let Some(err) = last_meta_err {
                     Err(err)
-                } else if list_limit < 1 || list_limit > APP_CONF.channel.search.list_limit_maximum
-                {
+                } else if list_limit < 1 || list_limit > ctx.search_config.list_limit_maximum {
                     Err(ChannelCommandError::PolicyReject(
                         "LIMIT out of minimum/maximum bounds",
                     ))
                 } else {
+                    let query = Query::list(&event_id, collection, bucket, list_limit, list_offset)
+                        .map_err(|()| ChannelCommandError::QueryError)?;
+
                     // Commit 'list' query
                     ChannelCommandBase::commit_pending_operation(
                         "LIST",
                         &event_id,
-                        QueryBuilder::list(&event_id, collection, bucket, list_limit, list_offset),
+                        query,
+                        ctx.executor,
                     )
                 }
             }
@@ -542,7 +555,7 @@ impl ChannelCommandSearch {
         }
     }
 
-    pub fn dispatch_help(parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_help(parts: SplitWhitespace, _ctx: &ChannelMessageModeSearch) -> ChannelResult {
         ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_SEARCH)
     }
 
@@ -663,7 +676,10 @@ impl ChannelCommandSearch {
 }
 
 impl ChannelCommandIngest {
-    pub fn dispatch_push(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_push(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeIngest,
+    ) -> ChannelResult {
         match (
             parts.next(),
             parts.next(),
@@ -700,10 +716,11 @@ impl ChannelCommandIngest {
                         text, push_lang
                     );
 
+                    let query = Query::push(collection, bucket, object, &text, push_lang)
+                        .map_err(|()| ChannelCommandError::QueryError)?;
+
                     // Commit 'push' query
-                    ChannelCommandBase::commit_ok_operation(QueryBuilder::push(
-                        collection, bucket, object, &text, push_lang,
-                    ))
+                    ChannelCommandBase::commit_ok_operation(query, ctx.executor)
                 }
             }
             _ => Err(ChannelCommandError::InvalidFormat(
@@ -712,7 +729,10 @@ impl ChannelCommandIngest {
         }
     }
 
-    pub fn dispatch_pop(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_pop(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeIngest,
+    ) -> ChannelResult {
         match (
             parts.next(),
             parts.next(),
@@ -727,10 +747,11 @@ impl ChannelCommandIngest {
                 );
                 debug!("ingest pop has text: {}", text);
 
+                let query = Query::pop(collection, bucket, object, &text)
+                    .map_err(|()| ChannelCommandError::QueryError)?;
+
                 // Make 'pop' query
-                ChannelCommandBase::commit_result_operation(QueryBuilder::pop(
-                    collection, bucket, object, &text,
-                ))
+                ChannelCommandBase::commit_result_operation(query, ctx.executor)
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "POP <collection> <bucket> <object> \"<text>\"",
@@ -738,17 +759,19 @@ impl ChannelCommandIngest {
         }
     }
 
-    pub fn dispatch_count(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_count(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeIngest,
+    ) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next(), parts.next()) {
             (Some(collection), bucket_part, object_part, None) => {
                 debug!("dispatching ingest count in collection: {}", collection);
 
+                let query = Query::count(collection, bucket_part, object_part)
+                    .map_err(|()| ChannelCommandError::QueryError)?;
+
                 // Make 'count' query
-                ChannelCommandBase::commit_result_operation(QueryBuilder::count(
-                    collection,
-                    bucket_part,
-                    object_part,
-                ))
+                ChannelCommandBase::commit_result_operation(query, ctx.executor)
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "COUNT <collection> [<bucket> [<object>]?]?",
@@ -756,7 +779,10 @@ impl ChannelCommandIngest {
         }
     }
 
-    pub fn dispatch_flushc(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_flushc(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeIngest,
+    ) -> ChannelResult {
         match (parts.next(), parts.next()) {
             (Some(collection), None) => {
                 debug!(
@@ -764,14 +790,20 @@ impl ChannelCommandIngest {
                     collection
                 );
 
+                let query =
+                    Query::flushc(collection).map_err(|()| ChannelCommandError::QueryError)?;
+
                 // Make 'flushc' query
-                ChannelCommandBase::commit_result_operation(QueryBuilder::flushc(collection))
+                ChannelCommandBase::commit_result_operation(query, ctx.executor)
             }
             _ => Err(ChannelCommandError::InvalidFormat("FLUSHC <collection>")),
         }
     }
 
-    pub fn dispatch_flushb(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_flushb(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeIngest,
+    ) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next()) {
             (Some(collection), Some(bucket), None) => {
                 debug!(
@@ -779,10 +811,11 @@ impl ChannelCommandIngest {
                     collection, bucket
                 );
 
+                let query = Query::flushb(collection, bucket)
+                    .map_err(|()| ChannelCommandError::QueryError)?;
+
                 // Make 'flushb' query
-                ChannelCommandBase::commit_result_operation(QueryBuilder::flushb(
-                    collection, bucket,
-                ))
+                ChannelCommandBase::commit_result_operation(query, ctx.executor)
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "FLUSHB <collection> <bucket>",
@@ -790,7 +823,10 @@ impl ChannelCommandIngest {
         }
     }
 
-    pub fn dispatch_flusho(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_flusho(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeIngest,
+    ) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next(), parts.next()) {
             (Some(collection), Some(bucket), Some(object), None) => {
                 debug!(
@@ -798,10 +834,11 @@ impl ChannelCommandIngest {
                     collection, bucket, object
                 );
 
+                let query = Query::flusho(collection, bucket, object)
+                    .map_err(|()| ChannelCommandError::QueryError)?;
+
                 // Make 'flusho' query
-                ChannelCommandBase::commit_result_operation(QueryBuilder::flusho(
-                    collection, bucket, object,
-                ))
+                ChannelCommandBase::commit_result_operation(query, ctx.executor)
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "FLUSHO <collection> <bucket> <object>",
@@ -809,7 +846,7 @@ impl ChannelCommandIngest {
         }
     }
 
-    pub fn dispatch_help(parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_help(parts: SplitWhitespace, _ctx: &ChannelMessageModeIngest) -> ChannelResult {
         ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_INGEST)
     }
 
@@ -844,7 +881,10 @@ impl ChannelCommandIngest {
 }
 
 impl ChannelCommandControl {
-    pub fn dispatch_trigger(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_trigger(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeControl,
+    ) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next()) {
             (None, _, _) => Ok(vec![ChannelCommandResponse::Result(format!(
                 "actions({})",
@@ -853,11 +893,15 @@ impl ChannelCommandControl {
             (Some(action_key), data_part, last_part) => {
                 let action_key_lower = action_key.to_lowercase();
 
+                let Executor {
+                    kv_pool, fst_pool, ..
+                } = &ctx.executor;
+
                 match action_key_lower.as_str() {
                     "consolidate" => {
                         if data_part.is_none() {
                             // Force a FST consolidate
-                            StoreFSTPool::consolidate(true);
+                            fst_pool.consolidate(true);
 
                             Ok(vec![ChannelCommandResponse::Ok])
                         } else {
@@ -870,8 +914,8 @@ impl ChannelCommandControl {
                                 // Proceed KV + FST backup
                                 let path = Path::new(path);
 
-                                if StoreKVPool::backup(&path.join(BACKUP_KV_PATH)).is_ok()
-                                    && StoreFSTPool::backup(&path.join(BACKUP_FST_PATH)).is_ok()
+                                if kv_pool.backup(&path.join(BACKUP_KV_PATH)).is_ok()
+                                    && fst_pool.backup(&path.join(BACKUP_FST_PATH)).is_ok()
                                 {
                                     Ok(vec![ChannelCommandResponse::Ok])
                                 } else {
@@ -887,8 +931,8 @@ impl ChannelCommandControl {
                                 // Proceed KV + FST restore
                                 let path = Path::new(path);
 
-                                if StoreKVPool::restore(&path.join(BACKUP_KV_PATH)).is_ok()
-                                    && StoreFSTPool::restore(&path.join(BACKUP_FST_PATH)).is_ok()
+                                if kv_pool.restore(&path.join(BACKUP_KV_PATH)).is_ok()
+                                    && fst_pool.restore(&path.join(BACKUP_FST_PATH)).is_ok()
                                 {
                                     Ok(vec![ChannelCommandResponse::Ok])
                                 } else {
@@ -904,10 +948,13 @@ impl ChannelCommandControl {
         }
     }
 
-    pub fn dispatch_info(mut parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_info(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeControl,
+    ) -> ChannelResult {
         match parts.next() {
             None => {
-                let statistics = ChannelStatistics::gather();
+                let statistics = ChannelStatistics::gather(&ctx.executor.kv_pool);
 
                 Ok(vec![ChannelCommandResponse::Result(format!(
                     "uptime({}) clients_connected({}) commands_total({}) \
@@ -927,7 +974,10 @@ impl ChannelCommandControl {
         }
     }
 
-    pub fn dispatch_help(parts: SplitWhitespace) -> ChannelResult {
+    pub fn dispatch_help(
+        parts: SplitWhitespace,
+        _ctx: &ChannelMessageModeControl,
+    ) -> ChannelResult {
         ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_CONTROL)
     }
 }

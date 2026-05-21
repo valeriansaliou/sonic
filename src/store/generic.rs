@@ -2,6 +2,7 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use core::cmp::Eq;
@@ -48,8 +49,9 @@ pub trait StoreGenericPool<
         collection_str: &str,
         pool_key: K,
         pool: &Arc<RwLock<HashMap<K, Arc<S>>>>,
+        builder: &B,
     ) -> Result<Arc<S>, ()> {
-        match B::build(pool_key) {
+        match builder.build(pool_key) {
             Ok(store) => {
                 // Acquire a thread-safe store pool reference in write mode
                 let mut store_pool_write = pool.write().unwrap();
@@ -145,15 +147,16 @@ pub trait StoreGenericPool<
 }
 
 pub trait StoreGenericBuilder<K, S> {
-    fn build(pool_key: K) -> Result<S, ()>;
+    fn build(&self, pool_key: K) -> Result<S, ()>;
 }
 
 pub trait StoreGenericActionBuilder {
-    fn proceed_erase_collection(collection_str: &str) -> Result<u32, ()>;
+    fn proceed_erase_collection(&self, collection_str: &str) -> Result<u32, ()>;
 
-    fn proceed_erase_bucket(collection_str: &str, bucket_str: &str) -> Result<u32, ()>;
+    fn proceed_erase_bucket(&self, collection_str: &str, bucket_str: &str) -> Result<u32, ()>;
 
     fn dispatch_erase<'a, T: Into<&'a str>>(
+        &self,
         kind: &str,
         collection: T,
         bucket: Option<T>,
@@ -163,9 +166,9 @@ pub trait StoreGenericActionBuilder {
         info!("{} erase requested on collection: {}", kind, collection_str);
 
         if let Some(bucket) = bucket {
-            Self::proceed_erase_bucket(collection_str, bucket.into())
+            self.proceed_erase_bucket(collection_str, bucket.into())
         } else {
-            Self::proceed_erase_collection(collection_str)
+            self.proceed_erase_collection(collection_str)
         }
     }
 }

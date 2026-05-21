@@ -2,23 +2,22 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use linked_hash_set::LinkedHashSet;
 use std::iter::FromIterator;
 
-use crate::APP_CONF;
 use crate::lexer::token::TokenLexer;
-use crate::query::types::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
-use crate::store::fst::{StoreFSTActionBuilder, StoreFSTPool};
+use crate::query::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
+use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::identifiers::{StoreObjectIID, StoreTermHash};
 use crate::store::item::StoreItem;
-use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVPool};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
-pub struct ExecutorSearch;
-
-impl ExecutorSearch {
-    pub fn execute<'a>(
+impl super::Executor {
+    pub fn search<'a>(
+        &self,
         store: StoreItem<'a>,
         _event_id: QuerySearchID,
         lexer: TokenLexer<'a>,
@@ -32,8 +31,9 @@ impl ExecutorSearch {
             general_fst_access_lock_read!();
 
             if let (Ok(kv_store), Ok(fst_store)) = (
-                StoreKVPool::acquire(StoreKVAcquireMode::OpenOnly, collection),
-                StoreFSTPool::acquire(collection, bucket),
+                self.kv_pool
+                    .acquire(StoreKVAcquireMode::OpenOnly, collection),
+                self.fst_pool.acquire(collection, bucket),
             ) {
                 // Important: acquire bucket store read lock
                 executor_kv_lock_read!(kv_store);
@@ -61,8 +61,8 @@ impl ExecutorSearch {
                     //   comes next we need to exhaust all search space as to intersect it with \
                     //   the (likely) upcoming word.
                     let (higher_limit, alternates_try) = (
-                        APP_CONF.store.kv.retain_word_objects,
-                        APP_CONF.channel.search.query_alternates_try,
+                        self.app_conf.store.kv.retain_word_objects,
+                        self.app_conf.channel.search.query_alternates_try,
                     );
 
                     if iids.len() < higher_limit && alternates_try > 0 {

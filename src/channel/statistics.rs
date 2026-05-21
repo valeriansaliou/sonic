@@ -8,8 +8,8 @@ use std::ops::Deref;
 use std::sync::RwLock;
 use std::time::Instant;
 
-use crate::store::fst::StoreFSTPool;
-use crate::store::kv::StoreKVPool;
+use sonic::store::fst::StoreFSTPool;
+use sonic::store::kv::StoreKVPool;
 
 lazy_static! {
     static ref START_TIME: Instant = Instant::now();
@@ -43,8 +43,8 @@ pub fn ensure_states() {
 }
 
 impl ChannelStatistics {
-    pub fn gather() -> ChannelStatistics {
-        let (kv_count, fst_count) = (StoreKVPool::count(), StoreFSTPool::count());
+    pub fn gather(kv_pool: &StoreKVPool) -> ChannelStatistics {
+        let (kv_count, fst_count) = (kv_pool.count(), StoreFSTPool::count());
 
         ChannelStatistics {
             uptime: START_TIME.elapsed().as_secs(),

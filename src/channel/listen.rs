@@ -2,38 +2,65 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use std::net::TcpListener;
 use std::process;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::thread;
 
-use super::handle::ChannelHandle;
-use crate::{APP_CONF, THREAD_NAME_CHANNEL_CLIENT};
+use sonic::store::fst::StoreFSTPool;
+use sonic::store::kv::StoreKVPool;
 
-pub struct ChannelListenBuilder;
-pub struct ChannelListen;
+use super::handle::ChannelHandle;
+use crate::THREAD_NAME_CHANNEL_CLIENT;
+
+#[derive(Clone)]
+pub struct ChannelListenBuilder {
+    pub app_conf: Arc<sonic::Config>,
+    pub kv_pool: StoreKVPool,
+    pub fst_pool: StoreFSTPool,
+}
+
+pub struct ChannelListen {
+    app_conf: Arc<sonic::Config>,
+    kv_pool: StoreKVPool,
+    fst_pool: StoreFSTPool,
+}
 
 lazy_static! {
     pub static ref CHANNEL_AVAILABLE: RwLock<bool> = RwLock::new(true);
 }
 
 impl ChannelListenBuilder {
-    pub fn build() -> ChannelListen {
-        ChannelListen {}
+    pub fn build(&self) -> ChannelListen {
+        ChannelListen {
+            app_conf: Arc::clone(&self.app_conf),
+            kv_pool: self.kv_pool.clone(),
+            fst_pool: self.fst_pool.clone(),
+        }
     }
 }
 
 impl ChannelListen {
     pub fn run(&self) {
-        match TcpListener::bind(APP_CONF.channel.inet) {
+        match TcpListener::bind(self.app_conf.channel.inet) {
             Ok(listener) => {
-                info!("listening on tcp://{}", APP_CONF.channel.inet);
+                info!("listening on tcp://{}", self.app_conf.channel.inet);
 
                 for stream in listener.incoming() {
                     match stream {
                         Ok(stream) => {
+                            let handle = ChannelHandle {
+                                channel_config: Arc::clone(&self.app_conf.channel),
+                                executor: sonic::Executor {
+                                    app_conf: Arc::clone(&self.app_conf),
+                                    kv_pool: self.kv_pool.clone(),
+                                    fst_pool: self.fst_pool.clone(),
+                                },
+                            };
+
                             thread::Builder::new()
                                 .name(THREAD_NAME_CHANNEL_CLIENT.to_string())
                                 .spawn(move || {
@@ -42,7 +69,7 @@ impl ChannelListen {
                                     }
 
                                     // Create client
-                                    ChannelHandle::client(stream);
+                                    handle.client(stream);
                                 })
                                 .ok();
                         }
