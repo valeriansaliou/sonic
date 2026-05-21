@@ -11,6 +11,18 @@ tasks:
     aliases: [doc]
     cmd: cargo doc --no-deps --lib --open
 
+  test:
+    desc: >-
+      Runs native Rust tests.
+      You can use `task test:foo,bar` to run tests foo and bar.
+    aliases: [test:*]
+    cmd: cargo test --locked --no-fail-fast{{ if .MATCH }} --test {{ .MATCH | first | splitList "," | join " --test " }}{{ end }}{{ if .ARGS }} {{ .ARGS }}{{ end }}
+    vars:
+      ARGS: '{{ without .CLI_ARGS_LIST "--trace" "--debug" "--info" "--warn" | join " " }}'
+    env:
+      # This matches the last log level flag specified (expected behavior).
+      LOG_LEVEL: '{{ regexFindAll "(^| )--(trace|debug|info|warn)( |$)" (.CLI_ARGS_LIST | join "  ") -1 | last | default "--" | trim | substr 2 -1 }}'
+
   e2e-test:
     desc: Runs end-to-end tests.
     cmd: tests/e2e-node/scripts/run.sh
