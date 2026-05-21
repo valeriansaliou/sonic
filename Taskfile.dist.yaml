@@ -20,6 +20,10 @@ tasks:
       - cargo test --locked
       - tests/integration/scripts/run.sh
 
+  changelog:prepare:
+    desc: Prepares changelog entries for the next release.
+    cmd: ./scripts/changelog_prepare.sh {{.CLI_ARGS}}
+
   release:
     desc: Makes a new release (git tag). CD will build and release the binary.
     silent: true
