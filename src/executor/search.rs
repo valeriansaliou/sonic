@@ -16,11 +16,11 @@ use crate::store::identifiers::{StoreObjectIID, StoreTermHash};
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
 impl super::Executor {
-    pub fn search<'a>(
+    pub fn search(
         &self,
-        item: StoreItem<'a>,
+        item: StoreItem,
         _event_id: QuerySearchID,
-        lexer: TokenLexer<'a>,
+        lexer: TokenLexer,
         limit: QuerySearchLimit,
         offset: QuerySearchOffset,
     ) -> Result<Option<Vec<String>>, ()> {

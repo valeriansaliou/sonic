@@ -15,7 +15,7 @@ use crate::store::identifiers::{StoreMetaKey, StoreMetaValue, StoreTermHashed};
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
 impl super::Executor {
-    pub fn push<'a>(&self, item: StoreItem<'a>, lexer: TokenLexer<'a>) -> Result<(), ()> {
+    pub fn push(&self, item: StoreItem, lexer: TokenLexer) -> Result<(), ()> {
         if let StoreItem(collection, Some(bucket), Some(object)) = item {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.

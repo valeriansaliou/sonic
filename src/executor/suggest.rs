@@ -11,11 +11,11 @@ use crate::store::StoreItem;
 use crate::store::fst::StoreFSTActionBuilder;
 
 impl super::Executor {
-    pub fn suggest<'a>(
+    pub fn suggest(
         &self,
-        item: StoreItem<'a>,
+        item: StoreItem,
         _event_id: QuerySearchID,
-        mut lexer: TokenLexer<'a>,
+        mut lexer: TokenLexer,
         limit: QuerySearchLimit,
     ) -> Result<Option<Vec<String>>, ()> {
         if let StoreItem(collection, Some(bucket), None) = item {
