@@ -25,7 +25,7 @@ pub enum StoreItemError {
     InvalidObject,
 }
 
-const STORE_ITEM_PART_LEN_MIN: usize = 0;
+const STORE_ITEM_PART_LEN_MIN: usize = 1;
 const STORE_ITEM_PART_LEN_MAX: usize = 128;
 
 impl<'a> StoreItemPart<'a> {
@@ -33,7 +33,7 @@ impl<'a> StoreItemPart<'a> {
     pub fn from_str(part: &'a str) -> Result<Self, ()> {
         let len = part.len();
 
-        if len > STORE_ITEM_PART_LEN_MIN && len <= STORE_ITEM_PART_LEN_MAX && part.is_ascii() {
+        if len >= STORE_ITEM_PART_LEN_MIN && len <= STORE_ITEM_PART_LEN_MAX && part.is_ascii() {
             Ok(StoreItemPart(part))
         } else {
             Err(())
