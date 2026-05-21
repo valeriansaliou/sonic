@@ -8,6 +8,12 @@
        It’s used by `task release` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/v1.5.0...HEAD
 
+### Bug Fixes
+
+Because of partial CI failures we ended up releasing some versions but not
+all (e.g. “error: crate sonic-server@1.5.0 already exists on crates.io index”).
+We will yank `1.5.0` on crates.io and publish `1.5.1` instead.
+
 ## [1.5.0] (2026-05-21)
 
 [1.5.0]: https://github.com/valeriansaliou/sonic/compare/v1.4.9...v1.5.0
