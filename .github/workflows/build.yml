@@ -40,9 +40,9 @@ jobs:
         uses: WyriHaximus/github-action-get-previous-tag@61819f33034117e6c686e6a31dba995a85afc9de # v2.0.0
 
       - name: Release package
-        run: cargo publish --no-verify --token ${CRATES_TOKEN}
+        run: cargo publish --no-verify
         env:
-          CRATES_TOKEN: ${{ secrets.CRATES_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
 
       - name: Release binaries
         run: ./scripts/release_binaries.sh --version=${{ steps.current_tag.outputs.tag }}
