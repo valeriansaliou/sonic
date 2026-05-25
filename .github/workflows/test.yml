@@ -120,13 +120,13 @@ jobs:
             target
           key: test-${{ runner.os }}-cargo-${{ matrix.rust-toolchain }}
 
-      - name: Cache integration artifacts
-        id: cache-integration
+      - name: Cache end-to-end test artifacts
+        id: cache-e2e-node
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
-            tests/integration/runner/node_modules
-          key: test-${{ runner.os }}-integration-${{ matrix.rust-toolchain }}
+            tests/e2e-node/runner/node_modules
+          key: test-${{ runner.os }}-e2e-node-${{ matrix.rust-toolchain }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master on 2026-05-14
@@ -147,5 +147,5 @@ jobs:
       - name: Test code
         run: cargo test --locked
 
-      - name: Run integration tests
-        run: tests/integration/scripts/run.sh
+      - name: Run end-to-end tests
+        run: tests/e2e-node/scripts/run.sh
