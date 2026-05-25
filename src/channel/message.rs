@@ -48,7 +48,7 @@ pub trait ChannelMessageMode {
     fn on(&self, mut stream: &TcpStream, message_slice: &[u8]) -> ChannelMessageResult {
         let message = str::from_utf8(message_slice).unwrap_or("");
 
-        debug!("got channel message: {}", message);
+        tracing::debug!("got channel message: {}", message);
 
         let command_start = Instant::now();
 
@@ -94,14 +94,15 @@ pub trait ChannelMessageMode {
                     write!(stream, "{} {}{}", response_args.0, values_string, LINE_FEED)
                         .expect("write failed");
 
-                    debug!(
+                    tracing::debug!(
                         "wrote response with values: {} ({})",
-                        response_args.0, values_string
+                        response_args.0,
+                        values_string
                     );
                 } else {
                     write!(stream, "{}{}", response_args.0, LINE_FEED).expect("write failed");
 
-                    debug!("wrote response with no values: {}", response_args.0);
+                    tracing::debug!("wrote response with no values: {}", response_args.0);
                 }
             }
         }
@@ -112,12 +113,12 @@ pub trait ChannelMessageMode {
         let command_took = command_start.elapsed();
 
         if command_took.as_millis() >= COMMAND_ELAPSED_MILLIS_SLOW_WARN {
-            warn!(
+            tracing::warn!(
                 "took a lot of time: {}ms to process channel message",
                 command_took.as_millis(),
             );
         } else {
-            info!(
+            tracing::info!(
                 "took {}ms/{}us/{}ns to process channel message",
                 command_took.as_millis(),
                 command_took.as_micros(),
@@ -164,7 +165,7 @@ impl ChannelMessage {
         let mut parts = message.split_whitespace();
         let command = parts.next().unwrap_or("").to_uppercase();
 
-        debug!("will dispatch search command: {}", command);
+        tracing::debug!("will dispatch search command: {}", command);
 
         (command, parts)
     }

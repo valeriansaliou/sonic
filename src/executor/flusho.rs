@@ -37,7 +37,7 @@ impl super::Executor {
                             if let Ok(iid_terms_value) = kv_action.get_iid_to_terms(iid) {
                                 iid_terms_value.unwrap_or_default()
                             } else {
-                                error!("failed getting flusho executor iid-to-terms");
+                                tracing::error!("failed getting flusho executor iid-to-terms");
 
                                 Vec::new()
                             }
@@ -48,13 +48,15 @@ impl super::Executor {
                         {
                             count_flushed += batch_count;
                         } else {
-                            error!("failed executing batch-flush-bucket in flusho executor");
+                            tracing::error!(
+                                "failed executing batch-flush-bucket in flusho executor"
+                            );
                         }
                     }
 
                     return Ok(count_flushed);
                 } else {
-                    error!("failed getting flusho executor oid-to-iid");
+                    tracing::error!("failed getting flusho executor oid-to-iid");
                 }
             }
         }

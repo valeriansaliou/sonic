@@ -25,7 +25,7 @@ impl super::Executor {
             if let Ok(fst_store) = self.fst_pool.acquire(collection, bucket) {
                 let fst_action = StoreFSTActionBuilder::access(fst_store);
 
-                debug!("running list");
+                tracing::debug!("running list");
 
                 return fst_action.list_words(limit as usize, offset as usize);
             }

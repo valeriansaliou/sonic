@@ -127,9 +127,10 @@ impl LexerStopWord {
     }
 
     pub fn guess_lang(text: &str, script: Script) -> Option<Lang> {
-        debug!(
+        tracing::debug!(
             "guessing locale from stopwords for script: {} and text: {}",
-            script, text
+            script,
+            text
         );
 
         let script_langs = Self::script_langs(script);
@@ -163,9 +164,10 @@ impl LexerStopWord {
 
                 // Found stopwords for this locale in text?
                 if lang_count > 0 {
-                    debug!(
+                    tracing::debug!(
                         "got {} common stopwords in guess for locale: {}",
-                        lang_count, script_lang
+                        lang_count,
+                        script_lang
                     );
 
                     if lang_count > likely_count {

@@ -114,9 +114,10 @@ impl StoreKVPool {
         if let Some(store_kv) = store_pool_read.get(&pool_key) {
             Self::proceed_acquire_cache("kv", collection_str, pool_key, store_kv).map(Some)
         } else {
-            info!(
+            tracing::info!(
                 "kv store not in pool for collection: {} {}, opening it",
-                collection_str, pool_key
+                collection_str,
+                pool_key
             );
 
             // Important: we need to drop the read reference first, to avoid \
@@ -147,7 +148,7 @@ impl StoreKVPool {
     }
 
     fn close(&self, collection_hash: StoreKVAtom) {
-        debug!(
+        tracing::debug!(
             "closing key-value database for collection: <{:x?}>",
             collection_hash
         );
@@ -169,7 +170,7 @@ impl StoreKVPool {
     }
 
     pub fn backup(&self, path: &Path) -> Result<(), io::Error> {
-        debug!("backing up all kv stores to path: {:?}", path);
+        tracing::debug!("backing up all kv stores to path: {:?}", path);
 
         // Create backup directory (full path)
         fs::create_dir_all(path)?;
@@ -184,7 +185,7 @@ impl StoreKVPool {
     }
 
     pub fn restore(&self, path: &Path) -> Result<(), io::Error> {
-        debug!("restoring all kv stores from path: {:?}", path);
+        tracing::debug!("restoring all kv stores from path: {:?}", path);
 
         // Proceed dump action (restore)
         self.dump_action(
@@ -196,7 +197,7 @@ impl StoreKVPool {
     }
 
     pub fn flush(&self, force: bool) {
-        debug!("scanning for kv store pool items to flush to disk");
+        tracing::debug!("scanning for kv store pool items to flush to disk");
 
         // Acquire flush lock, and reference it in context
         // Notice: this prevents two flush operations to be executed at the same time.
@@ -223,9 +224,10 @@ impl StoreKVPool {
                     .unwrap()
                     .elapsed()
                     .unwrap_or_else(|err| {
-                        error!(
+                        tracing::error!(
                             "kv key: {} last flush duration clock issue, zeroing: {}",
-                            key, err
+                            key,
+                            err
                         );
 
                         // Assuming a zero seconds fallback duration
@@ -234,16 +236,18 @@ impl StoreKVPool {
                     .as_secs();
 
                 if force || not_flushed_for >= self.kv_store_config.database.flush_after {
-                    info!(
+                    tracing::info!(
                         "kv key: {} not flushed for: {} seconds, may flush",
-                        key, not_flushed_for
+                        key,
+                        not_flushed_for
                     );
 
                     keys_flush.push(*key);
                 } else {
-                    debug!(
+                    tracing::debug!(
                         "kv key: {} not flushed for: {} seconds, no flush",
-                        key, not_flushed_for
+                        key,
+                        not_flushed_for
                     );
                 }
             }
@@ -251,7 +255,7 @@ impl StoreKVPool {
 
         // Exit trap: Nothing to flush yet? Abort there.
         if keys_flush.is_empty() {
-            info!("no kv store pool items need to be flushed at the moment");
+            tracing::info!("no kv store pool items need to be flushed at the moment");
 
             return;
         }
@@ -267,14 +271,14 @@ impl StoreKVPool {
                     let _access = STORE_ACCESS_LOCK.write().unwrap();
 
                     if let Some(store) = self.pool.read().unwrap().get(key) {
-                        debug!("kv key: {} flush started", key);
+                        tracing::debug!("kv key: {} flush started", key);
 
                         if let Err(err) = store.flush() {
-                            error!("kv key: {} flush failed: {}", key, err);
+                            tracing::error!("kv key: {} flush failed: {}", key, err);
                         } else {
                             count_flushed += 1;
 
-                            debug!("kv key: {} flush complete", key);
+                            tracing::debug!("kv key: {} flush complete", key);
                         }
 
                         // Bump 'last flushed' time
@@ -287,7 +291,7 @@ impl StoreKVPool {
             }
         }
 
-        info!(
+        tracing::info!(
             "done scanning for kv store pool items to flush to disk (flushed: {})",
             count_flushed
         );
@@ -310,7 +314,7 @@ impl StoreKVPool {
                 (collection.file_type(), collection.file_name().to_str())
             {
                 if collection_file_type.is_dir() {
-                    debug!("kv collection ongoing {}: {}", action, collection_name);
+                    tracing::debug!("kv collection ongoing {}: {}", action, collection_name);
 
                     fn_item(self, write_path, &collection.path(), collection_name)?;
                 }
@@ -333,9 +337,10 @@ impl StoreKVPool {
         // Generate path to KV backup
         let kv_backup_path = backup_path.join(collection_name);
 
-        debug!(
+        tracing::debug!(
             "kv collection: {} backing up to path: {:?}",
-            collection_name, kv_backup_path
+            collection_name,
+            kv_backup_path
         );
 
         // Erase any previously-existing KV backup
@@ -371,9 +376,10 @@ impl StoreKVPool {
                     .create_new_backup(&origin_kv)
                     .map_err(|_| io_error!("database backup failure"))?;
 
-                info!(
+                tracing::info!(
                     "kv collection: {} backed up to path: {:?}",
-                    collection_name, kv_backup_path
+                    collection_name,
+                    kv_backup_path
                 );
             }
         }
@@ -391,9 +397,10 @@ impl StoreKVPool {
         // Notice: this prevents store to be acquired from any context
         let _access = STORE_ACCESS_LOCK.write().unwrap();
 
-        debug!(
+        tracing::debug!(
             "kv collection: {} restoring from path: {:?}",
-            collection_name, origin_path
+            collection_name,
+            origin_path
         );
 
         // Convert names to hashes (as names are hashes encoded as base-16 strings, but we need \
@@ -428,9 +435,11 @@ impl StoreKVPool {
                     .restore_from_latest_backup(&kv_path, &kv_path, &DBRestoreOptions::default())
                     .map_err(|_| io_error!("database restore failure"))?;
 
-                info!(
+                tracing::info!(
                     "kv collection: {} restored to path: {:?} from backup: {:?}",
-                    collection_name, kv_path, origin_path
+                    collection_name,
+                    kv_path,
+                    origin_path
                 );
             }
         }
@@ -443,7 +452,7 @@ impl StoreGenericPool<StoreKVKey, StoreKV, StoreKVBuilder> for StoreKVPool {}
 
 impl StoreKVBuilder {
     fn open(&self, collection_hash: StoreKVAtom) -> Result<DB, DBError> {
-        debug!(
+        tracing::debug!(
             "opening key-value database for collection: <{:x?}>",
             collection_hash
         );
@@ -456,7 +465,7 @@ impl StoreKVBuilder {
     }
 
     fn configure(&self) -> DBOptions {
-        debug!("configuring key-value database");
+        tracing::debug!("configuring key-value database");
 
         let db_conf = &self.kv_store_config.database;
 
@@ -513,7 +522,7 @@ impl StoreGenericBuilder<StoreKVKey, StoreKV> for StoreKVBuilder {
                 }
             })
             .map_err(|err| {
-                error!("failed opening kv: {}", err);
+                tracing::error!("failed opening kv: {}", err);
             })
     }
 }
@@ -555,11 +564,11 @@ impl StoreKV {
 
         // WAL disabled?
         if !self.kv_store_config.database.write_ahead_log {
-            debug!("ignoring wal for kv write");
+            tracing::debug!("ignoring wal for kv write");
 
             write_options.disable_wal(true);
         } else {
-            debug!("using wal for kv write");
+            tracing::debug!("using wal for kv write");
 
             write_options.disable_wal(false);
         }
@@ -598,25 +607,27 @@ impl<'build> StoreGenericActionBuilder for StoreKVActionBuilder<'build> {
         self.kv_pool.close(collection_atom);
 
         if collection_path.exists() {
-            debug!(
+            tracing::debug!(
                 "kv collection store exists, erasing: {}/* at path: {:?}",
-                collection_str, &collection_path
+                collection_str,
+                &collection_path
             );
 
             // Remove KV store storage from filesystem
             let erase_result = fs::remove_dir_all(&collection_path);
 
             if erase_result.is_ok() {
-                debug!("done with kv collection erasure");
+                tracing::debug!("done with kv collection erasure");
 
                 Ok(1)
             } else {
                 Err(())
             }
         } else {
-            debug!(
+            tracing::debug!(
                 "kv collection store does not exist, consider already erased: {}/* at path: {:?}",
-                collection_str, &collection_path
+                collection_str,
+                &collection_path
             );
 
             Ok(0)
@@ -638,11 +649,11 @@ impl<'a> StoreKVAction<'a> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::meta_to_value(self.bucket.as_str(), &meta);
 
-            debug!("store get meta-to-value: {}", store_key);
+            tracing::debug!("store get meta-to-value: {}", store_key);
 
             match store.get(&store_key.as_bytes()) {
                 Ok(Some(value)) => {
-                    debug!("got meta-to-value: {}", store_key);
+                    tracing::debug!("got meta-to-value: {}", store_key);
 
                     Ok(if let Ok(value) = str::from_utf8(&value) {
                         match meta {
@@ -657,14 +668,15 @@ impl<'a> StoreKVAction<'a> {
                     })
                 }
                 Ok(None) => {
-                    debug!("no meta-to-value found: {}", store_key);
+                    tracing::debug!("no meta-to-value found: {}", store_key);
 
                     Ok(None)
                 }
                 Err(err) => {
-                    error!(
+                    tracing::error!(
                         "error getting meta-to-value: {} with trace: {}",
-                        store_key, err
+                        store_key,
+                        err
                     );
 
                     Err(())
@@ -679,7 +691,7 @@ impl<'a> StoreKVAction<'a> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::meta_to_value(self.bucket.as_str(), &meta);
 
-            debug!("store set meta-to-value: {}", store_key);
+            tracing::debug!("store set meta-to-value: {}", store_key);
 
             let value_string = match value {
                 StoreMetaValue::IIDIncr(iid_incr) => iid_incr.to_string(),
@@ -703,35 +715,38 @@ impl<'a> StoreKVAction<'a> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed);
 
-            debug!("store get term-to-iids: {}", store_key);
+            tracing::debug!("store get term-to-iids: {}", store_key);
 
             match store.get(&store_key.as_bytes()) {
                 Ok(Some(value)) => {
-                    debug!(
+                    tracing::debug!(
                         "got term-to-iids: {} with encoded value: {:?}",
-                        store_key, &*value
+                        store_key,
+                        &*value
                     );
 
                     Self::decode_u32_list(&*value)
                         .or(Err(()))
                         .map(|value_decoded| {
-                            debug!(
+                            tracing::debug!(
                                 "got term-to-iids: {} with decoded value: {:?}",
-                                store_key, &value_decoded
+                                store_key,
+                                &value_decoded
                             );
 
                             Some(value_decoded)
                         })
                 }
                 Ok(None) => {
-                    debug!("no term-to-iids found: {}", store_key);
+                    tracing::debug!("no term-to-iids found: {}", store_key);
 
                     Ok(None)
                 }
                 Err(err) => {
-                    error!(
+                    tracing::error!(
                         "error getting term-to-iids: {} with trace: {}",
-                        store_key, err
+                        store_key,
+                        err
                     );
 
                     Err(())
@@ -750,14 +765,15 @@ impl<'a> StoreKVAction<'a> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed);
 
-            debug!("store set term-to-iids: {}", store_key);
+            tracing::debug!("store set term-to-iids: {}", store_key);
 
             // Encode IID list into storage serialized format
             let iids_encoded = Self::encode_u32_list(iids);
 
-            debug!(
+            tracing::debug!(
                 "store set term-to-iids: {} with encoded value: {:?}",
-                store_key, iids_encoded
+                store_key,
+                iids_encoded
             );
 
             store.put(&store_key.as_bytes(), &iids_encoded).or(Err(()))
@@ -770,7 +786,7 @@ impl<'a> StoreKVAction<'a> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed);
 
-            debug!("store delete term-to-iids: {}", store_key);
+            tracing::debug!("store delete term-to-iids: {}", store_key);
 
             store.delete(&store_key.as_bytes()).or(Err(()))
         } else {
@@ -785,33 +801,36 @@ impl<'a> StoreKVAction<'a> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
 
-            debug!("store get oid-to-iid: {}", store_key);
+            tracing::debug!("store get oid-to-iid: {}", store_key);
 
             match store.get(&store_key.as_bytes()) {
                 Ok(Some(value)) => {
-                    debug!(
+                    tracing::debug!(
                         "got oid-to-iid: {} with encoded value: {:?}",
-                        store_key, &*value
+                        store_key,
+                        &*value
                     );
 
                     Self::decode_u32(&*value).or(Err(())).map(|value_decoded| {
-                        debug!(
+                        tracing::debug!(
                             "got oid-to-iid: {} with decoded value: {:?}",
-                            store_key, &value_decoded
+                            store_key,
+                            &value_decoded
                         );
 
                         Some(value_decoded)
                     })
                 }
                 Ok(None) => {
-                    debug!("no oid-to-iid found: {}", store_key);
+                    tracing::debug!("no oid-to-iid found: {}", store_key);
 
                     Ok(None)
                 }
                 Err(err) => {
-                    error!(
+                    tracing::error!(
                         "error getting oid-to-iid: {} with trace: {}",
-                        store_key, err
+                        store_key,
+                        err
                     );
 
                     Err(())
@@ -826,14 +845,15 @@ impl<'a> StoreKVAction<'a> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
 
-            debug!("store set oid-to-iid: {}", store_key);
+            tracing::debug!("store set oid-to-iid: {}", store_key);
 
             // Encode IID
             let iid_encoded = Self::encode_u32(iid);
 
-            debug!(
+            tracing::debug!(
                 "store set oid-to-iid: {} with encoded value: {:?}",
-                store_key, iid_encoded
+                store_key,
+                iid_encoded
             );
 
             store.put(&store_key.as_bytes(), &iid_encoded).or(Err(()))
@@ -846,7 +866,7 @@ impl<'a> StoreKVAction<'a> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
 
-            debug!("store delete oid-to-iid: {}", store_key);
+            tracing::debug!("store delete oid-to-iid: {}", store_key);
 
             store.delete(&store_key.as_bytes()).or(Err(()))
         } else {
@@ -861,7 +881,7 @@ impl<'a> StoreKVAction<'a> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
 
-            debug!("store get iid-to-oid: {}", store_key);
+            tracing::debug!("store get iid-to-oid: {}", store_key);
 
             match store.get(&store_key.as_bytes()) {
                 Ok(Some(value)) => Ok(str::from_utf8(&value).ok().map(|value| value.to_string())),
@@ -877,7 +897,7 @@ impl<'a> StoreKVAction<'a> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
 
-            debug!("store set iid-to-oid: {}", store_key);
+            tracing::debug!("store set iid-to-oid: {}", store_key);
 
             store.put(&store_key.as_bytes(), oid.as_bytes()).or(Err(()))
         } else {
@@ -889,7 +909,7 @@ impl<'a> StoreKVAction<'a> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
 
-            debug!("store delete iid-to-oid: {}", store_key);
+            tracing::debug!("store delete iid-to-oid: {}", store_key);
 
             store.delete(&store_key.as_bytes()).or(Err(()))
         } else {
@@ -907,21 +927,23 @@ impl<'a> StoreKVAction<'a> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
 
-            debug!("store get iid-to-terms: {}", store_key);
+            tracing::debug!("store get iid-to-terms: {}", store_key);
 
             match store.get(&store_key.as_bytes()) {
                 Ok(Some(value)) => {
-                    debug!(
+                    tracing::debug!(
                         "got iid-to-terms: {} with encoded value: {:?}",
-                        store_key, &*value
+                        store_key,
+                        &*value
                     );
 
                     Self::decode_u32_list(&*value)
                         .or(Err(()))
                         .map(|value_decoded| {
-                            debug!(
+                            tracing::debug!(
                                 "got iid-to-terms: {} with decoded value: {:?}",
-                                store_key, &value_decoded
+                                store_key,
+                                &value_decoded
                             );
 
                             if !value_decoded.is_empty() {
@@ -947,14 +969,15 @@ impl<'a> StoreKVAction<'a> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
 
-            debug!("store set iid-to-terms: {}", store_key);
+            tracing::debug!("store set iid-to-terms: {}", store_key);
 
             // Encode term list into storage serialized format
             let terms_hashed_encoded = Self::encode_u32_list(terms_hashed);
 
-            debug!(
+            tracing::debug!(
                 "store set iid-to-terms: {} with encoded value: {:?}",
-                store_key, terms_hashed_encoded
+                store_key,
+                terms_hashed_encoded
             );
 
             store
@@ -969,7 +992,7 @@ impl<'a> StoreKVAction<'a> {
         if let Some(ref store) = self.store {
             let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
 
-            debug!("store delete iid-to-terms: {}", store_key);
+            tracing::debug!("store delete iid-to-terms: {}", store_key);
 
             store.delete(&store_key.as_bytes()).or(Err(()))
         } else {
@@ -985,9 +1008,10 @@ impl<'a> StoreKVAction<'a> {
     ) -> Result<u32, ()> {
         let mut count = 0;
 
-        debug!(
+        tracing::debug!(
             "store batch flush bucket: {} with hashed terms: {:?}",
-            iid, iid_terms_hashed
+            iid,
+            iid_terms_hashed
         );
 
         // Delete OID <> IID association
@@ -1033,7 +1057,7 @@ impl<'a> StoreKVAction<'a> {
         let mut count = 0;
 
         for term_iid_drain in term_iids_drain {
-            debug!("store batch truncate object iid: {}", term_iid_drain);
+            tracing::debug!("store batch truncate object iid: {}", term_iid_drain);
 
             // Nuke term in IID to Terms list
             if let Ok(Some(mut term_iid_drain_terms)) = self.get_iid_to_terms(term_iid_drain) {
@@ -1049,12 +1073,12 @@ impl<'a> StoreKVAction<'a> {
                             .batch_flush_bucket(term_iid_drain, &term_iid_drain_oid, &Vec::new())
                             .is_err()
                         {
-                            error!(
+                            tracing::error!(
                                 "failed executing store batch truncate object batch-flush-bucket"
                             );
                         }
                     } else {
-                        error!("failed getting store batch truncate object iid-to-oid");
+                        tracing::error!("failed getting store batch truncate object iid-to-oid");
                     }
                 } else {
                     // Update IID to Terms list
@@ -1062,7 +1086,7 @@ impl<'a> StoreKVAction<'a> {
                         .set_iid_to_terms(term_iid_drain, &term_iid_drain_terms)
                         .is_err()
                     {
-                        error!("failed setting store batch truncate object iid-to-terms");
+                        tracing::error!("failed setting store batch truncate object iid-to-terms");
                     }
                 }
             }
@@ -1092,7 +1116,7 @@ impl<'a> StoreKVAction<'a> {
 
             // Scan all keys per-prefix and nuke them right away
             for key_prefix in &key_prefixes {
-                debug!(
+                tracing::debug!(
                     "store batch erase bucket: {} for prefix: {:?}",
                     self.bucket.as_str(),
                     key_prefix
@@ -1130,7 +1154,7 @@ impl<'a> StoreKVAction<'a> {
 
                 // Commit operation to database
                 if let Err(err) = store.do_write(batch) {
-                    error!(
+                    tracing::error!(
                         "failed in store batch erase bucket: {} with error: {}",
                         self.bucket.as_str(),
                         err
@@ -1141,14 +1165,14 @@ impl<'a> StoreKVAction<'a> {
                     //   deleted)
                     store.delete(&key_prefix_end).ok();
 
-                    debug!(
+                    tracing::debug!(
                         "succeeded in store batch erase bucket: {}",
                         self.bucket.as_str()
                     );
                 }
             }
 
-            info!(
+            tracing::info!(
                 "done processing store batch erase bucket: {}",
                 self.bucket.as_str()
             );

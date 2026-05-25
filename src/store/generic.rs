@@ -28,9 +28,11 @@ pub trait StoreGenericPool<
         pool_key: K,
         store: &Arc<S>,
     ) -> Result<Arc<S>, ()> {
-        debug!(
+        tracing::debug!(
             "{} store acquired from pool for collection: {} (pool key: {})",
-            kind, collection_str, pool_key
+            kind,
+            collection_str,
+            pool_key
         );
 
         // Bump store last used date (avoids early janitor eviction)
@@ -59,17 +61,21 @@ pub trait StoreGenericPool<
 
                 store_pool_write.insert(pool_key, store_box.clone());
 
-                debug!(
+                tracing::debug!(
                     "opened and cached {} store in pool for collection: {} (pool key: {})",
-                    kind, collection_str, pool_key
+                    kind,
+                    collection_str,
+                    pool_key
                 );
 
                 Ok(store_box)
             }
             Err(_) => {
-                error!(
+                tracing::error!(
                     "failed opening {} store for collection: {} (pool key: {})",
-                    kind, collection_str, pool_key
+                    kind,
+                    collection_str,
+                    pool_key
                 );
 
                 Err(())
@@ -83,7 +89,7 @@ pub trait StoreGenericPool<
         inactive_after: u64,
         access_lock: &Arc<RwLock<bool>>,
     ) {
-        debug!("scanning for {} store pool items to janitor", kind);
+        tracing::debug!("scanning for {} store pool items to janitor", kind);
 
         // Acquire access lock (in blocking write mode), and reference it in context
         // Notice: this prevents store to be acquired from any context
@@ -102,9 +108,10 @@ pub trait StoreGenericPool<
                 .unwrap()
                 .elapsed()
                 .unwrap_or_else(|err| {
-                    error!(
+                    tracing::error!(
                         "store pool item: {} last used duration clock issue, zeroing: {}",
-                        collection_bucket, err
+                        collection_bucket,
+                        err
                     );
 
                     // Assuming a zero seconds fallback duration
@@ -113,18 +120,22 @@ pub trait StoreGenericPool<
                 .as_secs();
 
             if last_used_elapsed >= inactive_after {
-                debug!(
+                tracing::debug!(
                     "found expired {} store pool item: {}; elapsed time: {}s",
-                    kind, collection_bucket, last_used_elapsed
+                    kind,
+                    collection_bucket,
+                    last_used_elapsed
                 );
 
                 // Notice: the bucket value needs to be cloned, as we cannot reference as value \
                 //   that will outlive referenced value once we remove it from its owner set.
                 removal_register.push(*collection_bucket);
             } else {
-                debug!(
+                tracing::debug!(
                     "found non-expired {} store pool item: {}; elapsed time: {}s",
-                    kind, collection_bucket, last_used_elapsed
+                    kind,
+                    collection_bucket,
+                    last_used_elapsed
                 );
             }
         }
@@ -137,7 +148,7 @@ pub trait StoreGenericPool<
             }
         }
 
-        info!(
+        tracing::info!(
             "done scanning for {} store pool items to janitor, expired {} items, now has {} items",
             kind,
             removal_register.len(),
@@ -163,7 +174,7 @@ pub trait StoreGenericActionBuilder {
     ) -> Result<u32, ()> {
         let collection_str = collection.into();
 
-        info!("{} erase requested on collection: {}", kind, collection_str);
+        tracing::info!("{} erase requested on collection: {}", kind, collection_str);
 
         if let Some(bucket) = bucket {
             self.proceed_erase_bucket(collection_str, bucket.into())

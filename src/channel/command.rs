@@ -211,11 +211,11 @@ impl ChannelCommandBase {
             || text_bytes[0] as char != TEXT_PART_BOUNDARY
             || text_bytes[text_bytes_len - 1] as char != TEXT_PART_BOUNDARY
         {
-            info!("could not properly parse text parts: {}", text_raw);
+            tracing::info!("could not properly parse text parts: {}", text_raw);
 
             None
         } else {
-            debug!(
+            tracing::debug!(
                 "parsed text parts (still needs post-processing): {}",
                 text_raw
             );
@@ -225,7 +225,7 @@ impl ChannelCommandBase {
                 Ok(text_inner) => {
                     let text_inner_string = unescape(text_inner.trim());
 
-                    debug!("parsed text parts (post-processed): {}", text_inner_string);
+                    tracing::debug!("parsed text parts (post-processed): {}", text_inner_string);
 
                     // Text must not be empty
                     if !text_inner_string.is_empty() {
@@ -235,9 +235,10 @@ impl ChannelCommandBase {
                     }
                 }
                 Err(err) => {
-                    info!(
+                    tracing::info!(
                         "could not type-cast post-processed text parts: {} because: {}",
-                        text_raw, err
+                        text_raw,
+                        err
                     );
 
                     None
@@ -268,13 +269,14 @@ impl ChannelCommandBase {
                             && !value.contains(META_PART_GROUP_OPEN)
                             && !value.contains(META_PART_GROUP_CLOSE)
                         {
-                            debug!("parsed meta part as: {} = {}", key, value);
+                            tracing::debug!("parsed meta part as: {} = {}", key, value);
 
                             Some(Ok((key, value)))
                         } else {
-                            info!(
+                            tracing::info!(
                                 "parsed meta part, but it contains reserved characters: {} = {}",
-                                key, value
+                                key,
+                                value
                             );
 
                             Some(Err((key, value)))
@@ -283,7 +285,7 @@ impl ChannelCommandBase {
                 }
             }
 
-            info!("could not parse meta part: {}", part);
+            tracing::info!("could not parse meta part: {}", part);
 
             Some(Err(("?", part)))
         } else {
@@ -365,9 +367,11 @@ impl ChannelCommandSearch {
                 // Generate command identifier
                 let event_id = ChannelCommandBase::generate_event_id();
 
-                debug!(
+                tracing::debug!(
                     "dispatching search query #{} on collection: {} and bucket: {}",
-                    event_id, collection, bucket
+                    event_id,
+                    collection,
+                    bucket
                 );
 
                 // Define query parameters
@@ -401,9 +405,13 @@ impl ChannelCommandSearch {
                         "LIMIT out of minimum/maximum bounds",
                     ))
                 } else {
-                    debug!(
+                    tracing::debug!(
                         "will search for #{} with text: {}, limit: {}, offset: {}, locale: <{:?}>",
-                        event_id, text, query_limit, query_offset, query_lang
+                        event_id,
+                        text,
+                        query_limit,
+                        query_offset,
+                        query_lang
                     );
 
                     let query = Query::search(
@@ -446,9 +454,11 @@ impl ChannelCommandSearch {
                 // Generate command identifier
                 let event_id = ChannelCommandBase::generate_event_id();
 
-                debug!(
+                tracing::debug!(
                     "dispatching search suggest #{} on collection: {} and bucket: {}",
-                    event_id, collection, bucket
+                    event_id,
+                    collection,
+                    bucket
                 );
 
                 // Define suggest parameters
@@ -475,9 +485,11 @@ impl ChannelCommandSearch {
                         "LIMIT out of minimum/maximum bounds",
                     ))
                 } else {
-                    debug!(
+                    tracing::debug!(
                         "will suggest for #{} with text: {}, limit: {}",
-                        event_id, text, suggest_limit
+                        event_id,
+                        text,
+                        suggest_limit
                     );
 
                     let query = Query::suggest(&event_id, collection, bucket, &text, suggest_limit)
@@ -507,9 +519,11 @@ impl ChannelCommandSearch {
                 // Generate command identifier
                 let event_id = ChannelCommandBase::generate_event_id();
 
-                debug!(
+                tracing::debug!(
                     "dispatching search list #{} on collection: {} and bucket: {}",
-                    event_id, collection, bucket
+                    event_id,
+                    collection,
+                    bucket
                 );
 
                 // Define list parameters
@@ -564,7 +578,7 @@ impl ChannelCommandSearch {
     ) -> Result<QueryMetaData, ChannelCommandError> {
         match meta_result {
             Ok((meta_key, meta_value)) => {
-                debug!("handle query meta: {} = {}", meta_key, meta_value);
+                tracing::debug!("handle query meta: {} = {}", meta_key, meta_value);
 
                 match meta_key {
                     "LIMIT" => {
@@ -613,7 +627,7 @@ impl ChannelCommandSearch {
     ) -> Result<Option<QuerySearchLimit>, ChannelCommandError> {
         match meta_result {
             Ok((meta_key, meta_value)) => {
-                debug!("handle suggest meta: {} = {}", meta_key, meta_value);
+                tracing::debug!("handle suggest meta: {} = {}", meta_key, meta_value);
 
                 match meta_key {
                     "LIMIT" => {
@@ -640,7 +654,7 @@ impl ChannelCommandSearch {
     fn handle_list_meta(meta_result: MetaPartsResult) -> Result<ListMetaData, ChannelCommandError> {
         match meta_result {
             Ok((meta_key, meta_value)) => {
-                debug!("handle list meta: {} = {}", meta_key, meta_value);
+                tracing::debug!("handle list meta: {} = {}", meta_key, meta_value);
 
                 match meta_key {
                     "LIMIT" => {
@@ -687,11 +701,13 @@ impl ChannelCommandIngest {
             ChannelCommandBase::parse_text_parts(&mut parts),
         ) {
             (Some(collection), Some(bucket), Some(object), Some(text)) => {
-                debug!(
+                tracing::debug!(
                     "dispatching ingest push in collection: {}, bucket: {} and object: {}",
-                    collection, bucket, object
+                    collection,
+                    bucket,
+                    object
                 );
-                debug!("ingest push has text: {}", text);
+                tracing::debug!("ingest push has text: {}", text);
 
                 // Define push parameters
                 let mut push_lang = None;
@@ -711,9 +727,10 @@ impl ChannelCommandIngest {
                 if let Some(err) = last_meta_err {
                     Err(err)
                 } else {
-                    debug!(
+                    tracing::debug!(
                         "will push for text: {} with hinted locale: <{:?}>",
-                        text, push_lang
+                        text,
+                        push_lang
                     );
 
                     let query = Query::push(collection, bucket, object, &text, push_lang)
@@ -741,11 +758,13 @@ impl ChannelCommandIngest {
             parts.next(),
         ) {
             (Some(collection), Some(bucket), Some(object), Some(text), None) => {
-                debug!(
+                tracing::debug!(
                     "dispatching ingest pop in collection: {}, bucket: {} and object: {}",
-                    collection, bucket, object
+                    collection,
+                    bucket,
+                    object
                 );
-                debug!("ingest pop has text: {}", text);
+                tracing::debug!("ingest pop has text: {}", text);
 
                 let query = Query::pop(collection, bucket, object, &text)
                     .map_err(|()| ChannelCommandError::QueryError)?;
@@ -765,7 +784,7 @@ impl ChannelCommandIngest {
     ) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next(), parts.next()) {
             (Some(collection), bucket_part, object_part, None) => {
-                debug!("dispatching ingest count in collection: {}", collection);
+                tracing::debug!("dispatching ingest count in collection: {}", collection);
 
                 let query = Query::count(collection, bucket_part, object_part)
                     .map_err(|()| ChannelCommandError::QueryError)?;
@@ -785,7 +804,7 @@ impl ChannelCommandIngest {
     ) -> ChannelResult {
         match (parts.next(), parts.next()) {
             (Some(collection), None) => {
-                debug!(
+                tracing::debug!(
                     "dispatching ingest flush collection in collection: {}",
                     collection
                 );
@@ -806,9 +825,10 @@ impl ChannelCommandIngest {
     ) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next()) {
             (Some(collection), Some(bucket), None) => {
-                debug!(
+                tracing::debug!(
                     "dispatching ingest flush bucket in collection: {}, bucket: {}",
-                    collection, bucket
+                    collection,
+                    bucket
                 );
 
                 let query = Query::flushb(collection, bucket)
@@ -829,9 +849,11 @@ impl ChannelCommandIngest {
     ) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next(), parts.next()) {
             (Some(collection), Some(bucket), Some(object), None) => {
-                debug!(
+                tracing::debug!(
                     "dispatching ingest flush object in collection: {}, bucket: {}, object: {}",
-                    collection, bucket, object
+                    collection,
+                    bucket,
+                    object
                 );
 
                 let query = Query::flusho(collection, bucket, object)
@@ -855,7 +877,7 @@ impl ChannelCommandIngest {
     ) -> Result<Option<QueryGenericLang>, ChannelCommandError> {
         match meta_result {
             Ok((meta_key, meta_value)) => {
-                debug!("handle push meta: {} = {}", meta_key, meta_value);
+                tracing::debug!("handle push meta: {} = {}", meta_key, meta_value);
 
                 match meta_key {
                     "LANG" => {

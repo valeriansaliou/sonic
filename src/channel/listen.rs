@@ -47,7 +47,7 @@ impl ChannelListen {
     pub fn run(&self) {
         match TcpListener::bind(self.app_conf.channel.inet) {
             Ok(listener) => {
-                info!("listening on tcp://{}", self.app_conf.channel.inet);
+                tracing::info!("listening on tcp://{}", self.app_conf.channel.inet);
 
                 for stream in listener.incoming() {
                     match stream {
@@ -65,7 +65,7 @@ impl ChannelListen {
                                 .name(THREAD_NAME_CHANNEL_CLIENT.to_string())
                                 .spawn(move || {
                                     if let Ok(peer_addr) = stream.peer_addr() {
-                                        debug!("channel client connecting: {}", peer_addr);
+                                        tracing::debug!("channel client connecting: {}", peer_addr);
                                     }
 
                                     // Create client
@@ -74,13 +74,13 @@ impl ChannelListen {
                                 .ok();
                         }
                         Err(err) => {
-                            warn!("error handling stream: {}", err);
+                            tracing::warn!("error handling stream: {}", err);
                         }
                     }
                 }
             }
             Err(err) => {
-                error!("error binding channel listener: {}", err);
+                tracing::error!("error binding channel listener: {}", err);
 
                 // Exit Sonic
                 process::exit(1);

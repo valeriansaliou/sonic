@@ -66,7 +66,7 @@ impl super::Executor {
                     );
 
                     if iids.len() < higher_limit && alternates_try > 0 {
-                        debug!(
+                        tracing::debug!(
                             "not enough iids were found ({}/{}), completing for term: {}",
                             iids.len(),
                             higher_limit,
@@ -90,7 +90,11 @@ impl super::Executor {
                                     continue 'suggestions;
                                 }
 
-                                debug!("got completed word: {} for term: {}", suggested_word, term);
+                                tracing::debug!(
+                                    "got completed word: {} for term: {}",
+                                    suggested_word,
+                                    term
+                                );
 
                                 if let Some(suggested_iids) = kv_action
                                     .get_term_to_iids(StoreTermHash::from(&suggested_word))
@@ -108,7 +112,7 @@ impl super::Executor {
                                             // Higher limit now reached? Stop acquiring new \
                                             //   suggested IIDs now.
                                             if iids_new_len >= higher_limit {
-                                                debug!(
+                                                tracing::debug!(
                                                     "got enough completed results for term: {}",
                                                     term
                                                 );
@@ -120,16 +124,17 @@ impl super::Executor {
                                 }
                             }
 
-                            debug!(
+                            tracing::debug!(
                                 "done completing results for term: {}, now {} results",
-                                term, iids_new_len
+                                term,
+                                iids_new_len
                             );
                         } else {
-                            debug!("did not get any completed word for term: {}", term);
+                            tracing::debug!("did not get any completed word for term: {}", term);
                         }
                     }
 
-                    debug!("got search executor iids: {:?} for term: {}", iids, term);
+                    tracing::debug!("got search executor iids: {:?} for term: {}", iids, term);
 
                     // Intersect found IIDs with previous batch
                     if found_iids.is_empty() {
@@ -138,14 +143,15 @@ impl super::Executor {
                         found_iids = found_iids.intersection(&iids).copied().collect();
                     }
 
-                    debug!(
+                    tracing::debug!(
                         "got search executor iid intersection: {:?} for term: {}",
-                        found_iids, term
+                        found_iids,
+                        term
                     );
 
                     // No IID found? (stop there)
                     if found_iids.is_empty() {
-                        info!(
+                        tracing::info!(
                             "stop search executor as no iid was found in common for term: {}",
                             term
                         );
@@ -170,11 +176,11 @@ impl super::Executor {
                     if let Ok(Some(oid)) = kv_action.get_iid_to_oid(*found_iid) {
                         result_oids.push(oid);
                     } else {
-                        error!("failed getting search executor iid-to-oid");
+                        tracing::error!("failed getting search executor iid-to-oid");
                     }
                 }
 
-                info!("got search executor final oids: {:?}", result_oids);
+                tracing::info!("got search executor final oids: {:?}", result_oids);
 
                 return Ok(if !result_oids.is_empty() {
                     Some(result_oids)

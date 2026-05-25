@@ -154,7 +154,7 @@ impl ChannelHandle {
                             // Do not continue, as there is too much pending data in the buffer. \
                             //   Most likely the client does not implement a proper back-pressure \
                             //   management system, thus we terminate it.
-                            error!("closing channel thread because of buffer overflow");
+                            tracing::error!("closing channel thread because of buffer overflow");
 
                             panic!("buffer overflow ({}/{} bytes)", buffer_len, MAX_LINE_SIZE);
                         }
@@ -193,7 +193,7 @@ impl ChannelHandle {
                     }
                 }
                 Err(err) => {
-                    error!("closing channel thread with traceback: {}", err);
+                    tracing::error!("closing channel thread with traceback: {}", err);
 
                     panic!("closing channel");
                 }
@@ -216,7 +216,7 @@ impl ChannelHandle {
 
                     if parts.next().unwrap_or("").to_uppercase().as_str() == "START" {
                         if let Some(res_mode) = parts.next() {
-                            debug!("got mode response: {}", res_mode);
+                            tracing::debug!("got mode response: {}", res_mode);
 
                             // Extract mode
                             if let Ok(mode) = ChannelMode::from_str(res_mode) {
@@ -225,12 +225,12 @@ impl ChannelHandle {
                                     if let Some(provided_auth) = parts.next() {
                                         // Compare provided password with configured password
                                         if provided_auth != auth_password {
-                                            info!("password provided, but does not match");
+                                            tracing::info!("password provided, but does not match");
 
                                             return Err(ChannelHandleError::AuthenticationFailed);
                                         }
                                     } else {
-                                        info!("no password provided, but one required");
+                                        tracing::info!("no password provided, but one required");
 
                                         // No password was provided, but we require one
                                         return Err(ChannelHandleError::AuthenticationRequired);

@@ -27,7 +27,7 @@ impl super::Executor {
                 let fst_action = StoreFSTActionBuilder::access(fst_store);
 
                 if let (Some(word), None) = (lexer.next(), lexer.next()) {
-                    debug!("running suggest on word: {}", word.0);
+                    tracing::debug!("running suggest on word: {}", word.0);
 
                     return Ok(fst_action.suggest_words(&word.0, limit as usize, None));
                 }

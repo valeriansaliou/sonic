@@ -24,8 +24,6 @@
 )]
 
 #[macro_use]
-extern crate log;
-#[macro_use]
 extern crate lazy_static;
 
 mod channel;
@@ -39,7 +37,6 @@ use std::thread;
 use std::time::Duration;
 
 use clap::{Arg, Command};
-use log::LevelFilter;
 
 use channel::listen::{ChannelListen, ChannelListenBuilder};
 use channel::statistics::ensure_states as ensure_states_channel_statistics;
@@ -47,6 +44,7 @@ use sonic::store::fst::StoreFSTPool;
 use sonic::store::kv::StoreKVPool;
 use tasker::runtime::TaskerBuilder;
 use tasker::shutdown::ShutdownSignal;
+use tracing::level_filters::LevelFilter;
 
 use crate::server::config::read_config;
 use crate::server::logger::ConfigLogger;
@@ -104,7 +102,7 @@ fn main() {
 
     let shutdown_signal = ShutdownSignal::new();
 
-    info!("starting up");
+    tracing::info!("starting up");
 
     // Ensure all states are bound
     ensure_states();
@@ -123,10 +121,10 @@ fn main() {
         app_conf.sonic.into(),
     ));
 
-    info!("started");
+    tracing::info!("started");
 
     shutdown_signal.at_exit(move |signal| {
-        info!("stopping gracefully (got signal: {})", signal);
+        tracing::info!("stopping gracefully (got signal: {})", signal);
 
         // Teardown Sonic Channel
         ChannelListen::teardown();
@@ -138,7 +136,7 @@ fn main() {
         //   shutdown; otherwise we would lose all non-consolidated FST changes)
         fst_pool.consolidate(true);
 
-        info!("stopped");
+        tracing::info!("stopped");
     });
 }
 
@@ -156,7 +154,7 @@ where
     F: Send + 'static,
     T: Send + 'static,
 {
-    debug!("spawn managed thread: {name}");
+    tracing::debug!("spawn managed thread: {name}");
 
     let worker = thread::Builder::new()
         .name(thread_name.to_string())
@@ -170,7 +168,7 @@ where
     };
 
     if has_error {
-        error!("managed thread crashed ({name}), setting it up again");
+        tracing::error!("managed thread crashed ({name}), setting it up again");
 
         // Prevents thread start loop floods
         thread::sleep(Duration::from_secs(1));

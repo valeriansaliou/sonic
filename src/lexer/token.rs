@@ -73,18 +73,18 @@ impl TokenLexerBuilder {
         let locale = match mode {
             TokenLexerMode::NormalizeAndCleanup(None) => {
                 // Detect text language (current lexer mode asks for a cleanup)
-                debug!("detecting locale from lexer text: {}", text);
+                tracing::debug!("detecting locale from lexer text: {}", text);
 
                 Self::detect_lang(text)
             }
             TokenLexerMode::NormalizeAndCleanup(Some(lang)) => {
                 // Use hinted language (current lexer mode asks for a cleanup)
-                debug!("using hinted locale: {} from lexer text: {}", lang, text);
+                tracing::debug!("using hinted locale: {} from lexer text: {}", lang, text);
 
                 Some(lang)
             }
             TokenLexerMode::NormalizeOnly => {
-                debug!("not detecting locale from lexer text: {}", text);
+                tracing::debug!("not detecting locale from lexer text: {}", text);
 
                 // May be 'NormalizeOnly' mode; no need to perform a locale detection
                 None
@@ -105,7 +105,7 @@ impl TokenLexerBuilder {
         // Truncate text if necessary, as to avoid the ngram or stopwords detector to be \
         //   ran on more words than those that are enough to reliably detect a locale.
         let safe_text = if text.len() > TEXT_LANG_TRUNCATE_OVER_CHARS {
-            debug!(
+            tracing::debug!(
                 "lexer text needs to be truncated, as it is too long ({}/{}): {}",
                 text.len(),
                 TEXT_LANG_TRUNCATE_OVER_CHARS,
@@ -129,7 +129,7 @@ impl TokenLexerBuilder {
             text
         };
 
-        debug!("will detect locale for lexer safe text: {}", safe_text);
+        tracing::debug!("will detect locale for lexer safe text: {}", safe_text);
 
         // Attempt to detect the locale from text using an hybrid method that maximizes both \
         //   accuracy and performance.
@@ -141,14 +141,14 @@ impl TokenLexerBuilder {
         //   fails at detecting a locale it will try using the other method in fallback as to \
         //   produce the most reliable result while minimizing CPU cycles.
         if safe_text.len() < TEXT_LANG_DETECT_NGRAM_UNDER_CHARS {
-            debug!(
+            tracing::debug!(
                 "lexer text is shorter than {} characters, using the slow method",
                 TEXT_LANG_DETECT_NGRAM_UNDER_CHARS
             );
 
             Self::detect_lang_slow(safe_text)
         } else {
-            debug!(
+            tracing::debug!(
                 "lexer text is equal or longer than {} characters, using the fast method",
                 TEXT_LANG_DETECT_NGRAM_UNDER_CHARS
             );
@@ -166,7 +166,7 @@ impl TokenLexerBuilder {
 
                 let mut locale = detector.lang();
 
-                info!(
+                tracing::info!(
                     "[slow lexer] locale detected from text: {} ({} from {} at {}/1; {}s + {}ms)",
                     safe_text,
                     locale,
@@ -180,13 +180,13 @@ impl TokenLexerBuilder {
                 // Notice: this is a fallback but should not be too reliable for short \
                 //   texts.
                 if !detector.is_reliable() {
-                    debug!("[slow lexer] trying to detect locale from stopwords instead");
+                    tracing::debug!("[slow lexer] trying to detect locale from stopwords instead");
 
                     // Better alternate locale found?
                     if let Some(alternate_locale) =
                         LexerStopWord::guess_lang(safe_text, detector.script())
                     {
-                        info!(
+                        tracing::info!(
                             "[slow lexer] detected more accurate locale from stopwords: {}",
                             alternate_locale
                         );
@@ -198,7 +198,7 @@ impl TokenLexerBuilder {
                 Some(locale)
             }
             None => {
-                info!(
+                tracing::info!(
                     "[slow lexer] no locale could be detected from text: {}",
                     safe_text
                 );
@@ -217,7 +217,7 @@ impl TokenLexerBuilder {
                 if let Some(locale) = LexerStopWord::guess_lang(safe_text, script) {
                     let stopwords_took = stopwords_start.elapsed();
 
-                    info!(
+                    tracing::info!(
                         "[fast lexer] locale detected from text: {} ({}; {}s + {}ms)",
                         safe_text,
                         locale,
@@ -227,14 +227,16 @@ impl TokenLexerBuilder {
 
                     Some(locale)
                 } else {
-                    debug!("[fast lexer] trying to detect locale from fallback ngram instead");
+                    tracing::debug!(
+                        "[fast lexer] trying to detect locale from fallback ngram instead"
+                    );
 
                     // No locale found, fallback on slow ngram.
                     lang_detect(safe_text)
                 }
             }
             None => {
-                info!(
+                tracing::info!(
                     "[fast lexer] no script could be detected from text: {}",
                     safe_text
                 );
@@ -255,7 +257,7 @@ impl<'a> TokenLexer<'a> {
             Some(Lang::Jpn) => match TOKENIZER_LINDERA.tokenize(text) {
                 Ok(tokens) => TokenLexerWords::Lindera(tokens.into_iter()),
                 Err(err) => {
-                    warn!("unable to tokenize japanese, falling back: {}", err);
+                    tracing::warn!("unable to tokenize japanese, falling back: {}", err);
 
                     TokenLexerWords::UAX29(text.unicode_words())
                 }
@@ -316,19 +318,19 @@ impl<'a> Iterator for TokenLexer<'a> {
 
                 // Check if word was not already yielded? (we return unique words)
                 if !self.yields.contains(&term_hash) {
-                    debug!("lexer yielded word: {}", word);
+                    tracing::debug!("lexer yielded word: {}", word);
 
                     self.yields.insert(term_hash);
 
                     return Some((word, term_hash));
                 } else {
-                    debug!(
+                    tracing::debug!(
                         "lexer did not yield word: {} because: word already yielded",
                         word
                     );
                 }
             } else {
-                debug!(
+                tracing::debug!(
                     "lexer did not yield word: {} because: word is a stop-word",
                     word
                 );

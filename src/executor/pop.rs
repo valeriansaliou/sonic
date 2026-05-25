@@ -46,7 +46,7 @@ impl super::Executor {
                         // Try to resolve existing search terms from IID, and perform an algebraic \
                         //   AND on all popped terms to generate a list of terms to be cleaned up.
                         if let Ok(Some(iid_terms_hashed_vec)) = kv_action.get_iid_to_terms(iid) {
-                            info!(
+                            tracing::info!(
                                 "got pop executor stored iid-to-terms: {:?}",
                                 iid_terms_hashed_vec
                             );
@@ -63,16 +63,17 @@ impl super::Executor {
                                 .copied()
                                 .collect();
 
-                            debug!(
+                            tracing::debug!(
                                 "got pop executor terms remaining terms: {:?} for iid: {}",
-                                remaining_terms, iid
+                                remaining_terms,
+                                iid
                             );
 
                             count_popped = (iid_terms_hashed.len() - remaining_terms.len()) as u32;
 
                             if count_popped > 0 {
                                 if remaining_terms.is_empty() {
-                                    info!("nuke whole bucket for pop executor");
+                                    tracing::info!("nuke whole bucket for pop executor");
 
                                     // Flush bucket (batch operation, as it is shared w/ other \
                                     //   executors)
@@ -82,7 +83,7 @@ impl super::Executor {
                                         &iid_terms_hashed_vec
                                     ));
                                 } else {
-                                    info!("nuke only certain terms for pop executor");
+                                    tracing::info!("nuke only certain terms for pop executor");
 
                                     // Nuke IID in Term-to-IIDs list
                                     for (pop_term, pop_term_hashed) in &pop_terms {
@@ -103,7 +104,7 @@ impl super::Executor {
 
                                                     // Pop from FST graph (does not exist anymore)
                                                     if fst_action.pop_word(pop_term) {
-                                                        debug!(
+                                                        tracing::debug!(
                                                             "pop term hash nuked from graph: {}",
                                                             pop_term_hashed
                                                         );
@@ -118,7 +119,7 @@ impl super::Executor {
                                                     );
                                                 }
                                             } else {
-                                                error!(
+                                                tracing::error!(
                                                     "failed getting term-to-iids in pop executor"
                                                 );
                                             }
@@ -135,7 +136,7 @@ impl super::Executor {
                                 }
                             }
                         } else {
-                            error!("failed getting iid-to-terms in pop executor");
+                            tracing::error!("failed getting iid-to-terms in pop executor");
                         }
                     }
 

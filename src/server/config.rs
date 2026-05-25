@@ -51,7 +51,7 @@ pub fn read_config(app_args: &crate::AppArgs) -> Config {
         panic!("Cannot find config file at '{config_path}'");
     }
 
-    debug!("reading config file: {config_path}");
+    tracing::debug!("reading config file: {config_path}");
 
     // Read configuration.
     let raw_config: config::Config = config::Config::builder()

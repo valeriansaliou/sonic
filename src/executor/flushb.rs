@@ -27,7 +27,7 @@ impl super::Executor {
 
                 if kv_store.is_some() {
                     // Store exists, proceed erasure.
-                    debug!(
+                    tracing::debug!(
                         "collection store exists, erasing: {} from {}",
                         bucket.as_str(),
                         collection.as_str()
@@ -44,14 +44,14 @@ impl super::Executor {
                         };
 
                         if fst_action_builder.erase(collection, Some(bucket)).is_ok() {
-                            debug!("done with bucket erasure");
+                            tracing::debug!("done with bucket erasure");
 
                             return Ok(erase_count);
                         }
                     }
                 } else {
                     // Store does not exist, consider as already erased.
-                    debug!(
+                    tracing::debug!(
                         "collection store does not exist, consider {} from {} already erased",
                         bucket.as_str(),
                         collection.as_str()

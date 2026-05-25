@@ -35,13 +35,13 @@ impl TaskerBuilder {
 
 impl Tasker {
     pub fn run(&self) {
-        info!("tasker is now active");
+        tracing::info!("tasker is now active");
 
         loop {
             // Hold for next aggregate run
             thread::sleep(TASKER_TICK_INTERVAL);
 
-            debug!("running a tasker tick...");
+            tracing::debug!("running a tasker tick...");
 
             let tick_start = Instant::now();
 
@@ -49,7 +49,7 @@ impl Tasker {
 
             let tick_took = tick_start.elapsed();
 
-            info!(
+            tracing::info!(
                 "ran tasker tick (took {}s + {}ms)",
                 tick_took.as_secs(),
                 tick_took.subsec_millis()

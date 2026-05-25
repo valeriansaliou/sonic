@@ -38,7 +38,7 @@ impl super::Executor {
                 //   bi-directional relationship)
                 let oid = object.as_str();
                 let iid = kv_action.get_oid_to_iid(oid).unwrap_or(None).or_else(|| {
-                    info!("must initialize push executor oid-to-iid and iid-to-oid");
+                    tracing::info!("must initialize push executor oid-to-iid and iid-to-oid");
 
                     if let Ok(iid_incr) = kv_action.get_meta_to_value(StoreMetaKey::IIDIncr) {
                         let iid_incr = if let Some(iid_incr) = iid_incr {
@@ -63,12 +63,14 @@ impl super::Executor {
 
                             Some(iid_incr)
                         } else {
-                            error!("failed updating push executor meta-to-value iid increment");
+                            tracing::error!(
+                                "failed updating push executor meta-to-value iid increment"
+                            );
 
                             None
                         }
                     } else {
-                        error!("failed getting push executor meta-to-value iid increment");
+                        tracing::error!("failed getting push executor meta-to-value iid increment");
 
                         None
                     }
@@ -86,7 +88,7 @@ impl super::Executor {
                                 .unwrap_or_default(),
                         );
 
-                    info!(
+                    tracing::info!(
                         "got push executor stored iid-to-terms: {:?}",
                         iid_terms_hashed
                     );
@@ -106,7 +108,7 @@ impl super::Executor {
                                     term_iids.retain(|cur_iid| cur_iid != &iid);
                                 }
 
-                                info!("has push executor term-to-iids: {}", iid);
+                                tracing::info!("has push executor term-to-iids: {}", iid);
 
                                 term_iids.insert(0, iid);
 
@@ -114,7 +116,7 @@ impl super::Executor {
                                 let truncate_limit = self.app_conf.store.kv.retain_word_objects;
 
                                 if term_iids.len() > truncate_limit {
-                                    info!(
+                                    tracing::info!(
                                         "push executor term-to-iids object too long (limit: {})",
                                         truncate_limit
                                     );
@@ -135,13 +137,13 @@ impl super::Executor {
                                 // Insert term into IID to terms map
                                 iid_terms_hashed.insert(term_hashed);
                             } else {
-                                error!("failed getting push executor term-to-iids");
+                                tracing::error!("failed getting push executor term-to-iids");
                             }
                         }
 
                         // Push to FST graph? (this consumes the term; to avoid sub-clones)
                         if fst_action.push_word(&term, &self.app_conf.store.fst) {
-                            debug!("push term committed to graph: {}", term);
+                            tracing::debug!("push term committed to graph: {}", term);
                         }
                     }
 
@@ -150,7 +152,7 @@ impl super::Executor {
                         let collected_iids: Vec<StoreTermHashed> =
                             iid_terms_hashed.into_iter().collect();
 
-                        info!(
+                        tracing::info!(
                             "has push executor iid-to-terms commits: {:?}",
                             collected_iids
                         );
