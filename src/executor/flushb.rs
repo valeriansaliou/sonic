@@ -14,7 +14,7 @@ impl super::Executor {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
             // Notice: acquire FST lock in write mode, as we will erase it.
-            general_kv_access_lock_read!();
+            let _kv_read_guard = self.kv_pool.lock_read_access();
             let _fst_write_guard = self.fst_pool.lock_write_access();
 
             if let Ok(kv_store) = self

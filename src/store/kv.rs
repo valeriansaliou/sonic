@@ -21,7 +21,7 @@ use std::fs;
 use std::io::{self, Cursor};
 use std::path::{Path, PathBuf};
 use std::str;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::thread;
 use std::time::{Duration, SystemTime};
 use std::vec::Drain;
@@ -39,6 +39,9 @@ use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher, StoreKeyerKey, StoreKeye
 pub struct StoreKVPool {
     pool: Arc<RwLock<HashMap<StoreKVKey, StoreKVBox>>>,
     kv_store_config: Arc<crate::config::ConfigStoreKV>,
+    store_access_lock: Arc<RwLock<bool>>,
+    store_acquire_lock: Arc<Mutex<()>>,
+    store_flush_lock: Arc<Mutex<()>>,
 }
 
 pub struct StoreKVBuilder {
@@ -78,22 +81,27 @@ type StoreKVBox = Arc<StoreKV>;
 
 const ATOM_HASH_RADIX: usize = 16;
 
-lazy_static! {
-    pub(crate) static ref STORE_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
-    static ref STORE_ACQUIRE_LOCK: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
-    static ref STORE_FLUSH_LOCK: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
-}
-
 impl StoreKVPool {
     pub fn new(kv_store_config: Arc<crate::config::ConfigStoreKV>) -> Self {
         Self {
             pool: Arc::default(),
             kv_store_config,
+            store_access_lock: Arc::default(),
+            store_acquire_lock: Arc::default(),
+            store_flush_lock: Arc::default(),
         }
     }
 
     pub fn count(&self) -> usize {
         self.pool.read().unwrap().len()
+    }
+
+    pub fn lock_read_access<'a>(&'a self) -> RwLockReadGuard<'a, bool> {
+        self.store_access_lock.read().unwrap()
+    }
+
+    pub fn lock_write_access<'a>(&'a self) -> RwLockWriteGuard<'a, bool> {
+        self.store_access_lock.write().unwrap()
     }
 
     pub fn acquire<'a, T: Into<&'a str>>(
@@ -106,7 +114,7 @@ impl StoreKVPool {
 
         // Freeze acquire lock, and reference it in context
         // Notice: this prevents two databases on the same collection to be opened at the same time.
-        let _acquire = STORE_ACQUIRE_LOCK.lock().unwrap();
+        let _acquire = self.store_acquire_lock.lock().unwrap();
 
         // Acquire a thread-safe store pool reference in read mode
         let store_pool_read = self.pool.read().unwrap();
@@ -165,7 +173,7 @@ impl StoreKVPool {
             "kv",
             &self.pool,
             self.kv_store_config.pool.inactive_after,
-            &*STORE_ACCESS_LOCK,
+            &self.store_access_lock,
         )
     }
 
@@ -201,7 +209,7 @@ impl StoreKVPool {
 
         // Acquire flush lock, and reference it in context
         // Notice: this prevents two flush operations to be executed at the same time.
-        let _flush = STORE_FLUSH_LOCK.lock().unwrap();
+        let _flush = self.store_flush_lock.lock().unwrap();
 
         // Step 1: List keys to be flushed
         let mut keys_flush: Vec<StoreKVKey> = Vec::new();
@@ -209,7 +217,7 @@ impl StoreKVPool {
         {
             // Acquire access lock (in blocking write mode), and reference it in context
             // Notice: this prevents store to be acquired from any context
-            let _access = STORE_ACCESS_LOCK.write().unwrap();
+            let _access = self.store_access_lock.write().unwrap();
 
             let store_pool_read = self.pool.read().unwrap();
 
@@ -268,7 +276,7 @@ impl StoreKVPool {
                 {
                     // Acquire access lock (in blocking write mode), and reference it in context
                     // Notice: this prevents store to be acquired from any context
-                    let _access = STORE_ACCESS_LOCK.write().unwrap();
+                    let _access = self.store_access_lock.write().unwrap();
 
                     if let Some(store) = self.pool.read().unwrap().get(key) {
                         tracing::debug!("kv key: {} flush started", key);
@@ -332,7 +340,7 @@ impl StoreKVPool {
     ) -> Result<(), io::Error> {
         // Acquire access lock (in blocking write mode), and reference it in context
         // Notice: this prevents store to be acquired from any context
-        let _access = STORE_ACCESS_LOCK.write().unwrap();
+        let _access = self.store_access_lock.write().unwrap();
 
         // Generate path to KV backup
         let kv_backup_path = backup_path.join(collection_name);
@@ -395,7 +403,7 @@ impl StoreKVPool {
     ) -> Result<(), io::Error> {
         // Acquire access lock (in blocking write mode), and reference it in context
         // Notice: this prevents store to be acquired from any context
-        let _access = STORE_ACCESS_LOCK.write().unwrap();
+        let _access = self.store_access_lock.write().unwrap();
 
         tracing::debug!(
             "kv collection: {} restoring from path: {:?}",

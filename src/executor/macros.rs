@@ -32,19 +32,3 @@ macro_rules! executor_kv_lock_write {
             .map(|inner| inner.lock.write().unwrap());
     };
 }
-
-macro_rules! general_kv_access_lock_read {
-    () => {
-        use crate::store::kv::STORE_ACCESS_LOCK;
-
-        let _kv_access = STORE_ACCESS_LOCK.read().unwrap();
-    };
-}
-
-macro_rules! general_kv_access_lock_write {
-    () => {
-        use crate::store::kv::STORE_ACCESS_LOCK;
-
-        let _kv_access = STORE_ACCESS_LOCK.write().unwrap();
-    };
-}

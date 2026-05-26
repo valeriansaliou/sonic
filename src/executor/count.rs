@@ -17,7 +17,7 @@ impl super::Executor {
             StoreItem(collection, Some(bucket), Some(object)) => {
                 // Important: acquire database access read lock, and reference it in context. This \
                 //   prevents the database from being erased while using it in this block.
-                general_kv_access_lock_read!();
+                let _kv_read_guard = self.kv_pool.lock_read_access();
 
                 if let Ok(kv_store) = self
                     .kv_pool
