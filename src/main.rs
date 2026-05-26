@@ -96,7 +96,7 @@ fn make_app_args() -> AppArgs {
 fn main() {
     let app_conf = read_config(&APP_ARGS);
 
-    let _logger = ConfigLogger::init(
+    ConfigLogger::init(
         LevelFilter::from_str(&app_conf.server.log_level).expect("invalid log level"),
     );
 

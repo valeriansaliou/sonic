@@ -33,7 +33,7 @@ impl<'a> StoreItemPart<'a> {
     pub fn from_str(part: &'a str) -> Result<Self, ()> {
         let len = part.len();
 
-        if len >= STORE_ITEM_PART_LEN_MIN && len <= STORE_ITEM_PART_LEN_MAX && part.is_ascii() {
+        if (STORE_ITEM_PART_LEN_MIN..=STORE_ITEM_PART_LEN_MAX).contains(&len) && part.is_ascii() {
             Ok(StoreItemPart(part))
         } else {
             Err(())
