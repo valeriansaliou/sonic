@@ -976,7 +976,8 @@ impl ChannelCommandControl {
     ) -> ChannelResult {
         match parts.next() {
             None => {
-                let statistics = ChannelStatistics::gather(&ctx.executor.kv_pool);
+                let statistics =
+                    ChannelStatistics::gather(&ctx.executor.kv_pool, &ctx.executor.fst_pool);
 
                 Ok(vec![ChannelCommandResponse::Result(format!(
                     "uptime({}) clients_connected({}) commands_total({}) \

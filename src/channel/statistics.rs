@@ -43,8 +43,8 @@ pub fn ensure_states() {
 }
 
 impl ChannelStatistics {
-    pub fn gather(kv_pool: &StoreKVPool) -> ChannelStatistics {
-        let (kv_count, fst_count) = (kv_pool.count(), StoreFSTPool::count());
+    pub fn gather(kv_pool: &StoreKVPool, fst_pool: &StoreFSTPool) -> ChannelStatistics {
+        let (kv_count, fst_count) = (kv_pool.count(), fst_pool.count());
 
         ChannelStatistics {
             uptime: START_TIME.elapsed().as_secs(),

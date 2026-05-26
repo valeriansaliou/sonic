@@ -6,7 +6,6 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::store::StoreItem;
-use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::kv::StoreKVActionBuilder;
 
 impl super::Executor {
@@ -23,13 +22,10 @@ impl super::Executor {
             let kv_action_builder = StoreKVActionBuilder {
                 kv_pool: &self.kv_pool,
             };
-            let fst_action_builder = StoreFSTActionBuilder {
-                fst_store_config: &self.app_conf.store.fst,
-            };
 
             match (
                 kv_action_builder.erase(collection, None),
-                fst_action_builder.erase(collection, None),
+                self.fst_pool.erase(collection, None),
             ) {
                 (Ok(erase_count), Ok(_)) => Ok(erase_count),
                 _ => Err(()),

@@ -6,7 +6,6 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::store::StoreItem;
-use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
 impl super::Executor {
@@ -39,11 +38,7 @@ impl super::Executor {
                     //   erasing a bucket requires a database lock, which would incur a dead-lock, \
                     //   thus we need to perform the erasure from there.
                     if let Ok(erase_count) = kv_action.batch_erase_bucket() {
-                        let fst_action_builder = StoreFSTActionBuilder {
-                            fst_store_config: &self.app_conf.store.fst,
-                        };
-
-                        if fst_action_builder.erase(collection, Some(bucket)).is_ok() {
+                        if self.fst_pool.erase(collection, Some(bucket)).is_ok() {
                             tracing::debug!("done with bucket erasure");
 
                             return Ok(erase_count);
