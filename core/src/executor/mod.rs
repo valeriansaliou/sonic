@@ -25,3 +25,21 @@ pub struct Executor {
     pub kv_pool: crate::store::kv::StoreKVPool,
     pub fst_pool: crate::store::fst::StoreFSTPool,
 }
+
+impl std::fmt::Debug for Executor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // NOTE: Deconstructing to future-proof this function.
+        let Self {
+            kv_pool,
+            fst_pool,
+            // NOTE: We don’t care about the app configuration,
+            //   we can see it elsewhere if needed.
+            app_conf: _app_conf,
+        } = self;
+
+        f.debug_struct("Executor")
+            .field("kv_pool", kv_pool)
+            .field("fst_pool", fst_pool)
+            .finish_non_exhaustive()
+    }
+}

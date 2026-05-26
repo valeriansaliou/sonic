@@ -9,4 +9,5 @@
 //! Most are internal, but some can be public if it makes the library easier to
 //! use.
 
+pub(crate) mod fmt;
 pub mod serde;
