@@ -17,7 +17,7 @@ impl super::Executor {
             // Acquire KV + FST locks in write mode, as we will erase them, we need to prevent any \
             //   other consumer to use them.
             general_kv_access_lock_write!();
-            general_fst_access_lock_write!();
+            let _fst_write_guard = self.fst_pool.lock_write_access();
 
             let kv_action_builder = StoreKVActionBuilder {
                 kv_pool: &self.kv_pool,

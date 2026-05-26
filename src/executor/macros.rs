@@ -48,19 +48,3 @@ macro_rules! general_kv_access_lock_write {
         let _kv_access = STORE_ACCESS_LOCK.write().unwrap();
     };
 }
-
-macro_rules! general_fst_access_lock_read {
-    () => {
-        use crate::store::fst::GRAPH_ACCESS_LOCK;
-
-        let _fst_access = GRAPH_ACCESS_LOCK.read().unwrap();
-    };
-}
-
-macro_rules! general_fst_access_lock_write {
-    () => {
-        use crate::store::fst::GRAPH_ACCESS_LOCK;
-
-        let _fst_access = GRAPH_ACCESS_LOCK.write().unwrap();
-    };
-}

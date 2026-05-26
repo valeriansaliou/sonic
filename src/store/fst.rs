@@ -23,7 +23,7 @@ use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::iter::FromIterator;
 use std::path::{Path, PathBuf};
 use std::str;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
@@ -39,6 +39,9 @@ use crate::lexer::ranges::LexerRegexRange;
 pub struct StoreFSTPool {
     fst_store_config: Arc<crate::config::ConfigStoreFST>,
     graph_pool: Arc<RwLock<HashMap<StoreFSTKey, StoreFSTBox>>>,
+    graph_acquire_lock: Arc<Mutex<()>>,
+    graph_rebuild_lock: Arc<Mutex<()>>,
+    graph_access_lock: Arc<RwLock<bool>>,
 }
 
 pub struct StoreFSTBuilder<'build> {
@@ -89,9 +92,6 @@ const WORD_LIMIT_LENGTH: usize = 40;
 const ATOM_HASH_RADIX: usize = 16;
 
 lazy_static! {
-    pub(crate) static ref GRAPH_ACCESS_LOCK: Arc<RwLock<bool>> = Arc::new(RwLock::new(false));
-    static ref GRAPH_ACQUIRE_LOCK: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
-    static ref GRAPH_REBUILD_LOCK: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
     static ref GRAPH_CONSOLIDATE: Arc<RwLock<HashSet<StoreFSTKey>>> =
         Arc::new(RwLock::new(HashSet::new()));
 }
@@ -111,6 +111,9 @@ impl StoreFSTPool {
         Self {
             fst_store_config,
             graph_pool: Arc::default(),
+            graph_acquire_lock: Arc::default(),
+            graph_rebuild_lock: Arc::default(),
+            graph_access_lock: Arc::default(),
         }
     }
 
@@ -119,6 +122,14 @@ impl StoreFSTPool {
             self.graph_pool.read().unwrap().len(),
             GRAPH_CONSOLIDATE.read().unwrap().len(),
         )
+    }
+
+    pub fn lock_read_access<'a>(&'a self) -> RwLockReadGuard<'a, bool> {
+        self.graph_access_lock.read().unwrap()
+    }
+
+    pub fn lock_write_access<'a>(&'a self) -> RwLockWriteGuard<'a, bool> {
+        self.graph_access_lock.write().unwrap()
     }
 
     pub fn acquire<'a, T: Into<&'a str>>(
@@ -132,7 +143,7 @@ impl StoreFSTPool {
 
         // Freeze acquire lock, and reference it in context
         // Notice: this prevents two graphs on the same collection to be opened at the same time.
-        let _acquire = GRAPH_ACQUIRE_LOCK.lock().unwrap();
+        let _acquire = self.graph_acquire_lock.lock().unwrap();
 
         // Acquire a thread-safe store pool reference in read mode
         let graph_pool_read = self.graph_pool.read().unwrap();
@@ -165,7 +176,7 @@ impl StoreFSTPool {
             "fst",
             &self.graph_pool,
             self.fst_store_config.pool.inactive_after,
-            &*GRAPH_ACCESS_LOCK,
+            &self.graph_access_lock,
         )
     }
 
@@ -208,7 +219,7 @@ impl StoreFSTPool {
 
         // Acquire rebuild lock, and reference it in context
         // Notice: this prevents two consolidate operations to be executed at the same time.
-        let _rebuild = GRAPH_REBUILD_LOCK.lock().unwrap();
+        let _rebuild = self.graph_rebuild_lock.lock().unwrap();
 
         // Exit trap: Register is empty? Abort there.
         if GRAPH_CONSOLIDATE.read().unwrap().is_empty() {
@@ -223,7 +234,7 @@ impl StoreFSTPool {
         {
             // Acquire access lock (in blocking write mode), and reference it in context
             // Notice: this prevents store to be acquired from any context
-            let _access = GRAPH_ACCESS_LOCK.write().unwrap();
+            let _access = self.graph_access_lock.write().unwrap();
 
             let (graph_pool_read, graph_consolidate_read) = (
                 self.graph_pool.read().unwrap(),
@@ -285,7 +296,7 @@ impl StoreFSTPool {
         {
             // Acquire access lock (in blocking write mode), and reference it in context
             // Notice: this prevents store to be acquired from any context
-            let _access = GRAPH_ACCESS_LOCK.write().unwrap();
+            let _access = self.graph_access_lock.write().unwrap();
 
             let mut graph_consolidate_write = GRAPH_CONSOLIDATE.write().unwrap();
 
@@ -306,7 +317,7 @@ impl StoreFSTPool {
                     //   trying to access the FST file as it gets processed. This also waits for \
                     //   current consumers to finish reading the FST, and prevents any new \
                     //   consumer from opening it while we are not done there.
-                    let _access = GRAPH_ACCESS_LOCK.write().unwrap();
+                    let _access = self.graph_access_lock.write().unwrap();
 
                     let do_close = if let Some(store) = self.graph_pool.read().unwrap().get(key) {
                         tracing::debug!("fst key: {} consolidate started", key);
@@ -430,7 +441,7 @@ impl StoreFSTPool {
     ) -> Result<(), io::Error> {
         // Acquire access lock (in blocking write mode), and reference it in context
         // Notice: this prevents store to be acquired from any context
-        let _access = GRAPH_ACCESS_LOCK.write().unwrap();
+        let _access = self.graph_access_lock.write().unwrap();
 
         // Generate path to FST backup
         let fst_backup_path = backup_path.join(collection_name).join(format!(
@@ -503,7 +514,7 @@ impl StoreFSTPool {
     ) -> Result<(), io::Error> {
         // Acquire access lock (in blocking write mode), and reference it in context
         // Notice: this prevents store to be acquired from any context
-        let _access = GRAPH_ACCESS_LOCK.write().unwrap();
+        let _access = self.graph_access_lock.write().unwrap();
 
         tracing::debug!(
             "fst bucket: {}/{} restoring from path: {:?}",

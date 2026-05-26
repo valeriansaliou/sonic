@@ -21,7 +21,7 @@ impl super::Executor {
         if let StoreItem(collection, Some(bucket), None) = item {
             // Important: acquire graph access read lock, and reference it in context. This \
             //   prevents the graph from being erased while using it in this block.
-            general_fst_access_lock_read!();
+            let _fst_read_guard = self.fst_pool.lock_read_access();
 
             if let Ok(fst_store) = self.fst_pool.acquire(collection, bucket) {
                 let fst_action = StoreFSTActionBuilder::access(fst_store);
