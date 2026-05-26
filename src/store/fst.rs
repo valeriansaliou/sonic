@@ -41,7 +41,7 @@ pub struct StoreFSTPool {
     graph_pool: Arc<RwLock<HashMap<StoreFSTKey, StoreFSTBox>>>,
     graph_acquire_lock: Arc<Mutex<()>>,
     graph_rebuild_lock: Arc<Mutex<()>>,
-    graph_access_lock: Arc<RwLock<bool>>,
+    graph_access_lock: Arc<RwLock<()>>,
     graph_consolidate: Arc<RwLock<HashSet<StoreFSTKey>>>,
 }
 
@@ -123,11 +123,11 @@ impl StoreFSTPool {
         )
     }
 
-    pub fn lock_read_access<'a>(&'a self) -> RwLockReadGuard<'a, bool> {
+    pub fn lock_read_access<'a>(&'a self) -> RwLockReadGuard<'a, ()> {
         self.graph_access_lock.read().unwrap()
     }
 
-    pub fn lock_write_access<'a>(&'a self) -> RwLockWriteGuard<'a, bool> {
+    pub fn lock_write_access<'a>(&'a self) -> RwLockWriteGuard<'a, ()> {
         self.graph_access_lock.write().unwrap()
     }
 

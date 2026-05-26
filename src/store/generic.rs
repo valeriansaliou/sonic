@@ -87,7 +87,7 @@ pub trait StoreGenericPool<
         kind: &str,
         pool: &Arc<RwLock<HashMap<K, Arc<S>>>>,
         inactive_after: u64,
-        access_lock: &Arc<RwLock<bool>>,
+        access_lock: &Arc<RwLock<()>>,
     ) {
         tracing::debug!("scanning for {} store pool items to janitor", kind);
 

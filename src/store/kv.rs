@@ -39,7 +39,7 @@ use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher, StoreKeyerKey, StoreKeye
 pub struct StoreKVPool {
     pool: Arc<RwLock<HashMap<StoreKVKey, StoreKVBox>>>,
     kv_store_config: Arc<crate::config::ConfigStoreKV>,
-    store_access_lock: Arc<RwLock<bool>>,
+    store_access_lock: Arc<RwLock<()>>,
     store_acquire_lock: Arc<Mutex<()>>,
     store_flush_lock: Arc<Mutex<()>>,
 }
@@ -96,11 +96,11 @@ impl StoreKVPool {
         self.pool.read().unwrap().len()
     }
 
-    pub fn lock_read_access<'a>(&'a self) -> RwLockReadGuard<'a, bool> {
+    pub fn lock_read_access<'a>(&'a self) -> RwLockReadGuard<'a, ()> {
         self.store_access_lock.read().unwrap()
     }
 
-    pub fn lock_write_access<'a>(&'a self) -> RwLockWriteGuard<'a, bool> {
+    pub fn lock_write_access<'a>(&'a self) -> RwLockWriteGuard<'a, ()> {
         self.store_access_lock.write().unwrap()
     }
 
