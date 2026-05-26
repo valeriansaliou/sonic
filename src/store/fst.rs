@@ -42,10 +42,12 @@ pub struct StoreFSTPool {
     graph_acquire_lock: Arc<Mutex<()>>,
     graph_rebuild_lock: Arc<Mutex<()>>,
     graph_access_lock: Arc<RwLock<bool>>,
+    graph_consolidate: Arc<RwLock<HashSet<StoreFSTKey>>>,
 }
 
 pub struct StoreFSTBuilder<'build> {
     fst_store_config: &'build crate::config::ConfigStoreFST,
+    graph_consolidate: Arc<RwLock<HashSet<StoreFSTKey>>>,
 }
 
 pub struct StoreFST {
@@ -54,6 +56,7 @@ pub struct StoreFST {
     pending: StoreFSTPending,
     last_used: Arc<RwLock<SystemTime>>,
     last_consolidated: Arc<RwLock<SystemTime>>,
+    graph_consolidate: Arc<RwLock<HashSet<StoreFSTKey>>>,
 }
 
 #[derive(Default)]
@@ -91,11 +94,6 @@ type StoreFSTBox = Arc<StoreFST>;
 const WORD_LIMIT_LENGTH: usize = 40;
 const ATOM_HASH_RADIX: usize = 16;
 
-lazy_static! {
-    static ref GRAPH_CONSOLIDATE: Arc<RwLock<HashSet<StoreFSTKey>>> =
-        Arc::new(RwLock::new(HashSet::new()));
-}
-
 impl StoreFSTPathMode {
     fn extension(&self) -> &'static str {
         match self {
@@ -114,13 +112,14 @@ impl StoreFSTPool {
             graph_acquire_lock: Arc::default(),
             graph_rebuild_lock: Arc::default(),
             graph_access_lock: Arc::default(),
+            graph_consolidate: Arc::default(),
         }
     }
 
     pub fn count(&self) -> (usize, usize) {
         (
             self.graph_pool.read().unwrap().len(),
-            GRAPH_CONSOLIDATE.read().unwrap().len(),
+            self.graph_consolidate.read().unwrap().len(),
         )
     }
 
@@ -165,6 +164,7 @@ impl StoreFSTPool {
 
             let builder = StoreFSTBuilder {
                 fst_store_config: &self.fst_store_config,
+                graph_consolidate: Arc::clone(&self.graph_consolidate),
             };
 
             Self::proceed_acquire_open("fst", collection_str, pool_key, &self.graph_pool, &builder)
@@ -222,7 +222,7 @@ impl StoreFSTPool {
         let _rebuild = self.graph_rebuild_lock.lock().unwrap();
 
         // Exit trap: Register is empty? Abort there.
-        if GRAPH_CONSOLIDATE.read().unwrap().is_empty() {
+        if self.graph_consolidate.read().unwrap().is_empty() {
             tracing::info!("no fst store pool items to consolidate in register");
 
             return;
@@ -238,7 +238,7 @@ impl StoreFSTPool {
 
             let (graph_pool_read, graph_consolidate_read) = (
                 self.graph_pool.read().unwrap(),
-                GRAPH_CONSOLIDATE.read().unwrap(),
+                self.graph_consolidate.read().unwrap(),
             );
 
             for key in &*graph_consolidate_read {
@@ -298,7 +298,7 @@ impl StoreFSTPool {
             // Notice: this prevents store to be acquired from any context
             let _access = self.graph_access_lock.write().unwrap();
 
-            let mut graph_consolidate_write = GRAPH_CONSOLIDATE.write().unwrap();
+            let mut graph_consolidate_write = self.graph_consolidate.write().unwrap();
 
             for key in &keys_consolidate {
                 graph_consolidate_write.remove(key);
@@ -821,7 +821,10 @@ impl StoreFSTPool {
         let bucket_target = StoreFSTKey::from_atom(collection_hash, bucket_hash);
 
         self.graph_pool.write().unwrap().remove(&bucket_target);
-        GRAPH_CONSOLIDATE.write().unwrap().remove(&bucket_target);
+        self.graph_consolidate
+            .write()
+            .unwrap()
+            .remove(&bucket_target);
     }
 }
 
@@ -894,6 +897,7 @@ impl<'build> StoreGenericBuilder<StoreFSTKey, StoreFST> for StoreFSTBuilder<'bui
                 pending: StoreFSTPending::default(),
                 last_used: Arc::new(RwLock::new(now)),
                 last_consolidated: Arc::new(RwLock::new(now)),
+                graph_consolidate: Arc::clone(&self.graph_consolidate),
             }
         })
         .map_err(|err| {
@@ -987,9 +991,14 @@ impl StoreFST {
 
     pub fn should_consolidate(&self) {
         // Check if not already scheduled
-        if !GRAPH_CONSOLIDATE.read().unwrap().contains(&self.target) {
+        if !self
+            .graph_consolidate
+            .read()
+            .unwrap()
+            .contains(&self.target)
+        {
             // Schedule target for next consolidation tick (ie. collection + bucket tuple)
-            GRAPH_CONSOLIDATE.write().unwrap().insert(self.target);
+            self.graph_consolidate.write().unwrap().insert(self.target);
 
             // Bump 'last consolidated' time, effectively de-bouncing consolidation to a fixed \
             //   and predictable tick time in the future.
@@ -1063,7 +1072,7 @@ impl StoreGenericActionBuilder for StoreFSTPool {
 
             let (mut graph_pool_write, mut graph_consolidate_write) = (
                 self.graph_pool.write().unwrap(),
-                GRAPH_CONSOLIDATE.write().unwrap(),
+                self.graph_consolidate.write().unwrap(),
             );
 
             for bucket_atom in bucket_atoms {
