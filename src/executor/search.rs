@@ -23,7 +23,7 @@ impl super::Executor {
         lexer: TokenLexer,
         limit: QuerySearchLimit,
         offset: QuerySearchOffset,
-    ) -> Result<Option<Vec<String>>, ()> {
+    ) -> Result<Vec<String>, ()> {
         if let StoreItem(collection, Some(bucket), None) = item {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
@@ -182,11 +182,7 @@ impl super::Executor {
 
                 tracing::info!("got search executor final oids: {:?}", result_oids);
 
-                return Ok(if !result_oids.is_empty() {
-                    Some(result_oids)
-                } else {
-                    None
-                });
+                return Ok(result_oids);
             }
         }
 

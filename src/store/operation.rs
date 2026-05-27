@@ -15,7 +15,13 @@ impl StoreOperationDispatch {
         match query {
             Query::Search(store, query_id, lexer, limit, offset) => executor
                 .search(store, query_id, lexer, limit, offset)
-                .map(|results| results.map(|results| results.join(" "))),
+                .map(|results| {
+                    if results.is_empty() {
+                        None
+                    } else {
+                        Some(results.join(" "))
+                    }
+                }),
             Query::Suggest(store, query_id, lexer, limit) => executor
                 .suggest(store, query_id, lexer, limit)
                 .map(|results| results.map(|results| results.join(" "))),
