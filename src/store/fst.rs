@@ -972,6 +972,10 @@ impl StoreFST {
         // Cap typo factor to set maximum?
         if let Some(max_factor) = max_factor {
             if typo_factor > max_factor {
+                tracing::debug!(
+                    "Capping typo factor from {typo_factor} to {max_factor} \
+                    because of max allowed factor"
+                );
                 typo_factor = max_factor;
             }
         }
