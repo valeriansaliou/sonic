@@ -47,13 +47,13 @@ const TCP_TIMEOUT_NON_ESTABLISHED: u64 = 10;
 const PROTOCOL_REVISION: u8 = 1;
 const BUFFER_LINE_SEPARATOR: u8 = b'\n';
 
-lazy_static! {
-    static ref CONNECTED_BANNER: String = format!(
-        "CONNECTED <{} v{}>",
-        env!("CARGO_PKG_NAME"),
-        env!("CARGO_PKG_VERSION")
-    );
-}
+const CONNECTED_BANNER: &str = concat!(
+    "CONNECTED <",
+    env!("CARGO_PKG_NAME"),
+    " v",
+    env!("CARGO_PKG_VERSION"),
+    ">"
+);
 
 impl ChannelHandleError {
     pub fn to_str(&self) -> &'static str {
@@ -77,7 +77,7 @@ impl ChannelHandle {
         self.configure_stream(&stream, false);
 
         // Send connected banner
-        write!(stream, "{}{}", *CONNECTED_BANNER, LINE_FEED).expect("write failed");
+        write!(stream, "{}{}", CONNECTED_BANNER, LINE_FEED).expect("write failed");
 
         // Increment connected clients count
         *CLIENTS_CONNECTED.write().unwrap() += 1;
