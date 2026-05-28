@@ -205,3 +205,28 @@ impl<'this> ChannelMessageMode for ChannelMessageModeControl<'this> {
         })
     }
 }
+
+macro_rules! gen_channel_message_mode_handle {
+    ($message:ident, $commands:ident, $ctx:ident, { $($external:expr => $internal:expr),+, }) => {{
+        let (command, parts) = ChannelMessage::extract($message);
+
+        if command.is_empty() == true || $commands.contains(&command.as_str()) == true {
+            match command.as_str() {
+                "" => Ok(vec![ChannelCommandResponse::Void]),
+                $(
+                    $external => $internal(parts, $ctx),
+                )+
+                "PING" => ChannelCommandBase::dispatch_ping(parts),
+                "QUIT" => ChannelCommandBase::dispatch_quit(parts),
+                _ => Ok(vec![ChannelCommandResponse::Err(
+                    ChannelCommandError::InternalError,
+                )]),
+            }
+        } else {
+            Ok(vec![ChannelCommandResponse::Err(
+                ChannelCommandError::UnknownCommand,
+            )])
+        }
+    }};
+}
+use gen_channel_message_mode_handle;
