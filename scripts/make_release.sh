@@ -40,7 +40,7 @@ VERSION="$(cargo pkgid | sed 's/.*@//')"
 
 description() {
   cat <<EOF
-${I_BOLD}Creates a new release for the Prose Pod API.${I_RESET}
+${I_BOLD}Creates a new release of Sonic.${I_RESET}
 
 This script bumps the version number, then adds and pushes a tag to 'origin'.
 EOF
