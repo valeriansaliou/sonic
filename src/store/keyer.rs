@@ -149,7 +149,7 @@ impl fmt::Display for StoreKeyer {
 
         write!(
             f,
-            "'{}:{:x?}:{:x?}' {:?}",
+            "'{}:{:x}:{:x}' {:?}",
             self.key[0], key_bucket, key_route, self.key
         )
     }

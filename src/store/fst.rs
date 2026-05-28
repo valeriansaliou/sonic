@@ -147,7 +147,7 @@ impl StoreFSTPool {
             Self::proceed_acquire_cache("fst", collection_str, pool_key, store_fst)
         } else {
             tracing::info!(
-                "fst store not in pool for collection: {} <{:x?}> / bucket: {} <{:x?}>, opening it",
+                "fst store not in pool for collection: {} <{:x}> / bucket: {} <{:x}>, opening it",
                 collection_str,
                 pool_key.collection_hash,
                 bucket_str,
@@ -809,7 +809,7 @@ impl StoreFSTPool {
 
     fn close(&self, collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) {
         tracing::debug!(
-            "closing finite-state transducer graph for collection: <{:x?}> and bucket: <{:x?}>",
+            "closing finite-state transducer graph for collection: <{:x}> and bucket: <{:x}>",
             collection_hash,
             bucket_hash
         );
@@ -833,7 +833,7 @@ impl<'build> StoreFSTBuilder<'build> {
         fst_store_config: &crate::config::ConfigStoreFST,
     ) -> Result<FSTSet, FSTError> {
         tracing::debug!(
-            "opening finite-state transducer graph for collection: <{:x?}> and bucket: <{:x?}>",
+            "opening finite-state transducer graph for collection: <{:x}> and bucket: <{:x}>",
             collection_hash,
             bucket_hash
         );
@@ -867,10 +867,10 @@ impl crate::config::ConfigStoreFST {
         collection_hash: StoreFSTAtom,
         bucket_hash: Option<StoreFSTAtom>,
     ) -> PathBuf {
-        let mut final_path = self.path.join(format!("{:x?}", collection_hash));
+        let mut final_path = self.path.join(format!("{:x}", collection_hash));
 
         if let Some(bucket_hash) = bucket_hash {
-            final_path = final_path.join(format!("{:x?}{}", bucket_hash, mode.extension()));
+            final_path = final_path.join(format!("{:x}{}", bucket_hash, mode.extension()));
         }
 
         final_path
@@ -1077,7 +1077,7 @@ impl StoreGenericActionBuilder for StoreFSTPool {
 
             for bucket_atom in bucket_atoms {
                 tracing::debug!(
-                    "fst bucket graph force close for bucket: {}/<{:x?}>",
+                    "fst bucket graph force close for bucket: {}/<{:x}>",
                     collection_str,
                     bucket_atom
                 );
@@ -1429,7 +1429,7 @@ impl StoreFSTKey {
 
 impl fmt::Display for StoreFSTKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<{:x?}>/<{:x?}>", self.collection_hash, self.bucket_hash)
+        write!(f, "<{:x}>/<{:x}>", self.collection_hash, self.bucket_hash)
     }
 }
 

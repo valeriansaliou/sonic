@@ -157,7 +157,7 @@ impl StoreKVPool {
 
     fn close(&self, collection_hash: StoreKVAtom) {
         tracing::debug!(
-            "closing key-value database for collection: <{:x?}>",
+            "closing key-value database for collection: <{:x}>",
             collection_hash
         );
 
@@ -461,7 +461,7 @@ impl StoreGenericPool<StoreKVKey, StoreKV, StoreKVBuilder> for StoreKVPool {}
 impl StoreKVBuilder {
     fn open(&self, collection_hash: StoreKVAtom) -> Result<DB, DBError> {
         tracing::debug!(
-            "opening key-value database for collection: <{:x?}>",
+            "opening key-value database for collection: <{:x}>",
             collection_hash
         );
 
@@ -511,7 +511,7 @@ impl StoreKVBuilder {
 
 impl crate::config::ConfigStoreKV {
     fn path(&self, collection_hash: StoreKVAtom) -> PathBuf {
-        self.path.join(format!("{:x?}", collection_hash))
+        self.path.join(format!("{:x}", collection_hash))
     }
 }
 
@@ -1247,7 +1247,7 @@ impl StoreKVKey {
 
 impl fmt::Display for StoreKVKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<{:x?}>", self.collection_hash)
+        write!(f, "<{:x}>", self.collection_hash)
     }
 }
 
