@@ -5,5 +5,4 @@ target/
 .cargo
 .task
 
-data/store/fst/*
-data/store/kv/*
+data/
