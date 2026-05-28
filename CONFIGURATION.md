@@ -28,7 +28,12 @@ Under `[channel]`:
 * `tcp_timeout` (type: _integer_, allowed: seconds, default: `300`) — Timeout of idle/dead client connections to Sonic Channel
 * `auth_password` (type: _string_, allowed: password values, default: none) — Authentication password required to connect to the channel (optional but recommended)
 
-Under `[channel.search]`:
+`channel.search` has been deprecated in favor of `search`, but it’s kept as an alias for
+backward compatibility reasons.
+
+### Search configuration
+
+Under `[search]`:
 
 * `query_limit_default` (type: _integer_, allowed: numbers, default: `10`) — Default search results limit for a query command (if the LIMIT command modifier is not used when issuing a QUERY command)
 * `query_limit_maximum` (type: _integer_, allowed: numbers, default: `100`) — Maximum search results limit for a query command (if the LIMIT command modifier is being used when issuing a QUERY command)

@@ -18,13 +18,13 @@ use crate::THREAD_NAME_CHANNEL_CLIENT;
 
 #[derive(Clone)]
 pub struct ChannelListenBuilder {
-    pub app_conf: Arc<sonic::Config>,
+    pub app_conf: Arc<crate::Config>,
     pub kv_pool: StoreKVPool,
     pub fst_pool: StoreFSTPool,
 }
 
 pub struct ChannelListen {
-    app_conf: Arc<sonic::Config>,
+    app_conf: Arc<crate::Config>,
     kv_pool: StoreKVPool,
     fst_pool: StoreFSTPool,
 }
@@ -53,9 +53,9 @@ impl ChannelListen {
                     match stream {
                         Ok(stream) => {
                             let handle = ChannelHandle {
-                                channel_config: Arc::clone(&self.app_conf.channel),
+                                app_conf: Arc::clone(&self.app_conf),
                                 executor: sonic::Executor {
-                                    app_conf: Arc::clone(&self.app_conf),
+                                    app_conf: Arc::clone(&self.app_conf.sonic),
                                     kv_pool: self.kv_pool.clone(),
                                     fst_pool: self.fst_pool.clone(),
                                 },

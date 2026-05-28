@@ -62,7 +62,7 @@ impl super::Executor {
                     //   the (likely) upcoming word.
                     let (higher_limit, alternates_try) = (
                         self.app_conf.store.kv.retain_word_objects,
-                        self.app_conf.channel.search.query_alternates_try,
+                        self.app_conf.search.query_alternates_try,
                     );
 
                     if iids.len() < higher_limit && alternates_try > 0 {

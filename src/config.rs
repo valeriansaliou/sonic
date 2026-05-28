@@ -10,7 +10,6 @@
 //! It does not include server nor channel configuration, which are specific
 //! to the `sonic-server` binary.
 
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -20,7 +19,7 @@ use crate::util::serde::env_var;
 
 #[derive(Deserialize)]
 pub struct Config {
-    pub channel: Arc<ConfigChannel>,
+    pub search: ConfigSearch,
 
     pub store: ConfigStore,
 }
@@ -45,20 +44,7 @@ impl Config {
 }
 
 #[derive(Deserialize)]
-pub struct ConfigChannel {
-    #[serde(deserialize_with = "env_var::socket_addr")]
-    pub inet: SocketAddr,
-
-    pub tcp_timeout: u64,
-
-    #[serde(default, deserialize_with = "env_var::opt_str")]
-    pub auth_password: Option<String>,
-
-    pub search: ConfigChannelSearch,
-}
-
-#[derive(Deserialize)]
-pub struct ConfigChannelSearch {
+pub struct ConfigSearch {
     pub query_limit_default: u16,
 
     pub query_limit_maximum: u16,
@@ -148,13 +134,15 @@ pub(crate) mod tests {
         [channel]
         inet = "[::1]:1491"
         tcp_timeout = 300
-        search.query_limit_default = 10
-        search.query_limit_maximum = 100
-        search.query_alternates_try = 4
-        search.suggest_limit_default = 5
-        search.suggest_limit_maximum = 20
-        search.list_limit_default = 100
-        search.list_limit_maximum = 500
+
+        [search]
+        query_limit_default = 10
+        query_limit_maximum = 100
+        query_alternates_try = 4
+        suggest_limit_default = 5
+        suggest_limit_maximum = 20
+        list_limit_default = 100
+        list_limit_maximum = 500
 
         [store.kv]
         path = "./data/store/kv/"

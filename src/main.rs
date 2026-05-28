@@ -46,7 +46,7 @@ use tasker::runtime::TaskerBuilder;
 use tasker::shutdown::ShutdownSignal;
 use tracing::level_filters::LevelFilter;
 
-use crate::server::config::read_config;
+use crate::server::config::{self, Config, read_config};
 use crate::server::logger::ConfigLogger;
 
 struct AppArgs {
@@ -94,7 +94,7 @@ fn make_app_args() -> AppArgs {
 }
 
 fn main() {
-    let app_conf = read_config(&APP_ARGS);
+    let app_conf = read_config(&APP_ARGS.config);
 
     ConfigLogger::init(
         LevelFilter::from_str(&app_conf.server.log_level).expect("invalid log level"),
@@ -118,7 +118,7 @@ fn main() {
     thread::spawn(spawn_channel(
         kv_pool.clone(),
         fst_pool.clone(),
-        app_conf.sonic.into(),
+        Arc::new(app_conf),
     ));
 
     tracing::info!("started");
@@ -180,7 +180,7 @@ where
 fn spawn_channel(
     kv_pool: StoreKVPool,
     fst_pool: StoreFSTPool,
-    app_conf: Arc<sonic::Config>,
+    app_conf: Arc<Config>,
 ) -> impl FnOnce() {
     let builder = ChannelListenBuilder {
         app_conf,

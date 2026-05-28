@@ -24,7 +24,7 @@ use super::statistics::CLIENTS_CONNECTED;
 use crate::LINE_FEED;
 
 pub struct ChannelHandle {
-    pub channel_config: Arc<sonic::config::ConfigChannel>,
+    pub app_conf: Arc<crate::Config>,
     pub executor: Executor,
 }
 
@@ -112,7 +112,7 @@ impl ChannelHandle {
 
     fn configure_stream(&self, stream: &TcpStream, is_established: bool) {
         let tcp_timeout = if is_established {
-            self.channel_config.tcp_timeout
+            self.app_conf.channel.tcp_timeout
         } else {
             TCP_TIMEOUT_NON_ESTABLISHED
         };
@@ -221,7 +221,8 @@ impl ChannelHandle {
                             // Extract mode
                             if let Ok(mode) = ChannelMode::from_str(res_mode) {
                                 // Check if authenticated?
-                                if let Some(ref auth_password) = self.channel_config.auth_password {
+                                if let Some(ref auth_password) = self.app_conf.channel.auth_password
+                                {
                                     if let Some(provided_auth) = parts.next() {
                                         // Compare provided password with configured password
                                         if provided_auth != auth_password {
@@ -271,7 +272,7 @@ impl ChannelHandle {
         match mode {
             ChannelMode::Search => ChannelMessageModeSearch {
                 executor: &self.executor,
-                search_config: &self.channel_config.search,
+                search_config: &self.app_conf.sonic.search,
             }
             .on(stream, message_slice),
             ChannelMode::Ingest => ChannelMessageModeIngest {
