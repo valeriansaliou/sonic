@@ -367,22 +367,22 @@ impl StoreKVPool {
                     kv_store_config: Arc::clone(&self.kv_store_config),
                 }
                 .open(collection_hash as StoreKVAtom)
-                .map_err(|_| io_error!("database open failure"))?;
+                .map_err(|_| io::Error::other("database open failure"))?;
 
                 // Initialize KV database backup engine
                 let kv_backup_options = DBBackupEngineOptions::new(&kv_backup_path)
-                    .map_err(|_| io_error!("backup engine options acquire failure"))?;
+                    .map_err(|_| io::Error::other("backup engine options acquire failure"))?;
                 let kv_backup_environment = DBEnv::new()
-                    .map_err(|_| io_error!("backup engine environment acquire failure"))?;
+                    .map_err(|_| io::Error::other("backup engine environment acquire failure"))?;
 
                 let mut kv_backup_engine =
                     DBBackupEngine::open(&kv_backup_options, &kv_backup_environment)
-                        .map_err(|_| io_error!("backup engine failure"))?;
+                        .map_err(|_| io::Error::other("backup engine failure"))?;
 
                 // Proceed actual KV database backup
                 kv_backup_engine
                     .create_new_backup(&origin_kv)
-                    .map_err(|_| io_error!("database backup failure"))?;
+                    .map_err(|_| io::Error::other("database backup failure"))?;
 
                 tracing::info!(
                     "kv collection: {} backed up to path: {:?}",
@@ -431,17 +431,17 @@ impl StoreKVPool {
 
                 // Initialize KV database backup engine
                 let kv_backup_options = DBBackupEngineOptions::new(&origin_path)
-                    .map_err(|_| io_error!("backup engine options acquire failure"))?;
+                    .map_err(|_| io::Error::other("backup engine options acquire failure"))?;
                 let kv_backup_environment = DBEnv::new()
-                    .map_err(|_| io_error!("backup engine environment acquire failure"))?;
+                    .map_err(|_| io::Error::other("backup engine environment acquire failure"))?;
 
                 let mut kv_backup_engine =
                     DBBackupEngine::open(&kv_backup_options, &kv_backup_environment)
-                        .map_err(|_| io_error!("backup engine failure"))?;
+                        .map_err(|_| io::Error::other("backup engine failure"))?;
 
                 kv_backup_engine
                     .restore_from_latest_backup(&kv_path, &kv_path, &DBRestoreOptions::default())
-                    .map_err(|_| io_error!("database restore failure"))?;
+                    .map_err(|_| io::Error::other("database restore failure"))?;
 
                 tracing::info!(
                     "kv collection: {} restored to path: {:?} from backup: {:?}",

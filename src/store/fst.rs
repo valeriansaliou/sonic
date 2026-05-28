@@ -476,7 +476,7 @@ impl StoreFSTPool {
                     bucket_hash as StoreFSTAtom,
                     &self.fst_store_config,
                 )
-                .map_err(|_| io_error!("graph open failure"))?;
+                .map_err(|_| io::Error::other("graph open failure"))?;
 
                 let mut origin_fst_stream = origin_fst.stream();
 
@@ -548,19 +548,19 @@ impl StoreFSTPool {
                 let fst_backup_reader = BufReader::new(File::open(&origin_path)?);
 
                 let mut fst_builder = FSTSetBuilder::new(fst_writer)
-                    .map_err(|_| io_error!("graph restore builder failure"))?;
+                    .map_err(|_| io::Error::other("graph restore builder failure"))?;
 
                 for word in fst_backup_reader.lines() {
                     let word = word?;
 
                     fst_builder
                         .insert(word)
-                        .map_err(|_| io_error!("graph restore word insert failure"))?;
+                        .map_err(|_| io::Error::other("graph restore word insert failure"))?;
                 }
 
                 fst_builder
                     .finish()
-                    .map_err(|_| io_error!("graph restore finish failure"))?;
+                    .map_err(|_| io::Error::other("graph restore finish failure"))?;
 
                 tracing::info!(
                     "fst bucket: {}/{} restored to path: {:?} from backup: {:?}",
