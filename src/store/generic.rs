@@ -166,20 +166,20 @@ pub trait StoreGenericActionBuilder {
 
     fn proceed_erase_bucket(&self, collection_str: &str, bucket_str: &str) -> Result<u32, ()>;
 
-    fn dispatch_erase<'a, T: Into<&'a str>>(
+    fn dispatch_erase<T: AsRef<str>>(
         &self,
         kind: &str,
         collection: T,
         bucket: Option<T>,
     ) -> Result<u32, ()> {
-        let collection_str = collection.into();
+        let collection = collection.as_ref();
 
-        tracing::info!("{} erase requested on collection: {}", kind, collection_str);
+        tracing::info!("{} erase requested on collection: {}", kind, collection);
 
         if let Some(bucket) = bucket {
-            self.proceed_erase_bucket(collection_str, bucket.into())
+            self.proceed_erase_bucket(collection, bucket.as_ref())
         } else {
-            self.proceed_erase_collection(collection_str)
+            self.proceed_erase_collection(collection)
         }
     }
 }

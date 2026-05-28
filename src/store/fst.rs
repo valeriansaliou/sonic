@@ -131,12 +131,8 @@ impl StoreFSTPool {
         self.graph_access_lock.write().unwrap()
     }
 
-    pub fn acquire<'a, T: Into<&'a str>>(
-        &self,
-        collection: T,
-        bucket: T,
-    ) -> Result<StoreFSTBox, ()> {
-        let (collection_str, bucket_str) = (collection.into(), bucket.into());
+    pub fn acquire<T: AsRef<str>>(&self, collection: T, bucket: T) -> Result<StoreFSTBox, ()> {
+        let (collection_str, bucket_str) = (collection.as_ref(), bucket.as_ref());
 
         let pool_key = StoreFSTKey::from_str(collection_str, bucket_str);
 
@@ -1040,7 +1036,7 @@ impl<'build> StoreFSTActionBuilder<'build> {
 }
 
 impl StoreFSTPool {
-    pub fn erase<'a, T: Into<&'a str>>(&self, collection: T, bucket: Option<T>) -> Result<u32, ()> {
+    pub fn erase<T: AsRef<str>>(&self, collection: T, bucket: Option<T>) -> Result<u32, ()> {
         self.dispatch_erase("fst", collection, bucket)
     }
 }
@@ -1343,15 +1339,15 @@ impl StoreFSTAction {
 }
 
 impl StoreFSTMisc {
-    pub fn count_collection_buckets<'a, T: Into<&'a str>>(
-        collection: T,
+    pub fn count_collection_buckets(
+        collection: impl AsRef<str>,
         fst_store_config: &crate::config::ConfigStoreFST,
     ) -> Result<usize, ()> {
         let mut count = 0;
 
         let path_mode = StoreFSTPathMode::Permanent;
 
-        let collection_atom = StoreKeyerHasher::to_compact(collection.into());
+        let collection_atom = StoreKeyerHasher::to_compact(collection.as_ref());
         let collection_path = fst_store_config.path(path_mode, collection_atom, None);
 
         if collection_path.exists() {

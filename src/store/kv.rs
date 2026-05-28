@@ -104,13 +104,13 @@ impl StoreKVPool {
         self.store_access_lock.write().unwrap()
     }
 
-    pub fn acquire<'a, T: Into<&'a str>>(
+    pub fn acquire(
         &self,
         mode: StoreKVAcquireMode,
-        collection: T,
+        collection: impl AsRef<str>,
     ) -> Result<Option<StoreKVBox>, ()> {
-        let collection_str = collection.into();
-        let pool_key = StoreKVKey::from_str(collection_str);
+        let collection = collection.as_ref();
+        let pool_key = StoreKVKey::from_str(collection);
 
         // Freeze acquire lock, and reference it in context
         // Notice: this prevents two databases on the same collection to be opened at the same time.
@@ -120,11 +120,11 @@ impl StoreKVPool {
         let store_pool_read = self.pool.read().unwrap();
 
         if let Some(store_kv) = store_pool_read.get(&pool_key) {
-            Self::proceed_acquire_cache("kv", collection_str, pool_key, store_kv).map(Some)
+            Self::proceed_acquire_cache("kv", collection, pool_key, store_kv).map(Some)
         } else {
             tracing::info!(
                 "kv store not in pool for collection: {} {}, opening it",
-                collection_str,
+                collection,
                 pool_key
             );
 
@@ -147,7 +147,7 @@ impl StoreKVPool {
             //   the database does not exist yet on disk and we are just looking to read data from \
             //   it)
             if can_open_db {
-                Self::proceed_acquire_open("kv", collection_str, pool_key, &self.pool, &builder)
+                Self::proceed_acquire_open("kv", collection, pool_key, &self.pool, &builder)
                     .map(Some)
             } else {
                 Ok(None)
@@ -597,7 +597,7 @@ impl<'build> StoreKVActionBuilder<'build> {
         Self::build(bucket, store)
     }
 
-    pub fn erase<'a, T: Into<&'a str>>(&self, collection: T, bucket: Option<T>) -> Result<u32, ()> {
+    pub fn erase<T: AsRef<str>>(&self, collection: T, bucket: Option<T>) -> Result<u32, ()> {
         self.dispatch_erase("kv", collection, bucket)
     }
 

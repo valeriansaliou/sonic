@@ -45,9 +45,9 @@ impl<'a> StoreItemPart<'a> {
     }
 }
 
-impl<'a> From<StoreItemPart<'a>> for &'a str {
-    fn from(part: StoreItemPart<'a>) -> Self {
-        part.as_str()
+impl<'a> AsRef<str> for StoreItemPart<'a> {
+    fn as_ref(&self) -> &str {
+        self.0
     }
 }
 
