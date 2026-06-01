@@ -6,60 +6,136 @@ on:
 name: Build and release binary
 
 jobs:
-  build-releases:
-    runs-on: ubuntu-22.04
+  make-release-github:
+    name: Make GitHub release
+
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Get current tag
+        id: current_tag
+        uses: WyriHaximus/github-action-get-previous-tag@61819f33034117e6c686e6a31dba995a85afc9de # v2.0.0
+
+      - name: Release new version
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        with:
+          tag_name: ${{ steps.current_tag.outputs.tag }}
+          name: Sonic ${{ steps.current_tag.outputs.tag }}
+          body: See [CHANGELOG.md](https://github.com/valeriansaliou/sonic/blob/master/server/CHANGELOG.md).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-cargo:
+    name: Publish to `cargo` registry (crates.io)
+
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Cache build artifacts
-        id: cache-cargo
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        with:
-          path: |
-            ~/.cargo/bin
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: build-${{ runner.os }}-cargo-any
+      - name: Release package
+        if: github.ref_type == 'tag'
+        run: cargo publish -p sonic-server --no-verify
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
+
+  build-publish-github:
+    needs: make-release-github
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target_arch: x86_64
+            target_platform: gnu
+            target_triple: x86_64-unknown-linux-gnu
+            container: debian:bookworm
+          - target_arch: x86_64
+            target_platform: rhel9
+            target_triple: x86_64-unknown-linux-gnu
+            container: redhat/ubi9
+          - target_arch: x86_64
+            target_platform: rhel10
+            target_triple: x86_64-unknown-linux-gnu
+            container: redhat/ubi10
+
+    runs-on: ubuntu-24.04
+    container:
+      image: ${{ matrix.container }}
+
+    name: ${{ matrix.target_arch }}-${{ matrix.target_platform }} (build + release)
+
+    steps:
+      # NOTE: Steps like `dtolnay/rust-toolchain` have dependencies…
+      - name: Install install dependencies
+        run: |-
+          case "${{ matrix.target_arch }}-${{ matrix.target_platform }}" in
+            *-rhel9|*-rhel10)
+              # NOTE: `curl-minimal` already installed by default.
+              ;;
+            *)
+              apt-get update && apt-get install -y \
+                curl
+              ;;
+          esac
+
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master on 2026-05-14
         with:
           toolchain: stable
 
-      - name: Verify versions
+      - name: Install build dependencies
         run: |-
+          case "${{ matrix.target_arch }}-${{ matrix.target_platform }}" in
+            *-rhel9|*-rhel10)
+              dnf install -y \
+                gcc gcc-c++ make \
+                clang clang-devel \
+                libzstd-devel
+              ;;
+            *)
+              apt-get update && apt-get install -y \
+                build-essential \
+                clang libclang-dev llvm-dev \
+                libzstd-dev
+              ;;
+          esac
+
+      - name: Verify versions
+        run: |
           rustc --version
           rustup --version 2>/dev/null
           cargo --version
+          gcc --version
+          clang --version
+
+      - id: build_archive
+        name: Build and archive binary
+        run: ./scripts/build_release_archive.sh ${{ matrix.target_arch }} ${{ matrix.target_platform }} ${{ matrix.target_triple }}
 
       - name: Get current tag
         id: current_tag
         uses: WyriHaximus/github-action-get-previous-tag@61819f33034117e6c686e6a31dba995a85afc9de # v2.0.0
 
-      - name: Release binaries
-        run: ./scripts/release_binaries.sh --version=${{ steps.current_tag.outputs.tag }}
-
-      - name: Release new version
+      - name: Publish archive in GitHub release
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           tag_name: ${{ steps.current_tag.outputs.tag }}
-          name: Sonic ${{ steps.current_tag.outputs.tag }}
-          body: See [CHANGELOG.md](https://github.com/valeriansaliou/sonic/blob/master/server/CHANGELOG.md).
-          files: ./${{ steps.current_tag.outputs.tag }}-*.tar.gz
+          files: ${{ steps.build_archive.outputs.archive_path }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Release package
-        run: cargo publish -p sonic-server --no-verify
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
+  build-publish-packagecloud:
+    name: Build and publish to Packagecloud
+    needs: make-release-github
 
-  build-packages:
-    needs: build-releases
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -69,14 +145,17 @@ jobs:
         run: ./scripts/build_packages.sh
 
       - name: Push packages to Packagecloud
+        if: github.ref_type == 'tag'
         uses: faucetsdn/action-packagecloud-upload-debian-packages@89b1e7201d7f9df94e3f360d9cb77134dd5ffc05 # v1
         with:
           path: ./packages
           repo: ${{ secrets.PACKAGECLOUD_REPO }}
           token: ${{ secrets.PACKAGECLOUD_TOKEN }}
 
-  build-docker:
-    runs-on: ubuntu-latest
+  build-publish-docker:
+    name: Build and publish to Docker Hub
+
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -89,6 +168,7 @@ jobs:
           images: valeriansaliou/sonic
 
       - name: Login to Docker Hub
+        if: github.ref_type == 'tag'
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -101,4 +181,4 @@ jobs:
           context: .
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
-          push: true
+          push: ${{ github.ref_type == 'tag' }}

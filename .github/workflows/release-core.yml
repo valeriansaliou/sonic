@@ -7,7 +7,7 @@ name: Release library
 
 jobs:
   cargo-publish:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
