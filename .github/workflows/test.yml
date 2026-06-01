@@ -24,7 +24,7 @@ name: Lint and test
 
 env:
   DEFAULT_RUST_TOOLCHAIN: &default_rust_toolchain stable
-  DEFAULT_RUNNER: &default_runner ubuntu-latest
+  DEFAULT_RUNNER: &default_runner ubuntu-24.04
 
 jobs:
   # Before everything else, validate the supply chain to ensure we don’t run

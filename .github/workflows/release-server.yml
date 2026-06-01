@@ -7,7 +7,7 @@ name: Build and release binary
 
 jobs:
   build-releases:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -59,7 +59,7 @@ jobs:
 
   build-packages:
     needs: build-releases
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -76,7 +76,7 @@ jobs:
           token: ${{ secrets.PACKAGECLOUD_TOKEN }}
 
   build-docker:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
