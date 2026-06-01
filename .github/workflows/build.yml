@@ -57,6 +57,71 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  build-releases-rhel:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - rhel_version: 9
+            container: redhat/ubi9
+          - rhel_version: 10
+            container: redhat/ubi10
+    container:
+      image: ${{ matrix.container }}
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          dnf install -y --allowerasing \
+            gcc gcc-c++ make cmake \
+            clang clang-devel \
+            openssl-devel \
+            nodejs \
+            git curl
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Verify versions
+        run: |
+          rustc --version
+          cargo --version
+          gcc --version
+          clang --version
+
+      - name: Get current tag
+        id: current_tag
+        uses: WyriHaximus/github-action-get-previous-tag@61819f33034117e6c686e6a31dba995a85afc9de # v2.0.0
+
+      - name: Build binary
+        run: |
+          cargo build --locked --release
+          mkdir ./sonic
+          cp target/release/sonic ./sonic/
+          cp config.cfg ./sonic/
+          tar --owner=0 --group=0 -czf \
+            ${{ steps.current_tag.outputs.tag }}-x86_64-rhel${{ matrix.rhel_version }}-gnu.tar.gz \
+            ./sonic
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonic-x86_64-rhel${{ matrix.rhel_version }}-gnu
+          path: ./${{ steps.current_tag.outputs.tag }}-x86_64-rhel${{ matrix.rhel_version }}-gnu.tar.gz
+
+      - name: Release binary
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        with:
+          tag_name: ${{ steps.current_tag.outputs.tag }}
+          files: ./${{ steps.current_tag.outputs.tag }}-x86_64-rhel${{ matrix.rhel_version }}-gnu.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build-packages:
     needs: build-releases
     runs-on: ubuntu-latest
