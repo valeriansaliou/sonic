@@ -3,7 +3,7 @@ on:
     tags:
       - "v*.*.*"
 
-name: Build and Release
+name: Build and release binary
 
 jobs:
   build-releases:
@@ -39,11 +39,6 @@ jobs:
         id: current_tag
         uses: WyriHaximus/github-action-get-previous-tag@61819f33034117e6c686e6a31dba995a85afc9de # v2.0.0
 
-      - name: Release package
-        run: cargo publish --no-verify
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
-
       - name: Release binaries
         run: ./scripts/release_binaries.sh --version=${{ steps.current_tag.outputs.tag }}
 
@@ -52,10 +47,15 @@ jobs:
         with:
           tag_name: ${{ steps.current_tag.outputs.tag }}
           name: Sonic ${{ steps.current_tag.outputs.tag }}
-          body: See [CHANGELOG.md](https://github.com/valeriansaliou/sonic/blob/master/CHANGELOG.md).
+          body: See [CHANGELOG.md](https://github.com/valeriansaliou/sonic/blob/master/server/CHANGELOG.md).
           files: ./${{ steps.current_tag.outputs.tag }}-*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release package
+        run: cargo publish -p sonic-server --no-verify
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
 
   build-packages:
     needs: build-releases

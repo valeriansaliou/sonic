@@ -1,0 +1,43 @@
+on:
+  push:
+    tags:
+      - "core-v*.*.*"
+
+name: Release library
+
+jobs:
+  cargo-publish:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master on 2026-05-14
+        with:
+          toolchain: stable
+
+      - name: Verify versions
+        run: |-
+          rustc --version
+          rustup --version 2>/dev/null
+          cargo --version
+
+      - name: Get current tag
+        id: current_tag
+        uses: WyriHaximus/github-action-get-previous-tag@61819f33034117e6c686e6a31dba995a85afc9de # v2.0.0
+
+      - name: Release package
+        run: cargo publish -p sonic-core
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
+
+      - name: Release new version
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        with:
+          tag_name: ${{ steps.current_tag.outputs.tag }}
+          name: Sonic core ${{ steps.current_tag.outputs.tag }}
+          body: See [CHANGELOG.md](https://github.com/valeriansaliou/sonic/blob/master/core/CHANGELOG.md).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

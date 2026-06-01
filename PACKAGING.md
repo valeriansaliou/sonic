@@ -13,7 +13,7 @@ We consider here the packaging flow of Sonic for Linux.
 
 CD will then publish the library on [crates.io](https://crates.io).
 
-Check the [“Actions” tab on GitHub](https://github.com/valeriansaliou/sonic/actions) to see the progress.
+Check the [“Actions” tab on GitHub](https://github.com/valeriansaliou/sonic/actions/workflows/release-core.yml) to see the progress.
 
 ## Releasing Sonic server (binary)
 
@@ -25,4 +25,4 @@ Check the [“Actions” tab on GitHub](https://github.com/valeriansaliou/sonic/
 
 CD will then build and release Sonic (server) on [crates.io](https://crates.io), GitHub, Docker Hub and Packagecloud.
 
-Check the [“Actions” tab on GitHub](https://github.com/valeriansaliou/sonic/actions) to see the progress.
+Check the [“Actions” tab on GitHub](https://github.com/valeriansaliou/sonic/actions/workflows/release-server.yml) to see the progress.
