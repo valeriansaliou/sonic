@@ -216,6 +216,38 @@ mod back_compat {
     #[test]
     fn test_channel_search_migration() {
         let old_config_toml = r#"
+        [channel]
+        search.query_limit_default = 42
+        search.query_alternates_try = 42
+        search.suggest_limit_default = 42
+        search.suggest_limit_maximum = 42
+        search.list_limit_default = 42
+        search.list_limit_maximum = 42
+        "#;
+
+        let config = crate::Config::parse(config::File::from_str(
+            old_config_toml,
+            config::FileFormat::Toml,
+        ));
+
+        assert!(
+            config.channel.search.is_none(),
+            "`channel.search` not emptied"
+        );
+        assert_eq!(
+            config.sonic.search.list_limit_default, 42,
+            "should be overriden"
+        );
+        assert_ne!(
+            config.sonic.search.query_limit_maximum, 42,
+            "should not be overriden"
+        );
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn test_channel_search_migration_mixed() {
+        let old_config_toml = r#"
         [channel.search]
         query_limit_default = 42
         # query_limit_maximum = 42
