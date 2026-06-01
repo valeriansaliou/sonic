@@ -52,6 +52,14 @@ jobs:
             target_platform: gnu
             target_triple: x86_64-unknown-linux-gnu
             container: debian:bookworm
+          - target_arch: x86_64
+            target_platform: rhel9
+            target_triple: x86_64-unknown-linux-gnu
+            container: redhat/ubi9
+          - target_arch: x86_64
+            target_platform: rhel10
+            target_triple: x86_64-unknown-linux-gnu
+            container: redhat/ubi10
 
     runs-on: ubuntu-24.04
     container:
@@ -64,6 +72,9 @@ jobs:
       - name: Install install dependencies
         run: |-
           case "${{ matrix.target_arch }}-${{ matrix.target_platform }}" in
+            *-rhel9|*-rhel10)
+              # NOTE: `curl-minimal` already installed by default.
+              ;;
             *)
               apt-get update && apt-get install -y \
                 curl
@@ -81,6 +92,12 @@ jobs:
       - name: Install build dependencies
         run: |-
           case "${{ matrix.target_arch }}-${{ matrix.target_platform }}" in
+            *-rhel9|*-rhel10)
+              dnf install -y \
+                gcc gcc-c++ make \
+                clang clang-devel \
+                libzstd-devel
+              ;;
             *)
               apt-get update && apt-get install -y \
                 build-essential \
