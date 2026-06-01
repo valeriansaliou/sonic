@@ -10,6 +10,10 @@
 
 # Configure the script to exit when a command fails.
 set -e
+# Configure the script to exit on undefined variables.
+set -u
+# Configure the script so errors in pipes are bubbled up.
+set -o pipefail
 # Configure the script so ERR traps are inherited.
 set -E
 
@@ -25,15 +29,16 @@ done
 : ${SELF:="$(basename $0)"}
 
 : ${REPOSITORY_ROOT:="${SCRIPTS_ROOT:?}"/..}
-CHANGELOG_FILE="${REPOSITORY_ROOT:?}"/CHANGELOG.md
 README_FILE="${REPOSITORY_ROOT:?}"/README.md
-CARGO_TOML_FILE="${REPOSITORY_ROOT:?}"/Cargo.toml
 CARGO_LOCK_FILE="${REPOSITORY_ROOT:?}"/Cargo.lock
 DEBIAN_RULES_FILE="${REPOSITORY_ROOT:?}"/debian/rules
+SERVER_DIR="${REPOSITORY_ROOT:?}"/server
+CORE_DIR="${REPOSITORY_ROOT:?}"/core
 
 # NOTE: We could use `cargo metadata` here, but it would require `jq` to parse
 #   so this is a good enough no-dependency equivalent.
-VERSION="$(cargo pkgid | sed 's/.*@//')"
+SERVER_VERSION="$(cargo pkgid -p sonic-server | sed 's/.*@//')"
+CORE_VERSION="$(cargo pkgid -p sonic-core | sed 's/.*@//')"
 
 
 # ===== HELPER FUNCTIONS =====
@@ -49,7 +54,7 @@ EOF
 usage() {
   cat <<EOF
 Usage:
-  ${SELF:?} major|minor|patch [OPTION...]
+  ${SELF:?} server|core major|minor|patch [OPTION...]
 
 Options:
   Safety checks:
@@ -66,11 +71,6 @@ help() {
   echo ''
   printf "$(usage)\n"
   exit 0
-}
-
-to_tag() {
-  local version="${1:?"Must pass a version number"}"
-  echo "v${version/v}"
 }
 
 UPDATED_FILES=()
@@ -92,14 +92,45 @@ replace() {
   perl -i -pe "$pattern" "$file" || { log_error "Pattern '$find' did not match anything in '$file')."; return 1; }
 }
 replace_version() {
-  replace "${1:?}" "\${1}${NEW_VERSION:?}\${2}" "${2:?}"
+  replace "${1:?}" "\${1}${3:-"${NEW_VERSION:?}"}\${2}" "${2:?}"
 }
 
 
 # ===== ARGUMENT PARSING =====
 
-VERSION_COMPONENTS=($(echo "${VERSION:?}" | tr '.' ' '))
+case "$1" in
+  server|bin)
+    RELEASING=server
+    VERSION="${SERVER_VERSION:?}"
+    CHANGELOG_FILE="${SERVER_DIR:?}"/CHANGELOG.md
+    CARGO_TOML_FILE="${SERVER_DIR:?}"/Cargo.toml
 
+    to_tag() {
+      local version="${1:?"Must pass a version number"}"
+      echo "v${version/v}"
+    }
+    ;;
+  core|lib)
+    RELEASING=core
+    VERSION="${CORE_VERSION:?}"
+    CHANGELOG_FILE="${CORE_DIR:?}"/CHANGELOG.md
+    CARGO_TOML_FILE="${CORE_DIR:?}"/Cargo.toml
+
+    to_tag() {
+      local version="${1:?"Must pass a version number"}"
+      echo "core-v${version/v}"
+    }
+    ;;
+  --help) help ;;
+  '') log_error "Expected at least two arguments."; log_info "$(usage)"; die ;;
+  *) log_error "Unknown positional argument: '$1'."; log_info "$(usage)"; die ;;
+esac
+# Skip argument now that it's processed.
+shift 1
+
+# TODO: Automatically detect semver change level when releasing the core.
+
+VERSION_COMPONENTS=($(echo "${VERSION:?}" | tr '.' ' '))
 case "$1" in
   major)
     VERSION_COMPONENTS[0]=$(( VERSION_COMPONENTS[0] + 1 ))
@@ -114,10 +145,10 @@ case "$1" in
     VERSION_COMPONENTS[2]=$(( VERSION_COMPONENTS[2] + 1 ))
     ;;
   --help) help ;;
-  '') log_error "Expected at least one argument."; log_info "$(usage)"; die ;;
+  '') log_error "Expected at least two arguments."; log_info "$(usage)"; die ;;
   *) log_error "Unknown positional argument: '$1'."; log_info "$(usage)"; die ;;
 esac
-# Skip first argument now that it's processed.
+# Skip argument now that it's processed.
 shift 1
 
 for arg in "$@"; do
@@ -133,6 +164,13 @@ done
 
 if [ "${DRY_RUN:-0}" -ne 0 ]; then
   die 'Dry run mode not supported.'
+fi
+
+# Ensure command ran on main branch.
+MAIN_BRANCH="$(git symbolic-ref refs/remotes/origin/HEAD | sed 's@^refs/remotes/origin/@@')"
+CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [ -z "${FORCE-}" ] && [ "${CURRENT_BRANCH:?}" != "${MAIN_BRANCH:?}" ]; then
+  die "'${SELF% --}' must be ran on '${MAIN_BRANCH:?}'."
 fi
 
 # Ensure there are no uncommitted changes.
@@ -151,6 +189,28 @@ if [ -z "${NO_PULL-}" ]; then
   # Ensure linear history.
   log_info "Pulling 'origin'…"
   git pull origin "${GIT_BRANCH:?}"
+fi
+
+# If bumping the server and the core has been updated since last version,
+# make sure the dependency version has been updated.
+if [ "${RELEASING:?}" == server ] && [ -z "${FORCE-}" ]; then
+  # NOTE: We cannot use
+  #   `cargo pkgid --manifest-path <(git show "${VERSION:?}":Cargo.toml)`
+  #   as it requires the `-Zscript` flag which in turn requires the nightly
+  #   Rust toolchain.
+  PREVIOUS_CORE_VERSION="$(perl -ne 'print "$1\n" if /^version = "([^"]+)"$/' <(git show "${VERSION:?}":core/Cargo.toml))"
+
+  # SAFETY: This matches the first occurence of `^version = ` in the file,
+  #   which means we don’t have to worry about cases like declaring dependency
+  #   versions in separate TOML sections.
+  LAST_CORE_RELEASE_COMMIT="$(git blame -L '/^version = /',+1 core/Cargo.toml | cut -d' ' -f1)"
+
+  if git diff --quiet "${LAST_CORE_RELEASE_COMMIT:?}" -- "${CORE_DIR:?}"/src "${CORE_DIR:?}"/Cargo.toml; then
+    # If the core was updated but not released, bail out.
+    die 'Sonic core has changes. Release it first with `task release:core`.'
+  elif ! grep -q "sonic-core = { version = \"${CORE_VERSION:?}\"" server/Cargo.toml; then
+    # If the core’s version used by the server is not up-to-date, bail out.
+  fi
 fi
 
 # Convert the new version to a string.
@@ -186,6 +246,17 @@ update_all_versions() {
   log_info "Changing version number in '$(basename "${CARGO_TOML_FILE:?}")'…"
   replace_version '^(version = \").+(\")' "${CARGO_TOML_FILE:?}"
 
+  if [ "${RELEASING:?}" == server ]; then
+    log_info "Changing version number in '$(basename "${CARGO_TOML_FILE:?}")'…"
+    replace_version '^(sonic-core = \{ version = \").+(\")' "${CARGO_TOML_FILE:?}" "${CORE_VERSION}"
+
+    log_info "Changing version number in '$(basename "${README_FILE:?}")'…"
+    replace_version '^(.*valeriansaliou/sonic:v).+$' "${README_FILE:?}"
+
+    log_info "Changing version number in '$(basename "${DEBIAN_RULES_FILE:?}")'…"
+    replace_version '^(VERSION = ).+$' "${DEBIAN_RULES_FILE:?}"
+  fi
+
   log_info "Updating '$(basename "${CARGO_LOCK_FILE:?}")'…"
   cargo check
   UPDATED_FILES+=("${CARGO_LOCK_FILE:?}")
@@ -199,12 +270,6 @@ compare/$(to_tag "${NEW_VERSION:?}")...HEAD
 [${NEW_VERSION:?}]: https://github.com/valeriansaliou/sonic/compare/$(to_tag "${VERSION:?}")...$(to_tag "${NEW_VERSION:?}")
 EOF
 )" "${CHANGELOG_FILE:?}"
-
-  log_info "Changing version number in '$(basename "${README_FILE:?}")'…"
-  replace_version '^(.*valeriansaliou/sonic:v).+$' "${README_FILE:?}"
-
-  log_info "Changing version number in '$(basename "${DEBIAN_RULES_FILE:?}")'…"
-  replace_version '^(VERSION = ).+$' "${DEBIAN_RULES_FILE:?}"
 }
 update_all_versions
 
