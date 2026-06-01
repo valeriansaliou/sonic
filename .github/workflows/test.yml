@@ -91,7 +91,7 @@ jobs:
         run: cargo fmt --check
 
       - name: Lint code
-        run: cargo clippy
+        run: cargo clippy --locked
 
   test:
     name: Test

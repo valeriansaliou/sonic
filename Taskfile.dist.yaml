@@ -20,7 +20,7 @@ tasks:
     cmds:
       - task: lint:deps
       - cargo fmt --check
-      - cargo clippy
+      - cargo clippy --locked
       - cargo build --locked
       - cargo test --locked
       - tests/integration/scripts/run.sh
