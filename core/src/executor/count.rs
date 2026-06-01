@@ -1,0 +1,73 @@
+// Sonic
+//
+// Fast, lightweight and schema-less search backend
+// Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
+use crate::store::StoreItem;
+use crate::store::fst::{StoreFSTActionBuilder, StoreFSTMisc};
+use crate::store::kv::StoreKVAcquireMode;
+use crate::store::kv::StoreKVActionBuilder;
+
+impl super::Executor {
+    pub fn count(&self, item: StoreItem) -> Result<u32, ()> {
+        match item {
+            // Count terms in (collection, bucket, object) from KV
+            StoreItem(collection, Some(bucket), Some(object)) => {
+                // Important: acquire database access read lock, and reference it in context. This \
+                //   prevents the database from being erased while using it in this block.
+                let _kv_read_guard = self.kv_pool.lock_read_access();
+
+                if let Ok(kv_store) = self
+                    .kv_pool
+                    .acquire(StoreKVAcquireMode::OpenOnly, collection)
+                {
+                    // Important: acquire bucket store read lock
+                    executor_kv_lock_read!(kv_store);
+
+                    let kv_action = StoreKVActionBuilder::access(bucket, kv_store);
+
+                    // Try to resolve existing OID to IID
+                    let oid = object.as_str();
+
+                    kv_action
+                        .get_oid_to_iid(oid)
+                        .unwrap_or(None)
+                        .map(|iid| {
+                            // List terms for IID
+                            if let Some(terms) = kv_action.get_iid_to_terms(iid).unwrap_or(None) {
+                                terms.len() as u32
+                            } else {
+                                0
+                            }
+                        })
+                        .ok_or(())
+                        .or(Ok(0))
+                } else {
+                    Err(())
+                }
+            }
+            // Count terms in (collection, bucket) from FST
+            StoreItem(collection, Some(bucket), None) => {
+                // Important: acquire graph access read lock, and reference it in context. This \
+                //   prevents the graph from being erased while using it in this block.
+                let _fst_read_guard = self.fst_pool.lock_read_access();
+
+                if let Ok(fst_store) = self.fst_pool.acquire(collection, bucket) {
+                    let fst_action = StoreFSTActionBuilder::access(fst_store);
+
+                    Ok(fst_action.count_words() as u32)
+                } else {
+                    Err(())
+                }
+            }
+            // Count buckets in (collection) from FS
+            StoreItem(collection, None, None) => {
+                StoreFSTMisc::count_collection_buckets(collection, &self.app_conf.store.fst)
+                    .map(|count| count as u32)
+            }
+            _ => Err(()),
+        }
+    }
+}

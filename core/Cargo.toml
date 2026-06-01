@@ -1,0 +1,49 @@
+[package]
+name = "sonic-core"
+version = "0.0.1"
+description = "Fast, lightweight and schema-less search backend."
+readme = "../README.md"
+license = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+keywords = ["search", "query", "server", "index"]
+categories = ["database-implementations", "web-programming"]
+authors = { workspace = true }
+
+[lib]
+name = "sonic"
+path = "src/lib.rs"
+doc = true
+
+[dependencies]
+tracing = "0.1"
+lazy_static = "1"
+serde = { version = "1", features = ["derive", "rc"] }
+unicode-segmentation = "1"
+radix = "0.6"
+rocksdb = { version = "0.24", features = ["zstd"] }
+fst = "0.3"
+fst-levenshtein = "0.3"
+fst-regex = "0.3"
+regex-syntax = "0.8"
+twox-hash = "2"
+byteorder = "1"
+hashbrown = "0.17"
+linked_hash_set = "0.1"
+whatlang = "0.18"
+regex = "1"
+jieba-rs = { version = "0.9", optional = true }
+lindera-core = { version = "0.31", optional = true }
+lindera-dictionary = { version = "0.31", features = ["unidic"], optional = true }
+lindera-tokenizer = { version = "0.31", features = ["unidic"], optional = true }
+
+[dev-dependencies]
+config = { version = "0.15", default-features = false, features = ["toml"] }
+
+[features]
+default = ["tokenizer-chinese"]
+tokenizer-chinese = ["jieba-rs"]
+tokenizer-japanese = ["lindera-core", "lindera-dictionary", "lindera-tokenizer"]
+benchmark = []

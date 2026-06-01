@@ -3,9 +3,12 @@ on:
     branches: [master]
     # Do not run the workflow if the project hasn't changed.
     paths: &source_paths
-      - "src/**"
-      - "tests/**"
-      - "Cargo.toml"
+      - "server/src/**"
+      - "server/tests/**"
+      - "server/Cargo.toml"
+      - "core/src/**"
+      - "core/tests/**"
+      - "core/Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
       # We changed some configuration:
@@ -17,7 +20,7 @@ on:
     # Do not run the workflow if the project hasn't changed.
     paths: *source_paths
 
-name: Lint and Test
+name: Lint and test
 
 env:
   DEFAULT_RUST_TOOLCHAIN: &default_rust_toolchain stable
@@ -88,7 +91,7 @@ jobs:
         run: cargo fmt --check
 
       - name: Lint code
-        run: cargo clippy
+        run: cargo clippy --locked
 
   test:
     name: Test

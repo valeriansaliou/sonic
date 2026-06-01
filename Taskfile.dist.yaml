@@ -20,25 +20,32 @@ tasks:
     cmds:
       - task: lint:deps
       - cargo fmt --check
-      - cargo clippy
+      - cargo clippy --locked
       - cargo build --locked
       - cargo test --locked
       - tests/integration/scripts/run.sh
 
   changelog:prepare:
     desc: Prepares changelog entries for the next release.
-    cmd: ./scripts/changelog_prepare.sh {{.CLI_ARGS}}
+    cmd: ./scripts/changelog_prepare.sh {{ .CLI_ARGS }}
 
-  release:
-    desc: Makes a new release (git tag). CD will build and release the binary.
+  release:core:
+    desc: Makes a new release (git tag) of Sonic core. CD will publish the library.
     silent: true
-    cmd: ./scripts/make_release.sh {{ .CLI_ARGS }}
+    cmd: ./scripts/make_release.sh core {{ .CLI_ARGS }}
+
+  release:server:
+    desc: Makes a new release (git tag) of Sonic server. CD will build and release the binary.
+    aliases: [release]
+    silent: true
+    cmd: ./scripts/make_release.sh server {{ .CLI_ARGS }}
 
   lint:deps:
     desc: Lints the dependency graph (checks for advisories, unwanted licenses, untrusted sources…).
     cmd: cargo deny check --show-stats
     sources:
-      - Cargo.toml
+      - server/Cargo.toml
+      - core/Cargo.toml
       - Cargo.lock
     preconditions:
       - sh: command -v cargo-deny >/dev/null

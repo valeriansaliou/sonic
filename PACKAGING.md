@@ -4,10 +4,25 @@ This file contains quick reminders and notes on how to package Sonic.
 
 We consider here the packaging flow of Sonic for Linux.
 
-1. **How to bump Sonic version, build Sonic, package it and release it on Crates, GitHub, Docker Hub and Packagecloud (multiple architectures):**
-   1. Make sure [`CHANGELOG.md`](./CHANGELOG.md) is up to date (changes should be in the “Unreleased” section).
-   1. [Install Task](https://taskfile.dev/docs/installation) then `task release -- major|minor|path`, following [Semantic Versioning](https://semver.org/).
+## Releasing Sonic core (library)
 
-      If you don’t want to install Task, you can run `./scripts/make_release.sh major|minor|path` directly.
-   1. Wait for all release jobs to complete on the [actions](https://github.com/valeriansaliou/sonic/actions) page on GitHub.
-   1. Publish a changelog and upload all the built archives on the [releases](https://github.com/valeriansaliou/sonic/releases) page on GitHub.
+1. Make sure [`core/CHANGELOG.md`](./core/CHANGELOG.md) is up to date (changes should be in the “Unreleased” section).
+1. [Install Task](https://taskfile.dev/docs/installation) then `task release:core -- major|minor|path`, following [Semantic Versioning](https://semver.org/).
+
+   If you don’t want to install Task, you can run `./scripts/make_release.sh core major|minor|path` directly.
+
+CD will then publish the library on [crates.io](https://crates.io).
+
+Check the [“Actions” tab on GitHub](https://github.com/valeriansaliou/sonic/actions/workflows/release-core.yml) to see the progress.
+
+## Releasing Sonic server (binary)
+
+1. If you made changes to the core, release it first.
+1. Make sure [`server/CHANGELOG.md`](./server/CHANGELOG.md) is up to date (changes should be in the “Unreleased” section).
+1. [Install Task](https://taskfile.dev/docs/installation) then `task release:server -- major|minor|path`, following [Semantic Versioning](https://semver.org/).
+
+   If you don’t want to install Task, you can run `./scripts/make_release.sh server major|minor|path` directly.
+
+CD will then build and release Sonic (server) on [crates.io](https://crates.io), GitHub, Docker Hub and Packagecloud.
+
+Check the [“Actions” tab on GitHub](https://github.com/valeriansaliou/sonic/actions/workflows/release-server.yml) to see the progress.

@@ -1,0 +1,251 @@
+// Sonic
+//
+// Fast, lightweight and schema-less search backend
+// Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
+// License: Mozilla Public License v2.0 (MPL v2.0)
+
+use std::sync::Arc;
+
+pub fn defaults_toml() -> &'static str {
+    r#"
+    [server]
+    log_level = "error"
+
+    [channel]
+    inet = "[::1]:1491"
+    tcp_timeout = 300
+
+    [search]
+    query_limit_default = 10
+    query_limit_maximum = 100
+    query_alternates_try = 4
+    suggest_limit_default = 5
+    suggest_limit_maximum = 20
+    list_limit_default = 100
+    list_limit_maximum = 500
+
+    [store.kv]
+    path = "./data/store/kv/"
+    retain_word_objects = 1000
+    pool.inactive_after = 1800
+    database.flush_after = 900
+    database.compress = true
+    database.parallelism = 2
+    database.max_compactions = 1
+    database.max_flushes = 1
+    database.write_buffer = 16384
+    database.write_ahead_log = true
+
+    [store.fst]
+    path = "./data/store/fst/"
+    pool.inactive_after = 300
+    graph.consolidate_after = 180
+    graph.max_size = 2048
+    graph.max_words = 250000
+    "#
+}
+
+impl Config {
+    pub fn parse(source: impl ::config::Source + Send + Sync + 'static) -> Self {
+        // Read configuration.
+        let raw_config: config::Config = config::Config::builder()
+            // Start from defaults.
+            .add_source(config::File::from_str(
+                defaults_toml(),
+                config::FileFormat::Toml,
+            ))
+            // Merge static configuration (from file).
+            .add_source(source)
+            // Merge environment overrides.
+            .add_source(
+                config::Environment::with_prefix("SONIC")
+                    .separator("__")
+                    .prefix_separator("_"),
+            )
+            .build()
+            .expect("error reading config");
+
+        // This temporary struct is used so we don’t have `sonic` wrapped in a
+        // `Arc` as our deserialization logic needs to override it. It’s dirty but
+        // hopefully we won’t have to do this again.
+        #[derive(serde::Deserialize)]
+        pub struct ConfigTemp {
+            pub channel: ConfigChannel,
+
+            pub server: ConfigServer,
+
+            #[serde(flatten)]
+            pub sonic: sonic::Config,
+        }
+
+        // Parse configuration.
+        let mut config = raw_config
+            .try_deserialize::<ConfigTemp>()
+            .expect("syntax error in config");
+
+        back_compat::migrate_channel_search(&mut config.channel, &mut config.sonic);
+
+        // Validate configuration.
+        config.sonic.validate();
+
+        Config {
+            channel: config.channel,
+            server: config.server,
+            sonic: Arc::new(config.sonic),
+        }
+    }
+}
+
+pub fn read_config(path: &str) -> Config {
+    // Abort if the user specified a config path that does not exist.
+    if path != crate::DEFAULT_CONFIG_FILE_PATH && !std::path::Path::new(path).exists() {
+        panic!("Cannot find config file at {path:?}");
+    }
+
+    tracing::debug!("reading config file: {path:?}");
+
+    Config::parse(config::File::new(path, config::FileFormat::Toml).required(false))
+}
+
+pub struct Config {
+    pub channel: ConfigChannel,
+
+    pub server: ConfigServer,
+
+    pub sonic: Arc<sonic::Config>,
+}
+
+#[allow(deprecated)]
+#[derive(serde::Deserialize)]
+pub struct ConfigChannel {
+    #[serde(deserialize_with = "sonic::util::serde::env_var::socket_addr")]
+    pub inet: std::net::SocketAddr,
+
+    pub tcp_timeout: u64,
+
+    #[serde(default, deserialize_with = "sonic::util::serde::env_var::opt_str")]
+    pub auth_password: Option<String>,
+
+    #[deprecated(since = "1.6.0", note = "Use `search` instead of `channel.search`")]
+    #[serde(default)]
+    pub search: Option<back_compat::ConfigChannelSearch>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct ConfigServer {
+    #[serde(deserialize_with = "sonic::util::serde::env_var::str")]
+    pub log_level: String,
+}
+
+#[allow(deprecated)]
+mod back_compat {
+    #[deprecated(since = "1.6.0", note = "Use `search` instead of `channel.search`")]
+    #[derive(serde::Deserialize)]
+    pub struct ConfigChannelSearch {
+        #[serde(default)]
+        pub query_limit_default: Option<u16>,
+
+        #[serde(default)]
+        pub query_limit_maximum: Option<u16>,
+
+        #[serde(default)]
+        pub query_alternates_try: Option<usize>,
+
+        #[serde(default)]
+        pub suggest_limit_default: Option<u16>,
+
+        #[serde(default)]
+        pub suggest_limit_maximum: Option<u16>,
+
+        #[serde(default)]
+        pub list_limit_default: Option<u16>,
+
+        #[serde(default)]
+        pub list_limit_maximum: Option<u16>,
+    }
+
+    // This is dirty, but AFAIK (@RemiBardon) the `config` crate doesn’t
+    // provide a better API and hopefully we won’t have to do this again.
+    pub fn migrate_channel_search(
+        channel: &mut crate::config::ConfigChannel,
+        sonic: &mut sonic::Config,
+    ) {
+        if let Some(search) = channel.search.take() {
+            tracing::warn!(
+                "You’re still using the deprecated `channel.search` key. \
+                Please use `search` instead. \
+                For this run, we will override `search` with `channel.search`."
+            );
+
+            let ConfigChannelSearch {
+                query_limit_default,
+                query_limit_maximum,
+                query_alternates_try,
+                suggest_limit_default,
+                suggest_limit_maximum,
+                list_limit_default,
+                list_limit_maximum,
+            } = search;
+
+            if let Some(query_limit_default) = query_limit_default {
+                sonic.search.query_limit_default = query_limit_default;
+            }
+            if let Some(query_limit_maximum) = query_limit_maximum {
+                sonic.search.query_limit_maximum = query_limit_maximum;
+            }
+            if let Some(query_alternates_try) = query_alternates_try {
+                sonic.search.query_alternates_try = query_alternates_try;
+            }
+            if let Some(suggest_limit_default) = suggest_limit_default {
+                sonic.search.suggest_limit_default = suggest_limit_default;
+            }
+            if let Some(suggest_limit_maximum) = suggest_limit_maximum {
+                sonic.search.suggest_limit_maximum = suggest_limit_maximum;
+            }
+            if let Some(list_limit_default) = list_limit_default {
+                sonic.search.list_limit_default = list_limit_default;
+            }
+            if let Some(list_limit_maximum) = list_limit_maximum {
+                sonic.search.list_limit_maximum = list_limit_maximum;
+            }
+        }
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn test_channel_search_migration() {
+        let old_config_toml = r#"
+        [channel.search]
+        query_limit_default = 42
+        # query_limit_maximum = 42
+        query_alternates_try = 42
+        suggest_limit_default = 42
+        suggest_limit_maximum = 42
+        list_limit_default = 42
+        list_limit_maximum = 42
+
+        [search]
+        query_limit_default = 8
+        query_limit_maximum = 8
+        "#;
+
+        let config = crate::Config::parse(config::File::from_str(
+            old_config_toml,
+            config::FileFormat::Toml,
+        ));
+
+        assert!(
+            config.channel.search.is_none(),
+            "`channel.search` not emptied"
+        );
+        assert_eq!(
+            config.sonic.search.list_limit_default, 42,
+            "should be overriden"
+        );
+        assert_eq!(
+            config.sonic.search.query_limit_maximum, 8,
+            "should not be overriden"
+        );
+    }
+}

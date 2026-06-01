@@ -1,0 +1,43 @@
+[package]
+name = "sonic-server"
+version = "1.5.1"
+description = "Fast, lightweight and schema-less search backend."
+readme = "../README.md"
+license = { workspace = true }
+edition = { workspace = true }
+rust-version = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+keywords = ["search", "query", "server", "index"]
+categories = ["database-implementations", "web-programming"]
+authors = { workspace = true }
+
+[[bin]]
+name = "sonic"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+sonic-core = { version = "0.0.1", path = "../core" }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+clap = { version = "4", features = ["std", "cargo"] }
+lazy_static = "1"
+serde = { version = "1", features = ["derive", "rc"] }
+rand = "0.10"
+hashbrown = "0.17"
+config = { version = "0.15", default-features = false, features = ["toml"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.31", features = ["signal"] }
+tikv-jemallocator = { version = "0.6", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Console"] }
+
+[features]
+default = ["allocator-jemalloc", "tokenizer-chinese"]
+allocator-jemalloc = ["tikv-jemallocator"]
+tokenizer-chinese = ["sonic-core/tokenizer-chinese"]
+tokenizer-japanese = ["sonic-core/tokenizer-japanese"]
+benchmark = []
