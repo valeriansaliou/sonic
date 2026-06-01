@@ -7,6 +7,8 @@ name: Build and release binary
 
 jobs:
   make-release-github:
+    name: Make GitHub release
+
     runs-on: ubuntu-24.04
 
     steps:
@@ -25,6 +27,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-cargo:
+    name: Publish to `cargo` registry (crates.io)
+
     runs-on: ubuntu-24.04
 
     steps:
@@ -110,8 +114,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  build-packages:
+  build-publish-packagecloud:
+    name: Build and publish to Packagecloud
     needs: make-release-github
+
     runs-on: ubuntu-24.04
 
     steps:
@@ -129,7 +135,9 @@ jobs:
           repo: ${{ secrets.PACKAGECLOUD_REPO }}
           token: ${{ secrets.PACKAGECLOUD_TOKEN }}
 
-  build-docker:
+  build-publish-docker:
+    name: Build and publish to Docker Hub
+
     runs-on: ubuntu-24.04
 
     steps:
