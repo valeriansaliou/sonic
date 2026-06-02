@@ -55,7 +55,7 @@ allow-build-scripts = [
     "getrandom@0.4.2",
     "libc@0.2.186",
     "librocksdb-sys@0.17.3+10.4.2",
-    "libz-sys@1.1.28",
+    "libz-sys@1.1.29",
     "lz4-sys@1.11.1+lz4-1.10.0",
     "nix@0.31.3",
     "proc-macro2@1.0.106",
@@ -68,7 +68,7 @@ allow-build-scripts = [
     "winapi@0.3.9",
     "wit-bindgen@0.51.0",
     "wit-bindgen@0.57.1",
-    "zerocopy@0.8.48",
+    "zerocopy@0.8.50",
     "zstd-safe@7.2.4",
     "zstd-sys@2.0.16+zstd.1.5.7",
 ]
