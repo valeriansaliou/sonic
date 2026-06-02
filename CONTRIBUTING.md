@@ -4,7 +4,7 @@
 
 - First of all, fork and clone this repo;
 - Install Rust and Cargo (to build and test Sonic);
-- Install NPM (for integration tests);
+- Install NPM (for end-to-end tests);
 - [Install Task](https://taskfile.dev/docs/installation) (for a better Developer Experience);
 
 ## Build Sonic
@@ -31,9 +31,9 @@ From the repository root, run:
 cargo test
 ```
 
-## Run integration tests
+## Run end-to-end tests
 
-From the directory: `<repository root>/tests/integration/scripts/`, run:
+From the directory: `<repository root>/tests/e2e-node/scripts/`, run:
 
 ```sh
 ./run.sh

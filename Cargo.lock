@@ -1686,6 +1686,7 @@ dependencies = [
  "tikv-jemallocator",
  "tracing",
  "tracing-subscriber",
+ "whatlang",
  "windows-sys 0.61.2",
 ]
 

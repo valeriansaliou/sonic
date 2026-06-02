@@ -1404,3 +1404,59 @@ mod benches {
         b.iter(|| StoreKVAction::decode_u32_list(&encoded_atom_list));
     }
 }
+
+// MARK: - Boilerplate
+
+impl fmt::Debug for StoreKVPool {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use crate::util::fmt::{AsPrettyMutex, AsPrettyRwLock};
+
+        // NOTE: Deconstructing to future-proof this function.
+        let Self {
+            pool,
+            store_access_lock,
+            store_acquire_lock,
+            store_flush_lock,
+            // NOTE: We don’t care about the configuration,
+            //   we can see it elsewhere if needed.
+            kv_store_config: _kv_store_config,
+        } = self;
+
+        f.debug_struct("StoreKVPool")
+            .field("pool", &AsPrettyRwLock(pool))
+            .field("store_access_lock", &AsPrettyRwLock(store_access_lock))
+            .field("store_acquire_lock", &AsPrettyMutex(store_acquire_lock))
+            .field("store_flush_lock", &AsPrettyMutex(store_flush_lock))
+            .finish_non_exhaustive()
+    }
+}
+
+impl fmt::Debug for StoreKVKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self, f)
+    }
+}
+
+impl fmt::Debug for StoreKV {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use crate::util::fmt::AsPrettyRwLock;
+
+        // NOTE: Deconstructing to future-proof this function.
+        let Self {
+            database,
+            last_used,
+            last_flushed,
+            lock,
+            // NOTE: We don’t care about the configuration,
+            //   we can see it elsewhere if needed.
+            kv_store_config: _kv_store_config,
+        } = self;
+
+        f.debug_struct("StoreKV")
+            .field("database", database)
+            .field("last_used", &AsPrettyRwLock(last_used))
+            .field("last_flushed", &AsPrettyRwLock(last_flushed))
+            .field("lock", &AsPrettyRwLock(lock))
+            .finish_non_exhaustive()
+    }
+}

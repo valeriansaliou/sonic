@@ -11,9 +11,21 @@ tasks:
     aliases: [doc]
     cmd: cargo doc --no-deps --lib --open
 
-  integration-test:
-    desc: Runs integration tests.
-    cmd: tests/integration/scripts/run.sh
+  test:
+    desc: >-
+      Runs native Rust tests.
+      You can use `task test:foo,bar` to run tests foo and bar.
+    aliases: [test:*]
+    cmd: cargo test --locked --no-fail-fast{{ if .MATCH }} --test {{ .MATCH | first | splitList "," | join " --test " }}{{ end }}{{ if .ARGS }} {{ .ARGS }}{{ end }}
+    vars:
+      ARGS: '{{ without .CLI_ARGS_LIST "--trace" "--debug" "--info" "--warn" | join " " }}'
+    env:
+      # This matches the last log level flag specified (expected behavior).
+      LOG_LEVEL: '{{ regexFindAll "(^| )--(trace|debug|info|warn)( |$)" (.CLI_ARGS_LIST | join "  ") -1 | last | default "--" | trim | substr 2 -1 }}'
+
+  e2e-test:
+    desc: Runs end-to-end tests.
+    cmd: tests/e2e-node/scripts/run.sh
 
   ci:
     desc: Runs all CI checks.
@@ -23,7 +35,7 @@ tasks:
       - cargo clippy --locked
       - cargo build --locked
       - cargo test --locked
-      - tests/integration/scripts/run.sh
+      - tests/e2e-node/scripts/run.sh
 
   changelog:prepare:
     desc: Prepares changelog entries for the next release.
@@ -55,7 +67,7 @@ tasks:
     desc: Lints Markdown files. You can pass a rule name to check it individually.
     aliases: [lint:md:*]
     silent: true
-    cmd: markdownlint-cli2 '**/*.md' '!target' '!tests/integration/runner' '!LICENSE.md' 2>&1{{ if .MATCH }} | { ! grep {{ index .MATCH 0 }}; }{{ end }}
+    cmd: markdownlint-cli2 '**/*.md' '!target' '!tests/e2e-node/runner' '!LICENSE.md' 2>&1{{ if .MATCH }} | { ! grep {{ index .MATCH 0 }}; }{{ end }}
     preconditions:
       - sh: command -v markdownlint-cli2 >/dev/null
         msg: "`markdownlint-cli2` is required. See <https://github.com/DavidAnson/markdownlint-cli2#install>."

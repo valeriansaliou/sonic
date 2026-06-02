@@ -1,6 +1,6 @@
 {
-  "name": "sonic-tests-integration",
-  "description": "Sonic integration tests",
+  "name": "sonic-tests-e2e-node",
+  "description": "Sonic Node.js end-to-end tests",
   "version": "1.0.0",
   "main": "runner.js",
   "homepage": "https://github.com/valeriansaliou/sonic",

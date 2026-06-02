@@ -28,6 +28,9 @@ rand = "0.10"
 hashbrown = "0.17"
 config = { version = "0.15", default-features = false, features = ["toml"] }
 
+[dev-dependencies]
+whatlang = "0.18"
+
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", features = ["signal"] }
 tikv-jemallocator = { version = "0.6", optional = true }

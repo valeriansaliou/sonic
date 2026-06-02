@@ -1477,3 +1477,76 @@ mod tests {
         )
     }
 }
+
+// MARK: - Boilerplate
+
+impl fmt::Debug for StoreFSTPool {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use crate::util::fmt::{AsPrettyMutex, AsPrettyRwLock};
+
+        // NOTE: Deconstructing to future-proof this function.
+        let Self {
+            graph_pool,
+            graph_acquire_lock,
+            graph_rebuild_lock,
+            graph_access_lock,
+            graph_consolidate,
+            // NOTE: We don’t care about the configuration,
+            //   we can see it elsewhere if needed.
+            fst_store_config: _fst_store_config,
+        } = self;
+
+        f.debug_struct("StoreFSTPool")
+            .field("graph_pool", &AsPrettyRwLock(graph_pool))
+            .field("graph_acquire_lock", &AsPrettyMutex(graph_acquire_lock))
+            .field("graph_rebuild_lock", &AsPrettyMutex(graph_rebuild_lock))
+            .field("graph_access_lock", &AsPrettyRwLock(graph_access_lock))
+            .field("graph_consolidate", &AsPrettyRwLock(graph_consolidate))
+            .finish_non_exhaustive()
+    }
+}
+
+impl fmt::Debug for StoreFSTKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self, f)
+    }
+}
+
+impl fmt::Debug for StoreFST {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use crate::util::fmt::AsPrettyRwLock;
+
+        // NOTE: Deconstructing to future-proof this function.
+        let Self {
+            graph,
+            target,
+            pending,
+            last_used,
+            last_consolidated,
+            graph_consolidate,
+        } = self;
+
+        f.debug_struct("StoreFST")
+            .field("graph", graph)
+            .field("target", target)
+            .field("pending", pending)
+            .field("last_used", &AsPrettyRwLock(last_used))
+            .field("last_consolidated", &AsPrettyRwLock(last_consolidated))
+            .field("graph_consolidate", &AsPrettyRwLock(graph_consolidate))
+            .finish()
+    }
+}
+
+impl fmt::Debug for StoreFSTPending {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use crate::util::fmt::AsPrettyRwLock;
+
+        // NOTE: Deconstructing to future-proof this function.
+        let Self { pop, push } = self;
+
+        f.debug_struct("StoreFSTPending")
+            .field("pop", &AsPrettyRwLock(pop))
+            .field("push", &AsPrettyRwLock(push))
+            .finish()
+    }
+}
