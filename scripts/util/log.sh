@@ -14,6 +14,18 @@ log_success() {
   echo "$@" | while IFS= read -r line; do log_success_ "$line"; done
 }
 
+log_debug_() {
+  if [ -n "${GITHUB_ACTIONS-}" ]; then
+    # NOTE: See <https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#setting-a-debug-message>.
+    printf "::debug::%s\n" "$*" >&2
+  else
+    printf "%b %s\n" "${C_CYAN}Debug:${C_RESET}" "$*"
+  fi
+}
+log_debug() {
+  echo "$@" | while IFS= read -r line; do log_debug_ "$line"; done
+}
+
 log_info_() {
   printf "${I_BOLD}%b${I_RESET} %s\n" "${C_BLUE}Info:${C_RESET}" "$*"
 }
@@ -23,7 +35,7 @@ log_info() {
 
 log_warn_() {
   if [ -n "${GITHUB_ACTIONS-}" ]; then
-    # NOTE: See <https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#setting-an-warning-message>.
+    # NOTE: See <https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#setting-a-warning-message>.
     printf "::warning::%s\n" "$*" >&2
   else
     printf "${I_BOLD}%b${I_RESET} %s\n" "${C_YELLOW}Warning:${C_RESET}" "$*" >&2

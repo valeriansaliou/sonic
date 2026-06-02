@@ -30,7 +30,7 @@ tasks:
   ci:
     desc: Runs all CI checks.
     cmds:
-      - task: lint:deps
+      - task: deps:lint
       - cargo fmt --check
       - cargo clippy --locked
       - cargo build --locked
@@ -52,9 +52,17 @@ tasks:
     silent: true
     cmd: ./scripts/make_release.sh server {{ .CLI_ARGS }}
 
-  lint:deps:
+  deps:update:
+    desc: Updates dependencies (non-breaking).
+    cmds:
+      - cargo update
+      - cargo deny check bans >/dev/null 2>&1 || task deps:validate-build-scripts
+      - task: deps:lint
+
+  deps:lint:
     desc: Lints the dependency graph (checks for advisories, unwanted licenses, untrusted sources…).
-    cmd: cargo deny check --show-stats
+    aliases: [lint:deps]
+    cmd: cargo deny check --show-stats {{ .CLI_ARGS }}
     sources:
       - server/Cargo.toml
       - core/Cargo.toml
@@ -62,6 +70,11 @@ tasks:
     preconditions:
       - sh: command -v cargo-deny >/dev/null
         msg: "`cargo deny` is required. Install using `cargo install cargo-deny --locked`."
+
+  deps:validate-build-scripts:
+    desc: Lets you validate build script changes in dependencies after updating.
+    silent: true
+    cmd: ./scripts/validate-dep-build-script-change.sh
 
   lint:md:
     desc: Lints Markdown files. You can pass a rule name to check it individually.

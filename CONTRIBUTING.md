@@ -45,6 +45,14 @@ From the directory: `<repository root>/tests/e2e-node/scripts/`, run:
 task ci
 ```
 
+## Update dependencies
+
+```sh
+task deps:update
+```
+
+This lints the supply chain after updating, and provides utility for easily validating changes in dependencies build scripts. **This is very important, please don’t use `cargo update` without `task deps:lint` and `task deps:validate-build-scripts`!**
+
 ## Report Issues & Request Features
 
 **If you encounter an issue with Sonic, or would like to request a feature to be implemented, please do [open an issue](https://github.com/valeriansaliou/sonic/issues/new).**

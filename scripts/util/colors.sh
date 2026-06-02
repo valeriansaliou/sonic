@@ -13,6 +13,8 @@ C_RED='\033[31m'
 C_GREEN='\033[32m'
 C_YELLOW='\033[33m'
 C_BLUE='\033[34m'
+C_PURPLE='\033[0;35m'
+C_CYAN='\033[0;36m'
 C_RESET='\033[39m'
 
 # Intensity
@@ -35,4 +37,10 @@ fg_yellow() {
 }
 fg_blue() {
   printf "${C_BLUE}%s${C_RESET}" "$*"
+}
+fg_purple() {
+  printf "${C_PURPLE}%s${C_RESET}" "$*"
+}
+fg_cyan() {
+  printf "${C_CYAN}%s${C_RESET}" "$*"
 }
