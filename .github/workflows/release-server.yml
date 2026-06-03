@@ -22,7 +22,7 @@ jobs:
   #       uses: WyriHaximus/github-action-get-previous-tag@61819f33034117e6c686e6a31dba995a85afc9de # v2.0.0
 
   #     - name: Release new version
-  #       if: github.ref_type == 'tag'
+  #       if: github.ref == 'refs/heads/master'
   #       uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
   #       with:
   #         tag_name: ${{ steps.current_tag.outputs.tag }}
@@ -41,7 +41,7 @@ jobs:
   #       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
   #     - name: Release package
-  #       if: github.ref_type == 'tag'
+  #       if: github.ref == 'refs/heads/master'
   #       run: cargo publish -p sonic-server --no-verify
   #       env:
   #         CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
@@ -137,7 +137,7 @@ jobs:
         run: ./scripts/build_release_archive.sh ${{ matrix.target_arch }} ${{ matrix.target_platform }} ${{ matrix.target_triple }}
 
       - name: Publish archive in GitHub release
-        if: github.ref_type == 'tag'
+        if: github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           tag_name: ${{ steps.current_tag.outputs.tag }}
@@ -159,7 +159,7 @@ jobs:
         run: ./scripts/build_packages.sh
 
       - name: Push packages to Packagecloud
-        if: github.ref_type == 'tag'
+        if: github.ref == 'refs/heads/master'
         uses: faucetsdn/action-packagecloud-upload-debian-packages@89b1e7201d7f9df94e3f360d9cb77134dd5ffc05 # v1
         with:
           path: ./packages
@@ -182,7 +182,7 @@ jobs:
   #         images: valeriansaliou/sonic
 
   #     - name: Login to Docker Hub
-  #       if: github.ref_type == 'tag'
+  #       if: github.ref == 'refs/heads/master'
   #       uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
   #       with:
   #         username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -195,4 +195,4 @@ jobs:
   #         context: .
   #         tags: ${{ steps.metadata.outputs.tags }}
   #         labels: ${{ steps.metadata.outputs.labels }}
-  #         push: ${{ github.ref_type == 'tag' }}
+  #         push: ${{ github.ref == 'refs/heads/master' }}
