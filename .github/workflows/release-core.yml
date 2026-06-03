@@ -33,11 +33,18 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
 
+      - name: Parse tag name
+        id: parsing
+        run: |
+          # Parse tag 'core-vX.Y.Z' into 'vX.Y.Z'.
+          TAG='${{ steps.current_tag.outputs.tag }}'
+          echo "version=${TAG#core-}" >> $GITHUB_OUTPUT
+
       - name: Release new version
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           tag_name: ${{ steps.current_tag.outputs.tag }}
-          name: Sonic core ${{ steps.current_tag.outputs.tag }}
+          name: Sonic core ${{ steps.parsing.outputs.version }}
           body: See [CHANGELOG.md](https://github.com/valeriansaliou/sonic/blob/master/core/CHANGELOG.md).
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
