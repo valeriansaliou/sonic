@@ -2,6 +2,7 @@ on:
   push:
     tags:
       - "v*.*.*"
+    branches: [master]
 
 name: Build and release binary
 
@@ -30,20 +31,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  publish-cargo:
-    name: Publish to `cargo` registry (crates.io)
+  # publish-cargo:
+  #   name: Publish to `cargo` registry (crates.io)
 
-    runs-on: ubuntu-24.04
+  #   runs-on: ubuntu-24.04
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Release package
-        if: github.ref_type == 'tag'
-        run: cargo publish -p sonic-server --no-verify
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
+  #     - name: Release package
+  #       if: github.ref_type == 'tag'
+  #       run: cargo publish -p sonic-server --no-verify
+  #       env:
+  #         CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
 
   build-publish-github:
     needs: make-release-github
@@ -156,33 +157,33 @@ jobs:
           repo: ${{ secrets.PACKAGECLOUD_REPO }}
           token: ${{ secrets.PACKAGECLOUD_TOKEN }}
 
-  build-publish-docker:
-    name: Build and publish to Docker Hub
+  # build-publish-docker:
+  #   name: Build and publish to Docker Hub
 
-    runs-on: ubuntu-24.04
+  #   runs-on: ubuntu-24.04
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Acquire Docker image metadata
-        id: metadata
-        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
-        with:
-          images: valeriansaliou/sonic
+  #     - name: Acquire Docker image metadata
+  #       id: metadata
+  #       uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
+  #       with:
+  #         images: valeriansaliou/sonic
 
-      - name: Login to Docker Hub
-        if: github.ref_type == 'tag'
-        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+  #     - name: Login to Docker Hub
+  #       if: github.ref_type == 'tag'
+  #       uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+  #       with:
+  #         username: ${{ secrets.DOCKERHUB_USERNAME }}
+  #         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
-        id: build
-        with:
-          context: .
-          tags: ${{ steps.metadata.outputs.tags }}
-          labels: ${{ steps.metadata.outputs.labels }}
-          push: ${{ github.ref_type == 'tag' }}
+  #     - name: Build and push Docker image
+  #       uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+  #       id: build
+  #       with:
+  #         context: .
+  #         tags: ${{ steps.metadata.outputs.tags }}
+  #         labels: ${{ steps.metadata.outputs.labels }}
+  #         push: ${{ github.ref_type == 'tag' }}
