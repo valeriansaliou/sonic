@@ -111,6 +111,9 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 32 # At the moment, `v1.6.0` is 12 commits away… we should be fine.
+          fetch-tags: true
 
       # FIX: Workaround for git error
       #   `fatal: detected dubious ownership in repository at '/__w/sonic/sonic'`
