@@ -217,6 +217,7 @@ if [ "${RELEASING:?}" == server ] && [ -z "${FORCE-}" ]; then
     die 'Sonic core has changes. Release it first with `task release:core`.'
   elif ! grep -q "sonic-core = { version = \"${CORE_VERSION:?}\"" server/Cargo.toml; then
     # If the core’s version used by the server is not up-to-date, bail out.
+    die "sonic-server isn’t using the last version of sonic-core (${CORE_VERSION:?}). Fix this first."
   fi
 fi
 
