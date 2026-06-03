@@ -221,6 +221,12 @@ if [ "${RELEASING:?}" == 'sonic-server' ] && [ -z "${FORCE-}" ]; then
   fi
 fi
 
+log_info "Validating supply chain…"
+if ! cargo deny check --show-stats; then
+  die 'Supply chain rejected. Fix mentioned issues first.'
+fi
+log_success 'Supply chain validated.'
+
 # Convert the new version to a string.
 NEW_VERSION=$(echo "${VERSION_COMPONENTS[*]}" | tr ' ' '.')
 
