@@ -23,11 +23,14 @@ done
 : ${SELF:="$(basename $0)"}
 
 : ${REPOSITORY_ROOT:="${SCRIPTS_ROOT:?}"/..}
-CHANGELOG_FILE="${REPOSITORY_ROOT:?}"/CHANGELOG.md
+README_FILE="${REPOSITORY_ROOT:?}"/README.md
+SERVER_DIR="${REPOSITORY_ROOT:?}"/server
+CORE_DIR="${REPOSITORY_ROOT:?}"/core
 
 # NOTE: We could use `cargo metadata` here, but it would require `jq` to parse
 #   so this is a good enough no-dependency equivalent.
-VERSION="$(cargo pkgid | sed 's/.*@//')"
+SERVER_VERSION="$(cargo pkgid -p sonic-server | sed 's/.*@//')"
+CORE_VERSION="$(cargo pkgid -p sonic-core | sed 's/.*@//')"
 
 
 # ===== HELPER FUNCTIONS =====
@@ -45,7 +48,7 @@ EOF
 usage() {
   cat <<EOF
 Usage:
-  ${SELF:?} [OPTION...]
+  ${SELF:?} server|core [OPTION...]
 
 Options:
   Miscellaneous options:
@@ -60,11 +63,6 @@ help() {
   exit 0
 }
 
-to_tag() {
-  local version="${1:?"Must pass a version number"}"
-  echo "v${version#v}"
-}
-
 git_log() {
   git --no-pager log --reverse --no-merges \
     --format="${1:?"Format expected"}" --date=short --color \
@@ -74,12 +72,49 @@ git_log() {
 
 # ===== ARGUMENT PARSING =====
 
+# Process non-positional arguments.
+ARGS_=()
 for arg in "$@"; do
   case $arg in
     --help) help ;;
-    *) log_error "Unknown argument: '$arg'."; log_info "$(usage)"; die ;;
+    *) ARGS_+=("$arg") ;;
   esac
 done
+# Update command args so we can then list test names.
+set -- "${ARGS_[@]}"
+unset ARGS_
+
+# Process positional arguments.
+if [ $# -lt 1 ]; then
+  log_error "Missing argument(s)."; log_info "$(usage)"; die
+elif [ $# -gt 1 ]; then
+  log_error "Too many arguments."; log_info "$(usage)"; die
+fi
+case "$1" in
+  server|bin)
+    RELEASING=server
+    VERSION="${SERVER_VERSION:?}"
+    CHANGELOG_FILE="${SERVER_DIR:?}"/CHANGELOG.md
+    CARGO_TOML_FILE="${SERVER_DIR:?}"/Cargo.toml
+
+    to_tag() {
+      local version="${1:?"Must pass a version number"}"
+      echo "v${version#v}"
+    }
+    ;;
+  core|lib)
+    RELEASING=core
+    VERSION="${CORE_VERSION:?}"
+    CHANGELOG_FILE="${CORE_DIR:?}"/CHANGELOG.md
+    CARGO_TOML_FILE="${CORE_DIR:?}"/Cargo.toml
+
+    to_tag() {
+      local version="${1:?"Must pass a version number"}"
+      echo "core-v${version#v}"
+    }
+    ;;
+  *) log_error "Unknown argument: '$arg'."; log_info "$(usage)"; die ;;
+esac
 
 
 # ===== MAIN LOGIC =====
