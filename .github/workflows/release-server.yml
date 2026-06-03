@@ -122,31 +122,35 @@ jobs:
         id: current_tag
         uses: WyriHaximus/github-action-get-previous-tag@61819f33034117e6c686e6a31dba995a85afc9de # v2.0.0
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master on 2026-05-14
-        with:
-          toolchain: stable
+      - run: |-
+          echo '${{ steps.current_tag.outputs.tag }}'
+          [ '${{ steps.current_tag.outputs.tag }}' != '' ]
 
-      - name: Verify versions
-        run: |
-          rustc --version
-          rustup --version 2>/dev/null
-          cargo --version
-          gcc --version
-          clang --version
+      # - name: Install Rust toolchain
+      #   uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master on 2026-05-14
+      #   with:
+      #     toolchain: stable
 
-      - id: build_archive
-        name: Build and archive binary
-        run: ./scripts/build_release_archive.sh ${{ matrix.target_arch }} ${{ matrix.target_platform }} ${{ matrix.target_triple }}
+      # - name: Verify versions
+      #   run: |
+      #     rustc --version
+      #     rustup --version 2>/dev/null
+      #     cargo --version
+      #     gcc --version
+      #     clang --version
 
-      - name: Publish archive in GitHub release
-        if: github.ref == 'refs/heads/master'
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
-        with:
-          tag_name: ${{ steps.current_tag.outputs.tag }}
-          files: ${{ steps.build_archive.outputs.archive_path }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # - id: build_archive
+      #   name: Build and archive binary
+      #   run: ./scripts/build_release_archive.sh ${{ matrix.target_arch }} ${{ matrix.target_platform }} ${{ matrix.target_triple }}
+
+      # - name: Publish archive in GitHub release
+      #   if: github.ref == 'refs/heads/master'
+      #   uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+      #   with:
+      #     tag_name: ${{ steps.current_tag.outputs.tag }}
+      #     files: ${{ steps.build_archive.outputs.archive_path }}
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-publish-packagecloud:
     name: Build and publish to Packagecloud
