@@ -252,11 +252,11 @@ trap revert_on_error ERR
 # Update version numbers in files.
 update_all_versions() {
   log_info "Changing version number in '$(basename "${CARGO_TOML_FILE:?}")'…"
-  replace_version '^(version = \").+(\")' "${CARGO_TOML_FILE:?}"
+  replace_version '^(version = \")[^\"]+(\")' "${CARGO_TOML_FILE:?}"
 
   if [ "${RELEASING:?}" == server ]; then
     log_info "Changing version number in '$(basename "${CARGO_TOML_FILE:?}")'…"
-    replace_version '^(sonic-core = \{ version = \").+(\")' "${CARGO_TOML_FILE:?}" "${CORE_VERSION}"
+    replace_version '^(sonic-core = \{ version = \")[^\"]+(\")' "${CARGO_TOML_FILE:?}" "${CORE_VERSION}"
 
     log_info "Changing version number in '$(basename "${README_FILE:?}")'…"
     replace_version '^(.*valeriansaliou/sonic:v).+$' "${README_FILE:?}"
