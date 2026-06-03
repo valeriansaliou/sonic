@@ -8,6 +8,18 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/v1.5.1...HEAD
 
+### Changes
+
+- Separate Sonic’s core into a library (in `1d4c49e`, `99b3955`, `693babb`)
+- config: Deprecate `channel.search` in favor of `search` (in `b2e7015`)
+- Dependency updates (fixes CVEs):
+  - Update dependencies to fix GHSA-3pv8-6f4r-ffg2 (in `a2d0f00`, `52042b6`)
+
+### New Features
+
+- Release for Red Hat Enterprise Linux (RHEL) (in `0e983a3`)
+- test: Introduce Rust integration tests (in `88e629b`)
+
 ## [1.5.1] (2026-05-21)
 
 [1.5.1]: https://github.com/valeriansaliou/sonic/compare/v1.5.0...v1.5.1
