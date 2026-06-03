@@ -48,7 +48,6 @@ tasks:
 
   release:server:
     desc: Makes a new release (git tag) of Sonic server. CD will build and release the binary.
-    aliases: [release]
     silent: true
     cmd: ./scripts/make_release.sh server {{ .CLI_ARGS }}
 
