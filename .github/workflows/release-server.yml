@@ -114,11 +114,11 @@ jobs:
         with:
           fetch-depth: 32 # At the moment, `v1.6.0` is 12 commits away… we should be fine.
           fetch-tags: true
-
-      # FIX: Workaround for git error
-      #   `fatal: detected dubious ownership in repository at '/__w/sonic/sonic'`
-      - name: Mark repository as safe in git
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          # FIX: Workaround for git error
+          #   `fatal: detected dubious ownership in repository at '/__w/sonic/sonic'`.
+          #   <https://github.com/actions/checkout>’s README says it’s the
+          #   default but hey we know how bugs can creep in.
+          set-safe-directory: true
 
       # NOTE: Running this before building to fail fast if an error arises.
       - name: Get current tag
