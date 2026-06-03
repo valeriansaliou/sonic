@@ -152,31 +152,31 @@ jobs:
       #   env:
       #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  build-publish-packagecloud:
-    name: Build and publish to Packagecloud
-    needs: build-publish-github
-    # Always run, no matter the outcome of `build-publish-github`.
-    # The reason we need this is because if compilation failed for one platform
-    # not supported in our Packagecloud release, we should still try to publish
-    # to Packagecloud. If required builds failed, it will be caught anyway.
-    if: always()
+  # build-publish-packagecloud:
+  #   name: Build and publish to Packagecloud
+  #   needs: build-publish-github
+  #   # Always run, no matter the outcome of `build-publish-github`.
+  #   # The reason we need this is because if compilation failed for one platform
+  #   # not supported in our Packagecloud release, we should still try to publish
+  #   # to Packagecloud. If required builds failed, it will be caught anyway.
+  #   if: always()
 
-    runs-on: ubuntu-24.04
+  #   runs-on: ubuntu-24.04
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Build packages
-        run: ./scripts/build_packages.sh
+  #     - name: Build packages
+  #       run: ./scripts/build_packages.sh
 
-      - name: Push packages to Packagecloud
-        if: github.ref == 'refs/heads/master'
-        uses: faucetsdn/action-packagecloud-upload-debian-packages@89b1e7201d7f9df94e3f360d9cb77134dd5ffc05 # v1
-        with:
-          path: ./packages
-          repo: ${{ secrets.PACKAGECLOUD_REPO }}
-          token: ${{ secrets.PACKAGECLOUD_TOKEN }}
+  #     - name: Push packages to Packagecloud
+  #       if: github.ref == 'refs/heads/master'
+  #       uses: faucetsdn/action-packagecloud-upload-debian-packages@89b1e7201d7f9df94e3f360d9cb77134dd5ffc05 # v1
+  #       with:
+  #         path: ./packages
+  #         repo: ${{ secrets.PACKAGECLOUD_REPO }}
+  #         token: ${{ secrets.PACKAGECLOUD_TOKEN }}
 
   # build-publish-docker:
   #   name: Build and publish to Docker Hub
