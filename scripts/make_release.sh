@@ -107,7 +107,7 @@ case "$1" in
 
     to_tag() {
       local version="${1:?"Must pass a version number"}"
-      echo "v${version/v}"
+      echo "v${version#v}"
     }
     ;;
   core|lib)
@@ -118,7 +118,7 @@ case "$1" in
 
     to_tag() {
       local version="${1:?"Must pass a version number"}"
-      echo "core-v${version/v}"
+      echo "core-v${version#v}"
     }
     ;;
   --help) help ;;

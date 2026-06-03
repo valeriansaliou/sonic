@@ -62,7 +62,7 @@ help() {
 
 to_tag() {
   local version="${1:?"Must pass a version number"}"
-  echo "v${version/v}"
+  echo "v${version#v}"
 }
 
 git_log() {
