@@ -155,6 +155,11 @@ jobs:
   build-publish-packagecloud:
     name: Build and publish to Packagecloud
     needs: build-publish-github
+    # Always run, no matter the outcome of `build-publish-github`.
+    # The reason we need this is because if compilation failed for one platform
+    # not supported in our Packagecloud release, we should still try to publish
+    # to Packagecloud. If required builds failed, it will be caught anyway.
+    if: always()
 
     runs-on: ubuntu-24.04
 
