@@ -109,6 +109,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      # FIX: Workaround for git error
+      #   `fatal: detected dubious ownership in repository at '/__w/sonic/sonic'`
+      - name: Mark repository as safe in git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # NOTE: Running this before building to fail fast if an error arises.
+      - name: Get current tag
+        id: current_tag
+        uses: WyriHaximus/github-action-get-previous-tag@61819f33034117e6c686e6a31dba995a85afc9de # v2.0.0
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master on 2026-05-14
         with:
@@ -125,10 +135,6 @@ jobs:
       - id: build_archive
         name: Build and archive binary
         run: ./scripts/build_release_archive.sh ${{ matrix.target_arch }} ${{ matrix.target_platform }} ${{ matrix.target_triple }}
-
-      - name: Get current tag
-        id: current_tag
-        uses: WyriHaximus/github-action-get-previous-tag@61819f33034117e6c686e6a31dba995a85afc9de # v2.0.0
 
       - name: Publish archive in GitHub release
         if: github.ref_type == 'tag'
