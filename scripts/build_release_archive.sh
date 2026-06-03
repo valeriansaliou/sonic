@@ -27,7 +27,7 @@ done
 
 : ${SELF:="$(basename $0)"}
 
-: ${REPOSITORY_ROOT:="$(dirname "${SCRIPTS_ROOT:?}")"}
+: ${REPOSITORY_ROOT:="${SCRIPTS_ROOT:?}"/..}
 
 # NOTE: We could use `cargo metadata` here, but it would require `jq` to parse
 #   so this is a good enough no-dependency equivalent.
