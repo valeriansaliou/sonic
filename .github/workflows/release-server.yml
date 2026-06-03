@@ -138,7 +138,7 @@ jobs:
 
   build-publish-packagecloud:
     name: Build and publish to Packagecloud
-    needs: make-release-github
+    needs: build-publish-github
 
     runs-on: ubuntu-24.04
 
