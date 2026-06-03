@@ -7,29 +7,29 @@ on:
 name: Build and release binary
 
 jobs:
-  # make-release-github:
-  #   name: Make GitHub release
+  make-release-github:
+    name: Make GitHub release
 
-  #   runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04
 
-  #   steps:
-  #     # NOTE: Required by `WyriHaximus/github-action-get-previous-tag`…
-  #     - name: Checkout code
-  #       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+    steps:
+      # NOTE: Required by `WyriHaximus/github-action-get-previous-tag`…
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-  #     - name: Get current tag
-  #       id: current_tag
-  #       uses: WyriHaximus/github-action-get-previous-tag@61819f33034117e6c686e6a31dba995a85afc9de # v2.0.0
+      - name: Get current tag
+        id: current_tag
+        uses: WyriHaximus/github-action-get-previous-tag@61819f33034117e6c686e6a31dba995a85afc9de # v2.0.0
 
-  #     - name: Release new version
-  #       if: github.ref == 'refs/heads/master'
-  #       uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
-  #       with:
-  #         tag_name: ${{ steps.current_tag.outputs.tag }}
-  #         name: Sonic ${{ steps.current_tag.outputs.tag }}
-  #         body: See [CHANGELOG.md](https://github.com/valeriansaliou/sonic/blob/master/server/CHANGELOG.md).
-  #       env:
-  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Release new version
+        if: github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        with:
+          tag_name: ${{ steps.current_tag.outputs.tag }}
+          name: Sonic ${{ steps.current_tag.outputs.tag }}
+          body: See [CHANGELOG.md](https://github.com/valeriansaliou/sonic/blob/master/server/CHANGELOG.md).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # publish-cargo:
   #   name: Publish to `cargo` registry (crates.io)
@@ -47,7 +47,7 @@ jobs:
   #         CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
 
   build-publish-github:
-    # needs: make-release-github
+    needs: make-release-github
 
     strategy:
       fail-fast: false
