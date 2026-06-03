@@ -98,6 +98,27 @@ replace_version() {
 
 # ===== ARGUMENT PARSING =====
 
+# Process non-positional arguments.
+ARGS_=()
+for arg in "$@"; do
+  case $arg in
+    --no-pull) NO_PULL=1 ;;
+    --force) FORCE=1 ;;
+    --help) help ;;
+    *) ARGS_+=("$arg") ;;
+  esac
+done
+# Update command args so we can then list test names.
+set -- "${ARGS_[@]}"
+unset ARGS_
+
+# Process positional arguments.
+if [ $# -lt 2 ]; then
+  log_error "Missing argument(s)."; log_info "$(usage)"; die
+elif [ $# -gt 2 ]; then
+  log_error "Too many arguments."; log_info "$(usage)"; die
+fi
+
 case "$1" in
   server|bin)
     RELEASING=server
@@ -121,17 +142,13 @@ case "$1" in
       echo "core-v${version#v}"
     }
     ;;
-  --help) help ;;
-  '') log_error "Expected at least two arguments."; log_info "$(usage)"; die ;;
-  *) log_error "Unknown positional argument: '$1'."; log_info "$(usage)"; die ;;
+  *) log_error "Unknown argument: '$arg'."; log_info "$(usage)"; die ;;
 esac
-# Skip argument now that it's processed.
-shift 1
 
 # TODO: Automatically detect semver change level when releasing the core.
 
 VERSION_COMPONENTS=($(echo "${VERSION:?}" | tr '.' ' '))
-case "$1" in
+case "$2" in
   major)
     VERSION_COMPONENTS[0]=$(( VERSION_COMPONENTS[0] + 1 ))
     VERSION_COMPONENTS[1]=0
@@ -146,19 +163,9 @@ case "$1" in
     ;;
   --help) help ;;
   '') log_error "Expected at least two arguments."; log_info "$(usage)"; die ;;
-  *) log_error "Unknown positional argument: '$1'."; log_info "$(usage)"; die ;;
+  *) log_error "Unknown semver change level: '$2'."; log_info "$(usage)"; die ;;
 esac
-# Skip argument now that it's processed.
-shift 1
 
-for arg in "$@"; do
-  case $arg in
-    --no-pull) NO_PULL=1 ;;
-    --force) FORCE=1 ;;
-    --help) help ;;
-    *) log_error "Unknown argument: '$arg'."; log_info "$(usage)"; die ;;
-  esac
-done
 
 # ===== MAIN LOGIC =====
 
