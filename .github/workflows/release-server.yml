@@ -73,16 +73,36 @@ jobs:
     name: ${{ matrix.target_arch }}-${{ matrix.target_platform }} (build + release)
 
     steps:
-      # NOTE: Steps like `dtolnay/rust-toolchain` have dependencies…
-      - name: Install install dependencies
+      - name: Install dependencies
         run: |-
-          case "${{ matrix.target_arch }}-${{ matrix.target_platform }}" in
-            *-rhel9|*-rhel10)
+          case "${{ matrix.container }}" in
+            redhat/ubi*)
+              # `dtolnay/rust-toolchain` dependencies
               # NOTE: `curl-minimal` already installed by default.
+
+              # `WyriHaximus/github-action-get-previous-tag` dependencies
+              dnf install -y git
+
+              # Sonic dependencies
+              dnf install -y \
+                gcc gcc-c++ make \
+                clang clang-devel \
+                libzstd-devel
               ;;
             *)
-              apt-get update && apt-get install -y \
-                curl
+              apt-get update
+
+              # `dtolnay/rust-toolchain` dependencies
+              apt-get install -y curl
+
+              # `WyriHaximus/github-action-get-previous-tag` dependencies
+              apt-get install -y git
+
+              # Sonic dependencies
+              apt-get install -y \
+                build-essential \
+                clang libclang-dev llvm-dev \
+                libzstd-dev
               ;;
           esac
 
@@ -93,23 +113,6 @@ jobs:
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master on 2026-05-14
         with:
           toolchain: stable
-
-      - name: Install build dependencies
-        run: |-
-          case "${{ matrix.target_arch }}-${{ matrix.target_platform }}" in
-            *-rhel9|*-rhel10)
-              dnf install -y \
-                gcc gcc-c++ make \
-                clang clang-devel \
-                libzstd-devel
-              ;;
-            *)
-              apt-get update && apt-get install -y \
-                build-essential \
-                clang libclang-dev llvm-dev \
-                libzstd-dev
-              ;;
-          esac
 
       - name: Verify versions
         run: |
