@@ -121,7 +121,7 @@ fi
 
 case "$1" in
   server|bin)
-    RELEASING=server
+    RELEASING=sonic-server
     VERSION="${SERVER_VERSION:?}"
     CHANGELOG_FILE="${SERVER_DIR:?}"/CHANGELOG.md
     CARGO_TOML_FILE="${SERVER_DIR:?}"/Cargo.toml
@@ -132,7 +132,7 @@ case "$1" in
     }
     ;;
   core|lib)
-    RELEASING=core
+    RELEASING=sonic-core
     VERSION="${CORE_VERSION:?}"
     CHANGELOG_FILE="${CORE_DIR:?}"/CHANGELOG.md
     CARGO_TOML_FILE="${CORE_DIR:?}"/Cargo.toml
@@ -200,7 +200,7 @@ fi
 
 # If bumping the server and the core has been updated since last version,
 # make sure the dependency version has been updated.
-if [ "${RELEASING:?}" == server ] && [ -z "${FORCE-}" ]; then
+if [ "${RELEASING:?}" == 'sonic-server' ] && [ -z "${FORCE-}" ]; then
   # NOTE: We cannot use
   #   `cargo pkgid --manifest-path <(git show "${VERSION:?}":Cargo.toml)`
   #   as it requires the `-Zscript` flag which in turn requires the nightly
@@ -254,7 +254,7 @@ update_all_versions() {
   log_info "Changing version number in '$(basename "${CARGO_TOML_FILE:?}")'…"
   replace_version '^(version = \")[^\"]+(\")' "${CARGO_TOML_FILE:?}"
 
-  if [ "${RELEASING:?}" == server ]; then
+  if [ "${RELEASING:?}" == 'sonic-server' ]; then
     log_info "Changing version number in '$(basename "${CARGO_TOML_FILE:?}")'…"
     replace_version '^(sonic-core = \{ version = \")[^\"]+(\")' "${CARGO_TOML_FILE:?}" "${CORE_VERSION}"
 
@@ -265,8 +265,8 @@ update_all_versions() {
     replace_version '^(VERSION = ).+$' "${DEBIAN_RULES_FILE:?}"
   fi
 
-  log_info "Updating '$(basename "${CARGO_LOCK_FILE:?}")'…"
-  cargo check
+  log_info "Updating '$(basename "${CARGO_LOCK_FILE:?}")' and dry-running \`cargo publish\`…"
+  cargo publish --dry-run -p "${RELEASING:?}" --no-verify --allow-dirty
   UPDATED_FILES+=("${CARGO_LOCK_FILE:?}")
 
   log_info "Updating '$(basename "${CHANGELOG_FILE:?}")'…"
