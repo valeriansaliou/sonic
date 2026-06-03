@@ -90,6 +90,7 @@ if [ $# -lt 1 ]; then
 elif [ $# -gt 1 ]; then
   log_error "Too many arguments."; log_info "$(usage)"; die
 fi
+
 case "$1" in
   server|bin)
     RELEASING=server
@@ -113,7 +114,7 @@ case "$1" in
       echo "core-v${version#v}"
     }
     ;;
-  *) log_error "Unknown argument: '$arg'."; log_info "$(usage)"; die ;;
+  *) log_error "Unknown argument: '$1'."; log_info "$(usage)"; die ;;
 esac
 
 
