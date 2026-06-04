@@ -25,11 +25,11 @@ mod common;
 use crate::common::*;
 
 macro_rules! test {
-    ($sentence:expr, $examples:expr) => {
+    ($sentence:tt $(LANG($ingest_lang:expr))?, $examples:tt $(LANG($query_lang:expr))?) => {
         init_logging();
         let executor = make_test_executor();
 
-        exec!(executor -> PUSH "messages" "user:1" "chat:1" $sentence);
+        exec!(executor -> PUSH "messages" "user:1" "chat:1" $sentence $(LANG($ingest_lang))?);
         exec!(executor -> TRIGGER consolidate);
 
         // Sanity check: ensure no stopword was provided (could make
@@ -42,7 +42,7 @@ macro_rules! test {
         for (needle, should_match) in $examples.into_iter() {
             assert!(!needle.contains("{"), "Needle shouldn’t contain '{{', make sure you formatted the string correctly.");
 
-            let response = exec!(executor -> QUERY "messages" "user:1" needle);
+            let response = exec!(executor -> QUERY "messages" "user:1" needle $(LANG($query_lang))?);
             if should_match {
                 assert_eq!(response, ["chat:1"], "Did not find {needle:?} in {:?}", $sentence);
             } else {
