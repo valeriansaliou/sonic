@@ -75,7 +75,11 @@ impl TokenLexerBuilder {
                 // Detect text language (current lexer mode asks for a cleanup)
                 tracing::debug!("detecting locale from lexer text: {}", text);
 
-                Self::detect_lang(text)
+                let locale = Self::detect_lang(text);
+
+                tracing::debug!("detected locale: {:?} from lexer text: {}", locale, text);
+
+                locale
             }
             TokenLexerMode::NormalizeAndCleanup(Some(lang)) => {
                 // Use hinted language (current lexer mode asks for a cleanup)
