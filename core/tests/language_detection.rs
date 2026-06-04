@@ -39,8 +39,6 @@ fn test_search_language_aware() {
 fn test_lang_is_case_insensitive() {
     init_logging();
 
-    init_logging();
-
     #[rustfmt::skip]
     let examples = [
         ("Allons au cinéma", "FRA"),
