@@ -1672,6 +1672,7 @@ dependencies = [
  "rocksdb",
  "serde",
  "tracing",
+ "tracing-subscriber",
  "twox-hash",
  "unicode-segmentation",
  "whatlang",

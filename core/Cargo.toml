@@ -41,6 +41,7 @@ lindera-tokenizer = { version = "0.31", features = ["unidic"], optional = true }
 
 [dev-dependencies]
 config = { version = "0.15", default-features = false, features = ["toml"] }
+tracing-subscriber = "0.3"
 
 [features]
 default = ["tokenizer-chinese"]
