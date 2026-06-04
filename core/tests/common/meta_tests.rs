@@ -16,6 +16,14 @@ macro_rules! test_ingest_then_query {
 
         $($(executor.fst_pool.fst_action_config.$field = $value;)+)?
 
+        #[allow(unused_mut, unused_assignments)]
+        let mut ingest_lang = "none"; // For logging purposes.
+        $(ingest_lang = $ingest_lang;)?
+
+        #[allow(unused_mut, unused_assignments)]
+        let mut query_lang = "none"; // For logging purposes.
+        $(query_lang = $query_lang;)?
+
         exec!(executor -> PUSH "messages" "user:1" "chat:1" $sentence $(LANG($ingest_lang))?);
         exec!(executor -> TRIGGER consolidate);
 
@@ -26,9 +34,9 @@ macro_rules! test_ingest_then_query {
 
             let response = exec!(executor -> QUERY "messages" "user:1" needle $(LANG($query_lang))?);
             if should_match {
-                assert_eq!(response, ["chat:1"], "Did not find {needle:?} in {:?}", $sentence);
+                assert_eq!(response, ["chat:1"], "Did not find {needle:?} LANG({query_lang}) in {:?} LANG({ingest_lang})", $sentence);
             } else {
-                assert_eq!(response, vec![] as Vec<&str>, "Found {needle:?} in {:?}", $sentence);
+                assert_eq!(response, vec![] as Vec<&str>, "Found {needle:?} LANG({query_lang}) in {:?} LANG({ingest_lang})", $sentence);
             }
         }
 

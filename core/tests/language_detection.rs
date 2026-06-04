@@ -12,27 +12,26 @@ use crate::common::*;
 
 /// Search should be language-aware.
 #[test]
-#[ignore = "Known issue (FIXME)"]
 fn test_search_language_aware() {
-    init_logging();
+    let sentence = "J’ai envie de boire un thé";
 
     #[rustfmt::skip]
-    let examples = [
-        ("J’ai envie de boire un thé", "FRA", "the", "ENG"),
-    ];
+    test_ingest_then_query!(
+        config: { fuzzy_matching_enabled: false, prefix_matching_enabled: false },
+        push: sentence LANG("fra"),
+        query: [
+            ("the", true),
+        ] LANG("fra"),
+    );
 
-    for (n, (message, lang, stopword, stopword_lang)) in examples.into_iter().enumerate() {
-        let executor = make_test_executor_with_id(n);
-
-        exec!(executor -> PUSH "messages" "user:1" "chat:1" message LANG(lang));
-        exec!(executor -> TRIGGER consolidate);
-
-        let response = exec!(executor -> QUERY "messages" "user:1" stopword LANG(lang));
-        assert_eq!(response, ["chat:1"]);
-
-        let response = exec!(executor -> QUERY "messages" "user:1" stopword LANG(stopword_lang));
-        assert_eq!(response, [] as [&str; 0]);
-    }
+    #[rustfmt::skip]
+    test_ingest_then_query!(
+        config: { fuzzy_matching_enabled: false, prefix_matching_enabled: false },
+        push: sentence LANG("fra"),
+        query: [
+            ("the", false),
+        ] LANG("eng"),
+    );
 }
 
 /// Language is case-insensitive.

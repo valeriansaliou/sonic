@@ -32,6 +32,12 @@ fn test_search_is_case_insensitive() {
 }
 
 /// Search should be diacritics-insensitive.
+///
+/// NOTE: In this test, we disable matching via prefix or Levenstein distance
+///   to avoid false positives. For example, `cinema` used to match `cinéma`,
+///   but it was because of typo correction and not because normalization was
+///   done properly. This is likely why it went under the radar that up until
+///   v1.6.0 Sonic was storing non-normalized words in the FST.
 #[test]
 fn test_search_is_diacritics_insensitive() {
     #[rustfmt::skip]
