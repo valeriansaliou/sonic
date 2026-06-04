@@ -63,7 +63,7 @@ macro_rules! exec {
         exec!($executor -> _PUSH $collection $bucket $oid $text; None)
     }};
 
-    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt LANG($lang:ident)) => {{
+    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt LANG($lang:expr)) => {{
         #[rustfmt::skip]
         $executor.log(format!(
             "PUSH {:?} {:?} {:?} {:?} LANG({})",
@@ -113,7 +113,7 @@ macro_rules! exec {
         exec!($executor -> _QUERY $collection $bucket $term; None)
     }};
 
-    ($executor:ident -> QUERY $collection:tt $bucket:tt $term:tt LANG($lang:ident)) => {{
+    ($executor:ident -> QUERY $collection:tt $bucket:tt $term:tt LANG($lang:expr)) => {{
         #[rustfmt::skip]
         $executor.log(format!(
             "QUERY {:?} {:?} {:?} LANG({})",
