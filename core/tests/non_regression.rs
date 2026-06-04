@@ -37,36 +37,6 @@ fn issue_173() {
     ]);
 }
 
-/// See <https://github.com/valeriansaliou/sonic/issues/262>.
-#[test]
-#[ignore = "Known issue (FIXME)"]
-fn issue_262() {
-    #[rustfmt::skip]
-    let test_cases = [
-        ("I met darren", true),
-        ("darren yesterday", true),
-    ];
-
-    // Sanity check: explicit locales at ingestion and query work as expected.
-    test_ingest_then_query!(
-        push: "I met darren yesterday. Great fun!" LANG("eng"),
-        query: test_cases LANG("eng"),
-    );
-
-    // This is what the user reported (used to not work).
-    test_ingest_then_query!(
-        push: "I met darren yesterday. Great fun!",
-        query: test_cases,
-    );
-
-    // I should also work this way.
-    // It’s common to know the language when ingesting, but not at query time.
-    test_ingest_then_query!(
-        push: "I met darren yesterday. Great fun!" LANG("eng"),
-        query: test_cases,
-    );
-}
-
 /// See <https://github.com/valeriansaliou/sonic/issues/245>.
 #[test]
 fn issue_245() {
@@ -104,4 +74,34 @@ fn issue_245() {
         ("Sibanova Veronik", true),
         ("Sibanova Veronika", true),
     ]);
+}
+
+/// See <https://github.com/valeriansaliou/sonic/issues/262>.
+#[test]
+#[ignore = "Known issue (FIXME)"]
+fn issue_262() {
+    #[rustfmt::skip]
+    let test_cases = [
+        ("I met darren", true),
+        ("darren yesterday", true),
+    ];
+
+    // Sanity check: explicit locales at ingestion and query work as expected.
+    test_ingest_then_query!(
+        push: "I met darren yesterday. Great fun!" LANG("eng"),
+        query: test_cases LANG("eng"),
+    );
+
+    // This is what the user reported (used to not work).
+    test_ingest_then_query!(
+        push: "I met darren yesterday. Great fun!",
+        query: test_cases,
+    );
+
+    // I should also work this way.
+    // It’s common to know the language when ingesting, but not at query time.
+    test_ingest_then_query!(
+        push: "I met darren yesterday. Great fun!" LANG("eng"),
+        query: test_cases,
+    );
 }
