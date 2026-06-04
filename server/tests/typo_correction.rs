@@ -25,19 +25,14 @@ mod common;
 use crate::common::*;
 
 macro_rules! test {
-    ($sentence:tt $(LANG($ingest_lang:expr))?, $examples:tt $(LANG($query_lang:expr))?) => {
+    ($sentence:tt $([$option:tt])* $(LANG($ingest_lang:expr))?, $examples:tt $(LANG($query_lang:expr))?) => {
         init_logging();
         let executor = make_test_executor();
 
         exec!(executor -> PUSH "messages" "user:1" "chat:1" $sentence $(LANG($ingest_lang))?);
         exec!(executor -> TRIGGER consolidate);
 
-        // Sanity check: ensure no stopword was provided (could make
-        // examples pass for the wrong reason).
-        assert_eq!(
-            exec!(executor -> COUNT "messages" "user:1" "chat:1"),
-            Ok($sentence.split_ascii_whitespace().count() as u32)
-        );
+        $(test!(internal_ $option: executor, $sentence);)*
 
         for (needle, should_match) in $examples.into_iter() {
             assert!(!needle.contains("{"), "Needle shouldn’t contain '{{', make sure you formatted the string correctly.");
@@ -50,6 +45,15 @@ macro_rules! test {
             }
         }
     };
+
+    (internal_ ensure_no_stopword: $executor:tt, $sentence:ident) => {
+        // Sanity check: ensure no stopword was provided (could make
+        // examples pass for the wrong reason).
+        assert_eq!(
+            exec!($executor -> COUNT "messages" "user:1" "chat:1"),
+            Ok($sentence.split_ascii_whitespace().count() as u32)
+        );
+    }
 }
 
 /// This test sentence contains words that are 3–10 characters-long, while
@@ -66,7 +70,7 @@ const ASTRONOMY_WORDS: &str = "sun moon comet nebula pulsars asteroid satellite 
 #[ignore = "Known issue (FIXME)"]
 fn test_search_allows_typos() {
     #[rustfmt::skip]
-    test!(ASTRONOMY_WORDS, [
+    test!(ASTRONOMY_WORDS [ensure_no_stopword], [
         // 3-letter word, distance = 1.
         ("sum", false),
         // 4-letter word, distance = 1.
@@ -95,7 +99,7 @@ fn test_search_allows_typos() {
 #[ignore = "Not supported yet (FIXME)"]
 fn test_search_term_order_insignificant() {
     #[rustfmt::skip]
-    test!(ASTRONOMY_WORDS, [
+    test!(ASTRONOMY_WORDS [ensure_no_stopword], [
         ("satellite pulsars nebula", true),
         (&format!("missing {ASTRONOMY_WORDS}"), true),
     ]);
