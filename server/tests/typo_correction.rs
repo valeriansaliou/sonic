@@ -44,6 +44,12 @@ macro_rules! test {
                 assert_eq!(response, vec![] as Vec<&str>, "Found {needle:?} in {:?}", $sentence);
             }
         }
+
+        // Drop the executor so it’s not debug-printed multiple times on
+        // failure if this macro was invoked multiple times in the same test.
+        // We could scope this code in a code block (`{ … }`) but it’d be an
+        // implementation detail one might remove in the future unknowingly.
+        drop(executor);
     };
 
     (internal_ ensure_no_stopword: $executor:tt, $sentence:ident) => {
