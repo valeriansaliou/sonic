@@ -1,7 +1,6 @@
 on:
   push:
-    tags:
-      - "v*.*.*"
+    tags: ["v*.*.*"]
 
 name: Build and release binary
 
@@ -99,7 +98,7 @@ jobs:
 
     steps:
       - name: Install dependencies
-        run: |-
+        run: |
           case "${{ matrix.container }}" in
             redhat/ubi*)
               # `dtolnay/rust-toolchain` dependencies

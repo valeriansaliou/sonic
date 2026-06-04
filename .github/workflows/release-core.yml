@@ -1,7 +1,6 @@
 on:
   push:
-    tags:
-      - "core-v*.*.*"
+    tags: ["core-v*.*.*"]
 
 name: Release library
 
@@ -78,7 +77,7 @@ jobs:
           toolchain: stable
 
       - name: Verify versions
-        run: |-
+        run: |
           rustc --version
           rustup --version 2>/dev/null
           cargo --version

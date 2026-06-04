@@ -82,7 +82,7 @@ jobs:
           components: rustfmt
 
       - name: Verify versions
-        run: |-
+        run: |
           rustc --version
           rustup --version 2>/dev/null
           cargo --version
@@ -134,7 +134,7 @@ jobs:
           toolchain: ${{ matrix.rust-toolchain }}
 
       - name: Verify versions
-        run: |-
+        run: |
           rustc --version
           rustup --version 2>/dev/null
           cargo --version
