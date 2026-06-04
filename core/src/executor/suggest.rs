@@ -17,7 +17,7 @@ impl super::Executor {
         _event_id: QuerySearchID,
         mut lexer: TokenLexer,
         limit: QuerySearchLimit,
-    ) -> Result<Option<Vec<String>>, ()> {
+    ) -> Result<Option<impl ExactSizeIterator<Item = String> + DoubleEndedIterator>, ()> {
         if let StoreItem(collection, Some(bucket), None) = item {
             // Important: acquire graph access read lock, and reference it in context. This \
             //   prevents the graph from being erased while using it in this block.

@@ -14,6 +14,7 @@ use fst::{
 use fst_levenshtein::Levenshtein;
 use fst_regex::Regex;
 use hashbrown::{HashMap, HashSet};
+use linked_hash_set::LinkedHashSet;
 use radix::RadixNum;
 use regex_syntax::escape as regex_escape;
 use std::collections::VecDeque;
@@ -955,27 +956,8 @@ impl StoreFST {
     pub fn lookup_typos(
         &self,
         word: &str,
-        max_factor: Option<u32>,
+        typo_factor: u32,
     ) -> Result<FSTStream<'_, Levenshtein>, ()> {
-        // Allow more typos in word as the word gets longer, up to a maximum limit
-        let mut typo_factor = match word.len() {
-            1..=3 => 0,
-            4..=6 => 1,
-            7..=9 => 2,
-            _ => 3,
-        };
-
-        // Cap typo factor to set maximum?
-        if let Some(max_factor) = max_factor {
-            if typo_factor > max_factor {
-                tracing::debug!(
-                    "Capping typo factor from {typo_factor} to {max_factor} \
-                    because of max allowed factor"
-                );
-                typo_factor = max_factor;
-            }
-        }
-
         tracing::debug!(
             "looking-up word in fst via 'typos': {} with typo factor: {}",
             word,
@@ -1255,13 +1237,13 @@ impl StoreFSTAction {
         from_word: &str,
         limit: usize,
         max_typo_factor: Option<u32>,
-    ) -> Option<Vec<String>> {
+    ) -> Option<impl ExactSizeIterator<Item = String> + DoubleEndedIterator + use<>> {
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(from_word) {
             return None;
         }
 
-        let mut found_words = Vec::with_capacity(limit);
+        let mut found_words = LinkedHashSet::with_capacity(limit);
 
         // Try to complete provided word
         if let Ok(stream) = self.store.lookup_begins(from_word) {
@@ -1272,15 +1254,36 @@ impl StoreFSTAction {
 
         // Try to fuzzy-suggest other words? (eg. correct typos)
         if found_words.len() < limit {
-            if let Ok(stream) = self.store.lookup_typos(from_word, max_typo_factor) {
-                tracing::debug!("looking up for word: {} in 'typos' fst stream", from_word);
+            // Allow more typos in word as the word gets longer, up to a maximum limit
+            let max_typo_factor = max_typo_factor.unwrap_or(match from_word.len() {
+                1..=3 => 0,
+                4..=6 => 1,
+                7..=9 => 2,
+                _ => 3,
+            });
+            let mut typo_factor = 1u32;
 
-                Self::find_words_stream(stream, &mut found_words, limit);
+            // TODO: Rework the Levenshtein query feature to avoid repeating
+            //   the same query over and over again. Maybe try to see if
+            //   `fst_levenshtein` can return distances in its response.
+            while found_words.len() < limit && typo_factor <= max_typo_factor {
+                if let Ok(stream) = self.store.lookup_typos(from_word, typo_factor) {
+                    tracing::debug!(
+                        "looking up for word: {} in 'typos' fst stream (max distance: {typo_factor})",
+                        from_word
+                    );
+
+                    Self::find_words_stream(stream, &mut found_words, limit);
+                } else {
+                    break;
+                }
+
+                typo_factor += 1;
             }
         }
 
         if !found_words.is_empty() {
-            Some(found_words)
+            Some(found_words.into_iter())
         } else {
             None
         }
@@ -1318,16 +1321,14 @@ impl StoreFSTAction {
 
     fn find_words_stream<A: Automaton>(
         mut stream: FSTStream<A>,
-        found_words: &mut Vec<String>,
+        found_words: &mut LinkedHashSet<String>,
         limit: usize,
     ) {
         while let Some(word) = stream.next() {
             if let Ok(word_str) = str::from_utf8(word) {
                 let word_string = word_str.to_string();
 
-                if !found_words.contains(&word_string) {
-                    found_words.push(word_string);
-
+                if found_words.insert_if_absent(word_string) {
                     // Requested limit reached? Stop there.
                     if found_words.len() >= limit {
                         break;
@@ -1460,7 +1461,7 @@ mod tests {
 
         let store = fst_pool.acquire("c:test:2", "b:test:2").unwrap();
 
-        assert!(store.lookup_typos("valerien", None).is_ok());
+        assert!(store.lookup_typos("valerien", 1).is_ok());
     }
 
     fn test_fst_store_config() -> Arc<crate::config::ConfigStoreFST> {

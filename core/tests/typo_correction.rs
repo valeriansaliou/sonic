@@ -35,7 +35,6 @@ const ASTRONOMY_WORDS: &str = "sun moon comet nebula pulsars asteroid satellite 
 /// The underlying algorithm used is the Levenshtein distance, so this test is
 /// based on that knowledge.
 #[test]
-#[ignore = "Known issue (FIXME)"]
 fn test_search_allows_typos() {
     #[rustfmt::skip]
     test_ingest_then_query!(ASTRONOMY_WORDS [ensure_no_stopword], [
@@ -51,14 +50,15 @@ fn test_search_allows_typos() {
         // 6-letter word, distance = 2.
         ("nzbala", false),
         // 7-letter word, distance = 2.
-        // FIXME: Broken by `fst_action.suggest_words(&term, alternates_try + 1, Some(1))` in `search.rs`.
         ("plusars", true), // pulsars
         // 9-letter word, distance = 2.
         ("saetllite", true), // satellite
         // 9-letter word, distance = 3.
-        ("satemmite", false),
+        ("satemmote", false),
         // 10-letter word, distance = 3.
         ("sapcecrzft", true), // spacecraft
+        // 10-letter word, distance = 4.
+        ("sapcecarft", false),
     ]);
 }
 

@@ -14,6 +14,29 @@ mod common;
 
 use crate::common::*;
 
+/// See <https://github.com/valeriansaliou/sonic/issues/166>.
+#[test]
+fn issue_166() {
+    #[rustfmt::skip]
+    test_ingest_then_query!("Search Index", [
+        ("search", true),
+        ("earch", true),
+    ]);
+}
+
+/// See <https://github.com/valeriansaliou/sonic/issues/173>.
+#[test]
+fn issue_173() {
+    #[rustfmt::skip]
+    test_ingest_then_query!("Alexander Tipugin", [
+        ("alexander", true),
+        ("alex", true),
+        ("lexander", true),
+        ("exander", true), // Bug used to return `false`.
+        ("exander Tipugin", true), // Bug used to return `false`.
+    ]);
+}
+
 /// See <https://github.com/valeriansaliou/sonic/issues/262>.
 #[test]
 #[ignore = "Known issue (FIXME)"]

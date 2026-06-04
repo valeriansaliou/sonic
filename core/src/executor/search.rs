@@ -78,7 +78,7 @@ impl super::Executor {
                         // Notice: we add '1' to the 'alternates_try' number as to account for \
                         //   exact match suggestion that comes as first result and is to be ignored.
                         if let Some(suggested_words) =
-                            fst_action.suggest_words(&term, alternates_try + 1, Some(1))
+                            fst_action.suggest_words(&term, alternates_try + 1, None)
                         {
                             let mut iids_new_len = iids.len();
 
