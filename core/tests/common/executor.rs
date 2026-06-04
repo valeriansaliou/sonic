@@ -59,7 +59,7 @@ pub fn make_test_executor_with_id(id: impl ToString) -> ExecutorGuard {
 
     // Create connection pools (does not open any connection yet)
     let kv_pool = StoreKVPool::new(Arc::clone(&app_conf.store.kv));
-    let fst_pool = StoreFSTPool::new(Arc::clone(&app_conf.store.fst));
+    let fst_pool = StoreFSTPool::new(Arc::clone(&app_conf.store.fst), Default::default());
 
     ExecutorGuard {
         id: id.to_string(),

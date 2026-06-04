@@ -39,6 +39,8 @@ use crate::lexer::ranges::LexerRegexRange;
 #[derive(Clone)]
 pub struct StoreFSTPool {
     fst_store_config: Arc<crate::config::ConfigStoreFST>,
+    // NOTE: This shouldn’t be here, but until a big rewrite let’s not care.
+    pub fst_action_config: StoreFSTActionConfig,
     graph_pool: Arc<RwLock<HashMap<StoreFSTKey, StoreFSTBox>>>,
     graph_acquire_lock: Arc<Mutex<()>>,
     graph_rebuild_lock: Arc<Mutex<()>>,
@@ -48,6 +50,8 @@ pub struct StoreFSTPool {
 
 pub struct StoreFSTBuilder<'build> {
     fst_store_config: &'build crate::config::ConfigStoreFST,
+    // NOTE: This shouldn’t be here, but until a big rewrite let’s not care.
+    fst_action_config: StoreFSTActionConfig,
     graph_consolidate: Arc<RwLock<HashSet<StoreFSTKey>>>,
 }
 
@@ -58,6 +62,8 @@ pub struct StoreFST {
     last_used: Arc<RwLock<SystemTime>>,
     last_consolidated: Arc<RwLock<SystemTime>>,
     graph_consolidate: Arc<RwLock<HashSet<StoreFSTKey>>>,
+    // NOTE: This shouldn’t be here, but until a big rewrite let’s not care.
+    action_config: StoreFSTActionConfig,
 }
 
 #[derive(Default)]
@@ -72,6 +78,12 @@ pub struct StoreFSTActionBuilder<'build> {
 
 pub struct StoreFSTAction {
     store: StoreFSTBox,
+}
+
+impl StoreFSTAction {
+    fn config(&self) -> &StoreFSTActionConfig {
+        &self.store.action_config
+    }
 }
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
@@ -92,6 +104,21 @@ enum StoreFSTPathMode {
 type StoreFSTAtom = u32;
 type StoreFSTBox = Arc<StoreFST>;
 
+#[derive(Debug, Clone, Copy)]
+pub struct StoreFSTActionConfig {
+    pub prefix_matching_enabled: bool,
+    pub fuzzy_matching_enabled: bool,
+}
+
+impl Default for StoreFSTActionConfig {
+    fn default() -> Self {
+        Self {
+            prefix_matching_enabled: true,
+            fuzzy_matching_enabled: true,
+        }
+    }
+}
+
 const WORD_LIMIT_LENGTH: usize = 40;
 const ATOM_HASH_RADIX: usize = 16;
 
@@ -106,9 +133,13 @@ impl StoreFSTPathMode {
 }
 
 impl StoreFSTPool {
-    pub fn new(fst_store_config: Arc<crate::config::ConfigStoreFST>) -> Self {
+    pub fn new(
+        fst_store_config: Arc<crate::config::ConfigStoreFST>,
+        fst_action_config: StoreFSTActionConfig,
+    ) -> Self {
         Self {
             fst_store_config,
+            fst_action_config,
             graph_pool: Arc::default(),
             graph_acquire_lock: Arc::default(),
             graph_rebuild_lock: Arc::default(),
@@ -162,6 +193,7 @@ impl StoreFSTPool {
             let builder = StoreFSTBuilder {
                 fst_store_config: &self.fst_store_config,
                 graph_consolidate: Arc::clone(&self.graph_consolidate),
+                fst_action_config: self.fst_action_config,
             };
 
             Self::proceed_acquire_open("fst", collection_str, pool_key, &self.graph_pool, &builder)
@@ -895,6 +927,7 @@ impl<'build> StoreGenericBuilder<StoreFSTKey, StoreFST> for StoreFSTBuilder<'bui
                 last_used: Arc::new(RwLock::new(now)),
                 last_consolidated: Arc::new(RwLock::new(now)),
                 graph_consolidate: Arc::clone(&self.graph_consolidate),
+                action_config: self.fst_action_config,
             }
         })
         .map_err(|err| {
@@ -1245,15 +1278,17 @@ impl StoreFSTAction {
 
         let mut found_words = LinkedHashSet::with_capacity(limit);
 
-        // Try to complete provided word
-        if let Ok(stream) = self.store.lookup_begins(from_word) {
-            tracing::debug!("looking up for word: {} in 'begins' fst stream", from_word);
+        if self.config().prefix_matching_enabled {
+            // Try to complete provided word
+            if let Ok(stream) = self.store.lookup_begins(from_word) {
+                tracing::debug!("looking up for word: {} in 'begins' fst stream", from_word);
 
-            Self::find_words_stream(stream, &mut found_words, limit);
+                Self::find_words_stream(stream, &mut found_words, limit);
+            }
         }
 
         // Try to fuzzy-suggest other words? (eg. correct typos)
-        if found_words.len() < limit {
+        if self.config().fuzzy_matching_enabled && found_words.len() < limit {
             // Allow more typos in word as the word gets longer, up to a maximum limit
             let max_typo_factor = max_typo_factor.unwrap_or(match from_word.len() {
                 1..=3 => 0,
@@ -1440,28 +1475,31 @@ mod tests {
 
     #[test]
     fn it_acquires_graph() {
-        let fst_store_config = test_fst_store_config();
-        let fst_pool = StoreFSTPool::new(fst_store_config);
+        let fst_pool = test_fst_pool();
 
         assert!(fst_pool.acquire("c:test:1", "b:test:1").is_ok());
     }
 
     #[test]
     fn it_janitors_graph() {
-        let fst_store_config = test_fst_store_config();
-        let fst_pool = StoreFSTPool::new(fst_store_config);
+        let fst_pool = test_fst_pool();
 
         fst_pool.janitor();
     }
 
     #[test]
     fn it_proceeds_primitives() {
-        let fst_store_config = test_fst_store_config();
-        let fst_pool = StoreFSTPool::new(fst_store_config);
+        let fst_pool = test_fst_pool();
 
         let store = fst_pool.acquire("c:test:2", "b:test:2").unwrap();
 
         assert!(store.lookup_typos("valerien", 1).is_ok());
+    }
+
+    fn test_fst_pool() -> StoreFSTPool {
+        let fst_store_config = test_fst_store_config();
+
+        StoreFSTPool::new(fst_store_config, Default::default())
     }
 
     fn test_fst_store_config() -> Arc<crate::config::ConfigStoreFST> {
@@ -1487,6 +1525,7 @@ impl fmt::Debug for StoreFSTPool {
 
         // NOTE: Deconstructing to future-proof this function.
         let Self {
+            fst_action_config,
             graph_pool,
             graph_acquire_lock,
             graph_rebuild_lock,
@@ -1498,6 +1537,7 @@ impl fmt::Debug for StoreFSTPool {
         } = self;
 
         f.debug_struct("StoreFSTPool")
+            .field("fst_action_config", fst_action_config)
             .field("graph_pool", &AsPrettyRwLock(graph_pool))
             .field("graph_acquire_lock", &AsPrettyMutex(graph_acquire_lock))
             .field("graph_rebuild_lock", &AsPrettyMutex(graph_rebuild_lock))
@@ -1525,6 +1565,7 @@ impl fmt::Debug for StoreFST {
             last_used,
             last_consolidated,
             graph_consolidate,
+            action_config,
         } = self;
 
         f.debug_struct("StoreFST")
@@ -1534,6 +1575,7 @@ impl fmt::Debug for StoreFST {
             .field("last_used", &AsPrettyRwLock(last_used))
             .field("last_consolidated", &AsPrettyRwLock(last_consolidated))
             .field("graph_consolidate", &AsPrettyRwLock(graph_consolidate))
+            .field("action_config", action_config)
             .finish()
     }
 }

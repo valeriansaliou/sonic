@@ -6,11 +6,15 @@
 
 macro_rules! test_ingest_then_query {
     (
+        $(config: { $($field:ident: $value:expr$(,)?)+ },)?
         push: $sentence:tt $([$check:ident])* $(LANG($ingest_lang:expr))?,
         query: $examples:tt $(LANG($query_lang:expr))? $(,)?
     ) => {
         init_logging();
-        let executor = make_test_executor();
+        #[allow(unused_mut)]
+        let mut executor = make_test_executor();
+
+        $($(executor.fst_pool.fst_action_config.$field = $value;)+)?
 
         exec!(executor -> PUSH "messages" "user:1" "chat:1" $sentence $(LANG($ingest_lang))?);
         exec!(executor -> TRIGGER consolidate);

@@ -109,7 +109,7 @@ fn main() {
 
     // Create connection pools (does not open any connection yet)
     let kv_pool = StoreKVPool::new(Arc::clone(&app_conf.sonic.store.kv));
-    let fst_pool = StoreFSTPool::new(Arc::clone(&app_conf.sonic.store.fst));
+    let fst_pool = StoreFSTPool::new(Arc::clone(&app_conf.sonic.store.fst), Default::default());
 
     // Spawn tasker (background thread)
     thread::spawn(spawn_tasker(kv_pool.clone(), fst_pool.clone()));

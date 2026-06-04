@@ -36,6 +36,7 @@ fn test_search_is_case_insensitive() {
 fn test_search_is_diacritics_insensitive() {
     #[rustfmt::skip]
     test_ingest_then_query!(
+        config: { fuzzy_matching_enabled: false, prefix_matching_enabled: false },
         push: "Cinéma",
         query: [
             ("cinema", true),
@@ -45,6 +46,7 @@ fn test_search_is_diacritics_insensitive() {
     // Example from <https://github.com/valeriansaliou/sonic/issues/245>.
     #[rustfmt::skip]
     test_ingest_then_query!(
+        config: { fuzzy_matching_enabled: false, prefix_matching_enabled: false },
         push: "Veronika Šibanová",
         query: [
             ("Sibanova", true),
