@@ -37,7 +37,7 @@ const ASTRONOMY_WORDS: &str = "sun moon comet nebula pulsars asteroid satellite 
 #[test]
 fn test_search_allows_typos() {
     #[rustfmt::skip]
-    test_ingest_then_query!(ASTRONOMY_WORDS [ensure_no_stopword], [
+    test_ingest_then_query!(push: ASTRONOMY_WORDS [ensure_no_stopword], query: [
         // 3-letter word, distance = 1.
         ("sum", false),
         // 4-letter word, distance = 1.
@@ -67,7 +67,7 @@ fn test_search_allows_typos() {
 #[ignore = "Not supported yet (FIXME)"]
 fn test_search_term_order_insignificant() {
     #[rustfmt::skip]
-    test_ingest_then_query!(ASTRONOMY_WORDS [ensure_no_stopword], [
+    test_ingest_then_query!(push: ASTRONOMY_WORDS [ensure_no_stopword], query: [
         ("satellite pulsars nebula", true),
         (&format!("missing {ASTRONOMY_WORDS}"), true),
     ]);

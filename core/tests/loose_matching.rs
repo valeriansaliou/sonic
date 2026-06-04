@@ -34,20 +34,21 @@ fn test_search_is_case_insensitive() {
 /// Search should be diacritics-insensitive.
 #[test]
 fn test_search_is_diacritics_insensitive() {
-    init_logging();
-
     #[rustfmt::skip]
-    let examples = [
-        ("Cinéma", "cinema"),
-    ];
+    test_ingest_then_query!(
+        push: "Cinéma",
+        query: [
+            ("cinema", true),
+        ],
+    );
 
-    for (n, (message, term)) in examples.into_iter().enumerate() {
-        let executor = make_test_executor_with_id(n);
-
-        exec!(executor -> PUSH "messages" "user:1" "chat:1" message);
-        exec!(executor -> TRIGGER consolidate);
-
-        let response = exec!(executor -> QUERY "messages" "user:1" term);
-        assert_eq!(response, ["chat:1"]);
-    }
+    // Example from <https://github.com/valeriansaliou/sonic/issues/245>.
+    #[rustfmt::skip]
+    test_ingest_then_query!(
+        push: "Veronika Šibanová",
+        query: [
+            ("Sibanova", true),
+            ("Veronika S", true),
+        ],
+    );
 }

@@ -5,14 +5,17 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 macro_rules! test_ingest_then_query {
-    ($sentence:tt $([$option:tt])* $(LANG($ingest_lang:expr))?, $examples:tt $(LANG($query_lang:expr))?) => {
+    (
+        push: $sentence:tt $([$check:ident])* $(LANG($ingest_lang:expr))?,
+        query: $examples:tt $(LANG($query_lang:expr))? $(,)?
+    ) => {
         init_logging();
         let executor = make_test_executor();
 
         exec!(executor -> PUSH "messages" "user:1" "chat:1" $sentence $(LANG($ingest_lang))?);
         exec!(executor -> TRIGGER consolidate);
 
-        $(test_ingest_then_query!(internal_ $option: executor, $sentence);)*
+        $(test_ingest_then_query!(internal_ $check: executor, $sentence);)*
 
         for (needle, should_match) in $examples.into_iter() {
             assert!(!needle.contains("{"), "Needle shouldn’t contain '{{', make sure you formatted the string correctly.");
