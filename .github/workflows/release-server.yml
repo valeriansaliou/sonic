@@ -20,6 +20,29 @@ jobs:
         id: current_tag
         uses: WyriHaximus/github-action-get-previous-tag@61819f33034117e6c686e6a31dba995a85afc9de # v2.0.0
 
+      - name: Parse changelog
+        run: |
+          TAG='${{ steps.current_tag.outputs.tag }}'
+          # Remove `v` prefix from `vX.Y.Z`.
+          TAG="${TAG#v}"
+
+          awk -f - server/CHANGELOG.md <<EOF > CHANGELOG.txt
+          # Find the tag section header, and skip it.
+          /^## \[?${TAG//\./\\.}\]?( |$)/              { in_section=1; next }
+
+          # Skip the diff link definition.
+          /^\[[^]]+\]: .+\/github.com\/.+\/compare\//  { next }
+
+          # Skip all leading empty lines.
+          in_section && !text_found && NF              { text_found=1 }
+
+          # Stop if we reach next level 2 heading (other version).
+          text_found && /^## /                         { exit }
+
+          # Otherwise, print the line.
+          text_found                                   { print }
+          EOF
+
       - name: Release new version
         # NOTE: This is not checking `github.ref_type == 'tag'` on purpose
         #   to abort and force the manual creation of the GitHub Release
@@ -29,7 +52,7 @@ jobs:
         with:
           tag_name: ${{ steps.current_tag.outputs.tag }}
           name: Sonic ${{ steps.current_tag.outputs.tag }}
-          body: See [CHANGELOG.md](https://github.com/valeriansaliou/sonic/blob/master/server/CHANGELOG.md).
+          body_path: CHANGELOG.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
