@@ -59,6 +59,7 @@ jobs:
           tag_name: ${{ steps.current_tag.outputs.tag }}
           name: Sonic ${{ steps.current_tag.outputs.tag }}
           body_path: CHANGELOG.txt
+          make_latest: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
