@@ -9,11 +9,13 @@
 pub mod config;
 mod executor;
 mod logging;
+mod meta_tests;
 pub mod util;
 
 pub use self::executor::*;
 pub(crate) use self::item_ref::*;
 pub use self::logging::*;
+pub(crate) use self::meta_tests::*;
 pub(crate) use self::util::assert_contains;
 
 // NOTE: Using macros instead of functions so `unwrap`s point to the call site
