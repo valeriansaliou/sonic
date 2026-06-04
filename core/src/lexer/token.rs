@@ -306,11 +306,23 @@ impl<'a> Iterator for TokenLexer<'a> {
     //   - Gibberish words are removed (ie. words that may just be junk) \
     //   - Stop-words are removed
     fn next(&mut self) -> Option<Self::Item> {
+        use unicode_normalization::UnicodeNormalization as _;
+        use unicode_normalization::char::is_combining_mark;
+
         for word in &mut self.words {
             // Lower-case word
             // Notice: unfortunately, as Rust is unicode-aware, we need to convert the str slice \
             //   to a heap-indexed String; as lower-cased characters may change in bit size.
-            let word = word.to_lowercase();
+            let word = word
+                .nfd()
+                .filter(|c| !is_combining_mark(*c))
+                .collect::<String>()
+                // Lowercase last so iteration is done on fewer characters
+                // (and implementation might also be faster since it’s only
+                // normalized characters now).
+                // NOTE: Cannot use `to_ascii_lowercase` because of non-Latin
+                //   scripts which also have casing (e.g. Greek, Cyrillic).
+                .to_lowercase();
 
             // Check if normalized word is a stop-word? (if should normalize and cleanup)
             if self.mode == TokenLexerMode::NormalizeOnly || !LexerStopWord::is(&word, self.locale)

@@ -12,7 +12,7 @@ use crate::common::*;
 
 /// Simplified and Traditional Chinese should be usable interchangeably.
 #[test]
-#[ignore = "Not supported yet"]
+#[ignore = "Not supported yet"] // TIP: For this, see crate `deunicode`.
 fn test_chinese_folding() {
     init_logging();
 
@@ -35,7 +35,7 @@ fn test_chinese_folding() {
 
 /// Chinese should support mixed input.
 #[test]
-#[ignore = "Not supported yet"]
+#[ignore = "Not supported yet"] // TIP: For this, see crate `deunicode`.
 fn test_chinese_mixed_input() {
     init_logging();
 
