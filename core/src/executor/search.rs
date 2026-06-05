@@ -55,6 +55,12 @@ impl super::Executor {
                             .unwrap_or_default(),
                     );
 
+                    tracing::debug!(
+                        "got exact search executor iids: {:?} for term: {}",
+                        iids,
+                        term
+                    );
+
                     // No IIDs? Try to complete with a suggested alternate word
                     // Notice: this may sound dirty to try generating as many results as the \
                     //   'retain_word_objects' value, but as we do not know if another lexed word \
