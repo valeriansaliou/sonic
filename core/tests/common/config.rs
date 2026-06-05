@@ -36,6 +36,9 @@ pub fn defaults_toml() -> String {
 
     format!(
         r#"
+        [normalization]
+        diacritic_folding_enabled = true
+
         [search]
         query_limit_default = 10
         query_limit_maximum = 100

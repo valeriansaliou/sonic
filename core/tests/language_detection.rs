@@ -17,7 +17,7 @@ fn test_search_language_aware() {
 
     #[rustfmt::skip]
     test_ingest_then_query!(
-        config: { fuzzy_matching_enabled: false, prefix_matching_enabled: false },
+        search_config: { fuzzy_matching_enabled: false, prefix_matching_enabled: false },
         push: sentence LANG("fra"),
         query: [
             ("the", true),
@@ -26,7 +26,7 @@ fn test_search_language_aware() {
 
     #[rustfmt::skip]
     test_ingest_then_query!(
-        config: { fuzzy_matching_enabled: false, prefix_matching_enabled: false },
+        search_config: { fuzzy_matching_enabled: false, prefix_matching_enabled: false },
         push: sentence LANG("fra"),
         query: [
             ("the", false),

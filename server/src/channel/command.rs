@@ -422,6 +422,7 @@ impl ChannelCommandSearch {
                         query_limit,
                         query_offset,
                         query_lang,
+                        *ctx.normalization_config,
                     )
                     .map_err(|()| ChannelCommandError::QueryError)?;
 
@@ -492,8 +493,12 @@ impl ChannelCommandSearch {
                         suggest_limit
                     );
 
-                    let query = Query::suggest(&event_id, collection, bucket, &text, suggest_limit)
-                        .map_err(|()| ChannelCommandError::QueryError)?;
+                    #[rustfmt::skip]
+                    let query = Query::suggest(
+                        &event_id, collection, bucket, &text, suggest_limit,
+                        *ctx.normalization_config,
+                    )
+                    .map_err(|()| ChannelCommandError::QueryError)?;
 
                     // Commit 'suggest' query
                     ChannelCommandBase::commit_pending_operation(
@@ -733,8 +738,12 @@ impl ChannelCommandIngest {
                         push_lang
                     );
 
-                    let query = Query::push(collection, bucket, object, &text, push_lang)
-                        .map_err(|()| ChannelCommandError::QueryError)?;
+                    #[rustfmt::skip]
+                    let query = Query::push(
+                        collection, bucket, object, &text, push_lang,
+                        *ctx.normalization_config,
+                    )
+                    .map_err(|()| ChannelCommandError::QueryError)?;
 
                     // Commit 'push' query
                     ChannelCommandBase::commit_ok_operation(query, ctx.executor)
@@ -766,8 +775,9 @@ impl ChannelCommandIngest {
                 );
                 tracing::debug!("ingest pop has text: {}", text);
 
-                let query = Query::pop(collection, bucket, object, &text)
-                    .map_err(|()| ChannelCommandError::QueryError)?;
+                let query =
+                    Query::pop(collection, bucket, object, &text, *ctx.normalization_config)
+                        .map_err(|()| ChannelCommandError::QueryError)?;
 
                 // Make 'pop' query
                 ChannelCommandBase::commit_result_operation(query, ctx.executor)

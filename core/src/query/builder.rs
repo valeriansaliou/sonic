@@ -7,10 +7,12 @@
 
 use super::Query;
 use super::types::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset};
+use crate::config::ConfigNormalization;
 use crate::lexer::{TokenLexerBuilder, TokenLexerMode};
 use crate::store::StoreItemBuilder;
 
 impl<'a> Query<'a> {
+    #[allow(clippy::too_many_arguments)] // This will be reworked at some point.
     pub fn search(
         query_id: &'a str,
         collection: &'a str,
@@ -19,10 +21,15 @@ impl<'a> Query<'a> {
         limit: QuerySearchLimit,
         offset: QuerySearchOffset,
         lang: Option<QueryGenericLang>,
+        normalization_config: ConfigNormalization,
     ) -> Result<Self, ()> {
         match (
             StoreItemBuilder::from_depth_2(collection, bucket),
-            TokenLexerBuilder::from(TokenLexerMode::from_query_lang(lang), terms),
+            TokenLexerBuilder::from(
+                TokenLexerMode::from_query_lang(lang),
+                terms,
+                normalization_config,
+            ),
         ) {
             (Ok(store), Ok(text_lexed)) => {
                 Ok(Query::Search(store, query_id, text_lexed, limit, offset))
@@ -37,10 +44,11 @@ impl<'a> Query<'a> {
         bucket: &'a str,
         terms: &'a str,
         limit: QuerySearchLimit,
+        normalization_config: ConfigNormalization,
     ) -> Result<Self, ()> {
         match (
             StoreItemBuilder::from_depth_2(collection, bucket),
-            TokenLexerBuilder::from(TokenLexerMode::NormalizeOnly, terms),
+            TokenLexerBuilder::from(TokenLexerMode::NormalizeOnly, terms, normalization_config),
         ) {
             (Ok(store), Ok(text_lexed)) => Ok(Query::Suggest(store, query_id, text_lexed, limit)),
             _ => Err(()),
@@ -66,10 +74,15 @@ impl<'a> Query<'a> {
         object: &'a str,
         text: &'a str,
         lang: Option<QueryGenericLang>,
+        normalization_config: ConfigNormalization,
     ) -> Result<Self, ()> {
         match (
             StoreItemBuilder::from_depth_3(collection, bucket, object),
-            TokenLexerBuilder::from(TokenLexerMode::from_query_lang(lang), text),
+            TokenLexerBuilder::from(
+                TokenLexerMode::from_query_lang(lang),
+                text,
+                normalization_config,
+            ),
         ) {
             (Ok(store), Ok(text_lexed)) => Ok(Query::Push(store, text_lexed)),
             _ => Err(()),
@@ -81,10 +94,11 @@ impl<'a> Query<'a> {
         bucket: &'a str,
         object: &'a str,
         text: &'a str,
+        normalization_config: ConfigNormalization,
     ) -> Result<Self, ()> {
         match (
             StoreItemBuilder::from_depth_3(collection, bucket, object),
-            TokenLexerBuilder::from(TokenLexerMode::NormalizeOnly, text),
+            TokenLexerBuilder::from(TokenLexerMode::NormalizeOnly, text, normalization_config),
         ) {
             (Ok(store), Ok(text_lexed)) => Ok(Query::Pop(store, text_lexed)),
             _ => Err(()),
@@ -136,16 +150,34 @@ impl<'a> Query<'a> {
 mod tests {
     use super::*;
 
+    fn test_normalization_config() -> ConfigNormalization {
+        ConfigNormalization {
+            diacritic_folding_enabled: false,
+        }
+    }
+
     #[test]
     fn it_builds_search_query() {
-        assert!(Query::search("id1", "c:test:1", "b:test:1", "Michael Dake", 10, 20, None).is_ok());
-        assert!(Query::search("id2", "c:test:1", "", "Michael Dake", 1, 0, None).is_err());
+        #[rustfmt::skip]
+        assert!(Query::search(
+            "id1", "c:test:1", "b:test:1", "Michael Dake", 10, 20, None,
+            test_normalization_config(),
+        ).is_ok());
+
+        #[rustfmt::skip]
+        assert!(Query::search(
+            "id2", "c:test:1", "", "Michael Dake", 1, 0, None,
+            test_normalization_config(),
+        ).is_err());
     }
 
     #[test]
     fn it_builds_suggest_query() {
-        assert!(Query::suggest("id1", "c:test:2", "b:test:2", "Micha", 5).is_ok());
-        assert!(Query::suggest("id2", "c:test:2", "", "Micha", 1).is_err());
+        #[rustfmt::skip]
+        assert!(Query::suggest("id1", "c:test:2", "b:test:2", "Micha", 5, test_normalization_config()).is_ok());
+
+        #[rustfmt::skip]
+        assert!(Query::suggest("id2", "c:test:2", "", "Micha", 1, test_normalization_config()).is_err());
     }
 
     #[test]
@@ -156,23 +188,26 @@ mod tests {
 
     #[test]
     fn it_builds_push_query() {
-        assert!(
-            Query::push(
-                "c:test:3",
-                "b:test:3",
-                "o:test:3",
-                "My name is Michael Dake. I'm ordering in the US.",
-                None
-            )
-            .is_ok()
-        );
-        assert!(Query::push("c:test:3", "", "o:test:3", "My name is Michael Dake.", None).is_err());
+        #[rustfmt::skip]
+        assert!(Query::push(
+            "c:test:3", "b:test:3", "o:test:3", "My name is Michael Dake. I'm ordering in the US.", None,
+            test_normalization_config(),
+        ).is_ok());
+
+        #[rustfmt::skip]
+        assert!(Query::push(
+            "c:test:3", "", "o:test:3", "My name is Michael Dake.", None,
+            test_normalization_config(),
+        ).is_err());
     }
 
     #[test]
     fn it_builds_pop_query() {
-        assert!(Query::pop("c:test:4", "b:test:4", "o:test:4", "ordering US").is_ok());
-        assert!(Query::pop("c:test:4", "", "o:test:4", "ordering US").is_err());
+        #[rustfmt::skip]
+        assert!(Query::pop("c:test:4", "b:test:4", "o:test:4", "ordering US", test_normalization_config()).is_ok());
+
+        #[rustfmt::skip]
+        assert!(Query::pop("c:test:4", "", "o:test:4", "ordering US", test_normalization_config()).is_err());
     }
 
     #[test]

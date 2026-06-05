@@ -6,7 +6,8 @@
 
 macro_rules! test_ingest_then_query {
     (
-        $(config: { $($field:ident: $value:expr$(,)?)+ },)?
+        $(normalization_config: { $($nc_field:ident: $nc_value:expr$(,)?)+ },)?
+        $(search_config: { $($sc_field:ident: $sc_value:expr$(,)?)+ },)?
         push: $sentence:tt $([$check:ident])* $(LANG($ingest_lang:expr))?,
         query: $examples:tt $(LANG($query_lang:expr))? $(,)?
     ) => {
@@ -14,7 +15,12 @@ macro_rules! test_ingest_then_query {
         #[allow(unused_mut)]
         let mut executor = make_test_executor();
 
-        $($(executor.fst_pool.fst_action_config.$field = $value;)+)?
+        {
+            #[allow(unused)]
+            let app_conf = std::sync::Arc::get_mut(&mut executor.app_conf).unwrap();
+            $($(app_conf.normalization.$nc_field = $nc_value;)+)?
+        }
+        $($(executor.fst_pool.fst_action_config.$sc_field = $sc_value;)+)?
 
         #[allow(unused_mut, unused_assignments)]
         let mut ingest_lang = "none"; // For logging purposes.

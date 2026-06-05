@@ -19,6 +19,8 @@ use crate::util::serde::env_var;
 
 #[derive(Deserialize)]
 pub struct Config {
+    pub normalization: ConfigNormalization,
+
     pub search: ConfigSearch,
 
     pub store: ConfigStore,
@@ -41,6 +43,13 @@ impl Config {
             panic!("consolidate_after for fst must be strictly lower than inactive_after");
         }
     }
+}
+
+/// Configuration group for normalization options (Unicode normalization,
+/// stemming, lemmatization…).
+#[derive(Deserialize, Clone, Copy)]
+pub struct ConfigNormalization {
+    pub diacritic_folding_enabled: bool,
 }
 
 #[derive(Deserialize)]
@@ -134,6 +143,9 @@ pub(crate) mod tests {
         [channel]
         inet = "[::1]:1491"
         tcp_timeout = 300
+
+        [normalization]
+        diacritic_folding_enabled = true
 
         [search]
         query_limit_default = 10

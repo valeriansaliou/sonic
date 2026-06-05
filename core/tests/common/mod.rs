@@ -51,6 +51,7 @@ macro_rules! exec {
                 sonic::lexer::TokenLexerBuilder::from(
                     sonic::lexer::TokenLexerMode::NormalizeAndCleanup($lang),
                     $text,
+                    $executor.app_conf.normalization,
                 )
                 .unwrap(),
             )
@@ -102,6 +103,7 @@ macro_rules! exec {
                 sonic::lexer::TokenLexerBuilder::from(
                     sonic::lexer::TokenLexerMode::NormalizeAndCleanup($lang),
                     $term,
+                    $executor.app_conf.normalization,
                 )
                 .unwrap(),
                 sonic::query::QuerySearchLimit::MAX,
