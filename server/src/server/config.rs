@@ -16,6 +16,12 @@ pub fn defaults_toml() -> &'static str {
     inet = "[::1]:1491"
     tcp_timeout = 300
 
+    [normalization]
+    # TODO(major): Enable by default.
+    diacritic_folding_enabled = false
+    # TODO(major): Enable by default.
+    stemming_enabled = false
+
     [search]
     query_limit_default = 10
     query_limit_maximum = 100

@@ -93,7 +93,7 @@ impl super::Executor {
                         iid_terms_hashed
                     );
 
-                    for (term, term_hashed) in lexer {
+                    for (term, term_hashed, _) in lexer {
                         // Check that term is not already linked to IID
                         if !iid_terms_hashed.contains(&term_hashed) {
                             if let Ok(term_iids) = kv_action.get_term_to_iids(term_hashed) {

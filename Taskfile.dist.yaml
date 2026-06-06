@@ -33,7 +33,7 @@ tasks:
       - task: deps:lint
       - cargo fmt --check
       - cargo clippy --locked
-      - cargo build --locked
+      - cargo check --locked --release
       - cargo test --locked
       - tests/e2e-node/scripts/run.sh
 

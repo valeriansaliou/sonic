@@ -47,12 +47,18 @@ impl super::Executor {
                 //   all resulting IIDs for each given term.
                 let mut found_iids: LinkedHashSet<StoreObjectIID> = LinkedHashSet::new();
 
-                'lexing: for (term, term_hashed) in lexer {
+                'lexing: for (term, term_hashed, original_len) in lexer {
                     let mut iids = LinkedHashSet::from_iter(
                         kv_action
                             .get_term_to_iids(term_hashed)
                             .unwrap_or(None)
                             .unwrap_or_default(),
+                    );
+
+                    tracing::debug!(
+                        "got exact search executor iids: {:?} for term: {}",
+                        iids,
+                        term
                     );
 
                     // No IIDs? Try to complete with a suggested alternate word
@@ -78,7 +84,7 @@ impl super::Executor {
                         // Notice: we add '1' to the 'alternates_try' number as to account for \
                         //   exact match suggestion that comes as first result and is to be ignored.
                         if let Some(suggested_words) =
-                            fst_action.suggest_words(&term, alternates_try + 1, Some(1))
+                            fst_action.suggest_words(&term, original_len, alternates_try + 1, None)
                         {
                             let mut iids_new_len = iids.len();
 

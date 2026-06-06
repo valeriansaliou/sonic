@@ -4,20 +4,22 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-//! Feature: Loose matching
+//! Feature: Han folding
 
 mod common;
 
 use crate::common::*;
 
-/// Search should be case-insensitive.
+/// Simplified and Traditional Chinese should be usable interchangeably.
 #[test]
-fn test_search_is_case_insensitive() {
+#[ignore = "Not supported yet"] // TIP: For this, see crate `deunicode`.
+fn test_chinese_folding() {
     init_logging();
 
     #[rustfmt::skip]
     let examples = [
-        ("HeLLo", "hello"),
+        ("圖書館", "图书馆"),
+        ("图书馆", "圖書館"),
     ];
 
     for (n, (message, term)) in examples.into_iter().enumerate() {
@@ -31,14 +33,16 @@ fn test_search_is_case_insensitive() {
     }
 }
 
-/// Search should be diacritics-insensitive.
+/// Chinese should support mixed input.
 #[test]
-fn test_search_is_diacritics_insensitive() {
+#[ignore = "Not supported yet"] // TIP: For this, see crate `deunicode`.
+fn test_chinese_mixed_input() {
     init_logging();
 
     #[rustfmt::skip]
     let examples = [
-        ("Cinéma", "cinema"),
+        ("北京", "bei"),
+        ("北jing", "北京"),
     ];
 
     for (n, (message, term)) in examples.into_iter().enumerate() {

@@ -7,6 +7,8 @@
 mod stopwords;
 
 pub mod ranges;
+#[cfg(feature = "stemming")]
+mod stemming;
 mod token;
 
 pub use self::token::*;

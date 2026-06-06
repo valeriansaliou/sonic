@@ -9,11 +9,13 @@
 pub mod config;
 mod executor;
 mod logging;
+mod meta_tests;
 pub mod util;
 
 pub use self::executor::*;
 pub(crate) use self::item_ref::*;
 pub use self::logging::*;
+pub(crate) use self::meta_tests::*;
 pub(crate) use self::util::assert_contains;
 
 // NOTE: Using macros instead of functions so `unwrap`s point to the call site
@@ -47,8 +49,10 @@ macro_rules! exec {
             .push(
                 crate::common::object_ref!($collection, $bucket, $oid),
                 sonic::lexer::TokenLexerBuilder::from(
-                    sonic::lexer::TokenLexerMode::NormalizeAndCleanup($lang),
+                    sonic::lexer::TokenLexerMode::NormalizeAndCleanup,
+                    $lang,
                     $text,
+                    $executor.app_conf.normalization,
                 )
                 .unwrap(),
             )
@@ -63,7 +67,7 @@ macro_rules! exec {
         exec!($executor -> _PUSH $collection $bucket $oid $text; None)
     }};
 
-    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt LANG($lang:ident)) => {{
+    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt LANG($lang:expr)) => {{
         #[rustfmt::skip]
         $executor.log(format!(
             "PUSH {:?} {:?} {:?} {:?} LANG({})",
@@ -98,8 +102,10 @@ macro_rules! exec {
                 crate::common::bucket_ref!($collection, $bucket),
                 "",
                 sonic::lexer::TokenLexerBuilder::from(
-                    sonic::lexer::TokenLexerMode::NormalizeAndCleanup($lang),
+                    sonic::lexer::TokenLexerMode::NormalizeAndCleanup,
+                    $lang,
                     $term,
+                    $executor.app_conf.normalization,
                 )
                 .unwrap(),
                 sonic::query::QuerySearchLimit::MAX,
@@ -113,7 +119,7 @@ macro_rules! exec {
         exec!($executor -> _QUERY $collection $bucket $term; None)
     }};
 
-    ($executor:ident -> QUERY $collection:tt $bucket:tt $term:tt LANG($lang:ident)) => {{
+    ($executor:ident -> QUERY $collection:tt $bucket:tt $term:tt LANG($lang:expr)) => {{
         #[rustfmt::skip]
         $executor.log(format!(
             "QUERY {:?} {:?} {:?} LANG({})",

@@ -290,6 +290,11 @@ Sonic supports a wide range of languages in its lexing system. If a language is 
 * 🇮🇱 Yiddish
 * 🇿🇦 Zulu
 
+Only a subset of those languages support stemming. Sonic uses [Snowball stemming algorithms] via [the `waken_snowball` crate]. See the crate’s documentation for a list of supported languages.
+
+[Snowball stemming algorithms]: https://snowballstem.org/ "Snowball homepage"
+[the `waken_snowball` crate]: https://crates.io/crates/waken_snowball "waken_snowball - crates.io: Rust Package Registry"
+
 ## How fast & lightweight is it?
 
 Sonic was built for [Crisp](https://crisp.chat/) from the start. As Crisp was growing and indexing more and more search data into a full-text search SQL database, we decided it was time to switch to a proper search backend system. When reviewing Elasticsearch (ELS) and others, we found those were full-featured heavyweight systems that did not scale well with Crisp's freemium-based cost structure.
