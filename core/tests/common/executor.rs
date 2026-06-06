@@ -37,17 +37,15 @@ impl ExecutorGuard {
 
 impl Drop for ExecutorGuard {
     fn drop(&mut self) {
-        println!();
-
         let test_failed = std::thread::panicking();
 
         // Print executor state on test failures for easier debugging.
         if test_failed {
             if *LOG_LEVEL > tracing::Level::INFO {
-                self.log(format!("executor={:#?}", self.executor));
+                self.log(format!("\nexecutor={:#?}", self.executor));
             }
         } else {
-            self.log("[Drop]");
+            self.log("[Drop]\n");
         }
 
         // TODO: Cleanup data directory on success.

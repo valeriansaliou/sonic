@@ -29,7 +29,7 @@ fn test_search_is_case_insensitive() {
         exec!(executor -> TRIGGER consolidate);
 
         let response = exec!(executor -> QUERY "messages" "user:1" term);
-        assert_eq!(response, ["chat:1"]);
+        assert_eq!(response, ["chat:1"], "({message:?}, {term:?})");
     }
 }
 
