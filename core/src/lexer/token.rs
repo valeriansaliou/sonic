@@ -341,37 +341,34 @@ impl<'a> Iterator for TokenLexer<'a> {
 
     // Guarantees provided by the lexer on the output: \
     //   - Text is split per-word in a script-aware way \
-    //   - Words are normalized (ie. lower-case) \
+    //   - Words are normalized (i.e. case is folded (≈ lower-cased), \
+    //     diacritics are optionally folded, word is opionally stemmed) \
     //   - Gibberish words are removed (ie. words that may just be junk) \
     //   - Stop-words are removed
     fn next(&mut self) -> Option<Self::Item> {
-        for word in &mut self.words {
-            let original_len = word.len();
+        for original_word in &mut self.words {
+            let original_len = original_word.len();
 
-            // NOTE: We cannot use `Iterator<Item = char>` in this pipeline
-            //   as some characters are lowercased differently depending on
-            //   where they are in the word. For example:
-            //   - "ΚΌΣΜΟΣ".to_lowercase() -> "κόσμος"
-            //   - "ΚΌΣΜΟΣ".chars().flat_map(char::to_lowercase) -> "κόσμοσ"
-            //   - But "ς".to_lowercase() -> "ς" (not "σ")
-            //   This forces multiple memory allocations but we can hardly
-            //   prevent them (e.g. stemming needs to lookup whole words).
             let word = {
                 #[cfg(debug_assertions)]
-                let mut word: String = word.to_owned();
-                let mut new_word: String;
+                let mut current_word: String = original_word.to_owned();
+
+                // NOTE: We use an iterator to avoid unnecessary `String`
+                //   allocations.
+                let mut chars: Box<dyn Iterator<Item = char>> = Box::new(original_word.chars());
 
                 // Case folding
-                // NOTE: Cannot use `to_ascii_lowercase` because non-Latin
-                //   scripts also have casing (e.g. Greek, Cyrillic).
                 {
                     use caseless::Caseless as _;
 
-                    new_word = word.chars().default_case_fold().collect();
+                    chars = Box::new(chars.default_case_fold());
+
                     #[cfg(debug_assertions)]
                     {
-                        tracing::trace!("Case folding: {word:?} -> {new_word:?}");
-                        word = new_word.clone();
+                        let new_word = chars.collect();
+                        tracing::trace!("Case folding: {current_word:?} -> {new_word:?}");
+                        current_word = new_word;
+                        chars = Box::new(current_word.chars());
                     }
                 }
 
@@ -380,26 +377,37 @@ impl<'a> Iterator for TokenLexer<'a> {
                     use unicode_normalization::UnicodeNormalization as _;
                     use unicode_normalization::char::is_combining_mark;
 
-                    new_word = new_word.nfd().filter(|c| !is_combining_mark(*c)).collect();
+                    chars = Box::new(chars.nfd().filter(|c| !is_combining_mark(*c)));
+
                     #[cfg(debug_assertions)]
                     {
-                        tracing::trace!("Diacritic folding: {word:?} -> {new_word:?}");
-                        word = new_word.clone();
+                        let new_word = chars.collect();
+                        tracing::trace!("Diacritic folding: {current_word:?} -> {new_word:?}");
+                        current_word = new_word;
+                        chars = Box::new(current_word.chars());
                     }
                 }
+
+                // NOTE: We need to collect here as stemming algorithms need to
+                //   lookup whole words.
+                #[allow(unused_mut)]
+                let mut new_word: String = chars.collect();
 
                 // Stemming
                 #[cfg(feature = "stemming")]
                 if self.config.stemming_enabled {
                     if let Some(algo) = self.snowball_algorithm {
-                        new_word = String::from(snowball::stem(algo, &word));
+                        new_word = String::from(snowball::stem(algo, &new_word));
+
                         tracing::debug!(
-                            "lexer stemmed word {word:?} into {new_word:?} using Snowball algorithm {algo:?}"
+                            "lexer stemmed word {original_word:?} into {new_word:?} \
+                            using Snowball algorithm {algo:?}"
                         );
+
                         #[cfg(debug_assertions)]
                         {
-                            tracing::trace!("Stemming: {word:?} -> {new_word:?}");
-                            word = new_word.clone();
+                            tracing::trace!("Stemming: {current_word:?} -> {new_word:?}");
+                            current_word = new_word.clone();
                         }
                     }
                 }
