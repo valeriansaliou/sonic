@@ -49,7 +49,8 @@ macro_rules! exec {
             .push(
                 crate::common::object_ref!($collection, $bucket, $oid),
                 sonic::lexer::TokenLexerBuilder::from(
-                    sonic::lexer::TokenLexerMode::NormalizeAndCleanup($lang),
+                    sonic::lexer::TokenLexerMode::NormalizeAndCleanup,
+                    $lang,
                     $text,
                     $executor.app_conf.normalization,
                 )
@@ -101,7 +102,8 @@ macro_rules! exec {
                 crate::common::bucket_ref!($collection, $bucket),
                 "",
                 sonic::lexer::TokenLexerBuilder::from(
-                    sonic::lexer::TokenLexerMode::NormalizeAndCleanup($lang),
+                    sonic::lexer::TokenLexerMode::NormalizeAndCleanup,
+                    $lang,
                     $term,
                     $executor.app_conf.normalization,
                 )

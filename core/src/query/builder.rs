@@ -26,7 +26,8 @@ impl<'a> Query<'a> {
         match (
             StoreItemBuilder::from_depth_2(collection, bucket),
             TokenLexerBuilder::from(
-                TokenLexerMode::from_query_lang(lang),
+                TokenLexerMode::from_query_lang(&lang),
+                lang.and_then(QueryGenericLang::into_lang_opt),
                 terms,
                 normalization_config,
             ),
@@ -48,7 +49,12 @@ impl<'a> Query<'a> {
     ) -> Result<Self, ()> {
         match (
             StoreItemBuilder::from_depth_2(collection, bucket),
-            TokenLexerBuilder::from(TokenLexerMode::NormalizeOnly, terms, normalization_config),
+            TokenLexerBuilder::from(
+                TokenLexerMode::NormalizeOnly,
+                None,
+                terms,
+                normalization_config,
+            ),
         ) {
             (Ok(store), Ok(text_lexed)) => Ok(Query::Suggest(store, query_id, text_lexed, limit)),
             _ => Err(()),
@@ -79,7 +85,8 @@ impl<'a> Query<'a> {
         match (
             StoreItemBuilder::from_depth_3(collection, bucket, object),
             TokenLexerBuilder::from(
-                TokenLexerMode::from_query_lang(lang),
+                TokenLexerMode::from_query_lang(&lang),
+                lang.and_then(QueryGenericLang::into_lang_opt),
                 text,
                 normalization_config,
             ),
@@ -98,7 +105,12 @@ impl<'a> Query<'a> {
     ) -> Result<Self, ()> {
         match (
             StoreItemBuilder::from_depth_3(collection, bucket, object),
-            TokenLexerBuilder::from(TokenLexerMode::NormalizeOnly, text, normalization_config),
+            TokenLexerBuilder::from(
+                TokenLexerMode::NormalizeOnly,
+                None,
+                text,
+                normalization_config,
+            ),
         ) {
             (Ok(store), Ok(text_lexed)) => Ok(Query::Pop(store, text_lexed)),
             _ => Err(()),
@@ -153,6 +165,7 @@ mod tests {
     fn test_normalization_config() -> ConfigNormalization {
         ConfigNormalization {
             diacritic_folding_enabled: false,
+            stemming_enabled: false,
         }
     }
 

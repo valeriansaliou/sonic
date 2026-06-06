@@ -19,6 +19,8 @@ pub fn defaults_toml() -> &'static str {
     [normalization]
     # TODO(major): Enable by default.
     diacritic_folding_enabled = false
+    # TODO(major): Enable by default.
+    stemming_enabled = false
 
     [search]
     query_limit_default = 10

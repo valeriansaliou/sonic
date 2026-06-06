@@ -39,13 +39,15 @@ jieba-rs = { version = "0.9", optional = true }
 lindera-core = { version = "0.31", optional = true }
 lindera-dictionary = { version = "0.31", features = ["unidic"], optional = true }
 lindera-tokenizer = { version = "0.31", features = ["unidic"], optional = true }
+snowball = { package = "waken_snowball", version = "0.1", optional = true }
 
 [dev-dependencies]
 config = { version = "0.15", default-features = false, features = ["toml"] }
 tracing-subscriber = "0.3"
 
 [features]
-default = ["tokenizer-chinese"]
+default = ["stemming", "tokenizer-chinese"]
+stemming = ["dep:snowball"]
 tokenizer-chinese = ["jieba-rs"]
 tokenizer-japanese = ["lindera-core", "lindera-dictionary", "lindera-tokenizer"]
 benchmark = []

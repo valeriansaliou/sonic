@@ -24,6 +24,8 @@ pub struct TokenLexerBuilder;
 pub struct TokenLexer<'a> {
     mode: TokenLexerMode,
     locale: Option<Lang>,
+    #[cfg(feature = "stemming")]
+    snowball_algorithm: Option<snowball::Algorithm>,
     words: TokenLexerWords<'a>,
     yields: HashSet<StoreTermHashed>,
     config: ConfigNormalization,
@@ -31,7 +33,7 @@ pub struct TokenLexer<'a> {
 
 #[derive(PartialEq)]
 pub enum TokenLexerMode {
-    NormalizeAndCleanup(Option<Lang>),
+    NormalizeAndCleanup,
     NormalizeOnly,
 }
 
@@ -73,32 +75,46 @@ lazy_static! {
 impl TokenLexerBuilder {
     pub fn from(
         mode: TokenLexerMode,
+        lang: Option<Lang>,
         text: &str,
         config: ConfigNormalization,
     ) -> Result<TokenLexer<'_>, ()> {
-        let locale = match mode {
-            TokenLexerMode::NormalizeAndCleanup(None) => {
-                // Detect text language (current lexer mode asks for a cleanup)
-                tracing::debug!("detecting locale from lexer text: {}", text);
-
-                let locale = Self::detect_lang(text);
-
-                tracing::debug!("detected locale: {:?} from lexer text: {}", locale, text);
-
-                locale
-            }
-            TokenLexerMode::NormalizeAndCleanup(Some(lang)) => {
+        let locale = match lang {
+            // If user provided a language, use it.
+            Some(hinted_lang) => {
                 // Use hinted language (current lexer mode asks for a cleanup)
-                tracing::debug!("using hinted locale: {} from lexer text: {}", lang, text);
+                tracing::debug!(
+                    "using hinted locale: {} from lexer text: {}",
+                    hinted_lang,
+                    text
+                );
 
-                Some(lang)
+                lang
             }
-            TokenLexerMode::NormalizeOnly => {
-                tracing::debug!("not detecting locale from lexer text: {}", text);
 
-                // May be 'NormalizeOnly' mode; no need to perform a locale detection
-                None
-            }
+            None => match mode {
+                // If user asked to cleanup, detect the language.
+                TokenLexerMode::NormalizeAndCleanup => {
+                    let locale = Self::detect_lang(text);
+                    tracing::debug!("detected locale: {:?} from lexer text: {}", locale, text);
+                    locale
+                }
+
+                // If user asked not to cleanup but stemming is enabled, detect the language.
+                #[cfg(feature = "stemming")]
+                TokenLexerMode::NormalizeOnly if config.stemming_enabled => {
+                    let locale = Self::detect_lang(text);
+                    tracing::debug!("detected locale: {:?} from lexer text: {}", locale, text);
+                    locale
+                }
+
+                // Otherwise, don’t detect the language.
+                TokenLexerMode::NormalizeOnly => {
+                    tracing::debug!("not detecting locale from lexer text: {}", text);
+
+                    None
+                }
+            },
         };
 
         // Build final token builder iterator
@@ -106,6 +122,8 @@ impl TokenLexerBuilder {
     }
 
     fn detect_lang(text: &str) -> Option<Lang> {
+        tracing::debug!("detecting locale from lexer text: {}", text);
+
         // Detect only if text is long-enough to allow the text locale detection system to \
         //   function properly
         if text.len() < TEXT_LANG_DETECT_PROCEED_OVER_CHARS {
@@ -280,9 +298,18 @@ impl<'a> TokenLexer<'a> {
             _ => TokenLexerWords::UAX29(text.unicode_words()),
         };
 
+        // Identify Snowball algorithm now to avoid doing it for every token.
+        #[cfg(feature = "stemming")]
+        let snowball_algorithm = match &locale {
+            Some(locale) => super::stemming::snowball_algorithm(locale),
+            None => None,
+        };
+
         TokenLexer {
             mode,
             locale,
+            #[cfg(feature = "stemming")]
+            snowball_algorithm,
             words,
             yields: HashSet::new(),
             config,
@@ -291,11 +318,11 @@ impl<'a> TokenLexer<'a> {
 }
 
 impl TokenLexerMode {
-    pub fn from_query_lang(lang: Option<QueryGenericLang>) -> TokenLexerMode {
+    pub fn from_query_lang(lang: &Option<QueryGenericLang>) -> TokenLexerMode {
         match lang {
-            Some(QueryGenericLang::Enabled(lang)) => {
+            Some(QueryGenericLang::Enabled(_)) => {
                 // Cleanup with provided language
-                TokenLexerMode::NormalizeAndCleanup(Some(lang))
+                TokenLexerMode::NormalizeAndCleanup
             }
             Some(QueryGenericLang::Disabled) => {
                 // Normalize only (language purposefully set to 'none')
@@ -303,14 +330,14 @@ impl TokenLexerMode {
             }
             None => {
                 // Auto-detect language and cleanup (this is the default behavior)
-                TokenLexerMode::NormalizeAndCleanup(None)
+                TokenLexerMode::NormalizeAndCleanup
             }
         }
     }
 }
 
 impl<'a> Iterator for TokenLexer<'a> {
-    type Item = (String, StoreTermHashed);
+    type Item = (String, StoreTermHashed, usize);
 
     // Guarantees provided by the lexer on the output: \
     //   - Text is split per-word in a script-aware way \
@@ -318,24 +345,61 @@ impl<'a> Iterator for TokenLexer<'a> {
     //   - Gibberish words are removed (ie. words that may just be junk) \
     //   - Stop-words are removed
     fn next(&mut self) -> Option<Self::Item> {
-        use unicode_normalization::UnicodeNormalization as _;
-        use unicode_normalization::char::is_combining_mark;
-
         for word in &mut self.words {
-            let word = if self.config.diacritic_folding_enabled {
-                word.nfd()
-                    .filter(|c| !is_combining_mark(*c))
-                    .collect::<String>()
-                    // Lowercase last so iteration is done on fewer characters
-                    // (and implementation might also be faster since it’s only
-                    // normalized characters now).
-                    // NOTE: Cannot use `to_ascii_lowercase` because non-Latin
-                    //   scripts also have casing (e.g. Greek, Cyrillic).
-                    .to_lowercase()
-            } else {
-                // Notice: unfortunately, as Rust is unicode-aware, we need to convert the str slice \
-                //   to a heap-indexed String; as lower-cased characters may change in bit size.
-                word.to_lowercase()
+            let original_len = word.len();
+
+            // NOTE: We cannot use `Iterator<Item = char>` in this pipeline
+            //   as some characters are lowercased differently depending on
+            //   where they are in the word. For example:
+            //   - "ΚΌΣΜΟΣ".to_lowercase() -> "κόσμος"
+            //   - "ΚΌΣΜΟΣ".chars().flat_map(char::to_lowercase) -> "κόσμοσ"
+            //   - But "ς".to_lowercase() -> "ς" (not "σ")
+            //   This forces multiple memory allocations but we can hardly
+            //   prevent them (e.g. stemming needs to lookup whole words).
+            let word = {
+                #[cfg(debug_assertions)]
+                let mut word: String = word.to_owned();
+
+                // Case folding
+                // NOTE: Cannot use `to_ascii_lowercase` because non-Latin
+                //   scripts also have casing (e.g. Greek, Cyrillic).
+                let mut new_word: String = word.to_lowercase();
+                #[cfg(debug_assertions)]
+                {
+                    tracing::trace!("Case folding: {word:?} -> {new_word:?}");
+                    word = new_word.clone();
+                }
+
+                // Diacritic folding
+                if self.config.diacritic_folding_enabled {
+                    use unicode_normalization::UnicodeNormalization as _;
+                    use unicode_normalization::char::is_combining_mark;
+
+                    new_word = new_word.nfd().filter(|c| !is_combining_mark(*c)).collect();
+                    #[cfg(debug_assertions)]
+                    {
+                        tracing::trace!("Diacritic folding: {word:?} -> {new_word:?}");
+                        word = new_word.clone();
+                    }
+                }
+
+                // Stemming
+                #[cfg(feature = "stemming")]
+                if self.config.stemming_enabled {
+                    if let Some(algo) = self.snowball_algorithm {
+                        new_word = String::from(snowball::stem(algo, &word));
+                        tracing::debug!(
+                            "lexer stemmed word {word:?} into {new_word:?} using Snowball algorithm {algo:?}"
+                        );
+                        #[cfg(debug_assertions)]
+                        {
+                            tracing::trace!("Stemming: {word:?} -> {new_word:?}");
+                            word = new_word.clone();
+                        }
+                    }
+                }
+
+                new_word
             };
 
             // Check if normalized word is a stop-word? (if should normalize and cleanup)
@@ -352,7 +416,7 @@ impl<'a> Iterator for TokenLexer<'a> {
 
                     self.yields.insert(term_hash);
 
-                    return Some((word, term_hash));
+                    return Some((word, term_hash, original_len));
                 } else {
                     tracing::debug!(
                         "lexer did not yield word: {} because: word already yielded",
@@ -394,61 +458,79 @@ impl<'a> Iterator for TokenLexerWords<'a> {
 mod tests {
     use super::*;
 
+    const NORMALIZATION_CONFIG: ConfigNormalization = ConfigNormalization {
+        diacritic_folding_enabled: false,
+        stemming_enabled: false,
+    };
+
     #[test]
     fn it_cleans_token_english() {
         let mut token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup(None),
+            TokenLexerMode::NormalizeAndCleanup,
+            None,
             "The quick brown fox jumps over the lazy dog!",
-            ConfigNormalization {
-                diacritic_folding_enabled: false,
-            },
+            NORMALIZATION_CONFIG,
         )
         .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Eng));
         assert_eq!(
             token_cleaner.next(),
-            Some(("quick".to_string(), 4179131656))
+            Some(("quick".to_string(), 4179131656, 5))
         );
         assert_eq!(
             token_cleaner.next(),
-            Some(("brown".to_string(), 1268820067))
+            Some(("brown".to_string(), 1268820067, 5))
         );
-        assert_eq!(token_cleaner.next(), Some(("fox".to_string(), 667256324)));
-        assert_eq!(token_cleaner.next(), Some(("jumps".to_string(), 633865164)));
-        assert_eq!(token_cleaner.next(), Some(("lazy".to_string(), 4130433347)));
-        assert_eq!(token_cleaner.next(), Some(("dog".to_string(), 2044924251)));
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("fox".to_string(), 667256324, 3))
+        );
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("jumps".to_string(), 633865164, 5))
+        );
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("lazy".to_string(), 4130433347, 4))
+        );
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("dog".to_string(), 2044924251, 3))
+        );
         assert_eq!(token_cleaner.next(), None);
     }
 
     #[test]
     fn it_cleans_token_french() {
         let mut token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup(None),
+            TokenLexerMode::NormalizeAndCleanup,
+            None,
             "Le vif renard brun saute par dessus le chien paresseux.",
-            ConfigNormalization {
-                diacritic_folding_enabled: false,
-            },
+            NORMALIZATION_CONFIG,
         )
         .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Fra));
         assert_eq!(
             token_cleaner.next(),
-            Some(("renard".to_string(), 1635186311))
-        );
-        assert_eq!(token_cleaner.next(), Some(("brun".to_string(), 2763604928)));
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("saute".to_string(), 1918158211))
+            Some(("renard".to_string(), 1635186311, 6))
         );
         assert_eq!(
             token_cleaner.next(),
-            Some(("chien".to_string(), 2177818351))
+            Some(("brun".to_string(), 2763604928, 4))
         );
         assert_eq!(
             token_cleaner.next(),
-            Some(("paresseux".to_string(), 1678693110))
+            Some(("saute".to_string(), 1918158211, 5))
+        );
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("chien".to_string(), 2177818351, 5))
+        );
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("paresseux".to_string(), 1678693110, 9))
         );
         assert_eq!(token_cleaner.next(), None);
     }
@@ -457,18 +539,17 @@ mod tests {
     #[test]
     fn it_cleans_token_chinese_jieba() {
         let mut token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup(None),
+            TokenLexerMode::NormalizeAndCleanup,
+            None,
             "我们中出了一个叛徒",
-            ConfigNormalization {
-                diacritic_folding_enabled: false,
-            },
+            NORMALIZATION_CONFIG,
         )
         .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Cmn));
-        assert_eq!(token_cleaner.next(), Some(("出".to_string(), 241978070)));
-        assert_eq!(token_cleaner.next(), Some(("一个".to_string(), 2596274530)));
-        assert_eq!(token_cleaner.next(), Some(("叛徒".to_string(), 3244183759)));
+        assert_eq!(token_cleaner.next(), Some(("出".into(), 241978070, 3)));
+        assert_eq!(token_cleaner.next(), Some(("一个".into(), 2596274530, 6)));
+        assert_eq!(token_cleaner.next(), Some(("叛徒".into(), 3244183759, 6)));
         assert_eq!(token_cleaner.next(), None);
     }
 
@@ -476,20 +557,31 @@ mod tests {
     #[test]
     fn it_cleans_token_chinese_naive() {
         let mut token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup(None),
+            TokenLexerMode::NormalizeAndCleanup,
+            None,
             "快狐跨懒狗快狐跨懒狗",
-            ConfigNormalization {
-                diacritic_folding_enabled: false,
-            },
+            NORMALIZATION_CONFIG,
         )
         .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Cmn));
-        assert_eq!(token_cleaner.next(), Some(("快".to_string(), 126546256)));
-        assert_eq!(token_cleaner.next(), Some(("狐".to_string(), 2879689662)));
-        assert_eq!(token_cleaner.next(), Some(("跨".to_string(), 2913342670)));
-        assert_eq!(token_cleaner.next(), Some(("懒".to_string(), 3199935961)));
-        assert_eq!(token_cleaner.next(), Some(("狗".to_string(), 3360772096)));
+        assert_eq!(token_cleaner.next(), Some(("快".to_string(), 126546256, 3)));
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("狐".to_string(), 2879689662, 3))
+        );
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("跨".to_string(), 2913342670, 3))
+        );
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("懒".to_string(), 3199935961, 3))
+        );
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("狗".to_string(), 3360772096, 3))
+        );
         assert_eq!(token_cleaner.next(), None);
     }
 
@@ -497,26 +589,37 @@ mod tests {
     #[test]
     fn it_cleans_token_japanese_lindera_product() {
         let mut token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup(None),
+            TokenLexerMode::NormalizeAndCleanup,
+            None,
             "関西国際空港限定トートバッグ",
-            ConfigNormalization {
-                diacritic_folding_enabled: false,
-            },
+            NORMALIZATION_CONFIG,
         )
         .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Jpn));
-        assert_eq!(token_cleaner.next(), Some(("関西".to_string(), 1283572620)));
-        assert_eq!(token_cleaner.next(), Some(("国際".to_string(), 2132457693)));
-        assert_eq!(token_cleaner.next(), Some(("空港".to_string(), 865668138)));
-        assert_eq!(token_cleaner.next(), Some(("限定".to_string(), 3708465176)));
         assert_eq!(
             token_cleaner.next(),
-            Some(("トート".to_string(), 881444746))
+            Some(("関西".to_string(), 1283572620, 6))
         );
         assert_eq!(
             token_cleaner.next(),
-            Some(("バッグ".to_string(), 3515727814))
+            Some(("国際".to_string(), 2132457693, 6))
+        );
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("空港".to_string(), 865668138, 6))
+        );
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("限定".to_string(), 3708465176, 6))
+        );
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("トート".to_string(), 881444746, 9))
+        );
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("バッグ".to_string(), 3515727814, 9))
         );
         assert_eq!(token_cleaner.next(), None);
     }
@@ -525,22 +628,20 @@ mod tests {
     #[test]
     fn it_cleans_token_japanese_lindera_food() {
         let token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup(None),
+            TokenLexerMode::NormalizeAndCleanup,
+            None,
             "𠮷野家",
-            ConfigNormalization {
-                diacritic_folding_enabled: false,
-            },
+            NORMALIZATION_CONFIG,
         )
         .unwrap();
 
         assert_eq!(token_cleaner.locale, None);
 
         let token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup(None),
+            TokenLexerMode::NormalizeAndCleanup,
+            None,
             "ヱビスビール",
-            ConfigNormalization {
-                diacritic_folding_enabled: false,
-            },
+            NORMALIZATION_CONFIG,
         )
         .unwrap();
 
@@ -551,37 +652,44 @@ mod tests {
     #[test]
     fn it_cleans_token_japanese_lindera_sentence() {
         let mut token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup(None),
+            TokenLexerMode::NormalizeAndCleanup,
+            None,
             "𠮷野家でヱビスビールを飲んだ",
-            ConfigNormalization {
-                diacritic_folding_enabled: false,
-            },
+            NORMALIZATION_CONFIG,
         )
         .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Jpn));
-        assert_eq!(token_cleaner.next(), Some(("𠮷".to_string(), 2866455824)));
-        assert_eq!(token_cleaner.next(), Some(("野家".to_string(), 1324395598)));
         assert_eq!(
             token_cleaner.next(),
-            Some(("ヱビス".to_string(), 1696836208))
+            Some(("𠮷".to_string(), 2866455824, 4))
         );
         assert_eq!(
             token_cleaner.next(),
-            Some(("ビール".to_string(), 3421909800))
+            Some(("野家".to_string(), 1324395598, 6))
         );
-        assert_eq!(token_cleaner.next(), Some(("飲ん".to_string(), 3196735184)));
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("ヱビス".to_string(), 1696836208, 9))
+        );
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("ビール".to_string(), 3421909800, 9))
+        );
+        assert_eq!(
+            token_cleaner.next(),
+            Some(("飲ん".to_string(), 3196735184, 6))
+        );
         assert_eq!(token_cleaner.next(), None);
     }
 
     #[test]
     fn it_cleans_token_emojis() {
         let mut token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup(None),
+            TokenLexerMode::NormalizeAndCleanup,
+            None,
             "🚀 🙋‍♂️🙋‍♂️🙋‍♂️",
-            ConfigNormalization {
-                diacritic_folding_enabled: false,
-            },
+            NORMALIZATION_CONFIG,
         )
         .unwrap();
 
@@ -592,19 +700,17 @@ mod tests {
     #[test]
     fn it_cleans_token_lang_hinted() {
         let mut token_cleaner_right = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup(Some(Lang::Eng)),
+            TokenLexerMode::NormalizeAndCleanup,
+            Some(Lang::Eng),
             "This will be cleaned properly, as English was hinted rightfully so.",
-            ConfigNormalization {
-                diacritic_folding_enabled: false,
-            },
+            NORMALIZATION_CONFIG,
         )
         .unwrap();
         let mut token_cleaner_wrong = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup(Some(Lang::Fra)),
+            TokenLexerMode::NormalizeAndCleanup,
+            Some(Lang::Fra),
             "This will not be cleaned properly, as French was hinted but this is English.",
-            ConfigNormalization {
-                diacritic_folding_enabled: false,
-            },
+            NORMALIZATION_CONFIG,
         )
         .unwrap();
 
@@ -613,11 +719,11 @@ mod tests {
 
         assert_eq!(
             token_cleaner_right.next(),
-            Some(("cleaned".to_string(), 3550382624))
+            Some(("cleaned".to_string(), 3550382624, 7))
         );
         assert_eq!(
             token_cleaner_wrong.next(),
-            Some(("this".to_string(), 493303710))
+            Some(("this".to_string(), 493303710, 4))
         );
     }
 
@@ -662,9 +768,7 @@ mod benches {
             TokenLexerBuilder::from(
                 TokenLexerMode::NormalizeOnly,
                 "Le vif renard brun saute par dessus le chien paresseux.",
-                ConfigNormalization {
-                    diacritic_folding_enabled: false,
-                },
+                NORMALIZATION_CONFIG,
             )
         });
     }
@@ -675,9 +779,7 @@ mod benches {
             let token_cleaner = TokenLexerBuilder::from(
                 TokenLexerMode::NormalizeOnly,
                 "Le vif renard brun saute par dessus le chien paresseux.",
-                ConfigNormalization {
-                    diacritic_folding_enabled: false,
-                },
+                NORMALIZATION_CONFIG,
             )
             .unwrap();
 
@@ -689,11 +791,10 @@ mod benches {
     fn bench_clean_token_english_regular_build(b: &mut Bencher) {
         b.iter(|| {
             TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup(None),
+                TokenLexerMode::NormalizeAndCleanup,
+                None,
                 "The quick brown fox jumps over the lazy dog!",
-                ConfigNormalization {
-                    diacritic_folding_enabled: false,
-                },
+                NORMALIZATION_CONFIG,
             )
         });
     }
@@ -702,11 +803,10 @@ mod benches {
     fn bench_clean_token_english_regular_exhaust(b: &mut Bencher) {
         b.iter(|| {
             let token_cleaner = TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup(None),
+                TokenLexerMode::NormalizeAndCleanup,
+                None,
                 "The quick brown fox jumps over the lazy dog!",
-                ConfigNormalization {
-                    diacritic_folding_enabled: false,
-                },
+                NORMALIZATION_CONFIG,
             )
             .unwrap();
 
@@ -718,15 +818,14 @@ mod benches {
     fn bench_clean_token_english_long_exhaust(b: &mut Bencher) {
         b.iter(|| {
             let token_cleaner = TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup(None),
+                TokenLexerMode::NormalizeAndCleanup,
+                None,
                 r#"Running an electrical current through water splits it into oxygen and hydrogen,
                 the latter of which can be used as a reliable, zero-emission fuel source. In the
                 past, the process of purifying water beforehand was too energy intensive for this
                 process to be useful — but now scientists have figured out how to skip the process
                 altogether and convert seawater into usable hydrogen"#,
-                ConfigNormalization {
-                    diacritic_folding_enabled: false,
-                },
+                NORMALIZATION_CONFIG,
             )
             .unwrap();
 
@@ -740,9 +839,7 @@ mod benches {
             TokenLexerBuilder::from(
                 TokenLexerMode::NormalizeAndCleanup(Some(Lang::Eng)),
                 "The quick brown fox jumps over the lazy dog!",
-                ConfigNormalization {
-                    diacritic_folding_enabled: false,
-                },
+                NORMALIZATION_CONFIG,
             )
         });
     }
@@ -753,9 +850,7 @@ mod benches {
             let token_cleaner = TokenLexerBuilder::from(
                 TokenLexerMode::NormalizeAndCleanup(Some(Lang::Eng)),
                 "The quick brown fox jumps over the lazy dog!",
-                ConfigNormalization {
-                    diacritic_folding_enabled: false,
-                },
+                NORMALIZATION_CONFIG,
             )
             .unwrap();
 
@@ -767,11 +862,10 @@ mod benches {
     fn bench_clean_token_chinese_build(b: &mut Bencher) {
         b.iter(|| {
             TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup(None),
+                TokenLexerMode::NormalizeAndCleanup,
+                None,
                 "我们中出了一个叛徒",
-                ConfigNormalization {
-                    diacritic_folding_enabled: false,
-                },
+                NORMALIZATION_CONFIG,
             )
         });
     }
@@ -780,11 +874,10 @@ mod benches {
     fn bench_clean_token_chinese_exhaust(b: &mut Bencher) {
         b.iter(|| {
             let token_cleaner = TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup(None),
+                TokenLexerMode::NormalizeAndCleanup,
+                None,
                 "我们中出了一个叛徒",
-                ConfigNormalization {
-                    diacritic_folding_enabled: false,
-                },
+                NORMALIZATION_CONFIG,
             )
             .unwrap();
 
@@ -796,11 +889,10 @@ mod benches {
     fn bench_clean_token_japanese_build(b: &mut Bencher) {
         b.iter(|| {
             TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup(None),
+                TokenLexerMode::NormalizeAndCleanup,
+                None,
                 "関西国際空港限定トートバッグ",
-                ConfigNormalization {
-                    diacritic_folding_enabled: false,
-                },
+                NORMALIZATION_CONFIG,
             )
         });
     }
@@ -809,11 +901,10 @@ mod benches {
     fn bench_clean_token_japanese_exhaust(b: &mut Bencher) {
         b.iter(|| {
             let token_cleaner = TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup(None),
+                TokenLexerMode::NormalizeAndCleanup,
+                None,
                 "関西国際空港限定トートバッグ",
-                ConfigNormalization {
-                    diacritic_folding_enabled: false,
-                },
+                NORMALIZATION_CONFIG,
             )
             .unwrap();
 

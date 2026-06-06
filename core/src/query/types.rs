@@ -32,6 +32,13 @@ impl QueryGenericLang {
             Lang::from_code(value).map(QueryGenericLang::Enabled)
         }
     }
+
+    pub fn into_lang_opt(self) -> Option<Lang> {
+        match self {
+            Self::Enabled(lang) => Some(lang),
+            Self::Disabled => None,
+        }
+    }
 }
 
 #[cfg(test)]

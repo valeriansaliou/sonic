@@ -36,8 +36,11 @@ const ASTRONOMY_WORDS: &str = "sun moon comet nebula pulsars asteroid satellite 
 /// based on that knowledge.
 #[test]
 fn test_search_allows_typos() {
+    // NOTE: Need to make language explicit because of
+    //   <https://github.com/valeriansaliou/sonic/issues/322#issuecomment-4638688602>.
+    //   Will be fixed separately.
     #[rustfmt::skip]
-    test_ingest_then_query!(push: ASTRONOMY_WORDS [ensure_no_stopword], query: [
+    test_ingest_then_query!(push: ASTRONOMY_WORDS [ensure_no_stopword] LANG("eng"), query: [
         // 3-letter word, distance = 1.
         ("sum", false),
         // 4-letter word, distance = 1.
@@ -59,7 +62,7 @@ fn test_search_allows_typos() {
         ("sapcecrzft", true), // spacecraft
         // 10-letter word, distance = 4.
         ("sapcecarft", false),
-    ]);
+    ] LANG("eng"));
 }
 
 /// Ensures the order of words in search queries is insignificant.

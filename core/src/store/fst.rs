@@ -1268,6 +1268,9 @@ impl StoreFSTAction {
     pub fn suggest_words(
         &self,
         from_word: &str,
+        // Length before stemming. Useful to apply fuzzy matching rules based
+        // on user input.
+        original_word_len: usize,
         limit: usize,
         max_typo_factor: Option<u32>,
     ) -> Option<impl ExactSizeIterator<Item = String> + DoubleEndedIterator + use<>> {
@@ -1290,7 +1293,7 @@ impl StoreFSTAction {
         // Try to fuzzy-suggest other words? (eg. correct typos)
         if self.config().fuzzy_matching_enabled && found_words.len() < limit {
             // Allow more typos in word as the word gets longer, up to a maximum limit
-            let max_typo_factor = max_typo_factor.unwrap_or(match from_word.len() {
+            let max_typo_factor = max_typo_factor.unwrap_or(match original_word_len {
                 1..=3 => 0,
                 4..=6 => 1,
                 7..=9 => 2,

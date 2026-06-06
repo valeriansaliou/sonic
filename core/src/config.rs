@@ -50,6 +50,9 @@ impl Config {
 #[derive(Deserialize, Clone, Copy)]
 pub struct ConfigNormalization {
     pub diacritic_folding_enabled: bool,
+
+    #[cfg(feature = "stemming")]
+    pub stemming_enabled: bool,
 }
 
 #[derive(Deserialize)]
@@ -146,6 +149,7 @@ pub(crate) mod tests {
 
         [normalization]
         diacritic_folding_enabled = true
+        stemming_enabled = true
 
         [search]
         query_limit_default = 10
