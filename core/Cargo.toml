@@ -19,6 +19,7 @@ doc = true
 
 [dependencies]
 unicode-normalization = "0.1"
+caseless = "0.2"
 tracing = "0.1"
 lazy_static = "1"
 serde = { version = "1", features = ["derive", "rc"] }

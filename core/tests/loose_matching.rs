@@ -12,7 +12,7 @@ use crate::common::*;
 
 /// Search should be case-insensitive.
 #[test]
-fn test_search_is_case_insensitive() {
+fn test_search_is_case_insensitive_simple() {
     init_logging();
 
     #[rustfmt::skip]
@@ -20,6 +20,64 @@ fn test_search_is_case_insensitive() {
         ("HeLLo", "hello"),
         ("ΚΌΣΜΟΣ", "κόσμος"),
         ("привет", "ПРИВЕТ"),
+    ];
+
+    // Make it work bidirectionally.
+    let examples = examples.into_iter().flat_map(|(a, b)| [(a, b), (b, a)]);
+
+    for (n, (message, term)) in examples.enumerate() {
+        let executor = make_test_executor_with_id(n);
+
+        exec!(executor -> PUSH "messages" "user:1" "chat:1" message);
+        exec!(executor -> TRIGGER consolidate);
+
+        let response = exec!(executor -> QUERY "messages" "user:1" term);
+        assert_eq!(response, ["chat:1"], "({message:?}, {term:?})");
+    }
+}
+
+/// Case-insensitivity isn’t just about lowercasing, as explained in
+/// <https://www.w3.org/TR/charmod-norm/#definitionCaseFolding>.
+/// This test ensures Sonic does proper case folding.
+#[test]
+fn test_search_is_case_insensitive_proper() {
+    init_logging();
+
+    #[rustfmt::skip]
+    let examples = [
+        ("ΚΌΣΜΟΣ", "κόσμοσ"),
+        ("ΚΌΣΜΟΣ", "κόσμος"),
+        ("DİYARBAKIR", "diyarbakır"),
+    ];
+
+    // Make it work bidirectionally.
+    let examples = examples.into_iter().flat_map(|(a, b)| [(a, b), (b, a)]);
+
+    for (n, (message, term)) in examples.into_iter().enumerate() {
+        let executor = make_test_executor_with_id(n);
+
+        exec!(executor -> PUSH "messages" "user:1" "chat:1" message);
+        exec!(executor -> TRIGGER consolidate);
+
+        let response = exec!(executor -> QUERY "messages" "user:1" term);
+        assert_eq!(response, ["chat:1"], "({message:?}, {term:?})");
+    }
+}
+
+/// Unicode representation should not impact search results.
+#[test]
+#[ignore = "Not supported yet"]
+fn test_search_is_unicode_normalized() {
+    init_logging();
+
+    #[rustfmt::skip]
+    let examples = [
+        // Ligatures
+        ("ﬃ", "ffi"),
+        // Width folding
+        ("ＡＢＣ", "ABC"),
+        // Style
+        ("①②③", "123"),
     ];
 
     for (n, (message, term)) in examples.into_iter().enumerate() {

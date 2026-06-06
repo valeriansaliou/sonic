@@ -359,15 +359,20 @@ impl<'a> Iterator for TokenLexer<'a> {
             let word = {
                 #[cfg(debug_assertions)]
                 let mut word: String = word.to_owned();
+                let mut new_word: String;
 
                 // Case folding
                 // NOTE: Cannot use `to_ascii_lowercase` because non-Latin
                 //   scripts also have casing (e.g. Greek, Cyrillic).
-                let mut new_word: String = word.to_lowercase();
-                #[cfg(debug_assertions)]
                 {
-                    tracing::trace!("Case folding: {word:?} -> {new_word:?}");
-                    word = new_word.clone();
+                    use caseless::Caseless as _;
+
+                    new_word = word.chars().default_case_fold().collect();
+                    #[cfg(debug_assertions)]
+                    {
+                        tracing::trace!("Case folding: {word:?} -> {new_word:?}");
+                        word = new_word.clone();
+                    }
                 }
 
                 // Diacritic folding
