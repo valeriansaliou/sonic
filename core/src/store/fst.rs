@@ -14,7 +14,7 @@ use fst::{
 use fst_levenshtein::Levenshtein;
 use fst_regex::Regex;
 use hashbrown::{HashMap, HashSet};
-use linked_hash_set::LinkedHashSet;
+use indexmap::IndexMap;
 use radix::RadixNum;
 use regex_syntax::escape as regex_escape;
 use std::collections::VecDeque;
@@ -33,6 +33,7 @@ use super::generic::{
 };
 use super::keyer::StoreKeyerHasher;
 use crate::lexer::ranges::LexerRegexRange;
+use crate::query::QueryMatchScore;
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
@@ -1273,20 +1274,25 @@ impl StoreFSTAction {
         original_word_len: usize,
         limit: usize,
         max_typo_factor: Option<u32>,
-    ) -> Option<impl ExactSizeIterator<Item = String> + DoubleEndedIterator + use<>> {
+    ) -> Option<
+        impl ExactSizeIterator<Item = (String, QueryMatchScore)> + DoubleEndedIterator + use<>,
+    > {
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(from_word) {
             return None;
         }
 
-        let mut found_words = LinkedHashSet::with_capacity(limit);
+        let mut found_words: IndexMap<String, QueryMatchScore> = IndexMap::with_capacity(limit);
 
         if self.config().prefix_matching_enabled {
             // Try to complete provided word
             if let Ok(stream) = self.store.lookup_begins(from_word) {
                 tracing::debug!("looking up for word: {} in 'begins' fst stream", from_word);
 
-                Self::find_words_stream(stream, &mut found_words, limit);
+                Self::find_words_stream(stream, &mut found_words, limit, |w| {
+                    let distance: usize = original_word_len.saturating_sub(w.len());
+                    u16::try_from(distance).unwrap_or(u16::MAX)
+                });
             }
         }
 
@@ -1311,7 +1317,14 @@ impl StoreFSTAction {
                         from_word
                     );
 
-                    Self::find_words_stream(stream, &mut found_words, limit);
+                    // NOTE: Returning the same score for every word works only
+                    //   because we re-run `lookup_typos` for increasingly
+                    //   larger typo factors and do not re-insert existing
+                    //   values. As explained in previous TODO, we should try
+                    //   to get the real distance back from `fst_levenshtein`.
+                    let score = u16::try_from(typo_factor).unwrap_or(u16::MAX);
+
+                    Self::find_words_stream(stream, &mut found_words, limit, |_| score);
                 } else {
                     break;
                 }
@@ -1359,14 +1372,17 @@ impl StoreFSTAction {
 
     fn find_words_stream<A: Automaton>(
         mut stream: FSTStream<A>,
-        found_words: &mut LinkedHashSet<String>,
+        found_words: &mut IndexMap<String, QueryMatchScore>,
         limit: usize,
+        score_fn: impl Fn(&str) -> QueryMatchScore,
     ) {
         while let Some(word) = stream.next() {
             if let Ok(word_str) = str::from_utf8(word) {
                 let word_string = word_str.to_string();
 
-                if found_words.insert_if_absent(word_string) {
+                if !found_words.contains_key(&word_string) {
+                    found_words.insert(word_string, score_fn(word_str));
+
                     // Requested limit reached? Stop there.
                     if found_words.len() >= limit {
                         break;
