@@ -1728,6 +1728,7 @@ dependencies = [
  "fst-levenshtein",
  "fst-regex",
  "hashbrown 0.17.1",
+ "indexmap",
  "jieba-rs",
  "lazy_static",
  "lindera-core",

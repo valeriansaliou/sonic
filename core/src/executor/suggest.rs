@@ -29,7 +29,10 @@ impl super::Executor {
                 if let (Some(word), None) = (lexer.next(), lexer.next()) {
                     tracing::debug!("running suggest on word: {}", word.0);
 
-                    return Ok(fst_action.suggest_words(&word.0, word.2, limit as usize, None));
+                    return match fst_action.suggest_words(&word.0, word.2, limit as usize, None) {
+                        Some(words) => Ok(Some(words.map(|(k, _)| k))),
+                        None => Ok(None),
+                    };
                 }
             }
         }

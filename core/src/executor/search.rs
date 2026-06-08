@@ -5,15 +5,18 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use linked_hash_set::LinkedHashSet;
+use indexmap::IndexMap;
+use std::collections::BTreeMap;
 use std::iter::FromIterator;
 
 use crate::lexer::TokenLexer;
-use crate::query::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
+use crate::query::{QueryMatchScore, QuerySearchID, QuerySearchLimit, QuerySearchOffset};
 use crate::store::StoreItem;
 use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::identifiers::{StoreObjectIID, StoreTermHash};
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
+
+const MISSING_MATCH_SCORE: u16 = 100;
 
 impl super::Executor {
     pub fn search(
@@ -46,16 +49,31 @@ impl super::Executor {
                 StoreFSTActionBuilder::access(fst_store),
             );
 
-            // Try to resolve existing search terms to IIDs, and perform an algebraic AND on \
-            //   all resulting IIDs for each given term.
-            let mut found_iids: LinkedHashSet<StoreObjectIID> = LinkedHashSet::new();
+            // Store scores for each found IID. Results will then be sorted by
+            // score before being returned. Scores are basically the sum of
+            // Levenshtein distances for each term in the query. Lower score
+            // means better result.
+            // NOTE: We use `IndexMap` instead of `HashMap` to preserve
+            //   insertion order, which correlates to reverse data ingestion
+            //   order.
+            // NOTE: `capacity = 24` to avoid initial grows.
+            let mut found_iids: IndexMap<StoreObjectIID, (u16, QueryMatchScore)> =
+                IndexMap::with_capacity(24.min(usize::from(limit)));
 
-            'lexing: for (term, term_hashed, original_len) in lexer {
-                let mut iids = LinkedHashSet::from_iter(
+            let mut term_count = 0u16;
+
+            for (term, term_hashed, original_len) in lexer {
+                // SAFETY: We’ll never reach 2^32…
+                term_count += 1;
+
+                let mut iids: IndexMap<StoreObjectIID, QueryMatchScore> = IndexMap::from_iter(
                     kv_action
                         .get_term_to_iids(term_hashed)
                         .unwrap_or(None)
-                        .unwrap_or_default(),
+                        .unwrap_or_default()
+                        .into_iter()
+                        // Assign a score of `0` as those are exact matches.
+                        .map(|k| (k, 0)),
                 );
 
                 tracing::debug!(
@@ -93,7 +111,7 @@ impl super::Executor {
 
                         // This loop will be broken early if we get enough results at some \
                         //   iteration
-                        'suggestions: for suggested_word in suggested_words {
+                        'suggestions: for (suggested_word, word_score) in suggested_words {
                             // Do not load base results twice for same term as base term
                             if suggested_word == term {
                                 continue 'suggestions;
@@ -113,8 +131,8 @@ impl super::Executor {
                                     // Do not append the same IID twice (can happen a lot \
                                     //   when completing from suggested results that point \
                                     //   to the same end-OID)
-                                    if !iids.contains(&suggested_iid) {
-                                        iids.insert(suggested_iid);
+                                    if !iids.contains_key(&suggested_iid) {
+                                        iids.insert(suggested_iid, word_score);
 
                                         iids_new_len += 1;
 
@@ -146,10 +164,10 @@ impl super::Executor {
                 tracing::debug!("got search executor iids: {:?} for term: {}", iids, term);
 
                 // Intersect found IIDs with previous batch
-                if found_iids.is_empty() {
-                    found_iids = iids;
-                } else {
-                    found_iids = found_iids.intersection(&iids).copied().collect();
+                for (iid, new_score) in iids.into_iter() {
+                    let (count, score) = found_iids.entry(iid).or_insert((0, 0));
+                    *count = count.saturating_add(1);
+                    *score = score.saturating_add(new_score);
                 }
 
                 tracing::debug!(
@@ -157,31 +175,29 @@ impl super::Executor {
                     found_iids,
                     term
                 );
-
-                // No IID found? (stop there)
-                if found_iids.is_empty() {
-                    tracing::info!(
-                        "stop search executor as no iid was found in common for term: {}",
-                        term
-                    );
-
-                    break 'lexing;
-                }
             }
+
+            // Update scores to take into account missing matches.
+            let found_iids = found_iids.into_iter().map(|(iid, (count, score))| {
+                (iid, score + MISSING_MATCH_SCORE * (term_count - count))
+            });
+
+            // Sort found IIDs, then flatten.
+            let found_iids = sorted_groups(found_iids).flat_map(|(_, v)| v);
 
             // Resolve OIDs from IIDs
             // Notice: we also proceed paging from there
             let (limit_usize, offset_usize) = (limit as usize, offset as usize);
             let mut result_oids = Vec::with_capacity(limit_usize);
 
-            'paging: for (index, found_iid) in found_iids.iter().skip(offset_usize).enumerate() {
+            'paging: for (index, found_iid) in found_iids.skip(offset_usize).enumerate() {
                 // Stop there?
                 if index >= limit_usize {
                     break 'paging;
                 }
 
                 // Read IID-to-OID for this found IID
-                if let Ok(Some(oid)) = kv_action.get_iid_to_oid(*found_iid) {
+                if let Ok(Some(oid)) = kv_action.get_iid_to_oid(found_iid) {
                     result_oids.push(oid);
                 } else {
                     tracing::error!("failed getting search executor iid-to-oid");
@@ -195,4 +211,16 @@ impl super::Executor {
 
         Err(())
     }
+}
+
+fn sorted_groups(
+    map: impl ExactSizeIterator<Item = (StoreObjectIID, QueryMatchScore)>,
+) -> impl ExactSizeIterator<Item = (QueryMatchScore, Vec<StoreObjectIID>)> {
+    let mut btree: BTreeMap<QueryMatchScore, Vec<StoreObjectIID>> = BTreeMap::new();
+
+    for (k, v) in map.into_iter() {
+        btree.entry(v).or_default().push(k);
+    }
+
+    btree.into_iter()
 }
