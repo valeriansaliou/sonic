@@ -25,9 +25,8 @@ maximum-db-staleness = "P2W"
 unmaintained = "all"
 yanked = "deny"
 ignore = [
-    # NOTE: `memmap` is unmaintained, but `fst` still depends on it
-    #   and we can’t just bump.
-    "RUSTSEC-2020-0077",
+    { id = "RUSTSEC-2020-0077", reason = "`memmap` is unmaintained, but `fst` still depends on it and we can’t just bump" },
+    { id = "RUSTSEC-2026-0173", reason = "`proc-macro-error2` is unmaintained, not insecure" },
 ]
 
 [bans]
