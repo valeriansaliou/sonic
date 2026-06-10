@@ -1286,47 +1286,47 @@ impl StoreFSTAction {
 
         if self.config().prefix_matching_enabled {
             // Try to complete provided word
-            if let Ok(stream) = self.store.lookup_begins(from_word) {
-                tracing::debug!("looking up for word: {} in 'begins' fst stream", from_word);
+            if let Some(stream) = self.lookup_begins(from_word, original_word_len) {
+                for (word, score) in stream {
+                    if found_words.contains_key(&word) {
+                        continue;
+                    }
 
-                Self::find_words_stream(stream, &mut found_words, limit, |w| {
-                    let distance: usize = original_word_len.saturating_sub(w.len());
-                    u16::try_from(distance).unwrap_or(u16::MAX)
-                });
+                    found_words.insert(word, score);
+
+                    // Requested limit reached? Stop there.
+                    if found_words.len() >= limit {
+                        break;
+                    }
+                }
             }
         }
 
         // Try to fuzzy-suggest other words? (eg. correct typos)
         if self.config().fuzzy_matching_enabled && found_words.len() < limit {
             // Allow more typos in word as the word gets longer, up to a maximum limit
-            let max_typo_factor = max_typo_factor.unwrap_or(match original_word_len {
-                1..=3 => 0,
-                4..=6 => 1,
-                7..=9 => 2,
-                _ => 3,
-            });
+            let max_typo_factor = max_typo_factor.unwrap_or(typo_factor(original_word_len));
             let mut typo_factor = 1u32;
 
             // TODO: Rework the Levenshtein query feature to avoid repeating
             //   the same query over and over again. Maybe try to see if
             //   `fst_levenshtein` can return distances in its response.
             while found_words.len() < limit && typo_factor <= max_typo_factor {
-                if let Ok(stream) = self.store.lookup_typos(from_word, typo_factor) {
-                    tracing::debug!(
-                        "looking up for word: {} in 'typos' fst stream (max distance: {typo_factor})",
-                        from_word
-                    );
-
-                    // NOTE: Returning the same score for every word works only
-                    //   because we re-run `lookup_typos` for increasingly
-                    //   larger typo factors and do not re-insert existing
-                    //   values. As explained in previous TODO, we should try
-                    //   to get the real distance back from `fst_levenshtein`.
-                    let score = u16::try_from(typo_factor).unwrap_or(u16::MAX);
-
-                    Self::find_words_stream(stream, &mut found_words, limit, |_| score);
-                } else {
+                let Some(stream) = self.lookup_typos(from_word, typo_factor) else {
                     break;
+                };
+
+                for (word, score) in stream {
+                    if found_words.contains_key(&word) {
+                        continue;
+                    }
+
+                    found_words.insert(word, score);
+
+                    // Requested limit reached? Stop there.
+                    if found_words.len() >= limit {
+                        break;
+                    }
                 }
 
                 typo_factor += 1;
@@ -1338,6 +1338,67 @@ impl StoreFSTAction {
         } else {
             None
         }
+    }
+
+    pub fn lookup_begins(
+        &self,
+        from_word: &str,
+        // Length before stemming. Useful to calculate correct score.
+        original_word_len: usize,
+    ) -> Option<impl Iterator<Item = (String, QueryMatchScore)>> {
+        // Word over limit? (abort, the FST does not perform well over large words)
+        if Self::word_over_limit(from_word) {
+            return None;
+        }
+
+        if !self.config().prefix_matching_enabled {
+            return None;
+        }
+
+        let Ok(stream) = self.store.lookup_begins(from_word) else {
+            return None;
+        };
+
+        tracing::debug!(
+            word = ?from_word,
+            "looking up for word in 'begins' fst stream"
+        );
+
+        Some(FSTStreamIterator(stream).map(move |word| {
+            // WARN: Calculating distance to original word length might
+            //   yield weird results when combines with stemming.
+            let distance: usize = original_word_len.abs_diff(word.len());
+            let score = u16::try_from(distance).unwrap_or(u16::MAX);
+            (word, score)
+        }))
+    }
+
+    pub fn lookup_typos(
+        &self,
+        from_word: &str,
+        typo_factor: u32,
+    ) -> Option<impl Iterator<Item = (String, QueryMatchScore)>> {
+        if !self.config().fuzzy_matching_enabled {
+            return None;
+        }
+
+        let Ok(stream) = self.store.lookup_typos(from_word, typo_factor) else {
+            return None;
+        };
+
+        tracing::debug!(
+            word = ?from_word, typo_factor,
+            "looking up for word in 'typos' fst stream"
+        );
+
+        // NOTE: Returning the same score for every word works only
+        //   because we re-run `lookup_typos` for increasingly
+        //   larger typo factors and do not re-insert existing
+        //   values. As explained in previous TODO, we should try
+        //   to get the real distance back from `fst_levenshtein`.
+        let score = u16::try_from(typo_factor).unwrap_or(u16::MAX);
+
+        Some(FSTStreamIterator(stream).map(move |word| (word, score)))
     }
 
     pub fn list_words(&self, limit: usize, offset: usize) -> Result<Vec<String>, ()> {
@@ -1369,27 +1430,15 @@ impl StoreFSTAction {
             false
         }
     }
+}
 
-    fn find_words_stream<A: Automaton>(
-        mut stream: FSTStream<A>,
-        found_words: &mut IndexMap<String, QueryMatchScore>,
-        limit: usize,
-        score_fn: impl Fn(&str) -> QueryMatchScore,
-    ) {
-        while let Some(word) = stream.next() {
-            if let Ok(word_str) = str::from_utf8(word) {
-                let word_string = word_str.to_string();
-
-                if !found_words.contains_key(&word_string) {
-                    found_words.insert(word_string, score_fn(word_str));
-
-                    // Requested limit reached? Stop there.
-                    if found_words.len() >= limit {
-                        break;
-                    }
-                }
-            }
-        }
+/// Allow more typos in word as the word gets longer, up to a maximum limit.
+pub(crate) fn typo_factor(word_len: usize) -> u32 {
+    match word_len {
+        1..=3 => 0,
+        4..=6 => 1,
+        7..=9 => 2,
+        _ => 3,
     }
 }
 
@@ -1487,6 +1536,27 @@ impl fmt::Display for StoreFSTKey {
         write!(f, "<{:x}>/<{:x}>", self.collection_hash, self.bucket_hash)
     }
 }
+
+// MARK: - Helpers
+
+#[repr(transparent)]
+struct FSTStreamIterator<'a, A: Automaton>(fst::set::Stream<'a, A>);
+
+impl<'a, A: Automaton> Iterator for FSTStreamIterator<'a, A> {
+    type Item = String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.0.next() {
+            Some(bytes) => match str::from_utf8(bytes) {
+                Ok(str) => Some(str.to_owned()),
+                Err(_) => None,
+            },
+            None => None,
+        }
+    }
+}
+
+// MARK: - Tests
 
 #[cfg(test)]
 mod tests {

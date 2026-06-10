@@ -8,6 +8,8 @@
 
 mod common;
 
+use std::sync::Arc;
+
 use crate::common::*;
 
 /// Initially, terms in Sonic queries were separated by implicit `AND`s,
@@ -34,7 +36,13 @@ use crate::common::*;
 #[test]
 fn test_no_implicit_and() {
     init_logging();
-    let executor = make_test_executor();
+    let mut executor = make_test_executor();
+
+    {
+        let app_conf = Arc::get_mut(&mut executor.app_conf).unwrap();
+        // Disable stemming to make results more predictable.
+        app_conf.normalization.stemming_enabled = false;
+    }
 
     // NOTE: This is NOT legal advice. It is solely for example purposes.
     exec!(
@@ -75,4 +83,96 @@ fn test_no_implicit_and() {
         // Mentions only “GDPR”.
         "article:2",
     ]);
+}
+
+#[test]
+fn test_no_implicit_and_with_stopwords() {
+    init_logging();
+    let mut executor = make_test_executor();
+
+    {
+        let app_conf = Arc::get_mut(&mut executor.app_conf).unwrap();
+        // Disable stemming to make results more predictable.
+        app_conf.normalization.stemming_enabled = false;
+    }
+
+    // NOTE: This is NOT legal advice. It is solely for example purposes.
+    exec!(executor -> PUSH "movies" "default" "movie:1" "Back to the Future");
+    exec!(executor -> PUSH "movies" "default" "movie:2" "Back to the Future Part II");
+    exec!(executor -> PUSH "movies" "default" "movie:3" "Back to the Future Part III");
+    exec!(executor -> PUSH "movies" "default" "movie:4" "Back to the Future Part IV"); // It doesn’t exist yet…
+
+    exec!(executor -> TRIGGER consolidate);
+
+    {
+        let response = exec!(executor -> QUERY "movies" "default" "Back to the Future");
+        #[rustfmt::skip]
+        assert_eq!(response, [
+            // Exact match.
+            "movie:1",
+            // Then reverse ingestion order.
+            "movie:4", "movie:3", "movie:2",
+        ]);
+    }
+
+    {
+        let response = exec!(executor -> QUERY "movies" "default" "Back to the Future Part II");
+        // Reverse ingestion order, because `ii` and `part` are stopwords in English.
+        assert_eq!(response, ["movie:4", "movie:3", "movie:2", "movie:1"]);
+    }
+
+    {
+        let response = exec!(executor -> QUERY "movies" "default" "Back to the Future Part III");
+        #[rustfmt::skip]
+        assert_eq!(response, [
+            // Exact match.
+            "movie:3",
+            // Then reverse ingestion order.
+            "movie:4", "movie:2", "movie:1",
+        ]);
+    }
+}
+
+#[test]
+fn test_query_limit_with_typos() {
+    init_logging();
+    let mut executor = make_test_executor();
+
+    {
+        let app_conf = Arc::get_mut(&mut executor.app_conf).unwrap();
+        // Disable stemming to make results more predictable.
+        app_conf.normalization.stemming_enabled = false;
+    }
+
+    // NOTE: This is NOT legal advice. It is solely for example purposes.
+    exec!(
+        executor -> PUSH "articles" "default" "article:1"
+        "Under the General Data Protection Regulation (GDPR), “personal data” is defined as any information relating to an identified or identifiable natural person. An identifiable person is one who can be directly or indirectly identified, in particular by reference to identifiers such as a name, identification number, location data, or an online identifier."
+    );
+    exec!(
+        executor -> PUSH "articles" "default" "article:2"
+        "The concept is intentionally broad. It covers obvious identifiers like names, email addresses, and national identification numbers, but also extends to data that can indirectly identify someone when combined with other information. This includes IP addresses, device identifiers, and certain behavioural or usage data when they can be linked back to an individual."
+    );
+    exec!(
+        executor -> PUSH "articles" "default" "article:3"
+        "Identifiability is assessed in context, meaning that data considered anonymous in one setting may become personal data in another if reasonable means exist to re-identify the person. The GDPR also considers whether identification requires disproportionate effort, taking into account available technology and cost."
+    );
+    exec!(
+        executor -> PUSH "articles" "default" "article:4"
+        "Personal data protection under GDPR applies only to living natural persons, not legal entities such as companies. The regulation also distinguishes between ordinary personal data and “special categories” of personal data, which include sensitive information like health data, biometric data, or data revealing racial or ethnic origin, and which are subject to stricter processing conditions."
+    );
+
+    exec!(executor -> TRIGGER consolidate);
+
+    {
+        let response =
+            exec!(executor -> QUERY "articles" "default" "personal data identifiab" LIMIT(3));
+        assert_eq!(response, ["article:1", "article:3", "article:4"]);
+    }
+
+    {
+        let response =
+            exec!(executor -> QUERY "articles" "default" "personal data identifiab" LIMIT(1));
+        assert_eq!(response, ["article:1"]);
+    }
 }
