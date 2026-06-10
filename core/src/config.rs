@@ -149,7 +149,7 @@ pub(crate) mod tests {
 
         [normalization]
         diacritic_folding_enabled = true
-        stemming_enabled = true
+        stemming_enabled = false
 
         [search]
         query_limit_default = 10
