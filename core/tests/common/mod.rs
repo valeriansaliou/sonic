@@ -44,36 +44,24 @@ pub(crate) mod item_ref {
 }
 
 macro_rules! exec {
-    ($executor:ident -> _PUSH $collection:tt $bucket:tt $oid:tt $text:tt; $lang:expr) => {
+    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $(LANG($lang:expr))?) => {{
+        #[rustfmt::skip]
+        $executor.log(format!(
+            "PUSH {:?} {:?} {:?} {:?}{}",
+            $collection, $bucket, $oid, $text, exec!(internal_ lang_txt $($lang)?)
+        ));
         $executor
             .push(
                 crate::common::object_ref!($collection, $bucket, $oid),
                 sonic::lexer::TokenLexerBuilder::from(
                     sonic::lexer::TokenLexerMode::NormalizeAndCleanup,
-                    $lang,
+                    exec!(internal_ lang $($lang)?),
                     $text,
                     $executor.app_conf.normalization,
                 )
                 .unwrap(),
             )
             .unwrap()
-    };
-
-    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt) => {{
-        $executor.log(format!(
-            "PUSH {:?} {:?} {:?} {:?}",
-            $collection, $bucket, $oid, $text
-        ));
-        exec!($executor -> _PUSH $collection $bucket $oid $text; None)
-    }};
-
-    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt LANG($lang:expr)) => {{
-        #[rustfmt::skip]
-        $executor.log(format!(
-            "PUSH {:?} {:?} {:?} {:?} LANG({})",
-            $collection, $bucket, $oid, $text, $lang,
-        ));
-        exec!($executor -> _PUSH $collection $bucket $oid $text; Some(whatlang::Lang::from_code($lang).unwrap()))
     }};
 
     ($executor:ident -> TRIGGER consolidate) => {{
@@ -96,36 +84,27 @@ macro_rules! exec {
         $executor.count(object_ref!($collection, $bucket, $oid))
     }};
 
-    ($executor:ident -> _QUERY $collection:tt $bucket:tt $term:tt; $lang:expr) => {
+    ($executor:ident -> QUERY $collection:tt $bucket:tt $term:tt $(LANG($lang:expr))? $(LIMIT($limit:expr))?) => {{
+        #[rustfmt::skip]
+        $executor.log(format!(
+            "QUERY {:?} {:?} {:?}{}{}",
+            $collection, $bucket, $term, exec!(internal_ lang_txt $($lang)?), exec!(internal_ limit_txt $($limit)?)
+        ));
         $executor
             .search(
                 crate::common::bucket_ref!($collection, $bucket),
                 "",
                 sonic::lexer::TokenLexerBuilder::from(
                     sonic::lexer::TokenLexerMode::NormalizeAndCleanup,
-                    $lang,
+                    exec!(internal_ lang $($lang)?),
                     $term,
                     $executor.app_conf.normalization,
                 )
                 .unwrap(),
-                sonic::query::QuerySearchLimit::MAX,
+                exec!(internal_ limit $($limit)?),
                 0,
             )
             .expect("QUERY should succeed")
-    };
-
-    ($executor:ident -> QUERY $collection:tt $bucket:tt $term:tt) => {{
-        $executor.log(format!("QUERY {:?} {:?} {:?}", $collection, $bucket, $term));
-        exec!($executor -> _QUERY $collection $bucket $term; None)
-    }};
-
-    ($executor:ident -> QUERY $collection:tt $bucket:tt $term:tt LANG($lang:expr)) => {{
-        #[rustfmt::skip]
-        $executor.log(format!(
-            "QUERY {:?} {:?} {:?} LANG({})",
-            $collection, $bucket, $term, $lang,
-        ));
-        exec!($executor -> _QUERY $collection $bucket $term; Some(whatlang::Lang::from_code($lang).unwrap()))
     }};
 
     ($executor:ident -> LIST $collection:tt $bucket:tt) => {{
@@ -160,5 +139,17 @@ macro_rules! exec {
             .flusho(crate::common::object_ref!($collection, $bucket, $oid))
             .unwrap()
     }};
+
+    (internal_ lang) => { None };
+    (internal_ lang $lang:expr) => { Some(whatlang::Lang::from_code($lang).unwrap()) };
+
+    (internal_ lang_txt) => { "" };
+    (internal_ lang_txt $lang:expr) => { format!(" LANG({})", $lang) };
+
+    (internal_ limit) => { sonic::query::QuerySearchLimit::MAX };
+    (internal_ limit $limit:expr) => { $limit };
+
+    (internal_ limit_txt) => { "" };
+    (internal_ limit_txt $limit:expr) => { format!(" LLIMIT({})", $limit) };
 }
 pub(crate) use exec;
