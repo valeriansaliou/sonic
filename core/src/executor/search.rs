@@ -7,14 +7,13 @@
 
 use indexmap::IndexMap;
 use std::collections::BTreeMap;
-use std::iter::FromIterator;
 
 use crate::lexer::TokenLexer;
 use crate::query::{QueryMatchScore, QuerySearchID, QuerySearchLimit, QuerySearchOffset};
 use crate::store::StoreItem;
-use crate::store::fst::StoreFSTActionBuilder;
-use crate::store::identifiers::{StoreObjectIID, StoreTermHash};
-use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
+use crate::store::fst::{StoreFSTActionBuilder, typo_factor};
+use crate::store::identifiers::{StoreObjectIID, StoreTermHash, StoreTermHashed};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVAction, StoreKVActionBuilder};
 
 const MISSING_MATCH_SCORE: u16 = 100;
 
@@ -41,6 +40,16 @@ impl super::Executor {
                 return Err(());
             };
 
+            let (higher_limit, mut alternates_try) = (
+                self.app_conf.store.kv.retain_word_objects,
+                self.app_conf.search.query_alternates_try,
+            );
+
+            let (prefix_matching_enabled, fuzzy_matching_enabled) = (
+                self.fst_pool.fst_action_config.prefix_matching_enabled,
+                self.fst_pool.fst_action_config.fuzzy_matching_enabled,
+            );
+
             // Important: acquire bucket store read lock
             executor_kv_lock_read!(kv_store);
 
@@ -49,6 +58,11 @@ impl super::Executor {
                 StoreFSTActionBuilder::access(fst_store),
             );
 
+            // Collect all terms so we know the count right ahead.
+            // PERF: This helps allocating the correct amounts of memory.
+            let terms: Vec<(String, StoreTermHashed, usize)> = lexer.collect();
+            let term_count = terms.len();
+
             // Store scores for each found IID. Results will then be sorted by
             // score before being returned. Scores are basically the sum of
             // Levenshtein distances for each term in the query. Lower score
@@ -56,141 +70,121 @@ impl super::Executor {
             // NOTE: We use `IndexMap` instead of `HashMap` to preserve
             //   insertion order, which correlates to reverse data ingestion
             //   order.
-            // NOTE: `capacity = 24` to avoid initial grows.
-            let mut found_iids: IndexMap<StoreObjectIID, (u16, QueryMatchScore)> =
-                IndexMap::with_capacity(24.min(usize::from(limit)));
+            // NOTE: `capacity = 24` to reduce initial grows.
+            let mut scoring_matrix: IndexMap<StoreObjectIID, Vec<QueryMatchScore>> =
+                IndexMap::with_capacity(24usize.min(usize::from(limit)));
 
-            let mut term_count = 0u16;
+            // Look for exact matches.
+            'matches: for (idx, (term, term_hash, _)) in terms.iter().enumerate() {
+                let iids = kv_action
+                    .get_term_to_iids(*term_hash)
+                    .unwrap_or(None)
+                    .unwrap_or_default();
 
-            for (term, term_hashed, original_len) in lexer {
-                // SAFETY: We’ll never reach 2^32…
-                term_count += 1;
+                tracing::debug!("got exact search executor iids: {iids:?} for term: {term:?}");
 
-                let mut iids: IndexMap<StoreObjectIID, QueryMatchScore> = IndexMap::from_iter(
-                    kv_action
-                        .get_term_to_iids(term_hashed)
-                        .unwrap_or(None)
-                        .unwrap_or_default()
-                        .into_iter()
-                        // Assign a score of `0` as those are exact matches.
-                        .map(|k| (k, 0)),
-                );
+                for iid in iids.into_iter() {
+                    // Assign a score of `0` as those are exact matches.
+                    let inserted = update_score(&mut scoring_matrix, iid, 0, idx, term_count);
 
-                tracing::debug!(
-                    "got exact search executor iids: {:?} for term: {}",
-                    iids,
-                    term
-                );
+                    if inserted {
+                        // Higher limit now reached?
+                        // Stop acquiring new suggested IIDs now.
+                        if scoring_matrix.len() >= higher_limit {
+                            tracing::trace!(?term, "got enough completed results for term");
 
-                // No IIDs? Try to complete with a suggested alternate word
-                // Notice: this may sound dirty to try generating as many results as the \
-                //   'retain_word_objects' value, but as we do not know if another lexed word \
-                //   comes next we need to exhaust all search space as to intersect it with \
-                //   the (likely) upcoming word.
-                let (higher_limit, alternates_try) = (
-                    self.app_conf.store.kv.retain_word_objects,
-                    self.app_conf.search.query_alternates_try,
-                );
-
-                if iids.len() < higher_limit && alternates_try > 0 {
-                    tracing::debug!(
-                        "not enough iids were found ({}/{}), completing for term: {}",
-                        iids.len(),
-                        higher_limit,
-                        term
-                    );
-
-                    // Suggest N words, in case the first one is found in FST as an exact \
-                    //   match of term, we can pick next ones to complete search even further.
-                    // Notice: we add '1' to the 'alternates_try' number as to account for \
-                    //   exact match suggestion that comes as first result and is to be ignored.
-                    if let Some(suggested_words) =
-                        fst_action.suggest_words(&term, original_len, alternates_try + 1, None)
-                    {
-                        let mut iids_new_len = iids.len();
-
-                        // This loop will be broken early if we get enough results at some \
-                        //   iteration
-                        'suggestions: for (suggested_word, word_score) in suggested_words {
-                            // Do not load base results twice for same term as base term
-                            if suggested_word == term {
-                                continue 'suggestions;
-                            }
-
-                            tracing::debug!(
-                                "got completed word: {} for term: {}",
-                                suggested_word,
-                                term
-                            );
-
-                            if let Some(suggested_iids) = kv_action
-                                .get_term_to_iids(StoreTermHash::from(&suggested_word))
-                                .unwrap_or(None)
-                            {
-                                for suggested_iid in suggested_iids {
-                                    // Do not append the same IID twice (can happen a lot \
-                                    //   when completing from suggested results that point \
-                                    //   to the same end-OID)
-                                    if !iids.contains_key(&suggested_iid) {
-                                        iids.insert(suggested_iid, word_score);
-
-                                        iids_new_len += 1;
-
-                                        // Higher limit now reached? Stop acquiring new \
-                                        //   suggested IIDs now.
-                                        if iids_new_len >= higher_limit {
-                                            tracing::debug!(
-                                                "got enough completed results for term: {}",
-                                                term
-                                            );
-
-                                            break 'suggestions;
-                                        }
-                                    }
-                                }
-                            }
+                            break 'matches;
                         }
-
-                        tracing::debug!(
-                            "done completing results for term: {}, now {} results",
-                            term,
-                            iids_new_len
-                        );
-                    } else {
-                        tracing::debug!("did not get any completed word for term: {}", term);
                     }
                 }
-
-                tracing::debug!("got search executor iids: {:?} for term: {}", iids, term);
-
-                // Intersect found IIDs with previous batch
-                for (iid, new_score) in iids.into_iter() {
-                    let (count, score) = found_iids.entry(iid).or_insert((0, 0));
-                    *count = count.saturating_add(1);
-                    *score = score.saturating_add(new_score);
-                }
-
-                tracing::debug!(
-                    "got search executor iid intersection: {:?} for term: {}",
-                    found_iids,
-                    term
-                );
             }
 
-            // Update scores to take into account missing matches.
-            let found_iids = found_iids.into_iter().map(|(iid, (count, score))| {
-                (iid, score + MISSING_MATCH_SCORE * (term_count - count))
-            });
+            #[cfg(debug_assertions)]
+            tracing::debug!(?scoring_matrix);
+
+            // Look for words containing `term` as prefix.
+            if scoring_matrix.len() < higher_limit && alternates_try > 0 && prefix_matching_enabled
+            {
+                tracing::debug!(
+                    "not enough iids were found ({}/{higher_limit}), looking for prefixes",
+                    scoring_matrix.len(),
+                );
+
+                'terms: for (idx, (term, _, original_len)) in terms.iter().enumerate() {
+                    let Some(suggestions) = fst_action.lookup_begins(term, *original_len) else {
+                        tracing::trace!("did not get any completed word for term {term:?}");
+                        continue 'terms;
+                    };
+
+                    merge_suggestions(
+                        suggestions,
+                        &mut scoring_matrix,
+                        term,
+                        idx,
+                        term_count,
+                        &kv_action,
+                        &mut alternates_try,
+                        higher_limit,
+                    );
+                }
+            }
+
+            #[cfg(debug_assertions)]
+            tracing::debug!(?scoring_matrix);
+
+            // Look for words like `term` (fuzzy matching).
+            if scoring_matrix.len() < higher_limit && alternates_try > 0 && fuzzy_matching_enabled {
+                tracing::debug!(
+                    "not enough iids were found ({}/{higher_limit}), looking for fuzzy matches",
+                    scoring_matrix.len(),
+                );
+
+                'terms: for (idx, (term, _, original_word_len)) in terms.iter().enumerate() {
+                    let max_typo_factor = typo_factor(*original_word_len);
+                    let mut typo_factor = 1u32;
+
+                    // TODO: Rework the Levenshtein query feature to avoid repeating
+                    //   the same query over and over again. Maybe try to see if
+                    //   `fst_levenshtein` can return distances in its response.
+                    while alternates_try > 0 && typo_factor <= max_typo_factor {
+                        let Some(suggestions) = fst_action.lookup_typos(term, typo_factor) else {
+                            tracing::trace!("did not get any completed word for term {term:?}");
+                            continue 'terms;
+                        };
+
+                        merge_suggestions(
+                            suggestions,
+                            &mut scoring_matrix,
+                            term,
+                            idx,
+                            term_count,
+                            &kv_action,
+                            &mut alternates_try,
+                            higher_limit,
+                        );
+
+                        typo_factor += 1;
+                    }
+                }
+            }
+
+            #[cfg(debug_assertions)]
+            tracing::debug!(?scoring_matrix);
+
+            // Flatten scores, taking into account missing matches.
+            let found_iids = scoring_matrix
+                .into_iter()
+                .map(|(iid, scores)| (iid, scores.into_iter().sum()));
 
             // Sort found IIDs, then flatten.
-            let found_iids = sorted_groups(found_iids).flat_map(|(_, v)| v);
+            let all_iids = sorted_groups(found_iids).flat_map(|(_, v)| v);
 
             // Resolve OIDs from IIDs
             // Notice: we also proceed paging from there
             let (limit_usize, offset_usize) = (limit as usize, offset as usize);
             let mut result_oids = Vec::with_capacity(limit_usize);
 
-            'paging: for (index, found_iid) in found_iids.skip(offset_usize).enumerate() {
+            'paging: for (index, found_iid) in all_iids.skip(offset_usize).enumerate() {
                 // Stop there?
                 if index >= limit_usize {
                     break 'paging;
@@ -210,6 +204,98 @@ impl super::Executor {
         }
 
         Err(())
+    }
+}
+
+#[allow(clippy::too_many_arguments)] // We’ll refactor this someday, and it’ not public anyway.
+fn merge_suggestions(
+    suggestions: impl Iterator<Item = (String, QueryMatchScore)>,
+    scoring_matrix: &mut IndexMap<StoreObjectIID, Vec<QueryMatchScore>>,
+    term: &String,
+    term_idx: usize,
+    term_count: usize,
+    kv_action: &StoreKVAction<'_>,
+    alternates_try: &mut usize,
+    higher_limit: usize,
+) {
+    'suggestions: for (suggested_word, suggestion_score) in suggestions {
+        // Do not load base results twice for same term as base term
+        if suggested_word.eq(term) {
+            continue;
+        }
+
+        tracing::trace!(?term, ?suggested_word, "got completed word for term");
+
+        let suggested_term_hash = StoreTermHash::from(&suggested_word);
+        let suggested_iids = match kv_action.get_term_to_iids(suggested_term_hash) {
+            Ok(Some(suggested_iids)) => suggested_iids,
+            Ok(None) => continue,
+            Err(_) => continue,
+        };
+
+        for suggested_iid in suggested_iids.into_iter().take(*alternates_try) {
+            // SAFETY: We can reach at most `alternates_try`.
+            *alternates_try = unsafe { alternates_try.unchecked_sub(1) };
+
+            let inserted = update_score(
+                scoring_matrix,
+                suggested_iid,
+                suggestion_score,
+                term_idx,
+                term_count,
+            );
+
+            if inserted {
+                // Higher limit now reached?
+                // Stop acquiring new suggested IIDs now.
+                if scoring_matrix.len() >= higher_limit {
+                    tracing::trace!(?term, "got enough completed results for term");
+
+                    break 'suggestions;
+                }
+            }
+        }
+    }
+
+    tracing::trace!(
+        ?term,
+        "done completing results for term, now {} total results",
+        scoring_matrix.len()
+    );
+}
+
+fn update_score(
+    scoring_matrix: &mut IndexMap<StoreObjectIID, Vec<QueryMatchScore>>,
+    iid: StoreObjectIID,
+    score: QueryMatchScore,
+    term_idx: usize,
+    term_count: usize,
+) -> bool {
+    match scoring_matrix.entry(iid) {
+        // If entry already exists, use lowest score.
+        indexmap::map::Entry::Occupied(mut occupied_entry) => {
+            // SAFETY: We always initialize vecs with `term_count` entries.
+            let entry_score = unsafe { occupied_entry.get_mut().get_unchecked_mut(term_idx) };
+
+            let new_score = score.min(*entry_score);
+
+            tracing::trace!(entry_score, new_score, "Updating to min score");
+            *entry_score = new_score;
+
+            false
+        }
+        // If entry does not exist, insert score.
+        indexmap::map::Entry::Vacant(vacant_entry) => {
+            let mut scores = vec![MISSING_MATCH_SCORE; term_count];
+
+            tracing::trace!(new_score = score, "Inserting new score");
+            // SAFETY: `scores` has `term_count` elements.
+            unsafe { *scores.get_unchecked_mut(term_idx) = score };
+
+            vacant_entry.insert(scores);
+
+            true
+        }
     }
 }
 
