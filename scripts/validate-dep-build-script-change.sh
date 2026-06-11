@@ -69,12 +69,14 @@ for entry in "${updated[@]}"; do
     | rg -B 1 "\+version = \"$version\"" \
     | rg -o '\-version = "([^"]+)"' -r '$1' || :)"
 
+  new_build_script=$(cd "${CARGO_REGISTRY_DIR:?}/${name:?}-${version:?}"; cargo metadata --no-deps --format-version=1 | jq -r '.packages[] | select(.name == "'"${name:?}"'") | .targets[] | select(.kind | index("custom-build")) | .src_path')
+
   if [ -z "${old_version-}" ]; then # New dependency with build script.
     log_info "$name: MISSING -> $(fg_green "$version")"
 
     insert=no
 
-    cat "${CARGO_REGISTRY_DIR:?}"/${name:?}-${version:?}/build.rs
+    cat "${new_build_script:?}"
 
     printf "Allow build script? [y/N] "
     read -r allow
@@ -84,8 +86,8 @@ for entry in "${updated[@]}"; do
         log_warn "Allowing '${name:?}@${version:?}'."
 
         ex -s deny.toml <<EOF
-let @new="    \"${name:?}@${version:?}\","
-/^allow-build-scripts = \[/put new
+let @s='    "${name:?}@${version:?}",'
+/^allow-build-scripts = \[/put s
 wq
 EOF
 
@@ -96,10 +98,10 @@ EOF
   else # Dependency with build script previously allowed.
     log_info "$name: $(fg_green "$old_version") -> $(fg_yellow "$version")"
 
+    old_build_script=$(cd "${CARGO_REGISTRY_DIR:?}/${name:?}-${old_version:?}"; cargo metadata --no-deps --format-version=1 | jq -r '.packages[] | select(.name == "'"${name:?}"'") | .targets[] | select(.kind | index("custom-build")) | .src_path')
+
     update=no
-    if diff -u --color=always \
-      "${CARGO_REGISTRY_DIR:?}"/${name:?}-${old_version:?}/build.rs \
-      "${CARGO_REGISTRY_DIR:?}"/${name:?}-${version:?}/build.rs
+    if diff -u --color=always "${old_build_script:?}" "${new_build_script:?}"
     then # Build script not changed.
       log_info "Build script not changed, bumping allowed version."
       update=yes
