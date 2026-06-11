@@ -29,7 +29,11 @@ hashbrown = "0.17"
 config = { version = "0.15", default-features = false, features = ["toml"] }
 
 [dev-dependencies]
-whatlang = "0.18"
+# Benchmarking dependencies.
+arrow-array = { version = "=59.0.0", default-features = false }
+criterion = { version = "=0.5.1", default-features = false, features = ["html_reports", "plotters"] }
+parquet = { version = "=59.0.0", default-features = false, features = ["arrow", "snap"] }
+sonic-client = { version = "0.0.1", path = "../client-rust", features = ["sync", "tracing"] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", features = ["signal"] }
@@ -44,3 +48,7 @@ allocator-jemalloc = ["tikv-jemallocator"]
 tokenizer-chinese = ["sonic-core/tokenizer-chinese"]
 tokenizer-japanese = ["sonic-core/tokenizer-japanese"]
 benchmark = []
+
+[[bench]]
+name = "wikipedia"
+harness = false

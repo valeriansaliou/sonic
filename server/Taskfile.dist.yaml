@@ -1,0 +1,85 @@
+# See <https://taskfile.dev/usage> and <https://taskfile.dev/reference/schema>
+# to find all keys and their usage.
+version: "3"
+
+env:
+  SELF: task {{ .ALIAS | default .TASK }} --
+  MAIN_WORKTREE_PATH:
+    sh: git worktree list --porcelain | awk '/^worktree/{print $2; exit}'
+
+tasks:
+  help:
+    desc: Shows available tasks for this project.
+    aliases: [default]
+    silent: true
+    cmd: task -a --sort none
+
+  bench:
+    desc: Benchmark Sonic by running a server and interacting with it using TCP.
+    cmds:
+      - cargo build --bin sonic --profile release
+      - task: cargo-bench
+        vars:
+          CLI_ARGS: " --profile release {{ .CLI_ARGS }}"
+
+  bench:check:
+    desc: Check a build against a benchmark baseline.
+    preconditions:
+      - sh: test {{ len .CLI_ARGS_LIST }} -ge 1
+        msg: "syntax: {{ .SELF }} GIT_REF"
+    cmds:
+      - cmd: git worktree add '{{ .WORKTREE_PATH }}' '{{ .GIT_REF }}'
+        if: test ! -d '{{ .WORKTREE_PATH }}'
+      - >-
+        {{ if .GIT_REF | ne "HEAD" }}cd '{{ .WORKTREE_PATH }}' &&{{ end }}
+        cargo install --path server --bin sonic --root '{{ .MAIN_WORKTREE_PATH }}/target/bench-builds/{{ .BASELINE_NAME }}'
+      - task: cargo-bench
+        vars:
+          CLI_ARGS: ' --profile release -- {{ .CLI_ARGS_LIST | rest | join " " }}'
+          SONIC_BIN: "{{ .MAIN_WORKTREE_PATH }}/target/bench-builds/{{ .BASELINE_NAME }}/bin/sonic"
+    vars:
+      GIT_REF: "{{ .CLI_ARGS_LIST | first }}"
+      BASELINE_NAME: transient
+      WORKTREE_PATH: "{{ .MAIN_WORKTREE_PATH }}/../sonic-{{ .GIT_REF }}"
+
+  bench:record:
+    desc: Record a new benchmark baseline.
+    preconditions:
+      - sh: test {{ len .CLI_ARGS_LIST }} -ge 2
+        msg: "syntax: {{ .SELF }} GIT_REF BASELINE_NAME"
+    cmds:
+      - cmd: git worktree add '{{ .WORKTREE_PATH }}' '{{ .GIT_REF }}'
+        if: test ! -d '{{ .WORKTREE_PATH }}'
+      - >-
+        {{ if .GIT_REF | ne "HEAD" }}cd '{{ .WORKTREE_PATH }}' &&{{ end }}
+        cargo install --path server --bin sonic --root '{{ .MAIN_WORKTREE_PATH }}/target/bench-builds/{{ .BASELINE_NAME }}'
+      - task: cargo-bench
+        vars:
+          CLI_ARGS: ' --profile release -- --save-baseline {{ .BASELINE_NAME }} {{ .CLI_ARGS_LIST | rest | rest | join " " }}'
+          SONIC_BIN: "{{ .MAIN_WORKTREE_PATH }}/target/bench-builds/{{ .BASELINE_NAME }}/bin/sonic"
+    vars:
+      GIT_REF: "{{ .CLI_ARGS_LIST | first }}"
+      BASELINE_NAME: "{{ .CLI_ARGS_LIST | rest | first }}"
+      WORKTREE_PATH: "{{ .MAIN_WORKTREE_PATH }}/../sonic-{{ .GIT_REF }}"
+
+  bench:compare:
+    desc: Compare two baselines.
+    cmds:
+      - task: cargo-bench
+        vars:
+          CLI_ARGS: '-- --baseline {{ .CLI_ARGS_LIST | first }} --load-baseline {{ .CLI_ARGS_LIST | rest | first }} {{ .CLI_ARGS_LIST | rest | rest | join " " }}'
+    preconditions:
+      - sh: test {{ len .CLI_ARGS_LIST }} -ge 2
+        msg: "syntax: {{ .SELF }} REF_A REF_B"
+
+  cargo-bench:
+    internal: true
+    cmd: cargo bench -p sonic-server --bench wikipedia{{ if .CLI_ARGS }} {{ .CLI_ARGS }}{{ end }}
+    preconditions:
+      - sh: "! lsof -iTCP:1491 -sTCP:LISTEN"
+        msg: >-
+          Address '[::1]:1491' already in use.
+          Check `lsof -iTCP:1491 -sTCP:LISTEN` anc kill the process.
+    env:
+      CRITERION_HOME: "{{ .MAIN_WORKTREE_PATH }}/target/criterion"
+      SONIC_BIN: { ref: .SONIC_BIN }
