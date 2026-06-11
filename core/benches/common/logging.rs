@@ -13,7 +13,7 @@ pub(crate) static LOG_LEVEL: LazyLock<tracing::Level> =
             Ok(level) if level == "DEBUG" => tracing::Level::DEBUG,
             Ok(level) if level == "INFO" => tracing::Level::INFO,
             Ok(level) if level == "WARN" => tracing::Level::WARN,
-            _ => tracing::Level::DEBUG,
+            _ => tracing::Level::WARN,
         },
     );
 static INIT_LOGGING: Once = Once::new();

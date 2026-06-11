@@ -27,6 +27,6 @@ debug-assertions = false
 strip = true
 
 [profile.bench]
-opt-level = 3
-debug = false
-debug-assertions = false
+inherits = "release"
+lto = "thin"
+strip = false

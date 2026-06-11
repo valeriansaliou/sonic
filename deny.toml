@@ -26,6 +26,7 @@ unmaintained = "all"
 yanked = "deny"
 ignore = [
     { id = "RUSTSEC-2020-0077", reason = "`memmap` is unmaintained, but `fst` still depends on it and we can’t just bump" },
+    { id = "RUSTSEC-2024-0436", reason = "`paste` is unmaintained, not insecure" },
     { id = "RUSTSEC-2026-0173", reason = "`proc-macro-error2` is unmaintained, not insecure" },
 ]
 
@@ -46,28 +47,42 @@ deny = [
 #   look at what has changed in the build script (to reduce the risk of
 #   supply-chain attack).
 allow-build-scripts = [
+    "ahash@0.8.12",
     "bindgen@0.72.1",
     "bzip2-sys@0.1.13+1.0.8",
     "clang-sys@1.8.1",
     "crc32fast@1.5.0",
+    "crunchy@0.2.4",
+    "flatbuffers@25.12.19",
     "getrandom@0.3.4",
     "getrandom@0.4.2",
+    "iana-time-zone-haiku@0.1.2",
     "libc@0.2.186",
+    "libm@0.2.16",
     "librocksdb-sys@0.17.3+10.4.2",
     "libz-sys@1.1.29",
     "lz4-sys@1.11.1+lz4-1.10.0",
     "nix@0.31.3",
+    "num-traits@0.2.19",
+    "paste@1.0.15",
     "proc-macro2@1.0.106",
     "quote@1.0.45",
+    "rustversion@1.0.22",
     "serde@1.0.228",
     "serde_core@1.0.228",
+    "serde_json@1.0.150",
+    "snap@1.1.1",
     "tikv-jemalloc-sys@0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7",
+    "tiny-keccak@2.0.2",
+    "wasm-bindgen-shared@0.2.123",
+    "wasm-bindgen@0.2.123",
     "winapi-i686-pc-windows-gnu@0.4.0",
     "winapi-x86_64-pc-windows-gnu@0.4.0",
     "winapi@0.3.9",
     "wit-bindgen@0.51.0",
     "wit-bindgen@0.57.1",
     "zerocopy@0.8.50",
+    "zmij@1.0.21",
     "zstd-safe@7.2.4",
     "zstd-sys@2.0.16+zstd.1.5.7",
 ]

@@ -43,8 +43,14 @@ lindera-tokenizer = { version = "0.31", features = ["unidic"], optional = true }
 snowball = { package = "waken_snowball", version = "0.1", optional = true }
 
 [dev-dependencies]
+# Integration testing dependencies.
 config = { version = "0.15", default-features = false, features = ["toml"] }
 tracing-subscriber = "0.3"
+
+# Benchmarking dependencies.
+arrow-array = { version = "=59.0.0", default-features = false }
+criterion = { version = "=0.5.1", default-features = false }
+parquet = { version = "=59.0.0", default-features = false, features = ["arrow", "snap"] }
 
 [features]
 default = ["stemming", "tokenizer-chinese"]
@@ -52,3 +58,7 @@ stemming = ["dep:snowball"]
 tokenizer-chinese = ["jieba-rs"]
 tokenizer-japanese = ["lindera-core", "lindera-dictionary", "lindera-tokenizer"]
 benchmark = []
+
+[[bench]]
+name = "wikipedia"
+harness = false

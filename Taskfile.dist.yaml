@@ -27,6 +27,25 @@ tasks:
     desc: Runs end-to-end tests.
     cmd: tests/e2e-node/scripts/run.sh
 
+  bench:core:
+    desc: Benchmark Sonic by interacting with the Rust library directly.
+    cmds:
+      - cargo bench -p sonic-core --bench wikipedia{{ if .CLI_ARGS }} -- {{ .CLI_ARGS }}{{ end }}
+
+  bench:server:
+    desc: Benchmark Sonic by running a server and interacting with it using telnet.
+    cmds:
+      - cargo build --release --bin sonic
+      - cargo bench -p sonic-server --bench wikipedia{{ if .CLI_ARGS }} -- {{ .CLI_ARGS }}{{ end }}
+    preconditions:
+      - sh: "! lsof -iTCP:1491 -sTCP:LISTEN"
+        msg: >-
+          Address '[::1]:1491' already in use.
+          Check `lsof -iTCP:1491 -sTCP:LISTEN` anc kill the process.
+    env:
+      CRITERION_HOME:
+        sh: echo "$(git worktree list --porcelain | awk '/^worktree/{print $2; exit}')"/target/criterion
+
   ci:
     desc: Runs all CI checks.
     cmds:
