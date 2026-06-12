@@ -94,9 +94,15 @@ fn make_app_args() -> AppArgs {
 }
 
 fn main() {
+    ConfigLogger::init(
+        std::env::var("SONIC_SERVER__LOG_LEVEL")
+            .map(|level| LevelFilter::from_str(&level).expect("invalid log level"))
+            .unwrap_or(LevelFilter::DEBUG),
+    );
+
     let app_conf = read_config(&APP_ARGS.config);
 
-    ConfigLogger::init(
+    ConfigLogger::update(
         LevelFilter::from_str(&app_conf.server.log_level).expect("invalid log level"),
     );
 
