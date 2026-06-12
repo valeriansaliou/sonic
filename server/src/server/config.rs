@@ -109,9 +109,14 @@ pub fn read_config(path: &str) -> Config {
         panic!("Cannot find config file at {path:?}");
     }
 
+    let path = std::path::absolute(path).unwrap();
     tracing::debug!("reading config file: {path:?}");
 
-    Config::parse(config::File::new(path, config::FileFormat::Toml).required(false))
+    Config::parse(
+        config::File::from(path)
+            .format(config::FileFormat::Toml)
+            .required(false),
+    )
 }
 
 pub struct Config {
