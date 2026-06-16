@@ -1,0 +1,2 @@
+# https://rust-lang.github.io/rustfmt
+merge_derives = false
