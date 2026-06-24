@@ -88,7 +88,7 @@ impl super::Executor {
                                 .unwrap_or_default(),
                         );
 
-                    tracing::info!(
+                    tracing::debug!(
                         "got push executor stored iid-to-terms: {:?}",
                         iid_terms_hashed
                     );
