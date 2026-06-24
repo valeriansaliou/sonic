@@ -211,12 +211,12 @@ impl ChannelCommandBase {
             || text_bytes[0] as char != TEXT_PART_BOUNDARY
             || text_bytes[text_bytes_len - 1] as char != TEXT_PART_BOUNDARY
         {
-            tracing::info!("could not properly parse text parts: {}", text_raw);
+            tracing::info!("could not properly parse text parts: {:?}", text_raw);
 
             None
         } else {
             tracing::debug!(
-                "parsed text parts (still needs post-processing): {}",
+                "parsed text parts (still needs post-processing): {:?}",
                 text_raw
             );
 
@@ -225,7 +225,10 @@ impl ChannelCommandBase {
                 Ok(text_inner) => {
                     let text_inner_string = unescape(text_inner.trim());
 
-                    tracing::debug!("parsed text parts (post-processed): {}", text_inner_string);
+                    tracing::debug!(
+                        "parsed text parts (post-processed): {:?}",
+                        text_inner_string
+                    );
 
                     // Text must not be empty
                     if !text_inner_string.is_empty() {
@@ -236,7 +239,7 @@ impl ChannelCommandBase {
                 }
                 Err(err) => {
                     tracing::info!(
-                        "could not type-cast post-processed text parts: {} because: {}",
+                        "could not type-cast post-processed text parts: {:?} because: {}",
                         text_raw,
                         err
                     );
