@@ -225,6 +225,7 @@ macro_rules! gen_channel_message_mode_handle {
                 )]),
             }
         } else {
+            tracing::warn!("Unknown command: {command:?}");
             Ok(vec![ChannelCommandResponse::Err(
                 ChannelCommandError::UnknownCommand,
             )])
