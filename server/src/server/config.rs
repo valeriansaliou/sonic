@@ -72,33 +72,35 @@ impl Config {
             .build()
             .expect("error reading config");
 
-        // This temporary struct is used so we don’t have `sonic` wrapped in a
-        // `Arc` as our deserialization logic needs to override it. It’s dirty but
-        // hopefully we won’t have to do this again.
+        // `#[serde(flatten)]` breaks type coercion from the `config` crate,
+        // so we can’t have `crate::Config` define
+        // `#[serde(flatten)] sonic: sonic::Config`. It’s a bit dirty but at
+        // least we don’t have to manually add custom deserialization logic to
+        // all non-string fields (in the core!).
         #[derive(serde::Deserialize)]
-        pub struct ConfigTemp {
+        pub struct ServerConfigTemp {
             pub channel: ConfigChannel,
-
             pub server: ConfigServer,
-
-            #[serde(flatten)]
-            pub sonic: sonic::Config,
         }
 
         // Parse configuration.
-        let mut config = raw_config
-            .try_deserialize::<ConfigTemp>()
+        let mut server_config = raw_config
+            .clone()
+            .try_deserialize::<ServerConfigTemp>()
+            .expect("syntax error in config");
+        let mut core_config = raw_config
+            .try_deserialize::<sonic::Config>()
             .expect("syntax error in config");
 
-        back_compat::migrate_channel_search(&mut config.channel, &mut config.sonic);
+        back_compat::migrate_channel_search(&mut server_config.channel, &mut core_config);
 
         // Validate configuration.
-        config.sonic.validate();
+        core_config.validate();
 
         Config {
-            channel: config.channel,
-            server: config.server,
-            sonic: Arc::new(config.sonic),
+            channel: server_config.channel,
+            server: server_config.server,
+            sonic: Arc::new(core_config),
         }
     }
 }
@@ -109,9 +111,14 @@ pub fn read_config(path: &str) -> Config {
         panic!("Cannot find config file at {path:?}");
     }
 
+    let path = std::path::absolute(path).unwrap();
     tracing::debug!("reading config file: {path:?}");
 
-    Config::parse(config::File::new(path, config::FileFormat::Toml).required(false))
+    Config::parse(
+        config::File::from(path)
+            .format(config::FileFormat::Toml)
+            .required(false),
+    )
 }
 
 pub struct Config {

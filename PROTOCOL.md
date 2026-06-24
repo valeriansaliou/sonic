@@ -23,7 +23,7 @@ _Refer to sections below to interact with Sonic._
 
 ### 2️⃣ Sonic Channel (uninitialized)
 
-* `START <mode> <password>`: select mode to use for connection (either: `search` or `ingest`). The password is found in the `config.cfg` file at `channel.auth_password`.
+* `START <mode> <password>`: select mode to use for connection (either: `search`, `ingest` or `control`). The password is found in the `config.cfg` file at `channel.auth_password`.
 
 _Issuing any other command — eg. `QUIT` — in this mode will abort the TCP connection, effectively resulting in a `QUIT` with the `ENDED not_recognized` response._
 
