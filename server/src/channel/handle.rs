@@ -146,22 +146,12 @@ impl ChannelHandle {
                         break;
                     }
 
-                    // Buffer overflow?
-                    {
-                        let buffer_len = n + buffer.len();
-
-                        if buffer_len > MAX_LINE_SIZE {
-                            // Do not continue, as there is too much pending data in the buffer. \
-                            //   Most likely the client does not implement a proper back-pressure \
-                            //   management system, thus we terminate it.
-                            tracing::error!("closing channel thread because of buffer overflow");
-
-                            panic!("buffer overflow ({}/{} bytes)", buffer_len, MAX_LINE_SIZE);
-                        }
-                    }
+                    let (mut chunk, mut read) =
+                        read[..n].split_at(n.min(MAX_LINE_SIZE - buffer.len()));
 
                     // Add chunk to buffer
-                    buffer.extend(&read[0..n]);
+                    buffer.extend(chunk);
+                    assert!(buffer.len() <= MAX_LINE_SIZE);
 
                     // Handle full lines from buffer (keep the last incomplete line in buffer)
                     {
@@ -180,6 +170,13 @@ impl ChannelHandle {
                                 // Important: clear the contents of the line, as it has just been \
                                 //   processed.
                                 processed_line.clear();
+
+                                (chunk, read) =
+                                    read.split_at(read.len().min(MAX_LINE_SIZE - buffer.len()));
+
+                                // Add chunk to buffer
+                                buffer.extend(chunk);
+                                assert!(buffer.len() <= MAX_LINE_SIZE);
                             } else {
                                 // Append current byte to processed line
                                 processed_line.push(byte);
@@ -189,7 +186,31 @@ impl ChannelHandle {
                         // Incomplete line remaining? Put it back in buffer.
                         if !processed_line.is_empty() {
                             buffer.extend(processed_line);
+                            assert!(buffer.len() <= MAX_LINE_SIZE);
                         }
+                    }
+
+                    // Check for buffer overflow.
+                    // NOTE: To avoid a needless read of `MAX_LINE_SIZE` bytes,
+                    //   we also ensure there is enough space for the line
+                    //   separator. If there isn’t, next loop cycle will abort
+                    //   because the line is too long anyway.
+                    let separator_len = char::from(BUFFER_LINE_SEPARATOR).len_utf8();
+
+                    if (buffer.len() + read.len()) < (MAX_LINE_SIZE - separator_len) {
+                        buffer.extend(read);
+                    } else {
+                        // Do not continue, as there is too much pending data
+                        // in the buffer. Most likely the client does not
+                        // implement a proper back-pressure management system,
+                        // thus we terminate it.
+                        tracing::error!("closing channel thread because of buffer overflow");
+
+                        panic!(
+                            "buffer overflow ({}/{} bytes)",
+                            buffer.len() + read.len(),
+                            MAX_LINE_SIZE
+                        );
                     }
                 }
                 Err(err) => {
