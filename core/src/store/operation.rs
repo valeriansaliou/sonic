@@ -5,7 +5,6 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use crate::util::itertools::Itertools as _;
 use crate::{Executor, Query};
 
 pub struct StoreOperationDispatch;
@@ -25,7 +24,7 @@ impl StoreOperationDispatch {
                 }),
             Query::Suggest(store, query_id, lexer, limit) => executor
                 .suggest(store, query_id, lexer, limit)
-                .map(|results| results.map(|mut results| results.join(" "))),
+                .map(|results| results.map(|results| results.join(" "))),
             Query::List(store, query_id, limit, offset) => executor
                 .list(store, query_id, limit, offset)
                 .map(|results| results.join(" "))

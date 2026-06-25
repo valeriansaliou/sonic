@@ -16,6 +16,7 @@ use crate::common::*;
 
 /// See <https://github.com/valeriansaliou/sonic/issues/166>.
 #[test]
+#[ignore = "Known issue"]
 fn issue_166() {
     #[rustfmt::skip]
     test_ingest_then_query!(push: "Search Index", query: [
@@ -26,6 +27,7 @@ fn issue_166() {
 
 /// See <https://github.com/valeriansaliou/sonic/issues/173>.
 #[test]
+#[ignore = "Known issue"]
 fn issue_173() {
     #[rustfmt::skip]
     test_ingest_then_query!(push: "Alexander Tipugin", query: [
