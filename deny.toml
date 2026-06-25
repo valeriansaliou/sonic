@@ -50,6 +50,7 @@ allow-build-scripts = [
     "bzip2-sys@0.1.13+1.0.8",
     "clang-sys@1.8.1",
     "crc32fast@1.5.0",
+    "crossbeam-utils@0.8.21",
     "getrandom@0.3.4",
     "getrandom@0.4.2",
     "libc@0.2.186",

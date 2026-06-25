@@ -1,0 +1,53 @@
+[package]
+name = "sonic-client"
+version = "0.0.1"
+description = "Official client for Sonic, a fast, lightweight and schema-less search backend."
+readme = "README.md"
+license = { workspace = true }
+edition = { workspace = true }
+rust-version = "1.91.0"
+homepage = { workspace = true }
+repository = { workspace = true }
+keywords = ["search", "query", "server", "index"]
+categories = ["database-implementations", "web-programming"]
+authors = [
+    "Rémi Bardon <remi@remibardon.name>",
+]
+
+[lib]
+name = "sonic_client"
+path = "src/lib.rs"
+doc = true
+
+[dependencies]
+bytes = { version = "1", default-features = false }
+crossbeam-channel = { version = "0.5", default-features = false, features = ["std"] }
+mio = { version = "1", default-features = false, features = ["net", "os-poll"] }
+oneshot = { version = "0.2", default-features = false }
+slab = { version = "0.4", default-features = false }
+
+# Optional dependencies
+log = { optional = true, version = "0.4", default-features = false }
+tracing = { optional = true, version = "0.1", default-features = false }
+
+[dev-dependencies]
+tokio = { version = "=1.52.3", default-features = false, features = ["rt-multi-thread", "macros"] }
+
+[features]
+default = ["ingest", "control", "search", "sync"]
+ingest = []
+control = []
+search = []
+sync = ["oneshot/std"]
+async = ["oneshot/async"]
+logging-std = []
+log = ["dep:log"]
+tracing = ["dep:tracing"]
+
+[[example]]
+name = "search_concurrent_async"
+required-features = ["async"]
+
+[[example]]
+name = "search_parallel_async"
+required-features = ["async"]
