@@ -5,7 +5,16 @@ version: "3"
 env:
   SELF: task {{ .ALIAS | default .TASK }} --
 
+includes:
+  server: ./server
+
 tasks:
+  help:
+    desc: Shows available tasks for this project.
+    aliases: [default]
+    silent: true
+    cmd: task -a --sort none
+
   doc:open:
     desc: Build and open Cargo docs.
     aliases: [doc]
