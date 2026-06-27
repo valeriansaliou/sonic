@@ -17,7 +17,7 @@ impl super::Executor {
         _event_id: QuerySearchID,
         mut lexer: TokenLexer,
         limit: QuerySearchLimit,
-    ) -> Result<Option<Vec<String>>, ()> {
+    ) -> Result<Option<impl ExactSizeIterator<Item = String> + DoubleEndedIterator>, ()> {
         if let StoreItem(collection, Some(bucket), None) = item {
             // Important: acquire graph access read lock, and reference it in context. This \
             //   prevents the graph from being erased while using it in this block.
@@ -29,7 +29,10 @@ impl super::Executor {
                 if let (Some(word), None) = (lexer.next(), lexer.next()) {
                     tracing::debug!("running suggest on word: {}", word.0);
 
-                    return Ok(fst_action.suggest_words(&word.0, limit as usize, None));
+                    return match fst_action.suggest_words(&word.0, word.2, limit as usize, None) {
+                        Some(words) => Ok(Some(words.map(|(k, _)| k))),
+                        None => Ok(None),
+                    };
                 }
             }
         }
