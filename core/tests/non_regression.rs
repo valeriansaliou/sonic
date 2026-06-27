@@ -78,7 +78,6 @@ fn issue_245() {
 
 /// See <https://github.com/valeriansaliou/sonic/issues/262>.
 #[test]
-#[ignore = "Known issue (FIXME)"]
 fn issue_262() {
     #[rustfmt::skip]
     let test_cases = [
