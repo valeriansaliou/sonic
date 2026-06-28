@@ -206,7 +206,7 @@ if [ "${RELEASING:?}" == 'sonic-server' ] && [ -z "${FORCE-}" ]; then
   #   `cargo pkgid --manifest-path <(git show "${VERSION:?}":Cargo.toml)`
   #   as it requires the `-Zscript` flag which in turn requires the nightly
   #   Rust toolchain.
-  PREVIOUS_CORE_VERSION="$(perl -ne 'print "$1\n" if /^version = "=([^"]+)"$/' <(git show "${VERSION:?}":core/Cargo.toml))"
+  PREVIOUS_CORE_VERSION="$(perl -ne 'print "$1\n" if /^version = "=([^"]+)"$/' <(git show "$(to_tag "${VERSION:?}")":core/Cargo.toml))"
 
   # SAFETY: This matches the first occurence of `^version = ` in the file,
   #   which means we don’t have to worry about cases like declaring dependency
