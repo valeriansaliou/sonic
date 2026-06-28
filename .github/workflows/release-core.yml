@@ -50,10 +50,7 @@ jobs:
           EOF
 
       - name: Release new version
-        # NOTE: This is not checking `github.ref_type == 'tag'` on purpose
-        #   to abort and force the manual creation of the GitHub Release
-        #   instead of skipping this silently.
-        if: github.ref == 'refs/heads/master'
+        if: github.ref_type == 'tag' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
         with:
           tag_name: ${{ steps.current_tag.outputs.tag }}
