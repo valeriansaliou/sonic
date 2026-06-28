@@ -8,6 +8,35 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/v1.6.0...HEAD
 
+This release was focused on making improvements to search results
+(see [Milestone #20 “v1.7.x - Better search results (non-breaking)”][milestone-20]).
+We benchmarked the changes, and concluded the performance impact of all those
+changes is negligible. If you notice something now being noticeably slower,
+please tell us as it might be a bug!
+
+[milestone-20]: https://github.com/valeriansaliou/sonic/milestone/20
+
+### Changes
+
+- Implement proper case folding (in `f67f964`)
+- Rework `QUERY` results ranking algorithm (see [Pull Request #355 “No implicit `AND`”](https://github.com/valeriansaliou/sonic/pull/355))
+- Logging improvements
+- More tests
+
+### New Features
+
+- Add support for diacritics-insensitive search (in `3d38caa`, `2379b0a`)
+- Add support for stemming (in `db83731`)
+- Introduce an official Rust client (in `5e1849d`)
+- bench: Introduce server benchmarks (in `8b9ec98`)
+- test: Introduce non-regression tests
+
+### Bug Fixes
+
+- Fix max typo correction in `QUERY` (in `097a752`)
+- config: Fix non-string parsing from env (in `b17daad`)
+- server: Fix buffer overflow detection code (in `c85d97b`)
+
 ## [1.6.0] (2026-06-03)
 
 [1.6.0]: https://github.com/valeriansaliou/sonic/compare/v1.5.1...v1.6.0
