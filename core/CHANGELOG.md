@@ -6,7 +6,11 @@
 
 <!-- WARN: Do not move the next line and add changelog entries **under** it.
        It’s used by `task release:*` when updating the changelog. -->
-[Unreleased]: https://github.com/valeriansaliou/sonic/compare/core-v0.0.1...HEAD
+[Unreleased]: https://github.com/valeriansaliou/sonic/compare/core-v0.1.0...HEAD
+
+## [0.1.0] (2026-06-28)
+
+[0.1.0]: https://github.com/valeriansaliou/sonic/compare/core-v0.0.1...core-v0.1.0
 
 This release was focused on making improvements to search results
 (see [Milestone #20 “v1.7.x - Better search results (non-breaking)”][milestone-20]).

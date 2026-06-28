@@ -1,6 +1,6 @@
 [package]
 name = "sonic-core"
-version = "0.0.1"
+version = "0.1.0"
 description = "Fast, lightweight and schema-less search backend."
 readme = "../README.md"
 license = { workspace = true }
