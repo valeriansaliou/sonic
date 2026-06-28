@@ -171,7 +171,8 @@ impl super::Executor {
             #[cfg(debug_assertions)]
             tracing::debug!(?scoring_matrix);
 
-            // Flatten scores, taking into account missing matches.
+            // Flatten scores, taking into account missing matches (thanks to
+            // `MISSING_MATCH_SCORE`).
             let found_iids = scoring_matrix
                 .into_iter()
                 .map(|(iid, scores)| (iid, scores.into_iter().sum()));
