@@ -216,7 +216,7 @@ if [ "${RELEASING:?}" == 'sonic-server' ] && [ -z "${FORCE-}" ]; then
   if git diff --quiet "${LAST_CORE_RELEASE_COMMIT:?}" -- "${CORE_DIR:?}"/src "${CORE_DIR:?}"/Cargo.toml; then
     # If the core was updated but not released, bail out.
     die 'Sonic core has changes. Release it first with `task release:core`.'
-  elif ! grep -q "sonic-core = { version = \"${CORE_VERSION:?}\"" server/Cargo.toml; then
+  elif ! grep -q "sonic-core = { version = \"=${CORE_VERSION:?}\"" server/Cargo.toml; then
     # If the core’s version used by the server is not up-to-date, bail out.
     die "sonic-server isn’t using the last version of sonic-core (${CORE_VERSION:?}). Fix this first."
   fi
@@ -263,7 +263,7 @@ update_all_versions() {
 
   if [ "${RELEASING:?}" == 'sonic-core' ]; then
     log_info "Changing core version number in '${SERVER_CARGO_TOML_FILE#"${REPOSITORY_ROOT:?}/"}'…"
-    replace_version '^(sonic-core = \{ version = \")[^\"]+(\")' "${SERVER_CARGO_TOML_FILE:?}" "${CORE_VERSION}"
+    replace_version '^(sonic-core = \{ version = \"=)[^\"]+(\")' "${SERVER_CARGO_TOML_FILE:?}"
   elif [ "${RELEASING:?}" == 'sonic-server' ]; then
     log_info "Changing version number in '$(basename "${README_FILE:?}")'…"
     replace_version '^(.*valeriansaliou/sonic:v).+$' "${README_FILE:?}"
