@@ -272,7 +272,10 @@ update_all_versions() {
     replace_version '^(VERSION = ).+$' "${DEBIAN_RULES_FILE:?}"
   fi
 
-  log_info "Updating '$(basename "${CARGO_LOCK_FILE:?}")' and dry-running \`cargo publish\`…"
+  log_info "Updating '$(basename "${CARGO_LOCK_FILE:?}")'…"
+  cargo metadata --offline --manifest-path "${CARGO_TOML_FILE:?}" --format-version 1 >/dev/null
+
+  log_info "Dry-running \`cargo publish\`…"
   cargo publish --dry-run -p "${RELEASING:?}" --no-verify --allow-dirty
   UPDATED_FILES+=("${CARGO_LOCK_FILE:?}")
 
