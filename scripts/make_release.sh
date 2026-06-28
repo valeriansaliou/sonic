@@ -213,7 +213,7 @@ if [ "${RELEASING:?}" == 'sonic-server' ] && [ -z "${FORCE-}" ]; then
   #   versions in separate TOML sections.
   LAST_CORE_RELEASE_COMMIT="$(git blame -L '/^version = /',+1 core/Cargo.toml | cut -d' ' -f1)"
 
-  if git diff --quiet "${LAST_CORE_RELEASE_COMMIT:?}" -- "${CORE_DIR:?}"/src "${CORE_DIR:?}"/Cargo.toml; then
+  if ! git diff --quiet "${LAST_CORE_RELEASE_COMMIT:?}" -- "${CORE_DIR:?}"/src "${CORE_DIR:?}"/Cargo.toml; then
     # If the core was updated but not released, bail out.
     die 'Sonic core has changes. Release it first with `task release:core`.'
   elif ! grep -q "sonic-core = { version = \"=${CORE_VERSION:?}\"" server/Cargo.toml; then
