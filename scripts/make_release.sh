@@ -136,6 +136,7 @@ case "$1" in
     VERSION="${CORE_VERSION:?}"
     CHANGELOG_FILE="${CORE_DIR:?}"/CHANGELOG.md
     CARGO_TOML_FILE="${CORE_DIR:?}"/Cargo.toml
+    SERVER_CARGO_TOML_FILE="${SERVER_DIR:?}"/Cargo.toml
 
     to_tag() {
       local version="${1:?"Must pass a version number"}"
@@ -260,10 +261,10 @@ update_all_versions() {
   log_info "Changing version number in '${CARGO_TOML_FILE#"${REPOSITORY_ROOT:?}/"}'…"
   replace_version '^(version = \")[^\"]+(\")' "${CARGO_TOML_FILE:?}"
 
-  if [ "${RELEASING:?}" == 'sonic-server' ]; then
-    log_info "Changing core version number in '${CARGO_TOML_FILE#"${REPOSITORY_ROOT:?}/"}'…"
-    replace_version '^(sonic-core = \{ version = \")[^\"]+(\")' "${CARGO_TOML_FILE:?}" "${CORE_VERSION}"
-
+  if [ "${RELEASING:?}" == 'sonic-core' ]; then
+    log_info "Changing core version number in '${SERVER_CARGO_TOML_FILE#"${REPOSITORY_ROOT:?}/"}'…"
+    replace_version '^(sonic-core = \{ version = \")[^\"]+(\")' "${SERVER_CARGO_TOML_FILE:?}" "${CORE_VERSION}"
+  elif [ "${RELEASING:?}" == 'sonic-server' ]; then
     log_info "Changing version number in '$(basename "${README_FILE:?}")'…"
     replace_version '^(.*valeriansaliou/sonic:v).+$' "${README_FILE:?}"
 
