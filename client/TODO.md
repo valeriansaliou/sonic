@@ -1,4 +1,4 @@
 # Sonic Rust client to-do list
 
-0. Better errors
-0. Connection pooling
+1. Better errors
+1. Connection pooling

@@ -30,7 +30,7 @@ ties occur, results are sorted by reverse ingestion order[^rio].
 
 Here is some more detailed and accurate pseudo-code:
 
-```
+```txt
 MISSING_MATCH_SCORE = 100
 
 fn query(query, app_config) -> [doc] {
