@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["core", "server", "client-rust"]
+members = ["core", "server", "client"]
 
 [workspace.package]
 license = "MPL-2.0"
