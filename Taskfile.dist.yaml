@@ -34,7 +34,7 @@ tasks:
 
   e2e-test:
     desc: Runs end-to-end tests.
-    cmd: tests/e2e-node/scripts/run.sh
+    cmd: server/tests/e2e-node/scripts/run.sh
 
   ci:
     desc: Runs all CI checks.
@@ -44,7 +44,7 @@ tasks:
       - cargo clippy --locked
       - cargo check --locked --release
       - cargo test --locked
-      - tests/e2e-node/scripts/run.sh
+      - server/tests/e2e-node/scripts/run.sh
 
   changelog:prepare:
     desc: Prepares changelog entries for the next release.
@@ -88,7 +88,7 @@ tasks:
     desc: Lints Markdown files. You can pass a rule name to check it individually.
     aliases: [lint:md:*]
     silent: true
-    cmd: markdownlint-cli2 '**/*.md' '!target' '!tests/e2e-node/runner' '!LICENSE.md' 2>&1{{ if .MATCH }} | { ! grep {{ index .MATCH 0 }}; }{{ end }}
+    cmd: markdownlint-cli2 '**/*.md' '!target' '!server/tests/e2e-node/runner' '!LICENSE.md' 2>&1{{ if .MATCH }} | { ! grep {{ index .MATCH 0 }}; }{{ end }}
     preconditions:
       - sh: command -v markdownlint-cli2 >/dev/null
         msg: "`markdownlint-cli2` is required. See <https://github.com/DavidAnson/markdownlint-cli2#install>."

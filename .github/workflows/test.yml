@@ -125,7 +125,7 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: |
-            tests/e2e-node/runner/node_modules
+            server/tests/e2e-node/runner/node_modules
           key: test-${{ runner.os }}-e2e-node-${{ matrix.rust-toolchain }}
 
       - name: Install Rust toolchain
@@ -148,4 +148,4 @@ jobs:
         run: cargo test --locked
 
       - name: Run end-to-end tests
-        run: tests/e2e-node/scripts/run.sh
+        run: server/tests/e2e-node/scripts/run.sh

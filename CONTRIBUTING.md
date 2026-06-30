@@ -33,7 +33,7 @@ cargo test
 
 ## Run end-to-end tests
 
-From the directory: `<repository root>/tests/e2e-node/scripts/`, run:
+From the directory: `<repository root>/server/tests/e2e-node/scripts/`, run:
 
 ```sh
 ./run.sh
