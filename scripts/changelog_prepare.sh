@@ -123,7 +123,7 @@ esac
 if [ -z "${FORCE-}" ] && ! grep -zq '...HEAD\n\n## \['"${VERSION:?}"'\]' "${CHANGELOG_FILE:?}"; then
   log_error "Cannot prepare changelog entries when some already exist."
   log_info "For your information, commits since last release ($(to_tag "${VERSION:?}")) are:"
-  git_log '- %s (in `%C(auto)%h`)'
+  git_log '* %s (in `%C(auto)%h`)'
   die
 fi
 
@@ -131,30 +131,30 @@ fi
 # from those which users shouldn’t have to worry about (i.e. internal stuff).
 # NOTE: `^` also helps not strating with `-`, which `grep` would read as an
 #   argument. Make sure to escape the leading `-` if you ever remove the `^`.
-MEANINGLESS_COMMIT_REGEX='^- (ci|tools|docs|chore|test):'
+MEANINGLESS_COMMIT_REGEX='^* (ci|tools|docs|chore|test):'
 
 cat <<EOF > temp
 New commits:
-$(git_log '- %s (in `%h`)' | grep -vE "${MEANINGLESS_COMMIT_REGEX:?}")
+$(git_log '* %s (in `%h`)' | grep -vE "${MEANINGLESS_COMMIT_REGEX:?}")
 
 Probably not meaningful in the changelog:
-$(git_log '- %s (in `%h`)' | grep -E "${MEANINGLESS_COMMIT_REGEX:?}")
+$(git_log '* %s (in `%h`)' | grep -E "${MEANINGLESS_COMMIT_REGEX:?}")
 
 ### Removals
 
-- TODO
+* TODO
 
 ### Changes
 
-- TODO
+* TODO
 
 ### New Features
 
-- TODO
+* TODO
 
 ### Bug Fixes
 
-- TODO
+* TODO
 
 EOF
 

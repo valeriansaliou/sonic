@@ -18,24 +18,24 @@ please tell us as it might be a bug!
 
 ### Changes
 
-- Implement proper case folding (in `f67f964`)
-- Rework `QUERY` results ranking algorithm (see [Pull Request #355 “No implicit `AND`”](https://github.com/valeriansaliou/sonic/pull/355))
-- Logging improvements
-- More tests
+* Implement proper case folding (in `f67f964`)
+* Rework `QUERY` results ranking algorithm (see [Pull Request #355 “No implicit `AND`”](https://github.com/valeriansaliou/sonic/pull/355))
+* Logging improvements
+* More tests
 
 ### New Features
 
-- Add support for diacritics-insensitive search (in `3d38caa`, `2379b0a`)
-- Add support for stemming (in `db83731`)
-- Introduce an official Rust client (in `5e1849d`)
-- bench: Introduce server benchmarks (in `8b9ec98`)
-- test: Introduce non-regression tests
+* Add support for diacritics-insensitive search (in `3d38caa`, `2379b0a`)
+* Add support for stemming (in `db83731`)
+* Introduce an official Rust client (in `5e1849d`)
+* bench: Introduce server benchmarks (in `8b9ec98`)
+* test: Introduce non-regression tests
 
 ### Bug Fixes
 
-- Fix max typo correction in `QUERY` (in `097a752`)
-- config: Fix non-string parsing from env (in `b17daad`)
-- server: Fix buffer overflow detection code (in `c85d97b`)
+* Fix max typo correction in `QUERY` (in `097a752`)
+* config: Fix non-string parsing from env (in `b17daad`)
+* server: Fix buffer overflow detection code (in `c85d97b`)
 
 ## [1.6.0] (2026-06-03)
 
@@ -43,15 +43,15 @@ please tell us as it might be a bug!
 
 ### Changes
 
-- Separate Sonic’s core into a library (in `1d4c49e`, `99b3955`, `693babb`)
-- config: Deprecate `channel.search` in favor of `search` (in `b2e7015`)
-- Dependency updates (fixes CVEs):
-  - Update dependencies to fix GHSA-3pv8-6f4r-ffg2 (in `a2d0f00`, `52042b6`)
+* Separate Sonic’s core into a library (in `1d4c49e`, `99b3955`, `693babb`)
+* config: Deprecate `channel.search` in favor of `search` (in `b2e7015`)
+* Dependency updates (fixes CVEs):
+  * Update dependencies to fix GHSA-3pv8-6f4r-ffg2 (in `a2d0f00`, `52042b6`)
 
 ### New Features
 
-- Release for Red Hat Enterprise Linux (RHEL) (in `0e983a3`)
-- test: Introduce Rust integration tests (in `88e629b`)
+* Release for Red Hat Enterprise Linux (RHEL) (in `0e983a3`)
+* test: Introduce Rust integration tests (in `88e629b`)
 
 ## [1.5.1] (2026-05-21)
 
@@ -69,36 +69,36 @@ We will yank `1.5.0` on crates.io and publish `1.5.1` instead.
 
 ### Removals
 
-- Stop GPG-signing binaries, since it consumes human time when releasing (in `05b8ddb`)
+* Stop GPG-signing binaries, since it consumes human time when releasing (in `05b8ddb`)
 
 ### Changes
 
-- Dependency updates (fixes CVEs):
-  - Bump `clap` from `3` to `4` (in `00a373d`)
-  - Bump `hashbrown` from `0.14` to `0.17` (in `47663c6`)
-  - Bump `jieba-rs` from `0.6` to `0.9` (in `69f3c08`, `c096f4f`)
-  - Bump `lindera` from `0.27` to `0.31` (in `b0acdc3`)
-  - Bump `nix` from `0.18` to `0.31` (in `28e2d2c`)
-  - Bump `rand` from `0.8` to `0.10` (in `6e9577f`)
-  - Bump `rocksdb` from `0.21` to `0.24` (in `dd3a0e8`, `266af2f`)
-  - Bump `tikv-jemallocator` from `0.4` to `0.6` (in `e391f3a`)
-  - Bump `toml` from `0.8` to `1` (in `49317f2`)
-  - Bump `twox-hash` from `1` to `2` (in `714dae4`)
-  - Bump `whatlang` from `0.16` to `0.18` (in `38a2ed6`)
-  - Use `windows-sys` instead of `winapi` (in `26d45f6`, `f0195b7`)
-  - Relax some dependency version requirements (in `966cdf7`)
-  - Run `cargo update` to fix CVEs (in `c50a16c`, `c83278c`)
-  - Run `cargo upgrade --pinned` (in `9bee794`)
-  - ci: Update third-party actions (in `722bfec`, `93f0e67`)
-  - ci: Pin third-party actions (in `8449b15`)
-  - ci: Build and release using locked dependency versions (in `630ac52`)
+* Dependency updates (fixes CVEs):
+  * Bump `clap` from `3` to `4` (in `00a373d`)
+  * Bump `hashbrown` from `0.14` to `0.17` (in `47663c6`)
+  * Bump `jieba-rs` from `0.6` to `0.9` (in `69f3c08`, `c096f4f`)
+  * Bump `lindera` from `0.27` to `0.31` (in `b0acdc3`)
+  * Bump `nix` from `0.18` to `0.31` (in `28e2d2c`)
+  * Bump `rand` from `0.8` to `0.10` (in `6e9577f`)
+  * Bump `rocksdb` from `0.21` to `0.24` (in `dd3a0e8`, `266af2f`)
+  * Bump `tikv-jemallocator` from `0.4` to `0.6` (in `e391f3a`)
+  * Bump `toml` from `0.8` to `1` (in `49317f2`)
+  * Bump `twox-hash` from `1` to `2` (in `714dae4`)
+  * Bump `whatlang` from `0.16` to `0.18` (in `38a2ed6`)
+  * Use `windows-sys` instead of `winapi` (in `26d45f6`, `f0195b7`)
+  * Relax some dependency version requirements (in `966cdf7`)
+  * Run `cargo update` to fix CVEs (in `c50a16c`, `c83278c`)
+  * Run `cargo upgrade --pinned` (in `9bee794`)
+  * ci: Update third-party actions (in `722bfec`, `93f0e67`)
+  * ci: Pin third-party actions (in `8449b15`)
+  * ci: Build and release using locked dependency versions (in `630ac52`)
 
 ### New Features
 
-- Stopwords:
-  - Add Malayalam (MAL) stopwords (in `e3ec190`)
-  - Add Serbian (SRP) stopwords (in `b0c1f66`, `a2bf0c5`)
-- config: Support environment-based configuration (in `cc99461`)
+* Stopwords:
+  * Add Malayalam (MAL) stopwords (in `e3ec190`)
+  * Add Serbian (SRP) stopwords (in `b0c1f66`, `a2bf0c5`)
+  * config: Support environment-based configuration (in `cc99461`)
 
 ## 1.4.9 (2024-06-16)
 

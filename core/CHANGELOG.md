@@ -22,21 +22,21 @@ please tell us as it might be a bug!
 
 ### Changes
 
-- Implement proper case folding (in `f67f964`)
-- Rework `QUERY` results ranking algorithm (see [Pull Request #355 “No implicit `AND`”](https://github.com/valeriansaliou/sonic/pull/355))
-- Logging improvements
-- More tests
+* Implement proper case folding (in `f67f964`)
+* Rework `QUERY` results ranking algorithm (see [Pull Request #355 “No implicit `AND`”](https://github.com/valeriansaliou/sonic/pull/355))
+* Logging improvements
+* More tests
 
 ### New Features
 
-- Allow disabling loose matching at the library level (in `17e196d`)
-- Add support for diacritics-insensitive search (in `3d38caa`, `2379b0a`)
-- Add support for stemming (in `db83731`)
+* Allow disabling loose matching at the library level (in `17e196d`)
+* Add support for diacritics-insensitive search (in `3d38caa`, `2379b0a`)
+* Add support for stemming (in `db83731`)
 
 ### Bug Fixes
 
-- Fix max typo correction in `QUERY` (in `097a752`)
-- config: Fix non-string parsing from env (in `b17daad`)
+* Fix max typo correction in `QUERY` (in `097a752`)
+* config: Fix non-string parsing from env (in `b17daad`)
 
 ## [0.0.1] (2026-06-03)
 
