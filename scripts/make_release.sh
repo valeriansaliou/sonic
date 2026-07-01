@@ -56,7 +56,7 @@ EOF
 usage() {
   cat <<EOF
 Usage:
-  ${SELF:?} server|core|client major|minor|patch [OPTION...]
+  ${SELF:?} server|core|client major|minor|patch|no-bump [OPTION...]
 
 Options:
   Safety checks:
@@ -176,6 +176,7 @@ case "$2" in
   patch)
     VERSION_COMPONENTS[2]=$(( VERSION_COMPONENTS[2] + 1 ))
     ;;
+  no-bump) ;;
   --help) help ;;
   '') log_error "Expected at least two arguments."; log_info "$(usage)"; die ;;
   *) log_error "Unknown semver change level: '$2'."; log_info "$(usage)"; die ;;
@@ -245,12 +246,14 @@ log_success 'Supply chain validated.'
 # Convert the new version to a string.
 NEW_VERSION=$(echo "${VERSION_COMPONENTS[*]}" | tr ' ' '.')
 
-# Log some useful info.
-log_info "Version change: $(fg_yellow "$(to_tag "${VERSION:?}")") -> $(fg_green "$(to_tag "${NEW_VERSION:?}")")"
-log_info "New commits:"
-log_as_info_ git --no-pager log --reverse --no-merges \
-  --format="- %C(auto)%h %s %C(green)(%ad)%C(reset)" --date=short --color \
-  "$(to_tag "${VERSION:?}")"..HEAD
+if [ "${NEW_VERSION:?}" != "${VERSION:?}" ]; then
+  # Log some useful info.
+  log_info "Version change: $(fg_yellow "$(to_tag "${VERSION:?}")") -> $(fg_green "$(to_tag "${NEW_VERSION:?}")")"
+  log_info "New commits:"
+  log_as_info_ git --no-pager log --reverse --no-merges \
+    --format="- %C(auto)%h %s %C(green)(%ad)%C(reset)" --date=short --color \
+    "$(to_tag "${VERSION:?}")"..HEAD
+fi
 
 # Register a trap to revert on error.
 revert_on_error() {
@@ -297,12 +300,12 @@ update_all_versions() {
   UPDATED_FILES+=("${CARGO_LOCK_FILE:?}")
 
   log_info "Updating '$(basename "${CHANGELOG_FILE:?}")'…"
-  replace "compare/$(to_tag "${VERSION:?}")...HEAD" "$(cat <<EOF
+  replace "compare/([a-z0-9._-]+[a-z0-9_-])...HEAD" "$(cat <<EOF
 compare/$(to_tag "${NEW_VERSION:?}")...HEAD
 
 ## [${NEW_VERSION:?}] ($(date -I))
 
-[${NEW_VERSION:?}]: https://github.com/valeriansaliou/sonic/compare/$(to_tag "${VERSION:?}")...$(to_tag "${NEW_VERSION:?}")
+[${NEW_VERSION:?}]: https://github.com/valeriansaliou/sonic/compare/\${1}...$(to_tag "${NEW_VERSION:?}")
 EOF
 )" "${CHANGELOG_FILE:?}"
 }
