@@ -2155,20 +2155,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b6b67fb9a61334225b5b790716f609cd58395f895b3fe8b328786812a40bc3b"
 
 [[package]]
-name = "sonic-client"
-version = "0.0.1"
-dependencies = [
- "bytes",
- "crossbeam-channel",
- "log",
- "mio",
- "oneshot",
- "slab",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "sonic-core"
 version = "0.1.0"
 dependencies = [
@@ -2214,12 +2200,26 @@ dependencies = [
  "parquet",
  "rand 0.10.1",
  "serde",
- "sonic-client",
  "sonic-core",
+ "sonic_client",
  "tikv-jemallocator",
  "tracing",
  "tracing-subscriber",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "sonic_client"
+version = "0.0.1"
+dependencies = [
+ "bytes",
+ "crossbeam-channel",
+ "log",
+ "mio",
+ "oneshot",
+ "slab",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

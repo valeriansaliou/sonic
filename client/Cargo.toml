@@ -1,5 +1,5 @@
 [package]
-name = "sonic-client"
+name = "sonic_client"
 version = "0.0.1"
 description = "Official client for Sonic, a fast, lightweight and schema-less search backend."
 readme = "README.md"
