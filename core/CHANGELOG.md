@@ -1,4 +1,4 @@
-# Sonic Changelog
+# Sonic core Changelog
 
 <!-- markdownlint-disable no-duplicate-heading -->
 
