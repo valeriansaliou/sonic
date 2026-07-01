@@ -34,11 +34,13 @@ CARGO_LOCK_FILE="${REPOSITORY_ROOT:?}"/Cargo.lock
 DEBIAN_RULES_FILE="${REPOSITORY_ROOT:?}"/packaging/debian/rules
 SERVER_DIR="${REPOSITORY_ROOT:?}"/server
 CORE_DIR="${REPOSITORY_ROOT:?}"/core
+CLIENT_DIR="${REPOSITORY_ROOT:?}"/client
 
 # NOTE: We could use `cargo metadata` here, but it would require `jq` to parse
 #   so this is a good enough no-dependency equivalent.
 SERVER_VERSION="$(cargo pkgid -p sonic-server | sed 's/.*@//')"
 CORE_VERSION="$(cargo pkgid -p sonic-core | sed 's/.*@//')"
+CLIENT_VERSION="$(cargo pkgid -p sonic_client | sed 's/.*@//')"
 
 
 # ===== HELPER FUNCTIONS =====
@@ -54,7 +56,7 @@ EOF
 usage() {
   cat <<EOF
 Usage:
-  ${SELF:?} server|core major|minor|patch [OPTION...]
+  ${SELF:?} server|core|client major|minor|patch [OPTION...]
 
 Options:
   Safety checks:
@@ -141,6 +143,18 @@ case "$1" in
     to_tag() {
       local version="${1:?"Must pass a version number"}"
       echo "core-v${version#v}"
+    }
+    ;;
+  client|client-rust)
+    RELEASING=sonic_client
+    VERSION="${CLIENT_VERSION:?}"
+    CHANGELOG_FILE="${CLIENT_DIR:?}"/CHANGELOG.md
+    CARGO_TOML_FILE="${CLIENT_DIR:?}"/Cargo.toml
+    SERVER_CARGO_TOML_FILE="${SERVER_DIR:?}"/Cargo.toml
+
+    to_tag() {
+      local version="${1:?"Must pass a version number"}"
+      echo "client-v${version#v}"
     }
     ;;
   *) log_error "Unknown argument: '$arg'."; log_info "$(usage)"; die ;;
@@ -264,6 +278,9 @@ update_all_versions() {
   if [ "${RELEASING:?}" == 'sonic-core' ]; then
     log_info "Changing core version number in '${SERVER_CARGO_TOML_FILE#"${REPOSITORY_ROOT:?}/"}'…"
     replace_version '^(sonic-core = \{ version = \"=)[^\"]+(\")' "${SERVER_CARGO_TOML_FILE:?}"
+  elif [ "${RELEASING:?}" == 'sonic_client' ]; then
+    log_info "Changing client version number in '${SERVER_CARGO_TOML_FILE#"${REPOSITORY_ROOT:?}/"}'…"
+    replace_version '^(sonic_client = \{ version = \"=)[^\"]+(\")' "${SERVER_CARGO_TOML_FILE:?}"
   elif [ "${RELEASING:?}" == 'sonic-server' ]; then
     log_info "Changing version number in '$(basename "${README_FILE:?}")'…"
     replace_version '^(.*valeriansaliou/sonic:v).+$' "${README_FILE:?}"

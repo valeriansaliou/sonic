@@ -60,6 +60,11 @@ tasks:
     silent: true
     cmd: ./scripts/make_release.sh server {{ .CLI_ARGS }}
 
+  release:client:
+    desc: Makes a new release (git tag) of Sonic client. CD will build and release the binary.
+    silent: true
+    cmd: ./scripts/make_release.sh client {{ .CLI_ARGS }}
+
   deps:update:
     desc: Updates dependencies (non-breaking).
     cmds:
@@ -74,6 +79,7 @@ tasks:
     sources:
       - server/Cargo.toml
       - core/Cargo.toml
+      - client/Cargo.toml
       - Cargo.lock
     preconditions:
       - sh: command -v cargo-deny >/dev/null
