@@ -61,3 +61,9 @@ it’s safe to assume the crate is abandonned.
 To address those issues and as part of modernizations we decided to insource
 the official Rust client. This will ensure its lifetime aligns with Sonic’s,
 and tests will ensure it always works (and at scale).
+
+After reaching out to [@FrontMage], he transferred us the ownership of his
+(abandonned) crate so we can reuse the name and avoid confusing situations.
+This is why this crate is published as [pkg:cargo/sonic_client].
+
+[pkg:cargo/sonic_client]: https://crates.io/crates/sonic_client "“sonic_client” on crates.io"
