@@ -199,12 +199,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Build packages
-        run: ./scripts/build_packages.sh
-
       # FIX: Fixes `dpkg-parsechangelog: error: cannot open file debian/changelog: No such file or directory`.
       - name: Link `debian` to `packaging/debian`
         run: ln -s packaging/debian debian
+
+      - name: Build packages
+        run: ./scripts/build_packages.sh
 
       - name: Push packages to Packagecloud
         if: github.ref_type == 'tag' || github.ref == 'refs/heads/master'
