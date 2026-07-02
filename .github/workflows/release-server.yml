@@ -199,6 +199,10 @@ jobs:
       - name: Build packages
         run: ./scripts/build_packages.sh
 
+      # FIX: Fixes `dpkg-parsechangelog: error: cannot open file debian/changelog: No such file or directory`.
+      - name: Link `debian` to `packaging/debian`
+        run: ln -s packaging/debian debian
+
       - name: Push packages to Packagecloud
         if: github.ref_type == 'tag' || github.ref == 'refs/heads/master'
         uses: faucetsdn/action-packagecloud-upload-debian-packages@89b1e7201d7f9df94e3f360d9cb77134dd5ffc05 # v1
