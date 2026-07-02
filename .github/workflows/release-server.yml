@@ -69,8 +69,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Detect if already published
+        id: check_crates_io
+        run: |-
+          # NOTE: We could use `cargo metadata` here, but it would require `jq`
+          #   to parse so this is a good enough no-dependency equivalent.
+          VERSION="$(cargo pkgid -p sonic-server | sed 's/.*@//')"
+          if curl -sf https://index.crates.io/so/ni/sonic-server | grep -q "\"vers\":\"${VERSION:?}\"" > /dev/null; then
+            echo "is_published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Release package
-        if: github.ref_type == 'tag' || github.ref == 'refs/heads/master'
+        if: (github.ref_type == 'tag' || github.ref == 'refs/heads/master') && steps.check_crates_io.outputs.is_published == 'false'
         run: cargo publish -p sonic-server --no-verify
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_TOKEN }}
@@ -199,6 +211,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Detect if already published
+        id: check_packagecloud
+        run: |-
+          # NOTE: We could use `cargo metadata` here, but it would require `jq`
+          #   to parse so this is a good enough no-dependency equivalent.
+          VERSION="$(cargo pkgid -p sonic-server | sed 's/.*@//')"
+          STATUS="$(curl -s -o /dev/null -w "%{http_code}" "https://packagecloud.io/${{ secrets.PACKAGECLOUD_REPO }}/packages/debian/bookworm/sonic_${VERSION:?}-0~0_amd64.deb")"
+          if [[ "${STATUS:?}" == 2?? ]]; then
+            echo "is_published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # FIX: Fixes `dpkg-parsechangelog: error: cannot open file debian/changelog: No such file or directory`.
       - name: Link `debian` to `packaging/debian`
         run: ln -s packaging/debian debian
@@ -207,7 +232,7 @@ jobs:
         run: ./scripts/build_packages.sh
 
       - name: Push packages to Packagecloud
-        if: github.ref_type == 'tag' || github.ref == 'refs/heads/master'
+        if: (github.ref_type == 'tag' || github.ref == 'refs/heads/master') && steps.check_packagecloud.outputs.is_published == 'false'
         uses: faucetsdn/action-packagecloud-upload-debian-packages@89b1e7201d7f9df94e3f360d9cb77134dd5ffc05 # v1
         with:
           path: ./packages
