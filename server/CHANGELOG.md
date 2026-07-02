@@ -6,7 +6,11 @@
 
 <!-- WARN: Do not move the next line and add changelog entries **under** it.
        It’s used by `task release:*` when updating the changelog. -->
-[Unreleased]: https://github.com/valeriansaliou/sonic/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/valeriansaliou/sonic/compare/v1.7.1...HEAD
+
+## [1.7.1] (2026-07-02)
+
+[1.7.1]: https://github.com/valeriansaliou/sonic/compare/v1.7.0...v1.7.1
 
 CI failed because we moved `debian/` to `packaging/debian/` and added Docker
 cross-compilation for `arm64` without installing `docker buildx`.
