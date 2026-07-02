@@ -1,6 +1,9 @@
 on:
   push:
     tags: ["client-v*.*.*"]
+  # Support manually triggering a release without pushing a new tag after a
+  # failed CI run (which required a CI fix).
+  workflow_dispatch: {}
 
 name: Release Rust client
 
@@ -18,6 +21,8 @@ jobs:
       - name: Get current tag
         id: current_tag
         uses: WyriHaximus/github-action-get-previous-tag@61819f33034117e6c686e6a31dba995a85afc9de # v2.0.0
+        with:
+          pattern: client-*
 
       - name: Parse tag name
         id: parsing
