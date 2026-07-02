@@ -8,6 +8,11 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/v1.7.0...HEAD
 
+CI failed because we moved `debian/` to `packaging/debian/` and added Docker
+cross-compilation for `arm64` without installing `docker buildx`.
+
+This release is exactly like `1.7.0`, it’s just for CD purposes.
+
 ## [1.7.0] (2026-07-01)
 
 [1.7.0]: https://github.com/valeriansaliou/sonic/compare/v1.6.0...v1.7.0
