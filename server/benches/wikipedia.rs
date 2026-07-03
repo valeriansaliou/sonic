@@ -21,10 +21,10 @@ use sonic_client::ingest::SonicChannelIngestBlocking;
 use sonic_client::options::*;
 use sonic_client::search::SonicChannelSearchBlocking;
 
-use crate::common::SpawnGuard;
 use crate::common::huggingface::WikipediaArticle;
 use crate::common::huggingface::download_shards;
 use crate::common::huggingface::iter_shard;
+use crate::common::spawn_guard::SpawnGuard;
 
 const ADDR: (Ipv6Addr, u16) = (Ipv6Addr::LOCALHOST, 1491);
 
