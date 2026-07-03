@@ -43,7 +43,7 @@ now some pieces still need some polishing.
 [sonic-channel] by [@pleshevskiy] used to be the recommended Rust client, but
 it has been archived on Mar 1, 2023 signifying it won’t get updated in the
 future. While trying to use it in our benchmarks we noticed `PONG` is
-unsupported (although `PING` is… causing a failure eery time it’s called) but
+unsupported (although `PING` is… causing a failure every time it’s called) but
 more importantly ingested text is not escaped. This means any text containing
 a `"` breaks request parsing and causes ingestion to fail.
 
