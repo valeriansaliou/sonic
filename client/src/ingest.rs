@@ -116,7 +116,7 @@ impl_fns!(
                 object;
                 text: text
             ),
-            Discriminant::Ok,
+            Discriminant::Result,
         )
     }
 );
