@@ -9,10 +9,8 @@ mod common;
 use sonic_client::SonicMultiplexer;
 use sonic_client::ingest::SonicChannelIngestBlocking;
 
-use crate::common::start_sonic;
+use crate::common::{PASS, start_sonic};
 
-/// WARN: DON’T HARDCODE A PASSWORD IN PRODUCTION CODE! This is just an example!
-const PASS: &str = "SecretPassword";
 const COLLECTION: &str = "collection";
 const BUCKET: &str = "bucket";
 
