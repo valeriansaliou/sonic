@@ -9,6 +9,9 @@ on:
       - "core/src/**"
       - "core/tests/**"
       - "core/Cargo.toml"
+      - "client/src/**"
+      - "client/tests/**"
+      - "client/Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
       # We changed some configuration:
