@@ -178,7 +178,7 @@ impl_fns!(
     fn flushc(&self, collection: impl AsRef<str>) -> std::io::Result<()> {
         self.inner.send(
             make_command!("FLUSHC {}", collection),
-            Discriminant::Ok,
+            Discriminant::Result,
             |_data| Ok(()),
         )
     }
@@ -189,7 +189,7 @@ impl_fns!(
     fn flushb(&self, collection: impl AsRef<str>, bucket: impl AsRef<str>) -> std::io::Result<()> {
         self.inner.send(
             make_command!("FLUSHB {} {}", collection, bucket),
-            Discriminant::Ok,
+            Discriminant::Result,
             |_data| Ok(()),
         )
     }
@@ -205,7 +205,7 @@ impl_fns!(
     ) -> std::io::Result<()> {
         self.inner.send(
             make_command!("FLUSHO {} {} {}", collection, bucket, object),
-            Discriminant::Ok,
+            Discriminant::Result,
             |_data| Ok(()),
         )
     }
