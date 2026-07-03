@@ -27,7 +27,8 @@
 extern crate lazy_static;
 
 mod channel;
-mod server;
+mod config;
+mod logger;
 mod tasker;
 
 use std::ops::Deref;
@@ -46,8 +47,8 @@ use tasker::runtime::TaskerBuilder;
 use tasker::shutdown::ShutdownSignal;
 use tracing::level_filters::LevelFilter;
 
-use crate::server::config::{self, Config, read_config};
-use crate::server::logger::ConfigLogger;
+use crate::config::{Config, read_config};
+use crate::logger::ConfigLogger;
 
 struct AppArgs {
     config: String,
