@@ -229,38 +229,65 @@ impl<Mode: ChannelMode + 'static> SonicChannel<Mode> {
         Ok(rx)
     }
 
-    /// Sends a command as multiple commands if it’s too long. Works only with
-    /// unit results.
-    pub(crate) fn send_buffered(
+    /// Sends a command as multiple commands if it’s too long.
+    pub(crate) fn send_buffered<T: Default + Send + 'static>(
         &self,
         command: Command,
         discriminant: Mode::Discriminant,
-    ) -> std::io::Result<oneshot::Receiver<std::io::Result<()>>> {
+        reduce: impl Fn(T, &str) -> std::io::Result<T> + Clone + Send + Sync + 'static,
+    ) -> std::io::Result<oneshot::Receiver<std::io::Result<T>>> {
         if command.len() <= self.channel_info.buffer_size {
-            return self.send(command, discriminant, |_data| Ok(()));
+            return self.send(command, discriminant, move |data| {
+                reduce(T::default(), data)
+            });
         }
 
         let splits = command.split(self.channel_info.buffer_size);
 
-        let mut final_rx: Option<oneshot::Receiver<std::io::Result<()>>> = None;
+        let mut final_rx: Option<oneshot::Receiver<std::io::Result<T>>> = None;
 
         for command in splits {
-            let (tx, rx) = oneshot::channel::<std::io::Result<()>>();
+            let (tx, rx) = oneshot::channel::<std::io::Result<T>>();
 
             let previous_rx = final_rx.replace(rx);
+            let reduce = reduce.clone();
 
             let task = Task {
                 command,
                 discriminant: discriminant.clone(),
                 callback: Box::new(move |result| {
-                    // NOTE: By doing this, we keep the receiver alive long
-                    //   enough so the channel is still open when a result is
-                    //   sent, preventing misleading errors from being logged.
-                    drop(previous_rx);
+                    // NOTE: By referencing `previous_rx`, we keep the receiver
+                    //   alive long enough so the channel is still open when a
+                    //   result is sent, preventing misleading errors from
+                    //   being logged.
+                    let accumulator = match previous_rx {
+                        Some(previous_rx) => {
+                            let previous_res = previous_rx
+                                // NOTE: We can have a very short timeout here
+                                //   as a value is guaranteed to have already
+                                //   arrived (by construction).
+                                .recv_timeout(std::time::Duration::from_millis(10))
+                                .unwrap_or_else(|error| {
+                                    Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, error))
+                                });
+                            match previous_res {
+                                Ok(t) => t,
+                                err @ Err(_) => {
+                                    if let Err(send_error) = tx.send(err) {
+                                        // Only log an error, as this would happen if the receiver is dropped.
+                                        log_error!("Could not send response: {send_error}");
+                                    }
+                                    return;
+                                }
+                            }
+                        }
+                        None => T::default(),
+                    };
 
                     match result {
-                        Ok((_data, _)) => {
-                            let send_res = tx.send(Ok(()));
+                        Ok((data, _tasks)) => {
+                            let res = reduce(accumulator, data);
+                            let send_res = tx.send(res);
 
                             if let Err(error) = send_res {
                                 // Only log an error, as this would happen if the receiver is dropped.

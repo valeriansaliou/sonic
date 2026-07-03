@@ -93,6 +93,7 @@ impl_fns!(
         self.inner.send_buffered(
             make_command!("PUSH {} {} {}", collection, bucket, object; text: text; options: options),
             Discriminant::Ok,
+            |_acc, _data| Ok(())
         )
     }
 );
@@ -107,7 +108,7 @@ impl_fns!(
         bucket: impl AsRef<str>,
         object: impl AsRef<str>,
         text: impl AsRef<str>,
-    ) -> std::io::Result<()> {
+    ) -> std::io::Result<usize> {
         self.inner.send_buffered(
             make_command!(
                 "POP {} {} {}",
@@ -117,6 +118,11 @@ impl_fns!(
                 text: text
             ),
             Discriminant::Result,
+            |acc, data| {
+                data.parse::<usize>()
+                    .map(|n| acc + n)
+                    .map_err(io_error_invalid_data)
+            },
         )
     }
 );
