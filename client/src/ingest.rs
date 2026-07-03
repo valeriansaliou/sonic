@@ -175,22 +175,26 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn flushc(&self, collection: impl AsRef<str>) -> std::io::Result<()> {
+    fn flushc(&self, collection: impl AsRef<str>) -> std::io::Result<usize> {
         self.inner.send(
             make_command!("FLUSHC {}", collection),
             Discriminant::Result,
-            |_data| Ok(()),
+            |data| data.parse().map_err(io_error_invalid_data),
         )
     }
 );
 
 impl_fns!(
     #[doc = "Time complexity: O(N) where N is the number of bucket objects."]
-    fn flushb(&self, collection: impl AsRef<str>, bucket: impl AsRef<str>) -> std::io::Result<()> {
+    fn flushb(
+        &self,
+        collection: impl AsRef<str>,
+        bucket: impl AsRef<str>,
+    ) -> std::io::Result<usize> {
         self.inner.send(
             make_command!("FLUSHB {} {}", collection, bucket),
             Discriminant::Result,
-            |_data| Ok(()),
+            |data| data.parse().map_err(io_error_invalid_data),
         )
     }
 );
@@ -202,11 +206,11 @@ impl_fns!(
         collection: impl AsRef<str>,
         bucket: impl AsRef<str>,
         object: impl AsRef<str>,
-    ) -> std::io::Result<()> {
+    ) -> std::io::Result<usize> {
         self.inner.send(
             make_command!("FLUSHO {} {} {}", collection, bucket, object),
             Discriminant::Result,
-            |_data| Ok(()),
+            |data| data.parse().map_err(io_error_invalid_data),
         )
     }
 );
