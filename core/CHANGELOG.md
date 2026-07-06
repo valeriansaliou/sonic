@@ -8,6 +8,10 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/core-v0.1.0...HEAD
 
+### Bug Fixes
+
+* fix(core): Perform implicit `AND` when `QUERY`ing an ID (in `fe3d2cc`)
+
 ## [0.1.0] (2026-06-28)
 
 [0.1.0]: https://github.com/valeriansaliou/sonic/compare/core-v0.0.1...core-v0.1.0
