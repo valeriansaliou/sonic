@@ -24,7 +24,6 @@ override_dh_auto_install:
 		tar -xf $(ENV_TARBALL)
 		strip sonic/sonic
 		mv sonic/config.cfg sonic/sonic.cfg
-		mkdir sonic/store/
 		sed -i 's/path = ".\/data\/store\//path = "\/var\/lib\/sonic\/store\//g' sonic/sonic.cfg
 
 override_dh_gencontrol:

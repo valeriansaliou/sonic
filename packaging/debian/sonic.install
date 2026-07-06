@@ -1,3 +1,2 @@
 sonic/sonic usr/bin/
 sonic/sonic.cfg etc/
-sonic/store/ var/lib/sonic/
