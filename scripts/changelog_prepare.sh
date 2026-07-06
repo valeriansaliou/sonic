@@ -36,9 +36,9 @@ CLIENT_VERSION="$(cargo pkgid -p sonic_client | sed 's/.*@//')"
 
 # A regex to separate commit messages which are meaningful in the changelog
 # from those which users shouldn’t have to worry about (i.e. internal stuff).
-# NOTE: `^` also helps not strating with `-`, which `grep` would read as an
-#   argument. Make sure to escape the leading `-` if you ever remove the `^`.
-unset MEANINGLESS_COMMIT_REGEX
+INTERNAL_COMMIT_REGEX='(ci|tools|docs|chore|test|debug)[!(:]'
+RELEASE_COMMIT_REGEX='(core-|client-)?v[0-9.]+'
+MEANINGLESS_COMMIT_REGEX="(${INTERNAL_COMMIT_REGEX:?}|${RELEASE_COMMIT_REGEX:?})"
 
 
 # ===== HELPER FUNCTIONS =====
@@ -77,6 +77,18 @@ git_log() {
     "$(to_tag "${VERSION:?}")"..HEAD
 }
 
+# Given `server|core`, matches:
+# - `server: Example`
+# - `core: Example`
+# - `foo(server): Example`
+# - `foo(core): Example`
+# - `server!: Example`
+# - `server(foo): Example`
+# - `feat(core)!: Example`
+subsystem_regex() {
+  echo "(${1:?})[\!(:]|[^(]+\((${1:?})\)[\!:]"
+}
+
 
 # ===== ARGUMENT PARSING =====
 
@@ -104,7 +116,7 @@ case "$1" in
     RELEASING=server
     VERSION="${SERVER_VERSION:?}"
     CHANGELOG_FILE="${SERVER_DIR:?}"/CHANGELOG.md
-    MEANINGLESS_COMMIT_REGEX='^\* (ci|tools|docs|chore|test):'
+    MEANINGLESS_COMMIT_REGEX="(${MEANINGLESS_COMMIT_REGEX:?})|($(subsystem_regex 'client'))"
 
     to_tag() {
       local version="${1:?"Must pass a version number"}"
@@ -115,7 +127,7 @@ case "$1" in
     RELEASING=core
     VERSION="${CORE_VERSION:?}"
     CHANGELOG_FILE="${CORE_DIR:?}"/CHANGELOG.md
-    MEANINGLESS_COMMIT_REGEX='^\* ((ci|tools|docs|chore|test|server)|[^(]+\(server|client\)):'
+    MEANINGLESS_COMMIT_REGEX="(${MEANINGLESS_COMMIT_REGEX:?})|($(subsystem_regex 'server|client'))"
 
     to_tag() {
       local version="${1:?"Must pass a version number"}"
@@ -126,7 +138,7 @@ case "$1" in
     RELEASING=sonic_client
     VERSION="${CLIENT_VERSION:?}"
     CHANGELOG_FILE="${CLIENT_DIR:?}"/CHANGELOG.md
-    MEANINGLESS_COMMIT_REGEX='^\* (ci|tools|docs|chore|test|server|core)|[^(]+\(server|core\)):'
+    MEANINGLESS_COMMIT_REGEX="(${MEANINGLESS_COMMIT_REGEX:?})|($(subsystem_regex 'server|core'))"
 
     to_tag() {
       local version="${1:?"Must pass a version number"}"
@@ -149,10 +161,10 @@ fi
 
 cat <<EOF > temp
 New commits:
-$(git_log '* %s (in `%h`)' | grep -vE "${MEANINGLESS_COMMIT_REGEX:?}")
+$(git_log '* %s (in `%h`)' | grep -vE "^\* (fixup! )?(${MEANINGLESS_COMMIT_REGEX:?})")
 
 Probably not meaningful in the changelog:
-$(git_log '* %s (in `%h`)' | grep -E "${MEANINGLESS_COMMIT_REGEX:?}")
+$(git_log '* %s (in `%h`)' | grep -E "^\* (fixup! )?(${MEANINGLESS_COMMIT_REGEX:?})")
 
 ### Removals
 
