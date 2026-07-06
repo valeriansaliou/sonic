@@ -111,6 +111,14 @@ impl super::Executor {
                 );
 
                 'terms: for (idx, (term, _, original_len)) in terms.iter().enumerate() {
+                    // Skip term if it’s an ID (we want exact matches only).
+                    if term.chars().any(is_considered_id_char) {
+                        tracing::debug!(
+                            "skipping prefix search for {term:?}: term is considered an ID"
+                        );
+                        continue 'terms;
+                    };
+
                     let Some(suggestions) = fst_action.lookup_begins(term, *original_len) else {
                         tracing::trace!("did not get any completed word for term {term:?}");
                         continue 'terms;
@@ -140,6 +148,14 @@ impl super::Executor {
                 );
 
                 'terms: for (idx, (term, _, original_word_len)) in terms.iter().enumerate() {
+                    // Skip term if it’s an ID (we want exact matches only).
+                    if term.chars().any(is_considered_id_char) {
+                        tracing::debug!(
+                            "skipping fuzzy matching for {term:?}: term is considered an ID"
+                        );
+                        continue 'terms;
+                    };
+
                     let max_typo_factor = typo_factor(*original_word_len);
                     let mut typo_factor = 1u32;
 
@@ -170,6 +186,27 @@ impl super::Executor {
 
             #[cfg(debug_assertions)]
             tracing::debug!(?scoring_matrix);
+
+            // Switch to implicit `AND` if query contains an ID.
+            // NOTE: When a user queries for an ID (e.g. UUID), they expect only
+            //   exact matches to be returned. If one term is considered an ID,
+            //   we drop all results missing at least one term. It’s not the
+            //   most efficient (compared to not storing the result in the first
+            //   place) but it’s an edge case and the cost is negligible.
+            let one_term_is_an_id = terms.iter().any(|(term, _, _)| is_considered_id(term));
+            if one_term_is_an_id {
+                let mut to_remove = Vec::<StoreObjectIID>::new();
+
+                for (&iid, scores) in scoring_matrix.iter() {
+                    if scores.contains(&MISSING_MATCH_SCORE) {
+                        to_remove.push(iid);
+                    }
+                }
+
+                for iid in to_remove {
+                    scoring_matrix.swap_remove(&iid);
+                }
+            }
 
             // Flatten scores, taking into account missing matches (thanks to
             // `MISSING_MATCH_SCORE`).
@@ -206,6 +243,14 @@ impl super::Executor {
 
         Err(())
     }
+}
+
+fn is_considered_id(s: &str) -> bool {
+    s.chars().any(is_considered_id_char)
+}
+
+fn is_considered_id_char(c: char) -> bool {
+    c.is_ascii_digit()
 }
 
 #[allow(clippy::too_many_arguments)] // We’ll refactor this someday, and it’ not public anyway.
