@@ -33,7 +33,7 @@ config = { version = "0.15", default-features = false, features = ["toml"] }
 arrow-array = { version = "=59.0.0", default-features = false }
 criterion = { version = "=0.5.1", default-features = false, features = ["html_reports", "plotters"] }
 parquet = { version = "=59.0.0", default-features = false, features = ["arrow", "snap"] }
-sonic_client = { version = "=0.2.0", path = "../client", features = ["sync", "tracing"] }
+sonic_client = { version = "=0.3.0", path = "../client", features = ["sync", "tracing"] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", features = ["signal"] }

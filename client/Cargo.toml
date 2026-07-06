@@ -1,6 +1,6 @@
 [package]
 name = "sonic_client"
-version = "0.2.0"
+version = "0.3.0"
 description = "Official client for Sonic, a fast, lightweight and schema-less search backend."
 readme = "README.md"
 license = { workspace = true }
