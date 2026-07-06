@@ -6,6 +6,11 @@
 
 use std::net::{Ipv6Addr, SocketAddr};
 
+use sonic_client::SonicMultiplexer;
+
+/// WARN: DON’T HARDCODE A PASSWORD IN PRODUCTION CODE! This is just an example!
+pub const PASS: &str = "SecretPassword";
+
 #[must_use]
 pub fn start_sonic() -> (SpawnGuard, SocketAddr) {
     use std::process::Command;
@@ -35,12 +40,38 @@ pub fn start_sonic() -> (SpawnGuard, SocketAddr) {
         .unwrap();
 
     // Auto-kill Sonic.
-    let mut sonic = SpawnGuard(sonic);
+    let sonic = SpawnGuard(sonic);
 
-    std::thread::sleep(Duration::from_millis(500));
-    if let Some(status) = sonic.try_wait().unwrap() {
-        panic!("Sonic exited with {status}")
-    };
+    let start = std::time::Instant::now();
+    let multiplexer = SonicMultiplexer::new().unwrap();
+    let mut error: Option<std::io::Error> = None;
+    while start.elapsed() < Duration::from_secs(1) {
+        use sonic_client::control::SonicChannelControlBlocking;
+
+        match SonicChannelControlBlocking::connect(addr, PASS, &multiplexer) {
+            Ok(channel) => match channel.ping() {
+                Ok(()) => {
+                    error = None;
+                    break;
+                }
+                Err(err) => {
+                    error = Some(err);
+                    std::thread::sleep(Duration::from_millis(50));
+                    continue;
+                }
+            },
+            Err(err) => {
+                error = Some(err);
+                std::thread::sleep(Duration::from_millis(50));
+                continue;
+            }
+        }
+    }
+
+    if let Some(error) = error {
+        panic!("{error}");
+    }
+
     // println!("Started Sonic");
 
     (sonic, addr)

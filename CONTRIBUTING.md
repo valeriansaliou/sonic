@@ -33,10 +33,10 @@ cargo test
 
 ## Run end-to-end tests
 
-From the directory: `<repository root>/server/tests/e2e-node/scripts/`, run:
+From the repository root, run:
 
 ```sh
-./run.sh
+task e2e-test
 ```
 
 ## Run all CI tests

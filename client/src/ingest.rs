@@ -93,6 +93,7 @@ impl_fns!(
         self.inner.send_buffered(
             make_command!("PUSH {} {} {}", collection, bucket, object; text: text; options: options),
             Discriminant::Ok,
+            |_acc, _data| Ok(())
         )
     }
 );
@@ -107,7 +108,7 @@ impl_fns!(
         bucket: impl AsRef<str>,
         object: impl AsRef<str>,
         text: impl AsRef<str>,
-    ) -> std::io::Result<()> {
+    ) -> std::io::Result<usize> {
         self.inner.send_buffered(
             make_command!(
                 "POP {} {} {}",
@@ -116,7 +117,12 @@ impl_fns!(
                 object;
                 text: text
             ),
-            Discriminant::Ok,
+            Discriminant::Result,
+            |acc, data| {
+                data.parse::<usize>()
+                    .map(|n| acc + n)
+                    .map_err(io_error_invalid_data)
+            },
         )
     }
 );
@@ -169,22 +175,26 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn flushc(&self, collection: impl AsRef<str>) -> std::io::Result<()> {
+    fn flushc(&self, collection: impl AsRef<str>) -> std::io::Result<usize> {
         self.inner.send(
             make_command!("FLUSHC {}", collection),
-            Discriminant::Ok,
-            |_data| Ok(()),
+            Discriminant::Result,
+            |data| data.parse().map_err(io_error_invalid_data),
         )
     }
 );
 
 impl_fns!(
     #[doc = "Time complexity: O(N) where N is the number of bucket objects."]
-    fn flushb(&self, collection: impl AsRef<str>, bucket: impl AsRef<str>) -> std::io::Result<()> {
+    fn flushb(
+        &self,
+        collection: impl AsRef<str>,
+        bucket: impl AsRef<str>,
+    ) -> std::io::Result<usize> {
         self.inner.send(
             make_command!("FLUSHB {} {}", collection, bucket),
-            Discriminant::Ok,
-            |_data| Ok(()),
+            Discriminant::Result,
+            |data| data.parse().map_err(io_error_invalid_data),
         )
     }
 );
@@ -196,11 +206,11 @@ impl_fns!(
         collection: impl AsRef<str>,
         bucket: impl AsRef<str>,
         object: impl AsRef<str>,
-    ) -> std::io::Result<()> {
+    ) -> std::io::Result<usize> {
         self.inner.send(
             make_command!("FLUSHO {} {} {}", collection, bucket, object),
-            Discriminant::Ok,
-            |_data| Ok(()),
+            Discriminant::Result,
+            |data| data.parse().map_err(io_error_invalid_data),
         )
     }
 );
