@@ -26,11 +26,19 @@ done
 README_FILE="${REPOSITORY_ROOT:?}"/README.md
 SERVER_DIR="${REPOSITORY_ROOT:?}"/server
 CORE_DIR="${REPOSITORY_ROOT:?}"/core
+CLIENT_DIR="${REPOSITORY_ROOT:?}"/client
 
 # NOTE: We could use `cargo metadata` here, but it would require `jq` to parse
 #   so this is a good enough no-dependency equivalent.
 SERVER_VERSION="$(cargo pkgid -p sonic-server | sed 's/.*@//')"
 CORE_VERSION="$(cargo pkgid -p sonic-core | sed 's/.*@//')"
+CLIENT_VERSION="$(cargo pkgid -p sonic_client | sed 's/.*@//')"
+
+# A regex to separate commit messages which are meaningful in the changelog
+# from those which users shouldn’t have to worry about (i.e. internal stuff).
+# NOTE: `^` also helps not strating with `-`, which `grep` would read as an
+#   argument. Make sure to escape the leading `-` if you ever remove the `^`.
+unset MEANINGLESS_COMMIT_REGEX
 
 
 # ===== HELPER FUNCTIONS =====
@@ -48,7 +56,7 @@ EOF
 usage() {
   cat <<EOF
 Usage:
-  ${SELF:?} server|core [OPTION...]
+  ${SELF:?} server|core|client [OPTION...]
 
 Options:
   Miscellaneous options:
@@ -96,7 +104,7 @@ case "$1" in
     RELEASING=server
     VERSION="${SERVER_VERSION:?}"
     CHANGELOG_FILE="${SERVER_DIR:?}"/CHANGELOG.md
-    CARGO_TOML_FILE="${SERVER_DIR:?}"/Cargo.toml
+    MEANINGLESS_COMMIT_REGEX='^\* (ci|tools|docs|chore|test):'
 
     to_tag() {
       local version="${1:?"Must pass a version number"}"
@@ -107,13 +115,25 @@ case "$1" in
     RELEASING=core
     VERSION="${CORE_VERSION:?}"
     CHANGELOG_FILE="${CORE_DIR:?}"/CHANGELOG.md
-    CARGO_TOML_FILE="${CORE_DIR:?}"/Cargo.toml
+    MEANINGLESS_COMMIT_REGEX='^\* ((ci|tools|docs|chore|test|server)|[^(]+\(server|client\)):'
 
     to_tag() {
       local version="${1:?"Must pass a version number"}"
       echo "core-v${version#v}"
     }
     ;;
+  client|client-rust)
+    RELEASING=sonic_client
+    VERSION="${CLIENT_VERSION:?}"
+    CHANGELOG_FILE="${CLIENT_DIR:?}"/CHANGELOG.md
+    MEANINGLESS_COMMIT_REGEX='^\* (ci|tools|docs|chore|test|server|core)|[^(]+\(server|core\)):'
+
+    to_tag() {
+      local version="${1:?"Must pass a version number"}"
+      echo "client-v${version#v}"
+    }
+    ;;
+
   *) log_error "Unknown argument: '$1'."; log_info "$(usage)"; die ;;
 esac
 
@@ -126,12 +146,6 @@ if [ -z "${FORCE-}" ] && ! grep -zq '...HEAD\n\n## \['"${VERSION:?}"'\]' "${CHAN
   git_log '* %s (in `%C(auto)%h`)'
   die
 fi
-
-# A regex to separate commit messages which are meaningful in the changelog
-# from those which users shouldn’t have to worry about (i.e. internal stuff).
-# NOTE: `^` also helps not strating with `-`, which `grep` would read as an
-#   argument. Make sure to escape the leading `-` if you ever remove the `^`.
-MEANINGLESS_COMMIT_REGEX='^* (ci|tools|docs|chore|test):'
 
 cat <<EOF > temp
 New commits:
