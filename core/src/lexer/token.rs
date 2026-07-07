@@ -41,7 +41,7 @@ enum TokenLexerWords<'a> {
     UAX29(UnicodeWords<'a>),
 
     #[cfg(feature = "tokenizer-chinese")]
-    JieBa(IntoIter<&'a str>),
+    Jieba(IntoIter<&'a str>),
 
     #[cfg(feature = "tokenizer-japanese")]
     Lindera(IntoIter<lindera_tokenizer::token::Token<'a>>),
@@ -285,7 +285,7 @@ impl<'a> TokenLexer<'a> {
         // Tokenize words (depending on the locale)
         let words = match locale {
             #[cfg(feature = "tokenizer-chinese")]
-            Some(Lang::Cmn) => TokenLexerWords::JieBa(TOKENIZER_JIEBA.cut(text, false).into_iter()),
+            Some(Lang::Cmn) => TokenLexerWords::Jieba(TOKENIZER_JIEBA.cut(text, false).into_iter()),
             #[cfg(feature = "tokenizer-japanese")]
             Some(Lang::Jpn) => match TOKENIZER_LINDERA.tokenize(text) {
                 Ok(tokens) => TokenLexerWords::Lindera(tokens.into_iter()),
@@ -456,7 +456,7 @@ impl<'a> Iterator for TokenLexerWords<'a> {
             TokenLexerWords::UAX29(token) => token.next(),
 
             #[cfg(feature = "tokenizer-chinese")]
-            TokenLexerWords::JieBa(token) => token.next(),
+            TokenLexerWords::Jieba(token) => token.next(),
 
             #[cfg(feature = "tokenizer-japanese")]
             TokenLexerWords::Lindera(token) => match token.next() {
