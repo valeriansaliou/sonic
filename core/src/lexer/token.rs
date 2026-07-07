@@ -9,9 +9,7 @@ use hashbrown::HashSet;
 use std::sync::LazyLock;
 use std::time::Instant;
 use unicode_segmentation::{UnicodeSegmentation, UnicodeWords};
-use whatlang::{
-    Lang, detect as lang_detect_all, detect_lang as lang_detect, detect_script as script_detect,
-};
+use whatlang::Lang;
 
 #[allow(unused_imports)]
 use std::vec::IntoIter;
@@ -187,18 +185,18 @@ impl TokenLexerBuilder {
     fn detect_lang_slow(safe_text: &str) -> Option<Lang> {
         let ngram_start = Instant::now();
 
-        match lang_detect_all(safe_text) {
-            Some(detector) => {
+        match whatlang::detect(safe_text) {
+            Some(info) => {
                 let ngram_took = ngram_start.elapsed();
 
-                let mut locale = detector.lang();
+                let mut locale = info.lang();
 
                 tracing::info!(
                     "[slow lexer] locale detected from text: {} ({} from {} at {}/1; {}s + {}ms)",
                     safe_text,
                     locale,
-                    detector.script(),
-                    detector.confidence(),
+                    info.script(),
+                    info.confidence(),
                     ngram_took.as_secs(),
                     ngram_took.subsec_millis()
                 );
@@ -206,12 +204,12 @@ impl TokenLexerBuilder {
                 // Confidence is low, try to detect locale from stop-words.
                 // Notice: this is a fallback but should not be too reliable for short \
                 //   texts.
-                if !detector.is_reliable() {
+                if !info.is_reliable() {
                     tracing::debug!("[slow lexer] trying to detect locale from stopwords instead");
 
                     // Better alternate locale found?
                     if let Some(alternate_locale) =
-                        LexerStopWord::guess_lang(safe_text, detector.script())
+                        LexerStopWord::guess_lang(safe_text, info.script())
                     {
                         tracing::info!(
                             "[slow lexer] detected more accurate locale from stopwords: {}",
@@ -238,7 +236,7 @@ impl TokenLexerBuilder {
     fn detect_lang_fast(safe_text: &str) -> Option<Lang> {
         let stopwords_start = Instant::now();
 
-        match script_detect(safe_text) {
+        match whatlang::detect_script(safe_text) {
             Some(script) => {
                 // Locale found?
                 if let Some(locale) = LexerStopWord::guess_lang(safe_text, script) {
@@ -259,7 +257,7 @@ impl TokenLexerBuilder {
                     );
 
                     // No locale found, fallback on slow ngram.
-                    lang_detect(safe_text)
+                    whatlang::detect_lang(safe_text)
                 }
             }
             None => {
