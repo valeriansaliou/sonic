@@ -14,7 +14,6 @@
 
 ### Changes
 
-* packaging(debian): Do not run `chown -R` on every Sonic update (in `b244423`)
 * feat(core): Consider more strings to be IDs (in `58bfe3c`)
 
 ## [0.1.1] (2026-07-06)
