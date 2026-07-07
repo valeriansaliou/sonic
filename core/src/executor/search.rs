@@ -112,6 +112,8 @@ impl super::Executor {
 
                 'terms: for (idx, (term, _, original_len)) in terms.iter().enumerate() {
                     // Skip term if it’s an ID (we want exact matches only).
+                    // FIXME: We’d like to enable prefix matching for IDs, but
+                    //   the way the tokenizer works causes false positives.
                     if is_considered_id(&term) {
                         tracing::debug!(
                             "skipping prefix search for {term:?}: term is considered an ID"
