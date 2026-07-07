@@ -122,40 +122,118 @@ fn test_search_is_diacritics_insensitive() {
 fn test_no_fuzzy_matching_for_ids() {
     init_logging();
 
+    struct TestMatches1st<'a> {
+        messages: Vec<&'a str>,
+        query: &'a str,
+    }
+
+    // In those examples, multiple messages are pushed into the index,
+    // and only the first is supposed to match the given query.
     let examples = [
-        // UUID.
-        (
-            vec![
+        // UUID like.
+        TestMatches1st {
+            messages: vec![
                 "My user ID is \"6db14cb4-b82e-4e49-8016-ef76c4290a2f\"",
                 "My user ID is `6db14cb4-b82e-4e49-8016-ef76c4290a2e`",
             ],
-            "6db14cb4-b82e-4e49-8016-ef76c4290a2f",
-        ),
-        // One term in the query (`abcd`) has only letters.
-        (
-            vec![
+            query: "6db14cb4-b82e-4e49-8016-ef76c4290a2f",
+        },
+        TestMatches1st {
+            // Note that one term in the query (`abcd`) has only letters.
+            messages: vec![
                 "My user ID is 6db14cb4-abcd-4e49-8016-ef76c4290a2e",
                 "My user ID is 6db14cb4-cdef-4e49-8016-ef76c4290a2e",
             ],
-            "6db14cb4-abcd-4e49-8016-ef76c4290a2e",
-        ),
+            query: "6db14cb4-abcd-4e49-8016-ef76c4290a2e",
+        },
         // Phone number like.
-        (
-            vec!["Here it is: 1234-567890-12", "Here it is: 1234-567890-13"],
-            "1234-567890-12",
-        ),
+        TestMatches1st {
+            messages: vec!["Here it is: 1234-567890-12", "Here it is: 1234-567890-13"],
+            query: "1234-567890-12",
+        },
+        TestMatches1st {
+            messages: vec!["Here it is: 0123456789", "Here it is: 0123456780"],
+            query: "0123456789",
+        },
+        // Email address.
+        TestMatches1st {
+            messages: vec![
+                "Contact me at alice@example.org",
+                "Son e-mail: alice@exemple.org",
+            ],
+            query: "alice@example.org",
+        },
+        TestMatches1st {
+            messages: vec![
+                "Contact me at alice+foo@example.org",
+                "Son e-mail: alice+foo@exemple.org",
+            ],
+            query: "alice+foo@example.org",
+        },
+        // Hash like.
+        TestMatches1st {
+            messages: vec![
+                "It’s in b244423d417369795292e9f4530d0c0e6fa07625",
+                "It’s in b244423d41736979529209f4530d0c0e6fa07625",
+            ],
+            query: "b244423d417369795292e9f4530d0c0e6fa07625",
+        },
+        TestMatches1st {
+            messages: vec!["It’s in b244423", "It’s in b242423"],
+            query: "b244423",
+        },
+        // Code like.
+        TestMatches1st {
+            messages: vec!["Check out ingest_flushc", "Look at ingest_flushb"],
+            query: "ingest_flushc",
+        },
+        // Domain name.
+        TestMatches1st {
+            messages: vec!["The client is example.org.", "Their homepage: exemple.org."],
+            query: "example.org",
+        },
+        // URL.
+        TestMatches1st {
+            messages: vec![
+                "All data is in https://example.org/foo?id=123",
+                "See https://example.org/foo?id=124",
+            ],
+            query: "https://example.org/foo?id=123",
+        },
+        // IP addresses.
+        TestMatches1st {
+            messages: vec!["192.168.1.0", "192.168.1.1"],
+            query: "192.168.1.0",
+        },
+        TestMatches1st {
+            messages: vec!["0.0.0.0", "0.0.0.1"],
+            query: "0.0.0.0",
+        },
+        TestMatches1st {
+            messages: vec!["2606:4700::6812:1c68", "2606:4700::6812:1c60"],
+            query: "2606:4700::6812:1c68",
+        },
+        TestMatches1st {
+            messages: vec!["::1", "::2"],
+            query: "::1",
+        },
+        // Username.
+        TestMatches1st {
+            messages: vec!["@example1", "@example2"],
+            query: "@example1",
+        },
     ];
 
-    for (example_idx, (messages, query)) in examples.into_iter().enumerate() {
+    for (example_idx, TestMatches1st { messages, query }) in examples.into_iter().enumerate() {
         let executor = make_test_executor_with_id(example_idx);
 
         for (message_idx, &message) in messages.iter().enumerate() {
             let id = &format!("chat:{message_idx}");
-            exec!(executor -> PUSH "messages" "user:1" id message);
+            exec!(executor -> PUSH "messages" "user:1" id message LANG("eng"));
         }
         exec!(executor -> TRIGGER consolidate);
 
-        let response = exec!(executor -> QUERY "messages" "user:1" query);
+        let response = exec!(executor -> QUERY "messages" "user:1" query LANG("eng"));
 
         assert_eq!(response, ["chat:0"], "({messages:?}, {query:?})");
     }

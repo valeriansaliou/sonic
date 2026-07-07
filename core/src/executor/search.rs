@@ -112,7 +112,7 @@ impl super::Executor {
 
                 'terms: for (idx, (term, _, original_len)) in terms.iter().enumerate() {
                     // Skip term if it’s an ID (we want exact matches only).
-                    if term.chars().any(is_considered_id_char) {
+                    if is_considered_id(&term) {
                         tracing::debug!(
                             "skipping prefix search for {term:?}: term is considered an ID"
                         );
@@ -149,7 +149,7 @@ impl super::Executor {
 
                 'terms: for (idx, (term, _, original_word_len)) in terms.iter().enumerate() {
                     // Skip term if it’s an ID (we want exact matches only).
-                    if term.chars().any(is_considered_id_char) {
+                    if is_considered_id(&term) {
                         tracing::debug!(
                             "skipping fuzzy matching for {term:?}: term is considered an ID"
                         );
@@ -246,11 +246,62 @@ impl super::Executor {
 }
 
 fn is_considered_id(s: &str) -> bool {
-    s.chars().any(is_considered_id_char)
+    s.chars().any(|c| c.is_ascii_digit() || c == '@')
+        || s.chars()
+            // Skip first char.
+            .skip(1)
+            // Skip last char.
+            .take(s.len().saturating_sub(2))
+            .any(is_non_prose_char)
 }
 
-fn is_considered_id_char(c: char) -> bool {
-    c.is_ascii_digit()
+fn is_non_prose_char(c: char) -> bool {
+    c == '.' || c == '_' || c == ':' || c == '\\' || c == '+' || c == '=' || c == '&'
+}
+
+/// Note that the tokenizer might split the tested strings in ways that make
+/// Sonic as a whole behave differently! This is just a simple unit test.
+#[cfg(test)]
+#[test]
+fn test_is_considered_id() {
+    // Sanity check.
+    assert!(!is_considered_id("Hello"));
+
+    // Phone number like.
+    assert!(is_considered_id("1234-567890-12"));
+    assert!(is_considered_id("0123456789"));
+
+    // UUID like.
+    assert!(is_considered_id("6db14cb4-b82e-4e49-8016-ef76c4290a2f"));
+
+    // Hash like.
+    assert!(is_considered_id("b244423d417369795292e9f4530d0c0e6fa07625"));
+    assert!(is_considered_id("b244423"));
+
+    // Code like.
+    assert!(is_considered_id("is_considered_id"));
+
+    // Domain name.
+    assert!(is_considered_id("example.org"));
+    assert!(!is_considered_id("endofsentence."));
+    assert!(!is_considered_id(".startofsentence"));
+
+    // URL.
+    assert!(is_considered_id("https://example.org/foo?id=123"));
+
+    // Email address.
+    assert!(is_considered_id("alice@example.org"));
+    assert!(is_considered_id("alice+foo@example.org"));
+
+    // IP addresses.
+    assert!(is_considered_id("192.168.1.0"));
+    assert!(is_considered_id("0.0.0.0"));
+    assert!(is_considered_id("2606:4700::6812:1c68"));
+    assert!(is_considered_id("::1"));
+    assert!(!is_considered_id("example:"));
+
+    // Username.
+    assert!(is_considered_id("@example"));
 }
 
 #[allow(clippy::too_many_arguments)] // We’ll refactor this someday, and it’ not public anyway.
