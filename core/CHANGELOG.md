@@ -8,6 +8,11 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/core-v0.1.1...HEAD
 
+### Changes
+
+* packaging(debian): Do not run `chown -R` on every Sonic update (in `b244423`)
+* feat(core): Consider more strings to be IDs (in `58bfe3c`)
+
 ## [0.1.1] (2026-07-06)
 
 [0.1.1]: https://github.com/valeriansaliou/sonic/compare/core-v0.1.0...core-v0.1.1
