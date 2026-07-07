@@ -6,7 +6,11 @@
 
 <!-- WARN: Do not move the next line and add changelog entries **under** it.
        It’s used by `task release:*` when updating the changelog. -->
-[Unreleased]: https://github.com/valeriansaliou/sonic/compare/v1.7.2...HEAD
+[Unreleased]: https://github.com/valeriansaliou/sonic/compare/v1.7.3...HEAD
+
+## [1.7.3] (2026-07-07)
+
+[1.7.3]: https://github.com/valeriansaliou/sonic/compare/v1.7.2...v1.7.3
 
 ### Changes
 
