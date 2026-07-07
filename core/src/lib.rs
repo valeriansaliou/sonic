@@ -24,9 +24,6 @@
     clippy::result_unit_err, // TODO: Re-enable (deny).
 )]
 
-#[macro_use]
-extern crate lazy_static;
-
 pub mod config;
 pub mod executor;
 pub mod lexer;

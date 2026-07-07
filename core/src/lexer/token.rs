@@ -5,13 +5,15 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use hashbrown::HashSet;
+#[allow(unused_imports)]
+use std::sync::LazyLock;
 use std::time::Instant;
 use unicode_segmentation::{UnicodeSegmentation, UnicodeWords};
 use whatlang::{
     Lang, detect as lang_detect_all, detect_lang as lang_detect, detect_script as script_detect,
 };
 
-#[cfg(feature = "tokenizer-chinese")]
+#[allow(unused_imports)]
 use std::vec::IntoIter;
 
 use super::stopwords::LexerStopWord;
@@ -52,25 +54,22 @@ const TEXT_LANG_DETECT_PROCEED_OVER_CHARS: usize = 20;
 const TEXT_LANG_DETECT_NGRAM_UNDER_CHARS: usize = 60;
 
 #[cfg(feature = "tokenizer-chinese")]
-lazy_static! {
-    static ref TOKENIZER_JIEBA: jieba_rs::Jieba = jieba_rs::Jieba::new();
-}
+static TOKENIZER_JIEBA: LazyLock<jieba_rs::Jieba> = LazyLock::new(jieba_rs::Jieba::new);
 
 #[cfg(feature = "tokenizer-japanese")]
-lazy_static! {
-    static ref TOKENIZER_LINDERA: lindera_tokenizer::tokenizer::Tokenizer =
-        lindera_tokenizer::tokenizer::Tokenizer::from_config(
-            lindera_tokenizer::tokenizer::TokenizerConfig {
-                dictionary: lindera_dictionary::DictionaryConfig {
-                    kind: Some(lindera_dictionary::DictionaryKind::UniDic),
-                    path: None
-                },
-                user_dictionary: None,
-                mode: lindera_core::mode::Mode::Normal,
-            }
-        )
-        .expect("unable to initialize japanese tokenizer");
-}
+static TOKENIZER_LINDERA: LazyLock<lindera_tokenizer::tokenizer::Tokenizer> = LazyLock::new(|| {
+    lindera_tokenizer::tokenizer::Tokenizer::from_config(
+        lindera_tokenizer::tokenizer::TokenizerConfig {
+            dictionary: lindera_dictionary::DictionaryConfig {
+                kind: Some(lindera_dictionary::DictionaryKind::UniDic),
+                path: None,
+            },
+            user_dictionary: None,
+            mode: lindera_core::mode::Mode::Normal,
+        },
+    )
+    .expect("unable to initialize japanese tokenizer")
+});
 
 impl TokenLexerBuilder {
     pub fn from(

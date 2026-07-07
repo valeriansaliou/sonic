@@ -4,6 +4,8 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use std::sync::LazyLock;
+
 use hashbrown::HashSet;
 use whatlang::{Lang, Script};
 
@@ -11,103 +13,82 @@ use crate::stopwords::*;
 
 pub struct LexerStopWord;
 
-// Recursion group #1 (10 items)
-lazy_static! {
-    static ref STOPWORDS_EPO: HashSet<&'static str> = make(epo::STOPWORDS_EPO);
-    static ref STOPWORDS_ENG: HashSet<&'static str> = make(eng::STOPWORDS_ENG);
-    static ref STOPWORDS_RUS: HashSet<&'static str> = make(rus::STOPWORDS_RUS);
-    static ref STOPWORDS_CMN: HashSet<&'static str> = make(cmn::STOPWORDS_CMN);
-    static ref STOPWORDS_SPA: HashSet<&'static str> = make(spa::STOPWORDS_SPA);
-    static ref STOPWORDS_POR: HashSet<&'static str> = make(por::STOPWORDS_POR);
-    static ref STOPWORDS_ITA: HashSet<&'static str> = make(ita::STOPWORDS_ITA);
-    static ref STOPWORDS_BEN: HashSet<&'static str> = make(ben::STOPWORDS_BEN);
-    static ref STOPWORDS_FRA: HashSet<&'static str> = make(fra::STOPWORDS_FRA);
-    static ref STOPWORDS_DEU: HashSet<&'static str> = make(deu::STOPWORDS_DEU);
-}
+static STOPWORDS_EPO: LazyLock<HashSet<&str>> = LazyLock::new(|| make(epo::STOPWORDS_EPO));
+static STOPWORDS_ENG: LazyLock<HashSet<&str>> = LazyLock::new(|| make(eng::STOPWORDS_ENG));
+static STOPWORDS_RUS: LazyLock<HashSet<&str>> = LazyLock::new(|| make(rus::STOPWORDS_RUS));
+static STOPWORDS_CMN: LazyLock<HashSet<&str>> = LazyLock::new(|| make(cmn::STOPWORDS_CMN));
+static STOPWORDS_SPA: LazyLock<HashSet<&str>> = LazyLock::new(|| make(spa::STOPWORDS_SPA));
+static STOPWORDS_POR: LazyLock<HashSet<&str>> = LazyLock::new(|| make(por::STOPWORDS_POR));
+static STOPWORDS_ITA: LazyLock<HashSet<&str>> = LazyLock::new(|| make(ita::STOPWORDS_ITA));
+static STOPWORDS_BEN: LazyLock<HashSet<&str>> = LazyLock::new(|| make(ben::STOPWORDS_BEN));
+static STOPWORDS_FRA: LazyLock<HashSet<&str>> = LazyLock::new(|| make(fra::STOPWORDS_FRA));
+static STOPWORDS_DEU: LazyLock<HashSet<&str>> = LazyLock::new(|| make(deu::STOPWORDS_DEU));
 
-// Recursion group #2 (10 items)
-lazy_static! {
-    static ref STOPWORDS_UKR: HashSet<&'static str> = make(ukr::STOPWORDS_UKR);
-    static ref STOPWORDS_KAT: HashSet<&'static str> = make(kat::STOPWORDS_KAT);
-    static ref STOPWORDS_ARA: HashSet<&'static str> = make(ara::STOPWORDS_ARA);
-    static ref STOPWORDS_HIN: HashSet<&'static str> = make(hin::STOPWORDS_HIN);
-    static ref STOPWORDS_JPN: HashSet<&'static str> = make(jpn::STOPWORDS_JPN);
-    static ref STOPWORDS_HEB: HashSet<&'static str> = make(heb::STOPWORDS_HEB);
-    static ref STOPWORDS_YID: HashSet<&'static str> = make(yid::STOPWORDS_YID);
-    static ref STOPWORDS_POL: HashSet<&'static str> = make(pol::STOPWORDS_POL);
-    static ref STOPWORDS_AMH: HashSet<&'static str> = make(amh::STOPWORDS_AMH);
-    static ref STOPWORDS_JAV: HashSet<&'static str> = make(jav::STOPWORDS_JAV);
-}
+static STOPWORDS_UKR: LazyLock<HashSet<&str>> = LazyLock::new(|| make(ukr::STOPWORDS_UKR));
+static STOPWORDS_KAT: LazyLock<HashSet<&str>> = LazyLock::new(|| make(kat::STOPWORDS_KAT));
+static STOPWORDS_ARA: LazyLock<HashSet<&str>> = LazyLock::new(|| make(ara::STOPWORDS_ARA));
+static STOPWORDS_HIN: LazyLock<HashSet<&str>> = LazyLock::new(|| make(hin::STOPWORDS_HIN));
+static STOPWORDS_JPN: LazyLock<HashSet<&str>> = LazyLock::new(|| make(jpn::STOPWORDS_JPN));
+static STOPWORDS_HEB: LazyLock<HashSet<&str>> = LazyLock::new(|| make(heb::STOPWORDS_HEB));
+static STOPWORDS_YID: LazyLock<HashSet<&str>> = LazyLock::new(|| make(yid::STOPWORDS_YID));
+static STOPWORDS_POL: LazyLock<HashSet<&str>> = LazyLock::new(|| make(pol::STOPWORDS_POL));
+static STOPWORDS_AMH: LazyLock<HashSet<&str>> = LazyLock::new(|| make(amh::STOPWORDS_AMH));
+static STOPWORDS_JAV: LazyLock<HashSet<&str>> = LazyLock::new(|| make(jav::STOPWORDS_JAV));
 
-// Recursion group #3 (10 items)
-lazy_static! {
-    static ref STOPWORDS_KOR: HashSet<&'static str> = make(kor::STOPWORDS_KOR);
-    static ref STOPWORDS_NOB: HashSet<&'static str> = make(nob::STOPWORDS_NOB);
-    static ref STOPWORDS_DAN: HashSet<&'static str> = make(dan::STOPWORDS_DAN);
-    static ref STOPWORDS_SWE: HashSet<&'static str> = make(swe::STOPWORDS_SWE);
-    static ref STOPWORDS_FIN: HashSet<&'static str> = make(fin::STOPWORDS_FIN);
-    static ref STOPWORDS_TUR: HashSet<&'static str> = make(tur::STOPWORDS_TUR);
-    static ref STOPWORDS_NLD: HashSet<&'static str> = make(nld::STOPWORDS_NLD);
-    static ref STOPWORDS_HUN: HashSet<&'static str> = make(hun::STOPWORDS_HUN);
-    static ref STOPWORDS_CES: HashSet<&'static str> = make(ces::STOPWORDS_CES);
-    static ref STOPWORDS_ELL: HashSet<&'static str> = make(ell::STOPWORDS_ELL);
-}
+static STOPWORDS_KOR: LazyLock<HashSet<&str>> = LazyLock::new(|| make(kor::STOPWORDS_KOR));
+static STOPWORDS_NOB: LazyLock<HashSet<&str>> = LazyLock::new(|| make(nob::STOPWORDS_NOB));
+static STOPWORDS_DAN: LazyLock<HashSet<&str>> = LazyLock::new(|| make(dan::STOPWORDS_DAN));
+static STOPWORDS_SWE: LazyLock<HashSet<&str>> = LazyLock::new(|| make(swe::STOPWORDS_SWE));
+static STOPWORDS_FIN: LazyLock<HashSet<&str>> = LazyLock::new(|| make(fin::STOPWORDS_FIN));
+static STOPWORDS_TUR: LazyLock<HashSet<&str>> = LazyLock::new(|| make(tur::STOPWORDS_TUR));
+static STOPWORDS_NLD: LazyLock<HashSet<&str>> = LazyLock::new(|| make(nld::STOPWORDS_NLD));
+static STOPWORDS_HUN: LazyLock<HashSet<&str>> = LazyLock::new(|| make(hun::STOPWORDS_HUN));
+static STOPWORDS_CES: LazyLock<HashSet<&str>> = LazyLock::new(|| make(ces::STOPWORDS_CES));
+static STOPWORDS_ELL: LazyLock<HashSet<&str>> = LazyLock::new(|| make(ell::STOPWORDS_ELL));
 
-// Recursion group #4 (10 items)
-lazy_static! {
-    static ref STOPWORDS_BUL: HashSet<&'static str> = make(bul::STOPWORDS_BUL);
-    static ref STOPWORDS_BEL: HashSet<&'static str> = make(bel::STOPWORDS_BEL);
-    static ref STOPWORDS_MAR: HashSet<&'static str> = make(mar::STOPWORDS_MAR);
-    static ref STOPWORDS_KAN: HashSet<&'static str> = make(kan::STOPWORDS_KAN);
-    static ref STOPWORDS_RON: HashSet<&'static str> = make(ron::STOPWORDS_RON);
-    static ref STOPWORDS_SLV: HashSet<&'static str> = make(slv::STOPWORDS_SLV);
-    static ref STOPWORDS_HRV: HashSet<&'static str> = make(hrv::STOPWORDS_HRV);
-    static ref STOPWORDS_SRP: HashSet<&'static str> = make(srp::STOPWORDS_SRP);
-    static ref STOPWORDS_MKD: HashSet<&'static str> = make(mkd::STOPWORDS_MKD);
-    static ref STOPWORDS_LIT: HashSet<&'static str> = make(lit::STOPWORDS_LIT);
-}
+static STOPWORDS_BUL: LazyLock<HashSet<&str>> = LazyLock::new(|| make(bul::STOPWORDS_BUL));
+static STOPWORDS_BEL: LazyLock<HashSet<&str>> = LazyLock::new(|| make(bel::STOPWORDS_BEL));
+static STOPWORDS_MAR: LazyLock<HashSet<&str>> = LazyLock::new(|| make(mar::STOPWORDS_MAR));
+static STOPWORDS_KAN: LazyLock<HashSet<&str>> = LazyLock::new(|| make(kan::STOPWORDS_KAN));
+static STOPWORDS_RON: LazyLock<HashSet<&str>> = LazyLock::new(|| make(ron::STOPWORDS_RON));
+static STOPWORDS_SLV: LazyLock<HashSet<&str>> = LazyLock::new(|| make(slv::STOPWORDS_SLV));
+static STOPWORDS_HRV: LazyLock<HashSet<&str>> = LazyLock::new(|| make(hrv::STOPWORDS_HRV));
+static STOPWORDS_SRP: LazyLock<HashSet<&str>> = LazyLock::new(|| make(srp::STOPWORDS_SRP));
+static STOPWORDS_MKD: LazyLock<HashSet<&str>> = LazyLock::new(|| make(mkd::STOPWORDS_MKD));
+static STOPWORDS_LIT: LazyLock<HashSet<&str>> = LazyLock::new(|| make(lit::STOPWORDS_LIT));
 
-// Recursion group #5 (10 items)
-lazy_static! {
-    static ref STOPWORDS_LAV: HashSet<&'static str> = make(lav::STOPWORDS_LAV);
-    static ref STOPWORDS_EST: HashSet<&'static str> = make(est::STOPWORDS_EST);
-    static ref STOPWORDS_TAM: HashSet<&'static str> = make(tam::STOPWORDS_TAM);
-    static ref STOPWORDS_VIE: HashSet<&'static str> = make(vie::STOPWORDS_VIE);
-    static ref STOPWORDS_URD: HashSet<&'static str> = make(urd::STOPWORDS_URD);
-    static ref STOPWORDS_THA: HashSet<&'static str> = make(tha::STOPWORDS_THA);
-    static ref STOPWORDS_GUJ: HashSet<&'static str> = make(guj::STOPWORDS_GUJ);
-    static ref STOPWORDS_UZB: HashSet<&'static str> = make(uzb::STOPWORDS_UZB);
-    static ref STOPWORDS_PAN: HashSet<&'static str> = make(pan::STOPWORDS_PAN);
-    static ref STOPWORDS_AZE: HashSet<&'static str> = make(aze::STOPWORDS_AZE);
-}
+static STOPWORDS_LAV: LazyLock<HashSet<&str>> = LazyLock::new(|| make(lav::STOPWORDS_LAV));
+static STOPWORDS_EST: LazyLock<HashSet<&str>> = LazyLock::new(|| make(est::STOPWORDS_EST));
+static STOPWORDS_TAM: LazyLock<HashSet<&str>> = LazyLock::new(|| make(tam::STOPWORDS_TAM));
+static STOPWORDS_VIE: LazyLock<HashSet<&str>> = LazyLock::new(|| make(vie::STOPWORDS_VIE));
+static STOPWORDS_URD: LazyLock<HashSet<&str>> = LazyLock::new(|| make(urd::STOPWORDS_URD));
+static STOPWORDS_THA: LazyLock<HashSet<&str>> = LazyLock::new(|| make(tha::STOPWORDS_THA));
+static STOPWORDS_GUJ: LazyLock<HashSet<&str>> = LazyLock::new(|| make(guj::STOPWORDS_GUJ));
+static STOPWORDS_UZB: LazyLock<HashSet<&str>> = LazyLock::new(|| make(uzb::STOPWORDS_UZB));
+static STOPWORDS_PAN: LazyLock<HashSet<&str>> = LazyLock::new(|| make(pan::STOPWORDS_PAN));
+static STOPWORDS_AZE: LazyLock<HashSet<&str>> = LazyLock::new(|| make(aze::STOPWORDS_AZE));
 
-// Recursion group #6 (10 items)
-lazy_static! {
-    static ref STOPWORDS_IND: HashSet<&'static str> = make(ind::STOPWORDS_IND);
-    static ref STOPWORDS_TEL: HashSet<&'static str> = make(tel::STOPWORDS_TEL);
-    static ref STOPWORDS_PES: HashSet<&'static str> = make(pes::STOPWORDS_PES);
-    static ref STOPWORDS_MAL: HashSet<&'static str> = make(mal::STOPWORDS_MAL);
-    static ref STOPWORDS_ORI: HashSet<&'static str> = make(ori::STOPWORDS_ORI);
-    static ref STOPWORDS_MYA: HashSet<&'static str> = make(mya::STOPWORDS_MYA);
-    static ref STOPWORDS_NEP: HashSet<&'static str> = make(nep::STOPWORDS_NEP);
-    static ref STOPWORDS_SIN: HashSet<&'static str> = make(sin::STOPWORDS_SIN);
-    static ref STOPWORDS_KHM: HashSet<&'static str> = make(khm::STOPWORDS_KHM);
-    static ref STOPWORDS_TUK: HashSet<&'static str> = make(tuk::STOPWORDS_TUK);
-}
+static STOPWORDS_IND: LazyLock<HashSet<&str>> = LazyLock::new(|| make(ind::STOPWORDS_IND));
+static STOPWORDS_TEL: LazyLock<HashSet<&str>> = LazyLock::new(|| make(tel::STOPWORDS_TEL));
+static STOPWORDS_PES: LazyLock<HashSet<&str>> = LazyLock::new(|| make(pes::STOPWORDS_PES));
+static STOPWORDS_MAL: LazyLock<HashSet<&str>> = LazyLock::new(|| make(mal::STOPWORDS_MAL));
+static STOPWORDS_ORI: LazyLock<HashSet<&str>> = LazyLock::new(|| make(ori::STOPWORDS_ORI));
+static STOPWORDS_MYA: LazyLock<HashSet<&str>> = LazyLock::new(|| make(mya::STOPWORDS_MYA));
+static STOPWORDS_NEP: LazyLock<HashSet<&str>> = LazyLock::new(|| make(nep::STOPWORDS_NEP));
+static STOPWORDS_SIN: LazyLock<HashSet<&str>> = LazyLock::new(|| make(sin::STOPWORDS_SIN));
+static STOPWORDS_KHM: LazyLock<HashSet<&str>> = LazyLock::new(|| make(khm::STOPWORDS_KHM));
+static STOPWORDS_TUK: LazyLock<HashSet<&str>> = LazyLock::new(|| make(tuk::STOPWORDS_TUK));
 
-// Recursion group #7 (10 items)
-lazy_static! {
-    static ref STOPWORDS_AKA: HashSet<&'static str> = make(aka::STOPWORDS_AKA);
-    static ref STOPWORDS_ZUL: HashSet<&'static str> = make(zul::STOPWORDS_ZUL);
-    static ref STOPWORDS_SNA: HashSet<&'static str> = make(sna::STOPWORDS_SNA);
-    static ref STOPWORDS_AFR: HashSet<&'static str> = make(afr::STOPWORDS_AFR);
-    static ref STOPWORDS_LAT: HashSet<&'static str> = make(lat::STOPWORDS_LAT);
-    static ref STOPWORDS_SLK: HashSet<&'static str> = make(slk::STOPWORDS_SLK);
-    static ref STOPWORDS_CAT: HashSet<&'static str> = make(cat::STOPWORDS_CAT);
-    static ref STOPWORDS_TGL: HashSet<&'static str> = make(tgl::STOPWORDS_TGL);
-    static ref STOPWORDS_HYE: HashSet<&'static str> = make(hye::STOPWORDS_HYE);
-    static ref STOPWORDS_CYM: HashSet<&'static str> = make(cym::STOPWORDS_CYM);
-}
+static STOPWORDS_AKA: LazyLock<HashSet<&str>> = LazyLock::new(|| make(aka::STOPWORDS_AKA));
+static STOPWORDS_ZUL: LazyLock<HashSet<&str>> = LazyLock::new(|| make(zul::STOPWORDS_ZUL));
+static STOPWORDS_SNA: LazyLock<HashSet<&str>> = LazyLock::new(|| make(sna::STOPWORDS_SNA));
+static STOPWORDS_AFR: LazyLock<HashSet<&str>> = LazyLock::new(|| make(afr::STOPWORDS_AFR));
+static STOPWORDS_LAT: LazyLock<HashSet<&str>> = LazyLock::new(|| make(lat::STOPWORDS_LAT));
+static STOPWORDS_SLK: LazyLock<HashSet<&str>> = LazyLock::new(|| make(slk::STOPWORDS_SLK));
+static STOPWORDS_CAT: LazyLock<HashSet<&str>> = LazyLock::new(|| make(cat::STOPWORDS_CAT));
+static STOPWORDS_TGL: LazyLock<HashSet<&str>> = LazyLock::new(|| make(tgl::STOPWORDS_TGL));
+static STOPWORDS_HYE: LazyLock<HashSet<&str>> = LazyLock::new(|| make(hye::STOPWORDS_HYE));
+static STOPWORDS_CYM: LazyLock<HashSet<&str>> = LazyLock::new(|| make(cym::STOPWORDS_CYM));
 
 fn make<'a>(words: &[&'a str]) -> HashSet<&'a str> {
     words.iter().copied().collect()
