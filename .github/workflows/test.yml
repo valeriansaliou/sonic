@@ -134,8 +134,8 @@ jobs:
           rustup --version 2>/dev/null
           cargo --version
 
-      - name: Build code
-        run: cargo build --locked
+      - name: Build Sonic server
+        run: cargo build --locked --bin sonic --no-default-features -F stemming
 
-      - name: Test code
-        run: cargo test --locked
+      - name: Test all
+        run: cargo test --locked --no-default-features -F stemming
