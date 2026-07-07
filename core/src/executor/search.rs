@@ -248,7 +248,7 @@ impl super::Executor {
 }
 
 fn is_considered_id(s: &str) -> bool {
-    s.chars().any(|c| c.is_ascii_digit() || c == '@')
+    s.chars().any(|c| c.is_ascii_digit() || matches!(c, '@'))
         || s.chars()
             // Skip first char.
             .skip(1)
@@ -258,7 +258,7 @@ fn is_considered_id(s: &str) -> bool {
 }
 
 fn is_non_prose_char(c: char) -> bool {
-    c == '.' || c == '_' || c == ':' || c == '\\' || c == '+' || c == '=' || c == '&'
+    matches!(c, '.' | '_' | ':' | '\\' | '+' | '=' | '&')
 }
 
 /// Note that the tokenizer might split the tested strings in ways that make
