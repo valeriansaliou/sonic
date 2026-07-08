@@ -138,18 +138,8 @@ impl TokenLexerBuilder {
             );
 
             // Perform an UTF-8 aware truncation
-            // Notice: then 'len()' check above was not UTF-8 aware, but is better than \
-            //   nothing as it avoids entering the below iterator for small strings.
-            // Notice: we fallback on text if the result is 'None'; as if it is 'None' there \
-            //   was less characters than the truncate limit in the UTF-8 parsed text. With \
-            //   this unwrap-way, we avoid doing a 'text.chars().count()' every time, which is \
-            //   a O(N) operation, and rather guard this block with a 'text.len()' which is \
-            //   a O(1) operation but which is not 100% reliable when approaching the truncate \
-            //   limit. This is a trade-off, which saves quite a lot CPU cycles at scale.
-            text.char_indices()
-                .nth(TEXT_LANG_TRUNCATE_OVER_CHARS)
-                .map(|(end_index, _)| &text[0..end_index])
-                .unwrap_or(text)
+            let end_index = text.floor_char_boundary(TEXT_LANG_TRUNCATE_OVER_CHARS);
+            &text[..end_index]
         } else {
             text
         };

@@ -5,7 +5,7 @@ members = ["core", "server", "client"]
 [workspace.package]
 license = "MPL-2.0"
 edition = "2024"
-rust-version = "1.88.0"
+rust-version = "1.91.0"
 homepage = "https://github.com/valeriansaliou/sonic"
 repository = "https://github.com/valeriansaliou/sonic.git"
 authors = [
