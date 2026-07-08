@@ -2,31 +2,238 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use hashbrown::HashSet;
-#[allow(unused_imports)]
+use std::borrow::Cow;
+use std::iter::Peekable;
 use std::sync::LazyLock;
 use std::time::Instant;
-use unicode_segmentation::{UnicodeSegmentation, UnicodeWords};
+
+use hashbrown::HashSet;
+use regex::Regex;
+use unicode_segmentation::UnicodeSegmentation;
 use whatlang::Lang;
 
-#[allow(unused_imports)]
-use std::vec::IntoIter;
-
-use super::stopwords::LexerStopWord;
 use crate::config::ConfigNormalization;
 use crate::query::QueryGenericLang;
 use crate::store::identifiers::{StoreTermHash, StoreTermHashed};
 
+use super::stopwords::LexerStopWord;
+
 pub struct TokenLexerBuilder;
+
+type WordsIter<'s> = Box<dyn Iterator<Item = &'s str> + 's>;
+
+static SPECIAL_PATTERNS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(concat!(
+        r"(?P<email>[\w.+-]+@[\w-]+\.[\w.-]+)",
+        r"|(?P<username>@[^\s]*\w)",
+        r"|(?P<url>\w{2,}://[^\s]*[^\s.])",
+        r"|(?P<ipv4>\d{1,3}(?:\.\d{1,3}){3})(?:[^\.\d]|$)",
+        r"|(?P<phone>\+?\d+(?:[\s\.-]?\d+){4,})",
+        r"|(?P<domain>[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})",
+        r"|(?P<id>[\w\d:_-]*[\d_][\w\d:-]*)"
+    ))
+    .unwrap()
+});
+
+pub struct Tokenizer<'s> {
+    text: &'s str,
+    lang: Option<Lang>,
+    regex_matches: Peekable<regex::CaptureMatches<'static, 's>>,
+    regex_cursor: usize,
+    words: Option<(WordsIter<'s>, usize)>,
+}
+
+impl<'s> Tokenizer<'s> {
+    fn new(text: &'s str, lang: Option<Lang>) -> Self {
+        Self {
+            lang,
+            regex_matches: SPECIAL_PATTERNS.captures_iter(text).peekable(),
+            text,
+            regex_cursor: 0,
+            words: None,
+        }
+    }
+}
+
+fn tokenize<'s>(text: &'s str, lang: Option<Lang>) -> Box<dyn Iterator<Item = &'s str> + 's> {
+    match lang {
+        #[cfg(feature = "tokenizer-chinese")]
+        Some(Lang::Cmn) => Box::from(TOKENIZER_JIEBA.cut(text, false).into_iter()),
+        #[cfg(feature = "tokenizer-japanese")]
+        Some(Lang::Jpn) => match TOKENIZER_LINDERA.tokenize(text) {
+            Ok(tokens) => Box::from(tokens.into_iter()),
+            Err(err) => {
+                tracing::warn!("unable to tokenize japanese, falling back: {}", err);
+
+                Box::from(text.unicode_words())
+            }
+        },
+        _ => Box::from(text.unicode_words()),
+    }
+}
+
+impl<'s> Iterator for Tokenizer<'s> {
+    type Item = Token<'s>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // If we were walking words, continue.
+        if let Some((words, end)) = self.words.as_mut() {
+            match words.next() {
+                Some(w) => return Some(Token::Word(w)),
+                None => {
+                    self.regex_cursor = *end;
+                    self.words = None;
+                }
+            }
+        }
+
+        // Check where the next special chunk is located.
+        match self.regex_matches.peek() {
+            Some(captures) => {
+                let m = captures.get_match();
+                let start = m.start();
+                let end = m.end();
+
+                // Up until that special chunk, tokenize normally.
+                if start > self.regex_cursor {
+                    let gap = &self.text[self.regex_cursor..start];
+                    let mut words = tokenize(gap, self.lang);
+
+                    if let Some(w) = words.next() {
+                        self.words = Some((words, end));
+                        return Some(Token::Word(w));
+                    }
+                }
+
+                // Once all normal words have been visited, yield the special
+                // chunk.
+                self.regex_cursor = end;
+                let next = Some(Token::special(captures));
+
+                // Advance the iterator now that we’ve visited all previous
+                // tokens.
+                self.regex_matches.next();
+
+                next
+            }
+            None => {
+                // When there are no more special chunks, finish by tokenizing
+                // normally.
+                let gap = &self.text[self.regex_cursor..];
+                let mut words = tokenize(gap, self.lang);
+
+                if let Some(w) = words.next() {
+                    self.words = Some((words, self.text.len()));
+                    return Some(Token::Word(w));
+                }
+
+                None
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Token<'s> {
+    /// Any word, for which fuzzy matching can be applied.
+    Word(&'s str),
+
+    /// A special token, like an email address, which should not be fuzzy
+    /// matched.
+    Special {
+        raw: &'s str,
+        normalized: Cow<'s, str>,
+    },
+}
+
+impl<'s> Token<'s> {
+    fn special(captures: &regex::Captures<'s>) -> Self {
+        let (raw, normalized) = if let Some(m) = captures.name("email") {
+            (m.as_str(), Cow::Borrowed(m.as_str()))
+        } else if let Some(m) = captures.name("username") {
+            (m.as_str(), Cow::Borrowed(m.as_str()))
+        } else if let Some(m) = captures.name("url") {
+            (m.as_str(), Cow::Borrowed(m.as_str()))
+        } else if let Some(m) = captures.name("ipv4") {
+            (m.as_str(), Cow::Borrowed(m.as_str()))
+        } else if let Some(m) = captures.name("phone") {
+            let raw = m.as_str();
+            let normalized: String = raw
+                .chars()
+                .filter(|c| c.is_ascii_digit() || *c == '+')
+                .collect();
+            (raw, Cow::Owned(normalized))
+        } else if let Some(m) = captures.name("domain") {
+            (m.as_str(), Cow::Borrowed(m.as_str()))
+        } else if let Some(m) = captures.name("id") {
+            (m.as_str(), Cow::Borrowed(m.as_str()))
+        } else {
+            unreachable!("One name always matches")
+        };
+
+        Self::Special { raw, normalized }
+    }
+}
+
+#[derive(PartialEq, Eq)]
+pub enum NormalizedToken {
+    /// Any word, for which fuzzy matching can be applied.
+    Word(String),
+
+    /// A special token, like an email address, which should not be fuzzy
+    /// matched.
+    Special(String),
+}
+
+impl std::fmt::Debug for NormalizedToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Word(str) => std::fmt::Debug::fmt(str, f),
+            Self::Special(str) => f.debug_tuple("Special").field(str).finish(),
+        }
+    }
+}
+
+impl std::ops::Deref for NormalizedToken {
+    type Target = String;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Word(str) => str,
+            Self::Special(str) => str,
+        }
+    }
+}
+
+impl NormalizedToken {
+    pub fn is_special(&self) -> bool {
+        matches!(self, Self::Special(_))
+    }
+
+    pub fn into_inner(self) -> String {
+        match self {
+            Self::Word(str) => str,
+            Self::Special(str) => str,
+        }
+    }
+}
+
+impl From<NormalizedToken> for String {
+    #[inline]
+    fn from(value: NormalizedToken) -> Self {
+        value.into_inner()
+    }
+}
 
 pub struct TokenLexer<'a> {
     mode: TokenLexerMode,
     locale: Option<Lang>,
     #[cfg(feature = "stemming")]
     snowball_algorithm: Option<snowball::Algorithm>,
-    words: TokenLexerWords<'a>,
+    tokenizer: Tokenizer<'a>,
     yields: HashSet<StoreTermHashed>,
     config: ConfigNormalization,
 }
@@ -37,14 +244,13 @@ pub enum TokenLexerMode {
     NormalizeOnly,
 }
 
-enum TokenLexerWords<'a> {
-    UAX29(UnicodeWords<'a>),
-
-    #[cfg(feature = "tokenizer-chinese")]
-    Jieba(IntoIter<&'a str>),
-
-    #[cfg(feature = "tokenizer-japanese")]
-    Lindera(IntoIter<lindera_tokenizer::token::Token<'a>>),
+impl TokenLexerMode {
+    pub fn should_cleanup(&self) -> bool {
+        match self {
+            Self::NormalizeAndCleanup => true,
+            Self::NormalizeOnly => false,
+        }
+    }
 }
 
 const TEXT_LANG_TRUNCATE_OVER_CHARS: usize = 200;
@@ -270,20 +476,7 @@ impl<'a> TokenLexer<'a> {
         config: ConfigNormalization,
     ) -> TokenLexer<'a> {
         // Tokenize words (depending on the locale)
-        let words = match locale {
-            #[cfg(feature = "tokenizer-chinese")]
-            Some(Lang::Cmn) => TokenLexerWords::Jieba(TOKENIZER_JIEBA.cut(text, false).into_iter()),
-            #[cfg(feature = "tokenizer-japanese")]
-            Some(Lang::Jpn) => match TOKENIZER_LINDERA.tokenize(text) {
-                Ok(tokens) => TokenLexerWords::Lindera(tokens.into_iter()),
-                Err(err) => {
-                    tracing::warn!("unable to tokenize japanese, falling back: {}", err);
-
-                    TokenLexerWords::UAX29(text.unicode_words())
-                }
-            },
-            _ => TokenLexerWords::UAX29(text.unicode_words()),
-        };
+        let tokenizer = Tokenizer::new(text, locale);
 
         // Identify Snowball algorithm now to avoid doing it for every token.
         #[cfg(feature = "stemming")]
@@ -297,7 +490,7 @@ impl<'a> TokenLexer<'a> {
             locale,
             #[cfg(feature = "stemming")]
             snowball_algorithm,
-            words,
+            tokenizer,
             yields: HashSet::new(),
             config,
         }
@@ -324,7 +517,7 @@ impl TokenLexerMode {
 }
 
 impl<'a> Iterator for TokenLexer<'a> {
-    type Item = (String, StoreTermHashed, usize);
+    type Item = (NormalizedToken, StoreTermHashed, usize);
 
     // Guarantees provided by the lexer on the output: \
     //   - Text is split per-word in a script-aware way \
@@ -333,124 +526,105 @@ impl<'a> Iterator for TokenLexer<'a> {
     //   - Gibberish words are removed (ie. words that may just be junk) \
     //   - Stop-words are removed
     fn next(&mut self) -> Option<Self::Item> {
-        for original_word in &mut self.words {
-            let original_len = original_word.len();
-
-            let word = {
-                #[cfg(debug_assertions)]
-                let mut current_word: String = original_word.to_owned();
-
-                // NOTE: We use an iterator to avoid unnecessary `String`
-                //   allocations.
-                let mut chars: Box<dyn Iterator<Item = char>> = Box::new(original_word.chars());
-
-                // Case folding
-                {
-                    use caseless::Caseless as _;
-
-                    chars = Box::new(chars.default_case_fold());
+        'tokenize: for token in self.tokenizer.by_ref() {
+            let (word, original_len) = match token {
+                Token::Word(original_word) => {
+                    let original_len = original_word.len();
 
                     #[cfg(debug_assertions)]
+                    let mut current_word: String = original_word.to_owned();
+
+                    // NOTE: We use an iterator to avoid unnecessary `String`
+                    //   allocations.
+                    let mut chars: Box<dyn Iterator<Item = char>> = Box::new(original_word.chars());
+
+                    // Case folding
                     {
-                        let new_word = chars.collect();
-                        tracing::trace!("Case folding: {current_word:?} -> {new_word:?}");
-                        current_word = new_word;
-                        chars = Box::new(current_word.chars());
-                    }
-                }
+                        use caseless::Caseless as _;
 
-                // Diacritic folding
-                if self.config.diacritic_folding_enabled {
-                    use unicode_normalization::UnicodeNormalization as _;
-                    use unicode_normalization::char::is_combining_mark;
-
-                    chars = Box::new(chars.nfd().filter(|c| !is_combining_mark(*c)));
-
-                    #[cfg(debug_assertions)]
-                    {
-                        let new_word = chars.collect();
-                        tracing::trace!("Diacritic folding: {current_word:?} -> {new_word:?}");
-                        current_word = new_word;
-                        chars = Box::new(current_word.chars());
-                    }
-                }
-
-                // NOTE: We need to collect here as stemming algorithms need to
-                //   lookup whole words.
-                #[allow(unused_mut)]
-                let mut new_word: String = chars.collect();
-
-                // Stemming
-                #[cfg(feature = "stemming")]
-                if self.config.stemming_enabled {
-                    if let Some(algo) = self.snowball_algorithm {
-                        new_word = String::from(snowball::stem(algo, &new_word));
-
-                        tracing::debug!(
-                            "lexer stemmed word {original_word:?} into {new_word:?} \
-                            using Snowball algorithm {algo:?}"
-                        );
+                        chars = Box::new(chars.default_case_fold());
 
                         #[cfg(debug_assertions)]
                         {
-                            tracing::trace!("Stemming: {current_word:?} -> {new_word:?}");
-                            current_word = new_word.clone();
+                            let new_word = chars.collect();
+                            tracing::trace!("Case folding: {current_word:?} -> {new_word:?}");
+                            current_word = new_word;
+                            chars = Box::new(current_word.chars());
                         }
                     }
-                }
 
-                new_word
+                    // Diacritic folding
+                    if self.config.diacritic_folding_enabled {
+                        use unicode_normalization::UnicodeNormalization as _;
+                        use unicode_normalization::char::is_combining_mark;
+
+                        chars = Box::new(chars.nfd().filter(|c| !is_combining_mark(*c)));
+
+                        #[cfg(debug_assertions)]
+                        {
+                            let new_word = chars.collect();
+                            tracing::trace!("Diacritic folding: {current_word:?} -> {new_word:?}");
+                            current_word = new_word;
+                            chars = Box::new(current_word.chars());
+                        }
+                    }
+
+                    // NOTE: We need to collect here as stemming algorithms need to
+                    //   lookup whole words.
+                    #[allow(unused_mut)]
+                    let mut new_word: String = chars.collect();
+
+                    // Stemming
+                    #[cfg(feature = "stemming")]
+                    if self.config.stemming_enabled {
+                        if let Some(algo) = self.snowball_algorithm {
+                            new_word = String::from(snowball::stem(algo, &new_word));
+
+                            tracing::debug!(
+                                "lexer stemmed word {original_word:?} into {new_word:?} using Snowball algorithm {algo:?}"
+                            );
+
+                            #[cfg(debug_assertions)]
+                            {
+                                tracing::trace!("Stemming: {current_word:?} -> {new_word:?}");
+                                current_word = new_word.clone();
+                            }
+                        }
+                    }
+
+                    (NormalizedToken::Word(new_word), original_len)
+                }
+                Token::Special { normalized, .. } => {
+                    let len = normalized.len();
+                    (NormalizedToken::Special(normalized.into_owned()), len)
+                }
             };
 
             // Check if normalized word is a stop-word? (if should normalize and cleanup)
-            if self.mode == TokenLexerMode::NormalizeOnly || !LexerStopWord::is(&word, self.locale)
-            {
-                // Hash the term (this is used by all iterator consumers, as well as internally \
-                //   in the iterator to keep track of already-yielded words in a space-optimized \
-                //   manner, ie. by using 32-bit unsigned integer hashes)
-                let term_hash = StoreTermHash::from(&word);
-
-                // Check if word was not already yielded? (we return unique words)
-                if !self.yields.contains(&term_hash) {
-                    tracing::debug!("lexer yielded word: {}", word);
-
-                    self.yields.insert(term_hash);
-
-                    return Some((word, term_hash, original_len));
-                } else {
-                    tracing::debug!(
-                        "lexer did not yield word: {} because: word already yielded",
-                        word
-                    );
-                }
-            } else {
-                tracing::debug!(
-                    "lexer did not yield word: {} because: word is a stop-word",
-                    word
-                );
+            if self.mode.should_cleanup() && LexerStopWord::is(&word, self.locale) {
+                tracing::debug!("lexer did not yield word {word:?}: word is a stop-word");
+                continue 'tokenize;
             }
+
+            // Hash the term (this is used by all iterator consumers, as well as internally \
+            //   in the iterator to keep track of already-yielded words in a space-optimized \
+            //   manner, ie. by using 32-bit unsigned integer hashes)
+            let term_hash = StoreTermHash::from(&word);
+
+            // Check if word was not already yielded? (we return unique words)
+            if self.yields.contains(&term_hash) {
+                tracing::debug!("lexer did not yield word {word:?}: word already yielded");
+                continue 'tokenize;
+            }
+
+            tracing::debug!("lexer yielded word: {word:?}");
+
+            self.yields.insert(term_hash);
+
+            return Some((word, term_hash, original_len));
         }
 
         None
-    }
-}
-
-impl<'a> Iterator for TokenLexerWords<'a> {
-    type Item = &'a str;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            TokenLexerWords::UAX29(token) => token.next(),
-
-            #[cfg(feature = "tokenizer-chinese")]
-            TokenLexerWords::Jieba(token) => token.next(),
-
-            #[cfg(feature = "tokenizer-japanese")]
-            TokenLexerWords::Lindera(token) => match token.next() {
-                Some(inner) => Some(inner.text),
-                None => None,
-            },
-        }
     }
 }
 
@@ -464,8 +638,203 @@ mod tests {
     };
 
     #[test]
+    fn test_tokenizer() {
+        fn test(sentence: &str, expected: Vec<Token>) {
+            let tokens = Tokenizer::new(sentence, Some(Lang::Eng))
+                // .inspect(|t| eprintln!("{t:?}"))
+                .take(256) // Breaks potential infinite loop.
+                .collect::<Vec<_>>();
+
+            assert_eq!(tokens, expected, "{sentence:?}");
+        }
+
+        // Email address.
+        test(
+            "Contact jane.doe@example.org, alice@example.org or bob+foo@example.org for support.",
+            vec![
+                Token::Word("Contact"),
+                Token::Special {
+                    raw: "jane.doe@example.org",
+                    normalized: Cow::Borrowed("jane.doe@example.org"),
+                },
+                Token::Special {
+                    raw: "alice@example.org",
+                    normalized: Cow::Borrowed("alice@example.org"),
+                },
+                Token::Word("or"),
+                Token::Special {
+                    raw: "bob+foo@example.org",
+                    normalized: Cow::Borrowed("bob+foo@example.org"),
+                },
+                Token::Word("for"),
+                Token::Word("support"),
+            ],
+        );
+
+        // Phone number like.
+        test(
+            "You can also call me at 555-123-4567 or +33 6 12 34 56 78 (06.12.34.56.78 / 06 12 34 56 78).",
+            vec![
+                Token::Word("You"),
+                Token::Word("can"),
+                Token::Word("also"),
+                Token::Word("call"),
+                Token::Word("me"),
+                Token::Word("at"),
+                Token::Special {
+                    raw: "555-123-4567",
+                    normalized: Cow::Borrowed("5551234567"),
+                },
+                Token::Word("or"),
+                Token::Special {
+                    raw: "+33 6 12 34 56 78",
+                    normalized: Cow::Borrowed("+33612345678"),
+                },
+                Token::Special {
+                    raw: "06.12.34.56.78",
+                    normalized: Cow::Borrowed("0612345678"),
+                },
+                Token::Special {
+                    raw: "06 12 34 56 78",
+                    normalized: Cow::Borrowed("0612345678"),
+                },
+            ],
+        );
+
+        // UUID like.
+        test(
+            "My account is 6db14cb4-b82e-4e49-8016-ef76c4290a2f.",
+            vec![
+                Token::Word("My"),
+                Token::Word("account"),
+                Token::Word("is"),
+                Token::Special {
+                    raw: "6db14cb4-b82e-4e49-8016-ef76c4290a2f",
+                    normalized: Cow::Borrowed("6db14cb4-b82e-4e49-8016-ef76c4290a2f"),
+                },
+            ],
+        );
+
+        // Hash like.
+        test(
+            "Check out b244423d417369795292e9f4530d0c0e6fa07625 and 927ff7701795282232dda41e023c7c6ba29d5a15 (927ff77).",
+            vec![
+                Token::Word("Check"),
+                Token::Word("out"),
+                Token::Special {
+                    raw: "b244423d417369795292e9f4530d0c0e6fa07625",
+                    normalized: Cow::Borrowed("b244423d417369795292e9f4530d0c0e6fa07625"),
+                },
+                Token::Word("and"),
+                Token::Special {
+                    raw: "927ff7701795282232dda41e023c7c6ba29d5a15",
+                    normalized: Cow::Borrowed("927ff7701795282232dda41e023c7c6ba29d5a15"),
+                },
+                Token::Special {
+                    raw: "927ff77",
+                    normalized: Cow::Borrowed("927ff77"),
+                },
+            ],
+        );
+
+        // URL.
+        test(
+            "Have a look at https://example.org/foo?id=123.",
+            vec![
+                Token::Word("Have"),
+                Token::Word("a"),
+                Token::Word("look"),
+                Token::Word("at"),
+                Token::Special {
+                    raw: "https://example.org/foo?id=123",
+                    normalized: Cow::Borrowed("https://example.org/foo?id=123"),
+                },
+            ],
+        );
+
+        // Domain name.
+        test(
+            "My domain name is example.org.",
+            vec![
+                Token::Word("My"),
+                Token::Word("domain"),
+                Token::Word("name"),
+                Token::Word("is"),
+                Token::Special {
+                    raw: "example.org",
+                    normalized: Cow::Borrowed("example.org"),
+                },
+            ],
+        );
+        test(
+            "I don’t put punctuation correctly .See?",
+            vec![
+                Token::Word("I"),
+                Token::Word("don’t"),
+                Token::Word("put"),
+                Token::Word("punctuation"),
+                Token::Word("correctly"),
+                Token::Word("See"),
+            ],
+        );
+
+        // IP addresses.
+        test(
+            "Try to ping 192.168.1.0, 0.0.0.0, 2606:4700::6812:1c68, or ::1.",
+            vec![
+                Token::Word("Try"),
+                Token::Word("to"),
+                Token::Word("ping"),
+                Token::Special {
+                    raw: "192.168.1.0",
+                    normalized: Cow::Borrowed("192.168.1.0"),
+                },
+                Token::Special {
+                    raw: "0.0.0.0",
+                    normalized: Cow::Borrowed("0.0.0.0"),
+                },
+                Token::Special {
+                    raw: "2606:4700::6812:1c68",
+                    normalized: Cow::Borrowed("2606:4700::6812:1c68"),
+                },
+                Token::Word("or"),
+                Token::Special {
+                    raw: "::1",
+                    normalized: Cow::Borrowed("::1"),
+                },
+            ],
+        );
+
+        // Username.
+        test(
+            "Contact @alice.",
+            vec![
+                Token::Word("Contact"),
+                Token::Special {
+                    raw: "@alice",
+                    normalized: Cow::Borrowed("@alice"),
+                },
+            ],
+        );
+
+        // Code like.
+        test(
+            "It’s tested in test_tokenizer.",
+            vec![
+                Token::Word("It’s"),
+                Token::Word("tested"),
+                Token::Word("in"),
+                Token::Special {
+                    raw: "test_tokenizer",
+                    normalized: Cow::Borrowed("test_tokenizer"),
+                },
+            ],
+        );
+    }
+
+    #[test]
     fn it_cleans_token_english() {
-        let mut token_cleaner = TokenLexerBuilder::from(
+        let token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup,
             None,
             "The quick brown fox jumps over the lazy dog!",
@@ -474,36 +843,21 @@ mod tests {
         .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Eng));
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("quick".to_string(), 4179131656, 5))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("brown".to_string(), 1268820067, 5))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("fox".to_string(), 667256324, 3))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("jumps".to_string(), 633865164, 5))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("lazy".to_string(), 4130433347, 4))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("dog".to_string(), 2044924251, 3))
-        );
-        assert_eq!(token_cleaner.next(), None);
+
+        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
+
+        assert_eq!(tokens.next(), Some("quick".to_owned()));
+        assert_eq!(tokens.next(), Some("brown".to_owned()));
+        assert_eq!(tokens.next(), Some("fox".to_owned()));
+        assert_eq!(tokens.next(), Some("jumps".to_owned()));
+        assert_eq!(tokens.next(), Some("lazy".to_owned()));
+        assert_eq!(tokens.next(), Some("dog".to_owned()));
+        assert_eq!(tokens.next(), None);
     }
 
     #[test]
     fn it_cleans_token_french() {
-        let mut token_cleaner = TokenLexerBuilder::from(
+        let token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup,
             None,
             "Le vif renard brun saute par dessus le chien paresseux.",
@@ -512,33 +866,21 @@ mod tests {
         .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Fra));
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("renard".to_string(), 1635186311, 6))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("brun".to_string(), 2763604928, 4))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("saute".to_string(), 1918158211, 5))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("chien".to_string(), 2177818351, 5))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("paresseux".to_string(), 1678693110, 9))
-        );
-        assert_eq!(token_cleaner.next(), None);
+
+        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
+
+        assert_eq!(tokens.next(), Some("renard".to_owned()));
+        assert_eq!(tokens.next(), Some("brun".to_owned()));
+        assert_eq!(tokens.next(), Some("saute".to_owned()));
+        assert_eq!(tokens.next(), Some("chien".to_owned()));
+        assert_eq!(tokens.next(), Some("paresseux".to_owned()));
+        assert_eq!(tokens.next(), None);
     }
 
     #[cfg(feature = "tokenizer-chinese")]
     #[test]
     fn it_cleans_token_chinese_jieba() {
-        let mut token_cleaner = TokenLexerBuilder::from(
+        let token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup,
             None,
             "我们中出了一个叛徒",
@@ -547,16 +889,19 @@ mod tests {
         .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Cmn));
-        assert_eq!(token_cleaner.next(), Some(("出".into(), 241978070, 3)));
-        assert_eq!(token_cleaner.next(), Some(("一个".into(), 2596274530, 6)));
-        assert_eq!(token_cleaner.next(), Some(("叛徒".into(), 3244183759, 6)));
-        assert_eq!(token_cleaner.next(), None);
+
+        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
+
+        assert_eq!(tokens.next(), Some("出".to_owned()));
+        assert_eq!(tokens.next(), Some("一个".to_owned()));
+        assert_eq!(tokens.next(), Some("叛徒".to_owned()));
+        assert_eq!(tokens.next(), None);
     }
 
     #[cfg(not(feature = "tokenizer-chinese"))]
     #[test]
     fn it_cleans_token_chinese_naive() {
-        let mut token_cleaner = TokenLexerBuilder::from(
+        let token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup,
             None,
             "快狐跨懒狗快狐跨懒狗",
@@ -565,24 +910,15 @@ mod tests {
         .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Cmn));
-        assert_eq!(token_cleaner.next(), Some(("快".to_string(), 126546256, 3)));
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("狐".to_string(), 2879689662, 3))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("跨".to_string(), 2913342670, 3))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("懒".to_string(), 3199935961, 3))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("狗".to_string(), 3360772096, 3))
-        );
-        assert_eq!(token_cleaner.next(), None);
+
+        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
+
+        assert_eq!(tokens.next(), Some("快".to_owned()));
+        assert_eq!(tokens.next(), Some("狐".to_owned()));
+        assert_eq!(tokens.next(), Some("跨".to_owned()));
+        assert_eq!(tokens.next(), Some("懒".to_owned()));
+        assert_eq!(tokens.next(), Some("狗".to_owned()));
+        assert_eq!(tokens.next(), None);
     }
 
     #[cfg(feature = "tokenizer-japanese")]
@@ -597,31 +933,16 @@ mod tests {
         .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Jpn));
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("関西".to_string(), 1283572620, 6))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("国際".to_string(), 2132457693, 6))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("空港".to_string(), 865668138, 6))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("限定".to_string(), 3708465176, 6))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("トート".to_string(), 881444746, 9))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("バッグ".to_string(), 3515727814, 9))
-        );
-        assert_eq!(token_cleaner.next(), None);
+
+        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
+
+        assert_eq!(tokens.next(), Some("関西".to_owned()));
+        assert_eq!(tokens.next(), Some("国際".to_owned()));
+        assert_eq!(tokens.next(), Some("空港".to_owned()));
+        assert_eq!(tokens.next(), Some("限定".to_owned()));
+        assert_eq!(tokens.next(), Some("トート".to_owned()));
+        assert_eq!(tokens.next(), Some("バッグ".to_owned()));
+        assert_eq!(tokens.next(), None);
     }
 
     #[cfg(feature = "tokenizer-japanese")]
@@ -660,27 +981,15 @@ mod tests {
         .unwrap();
 
         assert_eq!(token_cleaner.locale, Some(Lang::Jpn));
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("𠮷".to_string(), 2866455824, 4))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("野家".to_string(), 1324395598, 6))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("ヱビス".to_string(), 1696836208, 9))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("ビール".to_string(), 3421909800, 9))
-        );
-        assert_eq!(
-            token_cleaner.next(),
-            Some(("飲ん".to_string(), 3196735184, 6))
-        );
-        assert_eq!(token_cleaner.next(), None);
+
+        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
+
+        assert_eq!(tokens.next(), Some("𠮷".to_owned()));
+        assert_eq!(tokens.next(), Some("野家".to_owned()));
+        assert_eq!(tokens.next(), Some("ヱビス".to_owned()));
+        assert_eq!(tokens.next(), Some("ビール".to_owned()));
+        assert_eq!(tokens.next(), Some("飲ん".to_owned()));
+        assert_eq!(tokens.next(), None);
     }
 
     #[test]
@@ -694,19 +1003,20 @@ mod tests {
         .unwrap();
 
         assert_eq!(token_cleaner.locale, None);
+
         assert_eq!(token_cleaner.next(), None);
     }
 
     #[test]
     fn it_cleans_token_lang_hinted() {
-        let mut token_cleaner_right = TokenLexerBuilder::from(
+        let token_cleaner_right = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup,
             Some(Lang::Eng),
             "This will be cleaned properly, as English was hinted rightfully so.",
             NORMALIZATION_CONFIG,
         )
         .unwrap();
-        let mut token_cleaner_wrong = TokenLexerBuilder::from(
+        let token_cleaner_wrong = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup,
             Some(Lang::Fra),
             "This will not be cleaned properly, as French was hinted but this is English.",
@@ -717,14 +1027,11 @@ mod tests {
         assert_eq!(token_cleaner_right.locale, Some(Lang::Eng));
         assert_eq!(token_cleaner_wrong.locale, Some(Lang::Fra));
 
-        assert_eq!(
-            token_cleaner_right.next(),
-            Some(("cleaned".to_string(), 3550382624, 7))
-        );
-        assert_eq!(
-            token_cleaner_wrong.next(),
-            Some(("this".to_string(), 493303710, 4))
-        );
+        let mut tokens_right = token_cleaner_right.map(|(token, _, _)| token.into_inner());
+        let mut tokens_wrong = token_cleaner_wrong.map(|(token, _, _)| token.into_inner());
+
+        assert_eq!(tokens_right.next(), Some("cleaned".to_owned()));
+        assert_eq!(tokens_wrong.next(), Some("this".to_owned()));
     }
 
     #[test]
@@ -740,10 +1047,10 @@ mod tests {
         assert_eq!(
             TokenLexerBuilder::detect_lang(
                 r#"Running an electrical current through water splits it into oxygen and hydrogen,
-            the latter of which can be used as a reliable, zero-emission fuel source. In the past,
-            the process of purifying water beforehand was too energy intensive for this process to
-            be useful — but now scientists have figured out how to skip the process altogether and
-            convert seawater into usable hydrogen"#
+                the latter of which can be used as a reliable, zero-emission fuel source. In the past,
+                the process of purifying water beforehand was too energy intensive for this process to
+                be useful — but now scientists have figured out how to skip the process altogether and
+                convert seawater into usable hydrogen"#
             ),
             Some(Lang::Eng)
         );

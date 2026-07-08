@@ -51,7 +51,9 @@ impl super::Executor {
                                 iid_terms_hashed_vec
                             );
 
-                            let pop_terms: Vec<(String, StoreTermHashed, usize)> = lexer.collect();
+                            let pop_terms: Vec<(String, StoreTermHashed)> = lexer
+                                .map(|(token, hash, _len)| (token.into_inner(), hash))
+                                .collect();
 
                             let iid_terms_hashed: LinkedHashSet<StoreTermHashed> =
                                 LinkedHashSet::from_iter(iid_terms_hashed_vec.iter().copied());
@@ -86,7 +88,7 @@ impl super::Executor {
                                     tracing::info!("nuke only certain terms for pop executor");
 
                                     // Nuke IID in Term-to-IIDs list
-                                    for (pop_term, pop_term_hashed, _) in &pop_terms {
+                                    for (pop_term, pop_term_hashed) in &pop_terms {
                                         // Check that term is linked to IID (and should be removed)
                                         if iid_terms_hashed.contains(pop_term_hashed) {
                                             if let Ok(Some(mut pop_term_iids)) =

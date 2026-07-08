@@ -26,10 +26,10 @@ impl super::Executor {
             if let Ok(fst_store) = self.fst_pool.acquire(collection, bucket) {
                 let fst_action = StoreFSTActionBuilder::access(fst_store);
 
-                if let (Some(word), None) = (lexer.next(), lexer.next()) {
-                    tracing::debug!("running suggest on word: {}", word.0);
+                if let (Some((token, _hash, len)), None) = (lexer.next(), lexer.next()) {
+                    tracing::debug!("running suggest on word: {token:?}");
 
-                    return match fst_action.suggest_words(&word.0, word.2, limit as usize, None) {
+                    return match fst_action.suggest_words(&token, len, limit as usize, None) {
                         Some(words) => Ok(Some(words.map(|(k, _)| k))),
                         None => Ok(None),
                     };
