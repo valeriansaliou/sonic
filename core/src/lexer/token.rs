@@ -69,7 +69,12 @@ impl<'s> Tokenizer<'s> {
 fn tokenize<'s>(text: &'s str, lang: Option<Lang>) -> Box<dyn Iterator<Item = &'s str> + 's> {
     match lang {
         #[cfg(feature = "tokenizer-chinese")]
-        Some(Lang::Cmn) => Box::from(TOKENIZER_JIEBA.cut(text, false).into_iter()),
+        Some(Lang::Cmn) => Box::from(
+            TOKENIZER_JIEBA
+                .cut(text, false)
+                .into_iter()
+                .map(|token| token.word),
+        ),
         #[cfg(feature = "tokenizer-japanese")]
         Some(Lang::Jpn) => match TOKENIZER_LINDERA.tokenize(text) {
             Ok(tokens) => Box::from(tokens.into_iter()),

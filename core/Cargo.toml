@@ -36,7 +36,7 @@ indexmap = { version = "2", default-features = false, features = ["std"] }
 linked_hash_set = { version = "0.1", default-features = false }
 whatlang = { version = "0.18", default-features = false }
 regex = { version = "1", default-features = false }
-jieba-rs = { optional = true, version = "0.9", default-features = false, features = ["default-dict"] }
+jieba-rs = { optional = true, version = "0.10", default-features = false, features = ["default-dict"] }
 lindera-core = { optional = true, version = "0.31", default-features = false }
 lindera-dictionary = { optional = true, version = "0.31", default-features = false, features = ["unidic"] }
 lindera-tokenizer = { optional = true, version = "0.31", default-features = false, features = ["unidic"] }
