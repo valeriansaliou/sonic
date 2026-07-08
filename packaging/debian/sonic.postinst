@@ -1,0 +1,14 @@
+#!/bin/sh
+
+set -e
+
+case "$1" in
+    configure)
+        install -d -o sonic -g sonic -m 0750 /var/lib/sonic/
+        install -d -o sonic -g sonic -m 0750 /var/lib/sonic/store/
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

@@ -1,2 +1,0 @@
-d /var/lib/sonic 0750 sonic sonic -
-d /var/lib/sonic/store 0750 sonic sonic -
