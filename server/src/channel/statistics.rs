@@ -5,19 +5,18 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use std::ops::Deref;
-use std::sync::RwLock;
+use std::sync::{LazyLock, RwLock};
 use std::time::Instant;
 
 use sonic::store::fst::StoreFSTPool;
 use sonic::store::kv::StoreKVPool;
 
-lazy_static! {
-    static ref START_TIME: Instant = Instant::now();
-    pub static ref CLIENTS_CONNECTED: RwLock<u32> = RwLock::new(0);
-    pub static ref COMMANDS_TOTAL: RwLock<u64> = RwLock::new(0);
-    pub static ref COMMAND_LATENCY_BEST: RwLock<u32> = RwLock::new(0);
-    pub static ref COMMAND_LATENCY_WORST: RwLock<u32> = RwLock::new(0);
-}
+static START_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
+
+pub static CLIENTS_CONNECTED: RwLock<u32> = RwLock::new(0);
+pub static COMMANDS_TOTAL: RwLock<u64> = RwLock::new(0);
+pub static COMMAND_LATENCY_BEST: RwLock<u32> = RwLock::new(0);
+pub static COMMAND_LATENCY_WORST: RwLock<u32> = RwLock::new(0);
 
 #[derive(Default)]
 pub struct ChannelStatistics {
@@ -33,13 +32,7 @@ pub struct ChannelStatistics {
 
 pub fn ensure_states() {
     // Ensure all statics are initialized (a `deref` is enough to lazily initialize them)
-    let (_, _, _, _, _) = (
-        START_TIME.deref(),
-        CLIENTS_CONNECTED.deref(),
-        COMMANDS_TOTAL.deref(),
-        COMMAND_LATENCY_BEST.deref(),
-        COMMAND_LATENCY_WORST.deref(),
-    );
+    let _ = START_TIME.deref();
 }
 
 impl ChannelStatistics {

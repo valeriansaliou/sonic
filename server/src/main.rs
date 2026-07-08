@@ -23,9 +23,6 @@
     clippy::needless_borrows_for_generic_args, // Style preference.
 )]
 
-#[macro_use]
-extern crate lazy_static;
-
 mod channel;
 mod config;
 mod logger;
@@ -33,7 +30,7 @@ mod tasker;
 
 use std::ops::Deref;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::thread;
 use std::time::Duration;
 
@@ -65,9 +62,7 @@ pub static THREAD_NAME_CHANNEL_MASTER: &str = "sonic-channel-master";
 pub static THREAD_NAME_CHANNEL_CLIENT: &str = "sonic-channel-client";
 pub static THREAD_NAME_TASKER: &str = "sonic-tasker";
 
-lazy_static! {
-    static ref APP_ARGS: AppArgs = make_app_args();
-}
+static APP_ARGS: LazyLock<AppArgs> = LazyLock::new(make_app_args);
 
 const DEFAULT_CONFIG_FILE_PATH: &str = "./config.cfg";
 

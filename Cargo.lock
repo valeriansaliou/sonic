@@ -2070,7 +2070,6 @@ dependencies = [
  "config",
  "criterion",
  "hashbrown 0.17.1",
- "lazy_static",
  "nix",
  "parquet",
  "rand",

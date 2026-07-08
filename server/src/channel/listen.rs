@@ -29,9 +29,7 @@ pub struct ChannelListen {
     fst_pool: StoreFSTPool,
 }
 
-lazy_static! {
-    pub static ref CHANNEL_AVAILABLE: RwLock<bool> = RwLock::new(true);
-}
+pub static CHANNEL_AVAILABLE: RwLock<bool> = RwLock::new(true);
 
 impl ChannelListenBuilder {
     pub fn build(&self) -> ChannelListen {
