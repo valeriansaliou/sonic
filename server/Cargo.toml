@@ -18,14 +18,14 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-sonic-core = { version = "=0.1.2", path = "../core" }
-tracing = "0.1"
-tracing-subscriber = "0.3"
-clap = { version = "4", features = ["std", "cargo"] }
-lazy_static = "1"
-serde = { version = "1", features = ["derive", "rc"] }
-rand = "0.10"
-hashbrown = "0.17"
+sonic-core = { version = "=0.1.2", path = "../core", default-features = false, features = ["stemming"] }
+tracing = { version = "0.1", default-features = false }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "fmt"] }
+clap = { version = "4", default-features = false, features = ["std", "cargo"] }
+lazy_static = { version = "1", default-features = false }
+serde = { version = "1", default-features = false, features = ["derive", "rc"] }
+rand = { version = "0.10", default-features = false, features = ["std", "thread_rng"] }
+hashbrown = { version = "0.17", default-features = false, features = ["default-hasher", "allocator-api2", "inline-more"] }
 config = { version = "0.15", default-features = false, features = ["toml"] }
 
 [dev-dependencies]
@@ -36,11 +36,11 @@ parquet = { version = "=59.0.0", default-features = false, features = ["arrow", 
 sonic_client = { version = "=0.3.0", path = "../client", features = ["sync", "tracing"] }
 
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31", features = ["signal"] }
-tikv-jemallocator = { version = "0.6", optional = true }
+nix = { version = "0.31", default-features = false, features = ["signal"] }
+tikv-jemallocator = { optional = true, version = "0.6", default-features = false, features = ["background_threads_runtime_support"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_Console"] }
+windows-sys = { version = "0.61", default-features = false, features = ["Win32_System_Console"] }
 
 [features]
 default = ["allocator-jemalloc", "tokenizer-chinese"]
