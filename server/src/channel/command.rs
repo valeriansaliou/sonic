@@ -426,6 +426,7 @@ impl ChannelCommandSearch {
                         query_offset,
                         query_lang,
                         *ctx.normalization_config,
+                        *ctx.tokenization_config,
                     )
                     .map_err(|()| ChannelCommandError::QueryError)?;
 
@@ -500,6 +501,7 @@ impl ChannelCommandSearch {
                     let query = Query::suggest(
                         &event_id, collection, bucket, &text, suggest_limit,
                         *ctx.normalization_config,
+                        *ctx.tokenization_config,
                     )
                     .map_err(|()| ChannelCommandError::QueryError)?;
 
@@ -745,6 +747,7 @@ impl ChannelCommandIngest {
                     let query = Query::push(
                         collection, bucket, object, &text, push_lang,
                         *ctx.normalization_config,
+                        *ctx.tokenization_config,
                     )
                     .map_err(|()| ChannelCommandError::QueryError)?;
 
@@ -778,9 +781,15 @@ impl ChannelCommandIngest {
                 );
                 tracing::debug!("ingest pop has text: {}", text);
 
-                let query =
-                    Query::pop(collection, bucket, object, &text, *ctx.normalization_config)
-                        .map_err(|()| ChannelCommandError::QueryError)?;
+                let query = Query::pop(
+                    collection,
+                    bucket,
+                    object,
+                    &text,
+                    *ctx.normalization_config,
+                    *ctx.tokenization_config,
+                )
+                .map_err(|()| ChannelCommandError::QueryError)?;
 
                 // Make 'pop' query
                 ChannelCommandBase::commit_result_operation(query, ctx.executor)

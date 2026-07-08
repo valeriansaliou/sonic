@@ -8,7 +8,7 @@
 use indexmap::IndexMap;
 use std::collections::BTreeMap;
 
-use crate::lexer::TokenLexer;
+use crate::lexer::{NormalizedToken, TokenLexer};
 use crate::query::{QueryMatchScore, QuerySearchID, QuerySearchLimit, QuerySearchOffset};
 use crate::store::StoreItem;
 use crate::store::fst::{StoreFSTActionBuilder, typo_factor};
@@ -60,8 +60,8 @@ impl super::Executor {
 
             // Collect all terms so we know the count right ahead.
             // PERF: This helps allocating the correct amounts of memory.
-            let terms: Vec<(String, StoreTermHashed, usize)> = lexer.collect();
-            let term_count = terms.len();
+            let tokens: Vec<(NormalizedToken, StoreTermHashed, usize)> = lexer.collect();
+            let term_count = tokens.len();
 
             // Store scores for each found IID. Results will then be sorted by
             // score before being returned. Scores are basically the sum of
@@ -75,13 +75,13 @@ impl super::Executor {
                 IndexMap::with_capacity(24usize.min(usize::from(limit)));
 
             // Look for exact matches.
-            'matches: for (idx, (term, term_hash, _)) in terms.iter().enumerate() {
+            'matches: for (idx, (token, term_hash, _)) in tokens.iter().enumerate() {
                 let iids = kv_action
                     .get_term_to_iids(*term_hash)
                     .unwrap_or(None)
                     .unwrap_or_default();
 
-                tracing::debug!("got exact search executor iids: {iids:?} for term: {term:?}");
+                tracing::debug!("got exact search executor iids: {iids:?} for term: {token:?}");
 
                 for iid in iids.into_iter() {
                     // Assign a score of `0` as those are exact matches.
@@ -91,7 +91,7 @@ impl super::Executor {
                         // Higher limit now reached?
                         // Stop acquiring new suggested IIDs now.
                         if scoring_matrix.len() >= higher_limit {
-                            tracing::trace!(?term, "got enough completed results for term");
+                            tracing::trace!(?token, "got enough completed results for term");
 
                             break 'matches;
                         }
@@ -110,26 +110,16 @@ impl super::Executor {
                     scoring_matrix.len(),
                 );
 
-                'terms: for (idx, (term, _, original_len)) in terms.iter().enumerate() {
-                    // Skip term if it’s an ID (we want exact matches only).
-                    // FIXME: We’d like to enable prefix matching for IDs, but
-                    //   the way the tokenizer works causes false positives.
-                    if is_considered_id(&term) {
-                        tracing::debug!(
-                            "skipping prefix search for {term:?}: term is considered an ID"
-                        );
-                        continue 'terms;
-                    };
-
-                    let Some(suggestions) = fst_action.lookup_begins(term, *original_len) else {
-                        tracing::trace!("did not get any completed word for term {term:?}");
+                'terms: for (idx, (token, _, original_len)) in tokens.iter().enumerate() {
+                    let Some(suggestions) = fst_action.lookup_begins(token, *original_len) else {
+                        tracing::trace!("did not get any completed word for term {token:?}");
                         continue 'terms;
                     };
 
                     merge_suggestions(
                         suggestions,
                         &mut scoring_matrix,
-                        term,
+                        token,
                         idx,
                         term_count,
                         &kv_action,
@@ -149,13 +139,14 @@ impl super::Executor {
                     scoring_matrix.len(),
                 );
 
-                'terms: for (idx, (term, _, original_word_len)) in terms.iter().enumerate() {
-                    // Skip term if it’s an ID (we want exact matches only).
-                    if is_considered_id(&term) {
-                        tracing::debug!(
-                            "skipping fuzzy matching for {term:?}: term is considered an ID"
-                        );
-                        continue 'terms;
+                'terms: for (idx, (token, _, original_word_len)) in tokens.iter().enumerate() {
+                    let term = match token {
+                        NormalizedToken::Word(term) => term,
+                        // Skip term if it’s special (we want exact matches only).
+                        NormalizedToken::Special(term) => {
+                            tracing::debug!("skipping fuzzy search for {term:?}: term is special");
+                            continue 'terms;
+                        }
                     };
 
                     let max_typo_factor = typo_factor(*original_word_len);
@@ -189,14 +180,15 @@ impl super::Executor {
             #[cfg(debug_assertions)]
             tracing::debug!(?scoring_matrix);
 
-            // Switch to implicit `AND` if query contains an ID.
-            // NOTE: When a user queries for an ID (e.g. UUID), they expect only
-            //   exact matches to be returned. If one term is considered an ID,
-            //   we drop all results missing at least one term. It’s not the
-            //   most efficient (compared to not storing the result in the first
-            //   place) but it’s an edge case and the cost is negligible.
-            let one_term_is_an_id = terms.iter().any(|(term, _, _)| is_considered_id(term));
-            if one_term_is_an_id {
+            // Switch to implicit `AND` if query contains a special token.
+            // NOTE: When a user queries for a special token (e.g. UUID),
+            //   they expect only exact matches to be returned. If one term is
+            //   considered special, we drop all results missing at least one
+            //   term. It’s not the most efficient (compared to not storing the
+            //   result in the first place) but it’s an edge case and the cost
+            //   is negligible.
+            let one_term_is_special = tokens.iter().any(|(token, _, _)| token.is_special());
+            if one_term_is_special {
                 let mut to_remove = Vec::<StoreObjectIID>::new();
 
                 for (&iid, scores) in scoring_matrix.iter() {
@@ -245,65 +237,6 @@ impl super::Executor {
 
         Err(())
     }
-}
-
-fn is_considered_id(s: &str) -> bool {
-    s.chars().any(|c| c.is_ascii_digit() || c == '@')
-        || s.chars()
-            // Skip first char.
-            .skip(1)
-            // Skip last char.
-            .take(s.len().saturating_sub(2))
-            .any(is_non_prose_char)
-}
-
-fn is_non_prose_char(c: char) -> bool {
-    c == '.' || c == '_' || c == ':' || c == '\\' || c == '+' || c == '=' || c == '&'
-}
-
-/// Note that the tokenizer might split the tested strings in ways that make
-/// Sonic as a whole behave differently! This is just a simple unit test.
-#[cfg(test)]
-#[test]
-fn test_is_considered_id() {
-    // Sanity check.
-    assert!(!is_considered_id("Hello"));
-
-    // Phone number like.
-    assert!(is_considered_id("1234-567890-12"));
-    assert!(is_considered_id("0123456789"));
-
-    // UUID like.
-    assert!(is_considered_id("6db14cb4-b82e-4e49-8016-ef76c4290a2f"));
-
-    // Hash like.
-    assert!(is_considered_id("b244423d417369795292e9f4530d0c0e6fa07625"));
-    assert!(is_considered_id("b244423"));
-
-    // Code like.
-    assert!(is_considered_id("is_considered_id"));
-
-    // Domain name.
-    assert!(is_considered_id("example.org"));
-    assert!(!is_considered_id("endofsentence."));
-    assert!(!is_considered_id(".startofsentence"));
-
-    // URL.
-    assert!(is_considered_id("https://example.org/foo?id=123"));
-
-    // Email address.
-    assert!(is_considered_id("alice@example.org"));
-    assert!(is_considered_id("alice+foo@example.org"));
-
-    // IP addresses.
-    assert!(is_considered_id("192.168.1.0"));
-    assert!(is_considered_id("0.0.0.0"));
-    assert!(is_considered_id("2606:4700::6812:1c68"));
-    assert!(is_considered_id("::1"));
-    assert!(!is_considered_id("example:"));
-
-    // Username.
-    assert!(is_considered_id("@example"));
 }
 
 #[allow(clippy::too_many_arguments)] // We’ll refactor this someday, and it’ not public anyway.
