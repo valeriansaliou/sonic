@@ -24,7 +24,7 @@ tracing = "0.1"
 serde = { version = "1", features = ["derive", "rc"] }
 unicode-segmentation = "1"
 radix = "0.6"
-rocksdb = { version = "0.24", features = ["zstd"] }
+rocksdb = { version = "0.24", default-features = false, features = ["bindgen-runtime", "zstd"] }
 fst = "0.3"
 fst-levenshtein = "0.3"
 fst-regex = "0.3"
