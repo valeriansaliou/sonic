@@ -18,33 +18,33 @@ path = "src/lib.rs"
 doc = true
 
 [dependencies]
-unicode-normalization = "0.1"
-caseless = "0.2"
-tracing = "0.1"
-serde = { version = "1", features = ["derive", "rc"] }
-unicode-segmentation = "1"
-radix = "0.6"
+unicode-normalization = { version = "0.1", default-features = false }
+caseless = { version = "0.2", default-features = false }
+tracing = { version = "0.1", default-features = false }
+serde = { version = "1", default-features = false, features = ["derive", "rc"] }
+unicode-segmentation = { version = "1", default-features = false }
+radix = { version = "0.6", default-features = false }
 rocksdb = { version = "0.24", default-features = false, features = ["bindgen-runtime", "zstd"] }
-fst = "0.3"
-fst-levenshtein = "0.3"
-fst-regex = "0.3"
-regex-syntax = "0.8"
-twox-hash = "2"
-byteorder = "1"
-hashbrown = "0.17"
-indexmap = "2"
-linked_hash_set = "0.1"
-whatlang = "0.18"
-regex = "1"
-jieba-rs = { version = "0.9", optional = true }
-lindera-core = { version = "0.31", optional = true }
-lindera-dictionary = { version = "0.31", features = ["unidic"], optional = true }
-lindera-tokenizer = { version = "0.31", features = ["unidic"], optional = true }
-snowball = { package = "waken_snowball", version = "0.1", optional = true }
+fst = { version = "0.3", default-features = false }
+fst-levenshtein = { version = "0.3", default-features = false }
+fst-regex = { version = "0.3", default-features = false }
+regex-syntax = { version = "0.8", default-features = false }
+twox-hash = { version = "2", default-features = false, features = ["xxhash32"] }
+byteorder = { version = "1", default-features = false }
+hashbrown = { version = "0.17", default-features = false }
+indexmap = { version = "2", default-features = false, features = ["std"] }
+linked_hash_set = { version = "0.1", default-features = false }
+whatlang = { version = "0.18", default-features = false }
+regex = { version = "1", default-features = false }
+jieba-rs = { optional = true, version = "0.9", default-features = false, features = ["default-dict"] }
+lindera-core = { optional = true, version = "0.31", default-features = false }
+lindera-dictionary = { optional = true, version = "0.31", default-features = false, features = ["unidic"] }
+lindera-tokenizer = { optional = true, version = "0.31", default-features = false, features = ["unidic"] }
+snowball = { package = "waken_snowball", optional = true, version = "0.1", default-features = false }
 
 [dev-dependencies]
 config = { version = "0.15", default-features = false, features = ["toml"] }
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", default-features = false }
 
 [features]
 default = ["stemming", "tokenizer-chinese"]
