@@ -74,7 +74,7 @@ allow-build-scripts = [
     "serde_core@1.0.228",
     "serde_json@1.0.150",
     "snap@1.1.1",
-    "tikv-jemalloc-sys@0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7",
+    "tikv-jemalloc-sys@0.7.1+5.3.1-0-g81034ce1f1373e37dc865038e1bc8eeecf559ce8",
     "tiny-keccak@2.0.2",
     "wasm-bindgen-shared@0.2.126",
     "wasm-bindgen@0.2.126",
