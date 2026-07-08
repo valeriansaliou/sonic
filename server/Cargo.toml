@@ -37,7 +37,7 @@ sonic_client = { version = "=0.3.0", path = "../client", features = ["sync", "tr
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "=0.31.3", default-features = false, features = ["signal"] }
-tikv-jemallocator = { optional = true, version = "=0.6.1", default-features = false, features = ["background_threads_runtime_support"] }
+tikv-jemallocator = { optional = true, version = "=0.7.0", default-features = false, features = ["background_threads_runtime_support"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", default-features = false, features = ["Win32_System_Console"] }
