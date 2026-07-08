@@ -40,6 +40,9 @@ pub fn defaults_toml() -> String {
         diacritic_folding_enabled = true
         stemming_enabled = false
 
+        [tokenization]
+        detect_special_patterns = true
+
         [search]
         query_limit_default = 10
         query_limit_maximum = 100

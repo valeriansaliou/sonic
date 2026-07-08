@@ -58,6 +58,7 @@ macro_rules! exec {
                     exec!(internal_ lang $($lang)?),
                     $text,
                     $executor.app_conf.normalization,
+                    $executor.app_conf.tokenization,
                 )
                 .unwrap(),
             )
@@ -99,6 +100,7 @@ macro_rules! exec {
                     exec!(internal_ lang $($lang)?),
                     $term,
                     $executor.app_conf.normalization,
+                    $executor.app_conf.tokenization,
                 )
                 .unwrap(),
                 exec!(internal_ limit $($limit)?),

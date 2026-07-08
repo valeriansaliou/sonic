@@ -21,6 +21,10 @@ pub fn defaults_toml() -> &'static str {
     diacritic_folding_enabled = false
     stemming_enabled = false
 
+    [tokenization]
+    # TODO(major): Enable by default.
+    detect_special_patterns = false
+
     [search]
     query_limit_default = 10
     query_limit_maximum = 100

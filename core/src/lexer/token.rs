@@ -15,7 +15,7 @@ use regex::Regex;
 use unicode_segmentation::UnicodeSegmentation;
 use whatlang::Lang;
 
-use crate::config::ConfigNormalization;
+use crate::config::{ConfigNormalization, ConfigTokenization};
 use crate::query::QueryGenericLang;
 use crate::store::identifiers::{StoreTermHash, StoreTermHashed};
 
@@ -47,10 +47,18 @@ pub struct Tokenizer<'s> {
 }
 
 impl<'s> Tokenizer<'s> {
-    fn new(text: &'s str, lang: Option<Lang>) -> Self {
+    fn new(text: &'s str, lang: Option<Lang>, config: &ConfigTokenization) -> Self {
+        let regex_matches = if config.detect_special_patterns {
+            SPECIAL_PATTERNS.captures_iter(text).peekable()
+        } else {
+            // NOTE: It’s not truly an no-op but it is if we try matching a non-empty line.
+            static NOOP_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^$").unwrap());
+            NOOP_REGEX.captures_iter(" ").peekable()
+        };
+
         Self {
             lang,
-            regex_matches: SPECIAL_PATTERNS.captures_iter(text).peekable(),
+            regex_matches,
             text,
             regex_cursor: 0,
             words: None,
@@ -280,7 +288,8 @@ impl TokenLexerBuilder {
         mode: TokenLexerMode,
         lang: Option<Lang>,
         text: &str,
-        config: ConfigNormalization,
+        normalization_config: ConfigNormalization,
+        tokenization_config: ConfigTokenization,
     ) -> Result<TokenLexer<'_>, ()> {
         let locale = match lang {
             // If user provided a language, use it.
@@ -305,7 +314,7 @@ impl TokenLexerBuilder {
 
                 // If user asked not to cleanup but stemming is enabled, detect the language.
                 #[cfg(feature = "stemming")]
-                TokenLexerMode::NormalizeOnly if config.stemming_enabled => {
+                TokenLexerMode::NormalizeOnly if normalization_config.stemming_enabled => {
                     let locale = Self::detect_lang(text);
                     tracing::debug!("detected locale: {:?} from lexer text: {}", locale, text);
                     locale
@@ -321,7 +330,13 @@ impl TokenLexerBuilder {
         };
 
         // Build final token builder iterator
-        Ok(TokenLexer::new(mode, text, locale, config))
+        Ok(TokenLexer::new(
+            mode,
+            text,
+            locale,
+            normalization_config,
+            tokenization_config,
+        ))
     }
 
     fn detect_lang(text: &str) -> Option<Lang> {
@@ -473,10 +488,11 @@ impl<'a> TokenLexer<'a> {
         mode: TokenLexerMode,
         text: &'a str,
         locale: Option<Lang>,
-        config: ConfigNormalization,
+        normalization_config: ConfigNormalization,
+        tokenization_config: ConfigTokenization,
     ) -> TokenLexer<'a> {
         // Tokenize words (depending on the locale)
-        let tokenizer = Tokenizer::new(text, locale);
+        let tokenizer = Tokenizer::new(text, locale, &tokenization_config);
 
         // Identify Snowball algorithm now to avoid doing it for every token.
         #[cfg(feature = "stemming")]
@@ -492,7 +508,7 @@ impl<'a> TokenLexer<'a> {
             snowball_algorithm,
             tokenizer,
             yields: HashSet::new(),
-            config,
+            config: normalization_config,
         }
     }
 }
@@ -636,11 +652,14 @@ mod tests {
         diacritic_folding_enabled: false,
         stemming_enabled: false,
     };
+    const TOKENIZATION_CONFIG: ConfigTokenization = ConfigTokenization {
+        detect_special_patterns: true,
+    };
 
     #[test]
     fn test_tokenizer() {
         fn test(sentence: &str, expected: Vec<Token>) {
-            let tokens = Tokenizer::new(sentence, Some(Lang::Eng))
+            let tokens = Tokenizer::new(sentence, Some(Lang::Eng), &TOKENIZATION_CONFIG)
                 // .inspect(|t| eprintln!("{t:?}"))
                 .take(256) // Breaks potential infinite loop.
                 .collect::<Vec<_>>();
@@ -839,6 +858,7 @@ mod tests {
             None,
             "The quick brown fox jumps over the lazy dog!",
             NORMALIZATION_CONFIG,
+            TOKENIZATION_CONFIG,
         )
         .unwrap();
 
@@ -862,6 +882,7 @@ mod tests {
             None,
             "Le vif renard brun saute par dessus le chien paresseux.",
             NORMALIZATION_CONFIG,
+            TOKENIZATION_CONFIG,
         )
         .unwrap();
 
@@ -885,6 +906,7 @@ mod tests {
             None,
             "我们中出了一个叛徒",
             NORMALIZATION_CONFIG,
+            TOKENIZATION_CONFIG,
         )
         .unwrap();
 
@@ -906,6 +928,7 @@ mod tests {
             None,
             "快狐跨懒狗快狐跨懒狗",
             NORMALIZATION_CONFIG,
+            TOKENIZATION_CONFIG,
         )
         .unwrap();
 
@@ -929,6 +952,7 @@ mod tests {
             None,
             "関西国際空港限定トートバッグ",
             NORMALIZATION_CONFIG,
+            TOKENIZATION_CONFIG,
         )
         .unwrap();
 
@@ -953,6 +977,7 @@ mod tests {
             None,
             "𠮷野家",
             NORMALIZATION_CONFIG,
+            TOKENIZATION_CONFIG,
         )
         .unwrap();
 
@@ -963,6 +988,7 @@ mod tests {
             None,
             "ヱビスビール",
             NORMALIZATION_CONFIG,
+            TOKENIZATION_CONFIG,
         )
         .unwrap();
 
@@ -977,6 +1003,7 @@ mod tests {
             None,
             "𠮷野家でヱビスビールを飲んだ",
             NORMALIZATION_CONFIG,
+            TOKENIZATION_CONFIG,
         )
         .unwrap();
 
@@ -999,6 +1026,7 @@ mod tests {
             None,
             "🚀 🙋‍♂️🙋‍♂️🙋‍♂️",
             NORMALIZATION_CONFIG,
+            TOKENIZATION_CONFIG,
         )
         .unwrap();
 
@@ -1014,6 +1042,7 @@ mod tests {
             Some(Lang::Eng),
             "This will be cleaned properly, as English was hinted rightfully so.",
             NORMALIZATION_CONFIG,
+            TOKENIZATION_CONFIG,
         )
         .unwrap();
         let token_cleaner_wrong = TokenLexerBuilder::from(
@@ -1021,6 +1050,7 @@ mod tests {
             Some(Lang::Fra),
             "This will not be cleaned properly, as French was hinted but this is English.",
             NORMALIZATION_CONFIG,
+            TOKENIZATION_CONFIG,
         )
         .unwrap();
 
@@ -1076,6 +1106,7 @@ mod benches {
                 TokenLexerMode::NormalizeOnly,
                 "Le vif renard brun saute par dessus le chien paresseux.",
                 NORMALIZATION_CONFIG,
+                TOKENIZATION_CONFIG,
             )
         });
     }
@@ -1087,6 +1118,7 @@ mod benches {
                 TokenLexerMode::NormalizeOnly,
                 "Le vif renard brun saute par dessus le chien paresseux.",
                 NORMALIZATION_CONFIG,
+                TOKENIZATION_CONFIG,
             )
             .unwrap();
 
@@ -1102,6 +1134,7 @@ mod benches {
                 None,
                 "The quick brown fox jumps over the lazy dog!",
                 NORMALIZATION_CONFIG,
+                TOKENIZATION_CONFIG,
             )
         });
     }
@@ -1114,6 +1147,7 @@ mod benches {
                 None,
                 "The quick brown fox jumps over the lazy dog!",
                 NORMALIZATION_CONFIG,
+                TOKENIZATION_CONFIG,
             )
             .unwrap();
 
@@ -1133,6 +1167,7 @@ mod benches {
                 process to be useful — but now scientists have figured out how to skip the process
                 altogether and convert seawater into usable hydrogen"#,
                 NORMALIZATION_CONFIG,
+                TOKENIZATION_CONFIG,
             )
             .unwrap();
 
@@ -1147,6 +1182,7 @@ mod benches {
                 TokenLexerMode::NormalizeAndCleanup(Some(Lang::Eng)),
                 "The quick brown fox jumps over the lazy dog!",
                 NORMALIZATION_CONFIG,
+                TOKENIZATION_CONFIG,
             )
         });
     }
@@ -1158,6 +1194,7 @@ mod benches {
                 TokenLexerMode::NormalizeAndCleanup(Some(Lang::Eng)),
                 "The quick brown fox jumps over the lazy dog!",
                 NORMALIZATION_CONFIG,
+                TOKENIZATION_CONFIG,
             )
             .unwrap();
 
@@ -1173,6 +1210,7 @@ mod benches {
                 None,
                 "我们中出了一个叛徒",
                 NORMALIZATION_CONFIG,
+                TOKENIZATION_CONFIG,
             )
         });
     }
@@ -1185,6 +1223,7 @@ mod benches {
                 None,
                 "我们中出了一个叛徒",
                 NORMALIZATION_CONFIG,
+                TOKENIZATION_CONFIG,
             )
             .unwrap();
 
@@ -1200,6 +1239,7 @@ mod benches {
                 None,
                 "関西国際空港限定トートバッグ",
                 NORMALIZATION_CONFIG,
+                TOKENIZATION_CONFIG,
             )
         });
     }
@@ -1212,6 +1252,7 @@ mod benches {
                 None,
                 "関西国際空港限定トートバッグ",
                 NORMALIZATION_CONFIG,
+                TOKENIZATION_CONFIG,
             )
             .unwrap();
 

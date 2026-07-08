@@ -21,6 +21,8 @@ use crate::util::serde::env_var;
 pub struct Config {
     pub normalization: ConfigNormalization,
 
+    pub tokenization: ConfigTokenization,
+
     pub search: ConfigSearch,
 
     pub store: ConfigStore,
@@ -53,6 +55,12 @@ pub struct ConfigNormalization {
 
     #[cfg(feature = "stemming")]
     pub stemming_enabled: bool,
+}
+
+/// Configuration group for tokenization options.
+#[derive(Deserialize, Clone, Copy)]
+pub struct ConfigTokenization {
+    pub detect_special_patterns: bool,
 }
 
 #[derive(Deserialize)]
@@ -150,6 +158,9 @@ pub(crate) mod tests {
         [normalization]
         diacritic_folding_enabled = true
         stemming_enabled = false
+
+        [tokenization]
+        detect_special_patterns = true
 
         [search]
         query_limit_default = 10
