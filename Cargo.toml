@@ -30,3 +30,11 @@ strip = true
 inherits = "release"
 lto = "thin"
 strip = false
+
+[profile.lint]
+inherits = "dev"
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = "off"
+panic = "abort"
