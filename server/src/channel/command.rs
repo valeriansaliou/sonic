@@ -11,6 +11,7 @@ use rand::distr::Alphanumeric;
 use std::fmt;
 use std::path::Path;
 use std::str::{self, SplitWhitespace};
+use std::sync::LazyLock;
 use std::vec::Vec;
 
 use sonic::query::{
@@ -70,32 +71,19 @@ const META_PART_GROUP_CLOSE: char = ')';
 static BACKUP_KV_PATH: &str = "kv";
 static BACKUP_FST_PATH: &str = "fst";
 
-lazy_static! {
-    pub static ref COMMANDS_MODE_SEARCH: Vec<&'static str> =
-        vec!["QUERY", "SUGGEST", "LIST", "PING", "HELP", "QUIT"];
-    pub static ref COMMANDS_MODE_INGEST: Vec<&'static str> = vec![
-        "PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT"
-    ];
-    pub static ref COMMANDS_MODE_CONTROL: Vec<&'static str> =
-        vec!["TRIGGER", "INFO", "PING", "HELP", "QUIT"];
-    pub static ref CONTROL_TRIGGER_ACTIONS: Vec<&'static str> =
-        vec!["consolidate", "backup", "restore"];
-    static ref MANUAL_MODE_SEARCH: HashMap<&'static str, &'static Vec<&'static str>> =
-        [("commands", &*COMMANDS_MODE_SEARCH)]
-            .iter()
-            .cloned()
-            .collect();
-    static ref MANUAL_MODE_INGEST: HashMap<&'static str, &'static Vec<&'static str>> =
-        [("commands", &*COMMANDS_MODE_INGEST)]
-            .iter()
-            .cloned()
-            .collect();
-    static ref MANUAL_MODE_CONTROL: HashMap<&'static str, &'static Vec<&'static str>> =
-        [("commands", &*COMMANDS_MODE_CONTROL)]
-            .iter()
-            .cloned()
-            .collect();
-}
+pub static COMMANDS_MODE_SEARCH: [&str; 6] = ["QUERY", "SUGGEST", "LIST", "PING", "HELP", "QUIT"];
+pub static COMMANDS_MODE_INGEST: [&str; 9] = [
+    "PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT",
+];
+pub static COMMANDS_MODE_CONTROL: [&str; 5] = ["TRIGGER", "INFO", "PING", "HELP", "QUIT"];
+pub static CONTROL_TRIGGER_ACTIONS: [&str; 3] = ["consolidate", "backup", "restore"];
+
+static MANUAL_MODE_SEARCH: LazyLock<HashMap<&str, Vec<&str>>> =
+    LazyLock::new(|| HashMap::from_iter([("commands", COMMANDS_MODE_SEARCH.to_vec())]));
+static MANUAL_MODE_INGEST: LazyLock<HashMap<&str, Vec<&str>>> =
+    LazyLock::new(|| HashMap::from_iter([("commands", COMMANDS_MODE_INGEST.to_vec())]));
+static MANUAL_MODE_CONTROL: LazyLock<HashMap<&str, Vec<&str>>> =
+    LazyLock::new(|| HashMap::from_iter([("commands", COMMANDS_MODE_CONTROL.to_vec())]));
 
 impl ChannelCommandResponse {
     pub fn to_args(&self) -> ChannelCommandResponseArgs {
@@ -134,7 +122,7 @@ impl ChannelCommandBase {
 
     pub fn generic_dispatch_help(
         mut parts: SplitWhitespace,
-        manuals: &HashMap<&str, &Vec<&str>>,
+        manuals: &HashMap<&str, Vec<&str>>,
     ) -> ChannelResult {
         match (parts.next(), parts.next()) {
             (None, _) => {

@@ -10,19 +10,17 @@ mod platform {
     //   Windows support upon the original `graceful` crate; find the fork at: \
     //   https://github.com/Git0Shuai/graceful
 
-    use std::sync::Mutex;
     use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
+    use std::sync::{LazyLock, Mutex};
 
     use windows_sys::Win32::Foundation::{BOOL, TRUE};
     use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
 
-    lazy_static! {
-        static ref CHANNEL: (SyncSender<u32>, Mutex<Receiver<u32>>) = {
-            let channel = sync_channel(0);
+    static CHANNEL: LazyLock<(SyncSender<u32>, Mutex<Receiver<u32>>)> = LazyLock::new(|| {
+        let channel = sync_channel(0);
 
-            (channel.0, Mutex::new(channel.1))
-        };
-    }
+        (channel.0, Mutex::new(channel.1))
+    });
 
     unsafe extern "system" fn handler(event: u32) -> BOOL {
         CHANNEL.0.send(event).unwrap();
