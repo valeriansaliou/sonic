@@ -296,7 +296,7 @@ update_all_versions() {
   cargo metadata --offline --manifest-path "${CARGO_TOML_FILE:?}" --format-version 1 >/dev/null
 
   log_info "Dry-running \`cargo publish\`…"
-  cargo publish --dry-run -p "${RELEASING:?}" --no-verify --allow-dirty
+  cargo publish --dry-run -p "${RELEASING:?}" --allow-dirty
   UPDATED_FILES+=("${CARGO_LOCK_FILE:?}")
 
   log_info "Updating '$(basename "${CHANGELOG_FILE:?}")'…"
