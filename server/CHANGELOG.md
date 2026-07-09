@@ -8,6 +8,29 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/v1.7.3...HEAD
 
+### Changes
+
+Dependency updates:
+
+* core: Bump `jieba-rs` from `0.9` to `0.10` (in `5d4a432`)
+* core: Disable unnecessary `rocksdb` features (in `421d13d`)
+* core: Disable default features for all dependencies (in `cd7f328`)
+* server: Bump `tikv-jemallocator` from `0.6.1` to `0.7.0` (in `ba585e5`)
+* server: Remove dependency to `lazy_static` (in `0688d5c`)
+* server: Update transitive dependencies (in `456343a`)
+* server: Pin all dependencies (in `ec4a30a`)
+* server: Disable default features for all dependencies (in `606c9cf`)
+
+### New Features
+
+* feat(core): Improve the tokenizer to avoid splitting special tokens (in `f290006`)
+* feat(core): Make tokenizer pattern matching opt-in (in `ddd6848`)
+* feat(core): Make tokenizer pattern matching non-breaking (in `e744fd0`)
+
+### Bug Fixes
+
+* fixup! packaging(debian): Do not run `chown -R` on every Sonic update (in `0835b27`)
+
 ## [1.7.3] (2026-07-07)
 
 [1.7.3]: https://github.com/valeriansaliou/sonic/compare/v1.7.2...v1.7.3
