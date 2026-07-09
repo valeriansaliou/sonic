@@ -8,6 +8,20 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/core-v0.1.2...HEAD
 
+### Changes
+
+Dependency updates:
+
+* Bump `jieba-rs` from `0.9` to `0.10` (in `5d4a432`)
+* Disable unnecessary `rocksdb` features (in `421d13d`)
+* Disable default features for all dependencies (in `cd7f328`)
+
+### New Features
+
+* feat: Improve the tokenizer to avoid splitting special tokens (in `f290006`)
+* feat: Make tokenizer pattern matching opt-in (in `ddd6848`)
+* feat: Make tokenizer pattern matching non-breaking (in `e744fd0`)
+
 ## [0.1.2] (2026-07-07)
 
 [0.1.2]: https://github.com/valeriansaliou/sonic/compare/core-v0.1.1...core-v0.1.2
