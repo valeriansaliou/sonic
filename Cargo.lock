@@ -2032,7 +2032,7 @@ checksum = "1b6b67fb9a61334225b5b790716f609cd58395f895b3fe8b328786812a40bc3b"
 
 [[package]]
 name = "sonic-core"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "byteorder",
  "caseless",
