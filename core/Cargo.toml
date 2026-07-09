@@ -21,7 +21,7 @@ doc = true
 unicode-normalization = { version = "0.1", default-features = false }
 caseless = { version = "0.2", default-features = false }
 tracing = { version = "0.1", default-features = false }
-serde = { version = "1", default-features = false, features = ["derive", "rc"] }
+serde = { version = "1", default-features = false, features = ["derive", "rc", "std"] }
 unicode-segmentation = { version = "1", default-features = false }
 radix = { version = "0.6", default-features = false }
 rocksdb = { version = "0.24", default-features = false, features = ["bindgen-runtime", "zstd"] }
@@ -31,7 +31,7 @@ fst-regex = { version = "0.3", default-features = false }
 regex-syntax = { version = "0.8", default-features = false, features = ["std", "unicode"] }
 twox-hash = { version = "2", default-features = false, features = ["xxhash32"] }
 byteorder = { version = "1", default-features = false }
-hashbrown = { version = "0.17", default-features = false }
+hashbrown = { version = "0.17", default-features = false, features = ["allocator-api2", "default-hasher", "inline-more"] }
 indexmap = { version = "2", default-features = false, features = ["std"] }
 linked_hash_set = { version = "0.1", default-features = false }
 whatlang = { version = "0.18", default-features = false }
