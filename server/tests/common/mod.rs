@@ -77,7 +77,10 @@ fn start_sonic(
         Command::new(SONIC_BIN_PATH.as_path())
             // .args(["-c", sonic_config_path])
             .env("SONIC_CHANNEL__INET", addr.to_string())
-            .env("SONIC_SERVER__LOG_LEVEL", "WARN"),
+            .env(
+                "SONIC_SERVER__LOG_LEVEL",
+                std::env::var("LOG_LEVEL").unwrap_or("WARN".to_owned()),
+            ),
     )
     .env("SONIC_STORE__KV__PATH", data_path.join("kv"))
     .env("SONIC_STORE__FST__PATH", data_path.join("fst"))
