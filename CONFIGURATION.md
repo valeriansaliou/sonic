@@ -31,6 +31,51 @@ Under `[channel]`:
 `channel.search` has been deprecated in favor of `search`, but it’s kept as an alias for
 backward compatibility reasons.
 
+### Normalization configuration
+
+Warning: After making changes to normalization steps, you must rebuild Sonic’s
+index by re-ingesting all data. To avoid such breaking change, new features are
+disabled by default (opt-in). On major releases, some steps might become
+enabled by default (opt-out). Sonic won’t enable unreasonable defaults, but
+override if you need consistency.
+
+Under `[normalization]`:
+
+* `diacritic_folding_enabled` (type: _boolean_, allowed: `true`, `false`, default: `false`) — Whether to enable [diacritic](https://en.wikipedia.org/wiki/Diacritic) folding or not (it reduces the index size and improves results)
+* `stemming_enabled` (type: _boolean_, allowed: `true`, `false`, default: `false`) — Whether to enable [stemming](https://en.wikipedia.org/wiki/Stemming) or not (it avoids losing non-flushed data in case of server crash)
+  * Warning: Enabling stemming greatly affects the quality of Sonic results. Enable only if you have a good reason to.
+
+### Tokenization configuration
+
+Warning: After making changes to tokenization steps, you must rebuild Sonic’s
+index by re-ingesting all data. To avoid such breaking change, new features are
+disabled by default (opt-in). On major releases, some steps might become
+enabled by default (opt-out). Sonic won’t enable unreasonable defaults, but
+override if you need consistency.
+
+Under `[tokenization]`:
+
+* `detect_special_patterns` (type: _boolean_, allowed: `true`, `false`, default: `true`) — Whether the tokenizer should detect special patterns or not
+  * Sonic does fuzzy matching by default. However, some search terms are
+    usually expected to match exactly, like email addresses. To support this
+    use case, Sonic detects common patterns (e.g. email addresses, phone
+    numbers, UUIDs, etc. and ensures they are both not split by the tokenizer
+    (unless `tokenization.compat_split_special_patterns = true`) and matched
+    exactly in queries.
+  * For more information, see [docs/tokenizer-pattern-matching.md](./docs/tokenizer-pattern-matching.md).
+  * This feature adds negligible overhead, you should probably not disable it.
+* `compat_split_special_patterns` (type: _boolean_, allowed: `true`, `false`, default: `true`) — Whether the tokenizer should split special patterns or not
+  * Special patterns are matched exactly when performing a query. However,
+    doing so without rebuilding your Sonic index breaks queries with special
+    patterns. This flag enables a compatibility feature that integrates with an
+    existing inex (at the cost of potentially worse results).
+  * For more information, see [docs/tokenizer-pattern-matching.md](./docs/tokenizer-pattern-matching.md).
+  * You don’t need to rebuild your Sonic index if you use
+    `tokenization.compat_split_special_patterns = true` (default).
+  * If you can easily rebuild your Sonic index and sometimes query things like
+    email addresses, phone numbers or identifiers, it is recommended that you
+    disable this feature.
+
 ### Search configuration
 
 Under `[search]`:
