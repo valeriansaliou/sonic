@@ -22,8 +22,9 @@ pub fn defaults_toml() -> &'static str {
     stemming_enabled = false
 
     [tokenization]
-    # TODO(major): Enable by default.
-    detect_special_patterns = false
+    detect_special_patterns = true
+    # TODO(major): Disable by default.
+    compat_split_special_patterns = true
 
     [search]
     query_limit_default = 10

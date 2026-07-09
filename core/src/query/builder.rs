@@ -176,6 +176,7 @@ mod tests {
     };
     const TOKENIZATION_CONFIG: ConfigTokenization = ConfigTokenization {
         detect_special_patterns: true,
+        compat_split_special_patterns: false,
     };
 
     #[test]

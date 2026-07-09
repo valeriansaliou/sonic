@@ -15,15 +15,15 @@ Let’s take a simplified example (pseudo-code):
 
 ```txt
 Ingest (Sonic <= v1.7.3):
-  PUSH doc:1 "olivia@example.org"
+  PUSH msg:1 "olivia@example.org"
               └────┘ └─────────┘
-  PUSH doc:2 "olivio@example.org" # Lev(doc:1, doc:2) = 1
+  PUSH msg:2 "olivio@example.org" # Lev(msg:1, msg:2) = 1
               └────┘ └─────────┘
-  PUSH doc:3 "alicia@example.org" # Lev(doc:1, doc:3) = 2
+  PUSH msg:3 "alicia@example.org" # Lev(msg:1, msg:3) = 2
               └────┘ └─────────┘
-  PUSH doc:4 "olivia@example.com" # Lev(doc:1, doc:4) = 3
+  PUSH msg:4 "olivia@example.com" # Lev(msg:1, msg:4) = 3
               └────┘ └─────────┘
-  PUSH doc:5 "olivia and olivio"
+  PUSH msg:5 "olivia and olivio"
               └────┘ └─┘ └────┘
 
 In the index: {
@@ -43,7 +43,7 @@ Search (v1.6.0):
      olivia  olivio  example.org
        └─ OR ──┘         │
           └───── AND ────┘
-  RESULT doc:2 doc:1 # Too many results (expected: doc:1)
+  RESULT msg:2 msg:1 # Too many results (expected: msg:1)
 ```
 
 However, because 1 character differences in both the username or domain part of
@@ -75,7 +75,7 @@ Search (v1.7.0):
     olivia  olivio  alicia  example.org  example.com
       └───────┴─ OR ──┘         └──── OR ────┘
                   └─────── OR ────────┘
-  RESULT doc:1 doc:2 doc:3 doc:4 doc:5 # Too many results (expected: doc:1)
+  RESULT msg:1 msg:2 msg:3 msg:4 msg:5 # Too many results (expected: msg:1)
 ```
 
 Although results were ordered perfectly, users were expecting not to see fuzzy
@@ -102,8 +102,8 @@ Search (v1.7.3):
     olivia  olivio  alicia  example.org
       └───────┴─ OR ──┘         │
                   └──── AND ────┘
-  RESULT doc:1 doc:2 doc:3 # Better than v1.7.0, but still too many results
-                           # and arguably worse than v1.6.0 (expected: doc:1)
+  RESULT msg:1 msg:2 msg:3 # Better than v1.7.0, but still too many results
+  # and arguably worse than v1.6.0 (expected: msg:1)
 ```
 
 Because the tokenizer would split on `@`, `olivia` couldn’t be detected as an
@@ -153,22 +153,22 @@ At [Crisp] we can’t just rebuild the index because we’re bumping Sonic, beca
 —even though Sonic is fast— ingesting billions of messages still takes _hours_,
 so it was time to look for a smarter idea.
 
-If we want to get the results users expect (i.e. just `doc:1` in our example),
+If we want to get the results users expect (i.e. just `msg:1` in our example),
 the tokenizer _has to_ be aware of patterns. But we also can’t force a rebuild
 of the index in a non-breaking release, so we have to act in-between.
 
 The solution we came up with is to enable `tokenization.detect_special_patterns`
-by default but add `tokenization.split_special_patterns` to control whether or
-not they should be further split. When `true`, terms are split just like in
-`v1.6.0`, but they are now marked special and we can force exact matching. Here
-is an example:
+by default but add `tokenization.compat_split_special_patterns` to control
+whether or not they should be further split. When `true`, terms are split just
+like in `v1.6.0`, but they are now marked special and we can force exact
+matching. Here is an example:
 
 ```txt
 Index (<= v1.7.3): {
   "olivia", "example.org", "olivio", "alicia", "example.com", "and"
 }
 
-Search (v1.7.4 with `tokenization.split_special_patterns = true`):
+Search (v1.7.4 with `tokenization.compat_split_special_patterns = true`):
   QUERY "olivia@example.org"
          └── Special ─────┘
          └─┬──┘ └────┬────┘
@@ -176,27 +176,27 @@ Search (v1.7.4 with `tokenization.split_special_patterns = true`):
            │         │
          olivia  example.org
            └── AND ──┘
-  RESULT doc:1 # Expected result
+  RESULT msg:1 # Expected result
 ```
 
 In this example, the result is exactly what we want, but there is still one
 edge case where a document contains both `olivia` and `example.org` (but not
 `olivia@example.org`). Unfortunately it’s not possible for Sonic to work around
 this case without its index being rebuilt with
-`tokenization.split_special_patterns = false` (which will be the default in
-Sonic `v2.0.0`). Here is why it would be perfect:
+`tokenization.compat_split_special_patterns = false` (which will be the default
+in Sonic `v2.0.0`). Here is why it would be perfect:
 
 ```txt
-Ingest (v1.7.4 with `tokenization.split_special_patterns = false`):
-  PUSH doc:1 "olivia@example.org"
+Ingest (v1.7.4 with `tokenization.compat_split_special_patterns = false`):
+  PUSH msg:1 "olivia@example.org"
               └────────────────┘
-  PUSH doc:2 "olivio@example.org"
+  PUSH msg:2 "olivio@example.org"
               └────────────────┘
-  PUSH doc:3 "alicia@example.org"
+  PUSH msg:3 "alicia@example.org"
               └────────────────┘
-  PUSH doc:4 "olivia@example.com"
+  PUSH msg:4 "olivia@example.com"
               └────────────────┘
-  PUSH doc:5 "olivia and olivio"
+  PUSH msg:5 "olivia and olivio"
               └────┘ └─┘ └────┘
 
 In the index: {
@@ -204,12 +204,12 @@ In the index: {
   "olivia@example.com", "olivia", "and", "olivio"
 }
 
-Search (v1.7.4 with `tokenization.split_special_patterns = false`):
+Search (v1.7.4 with `tokenization.compat_split_special_patterns = false`):
   QUERY "olivia@example.org"
          └── Special ─────┘
                 │
               Exact
                 │
          olivia@example.org
-  RESULT doc:1 # Perfect!
+  RESULT msg:1 # Perfect!
 ```
