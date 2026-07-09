@@ -61,6 +61,9 @@ pub struct ConfigNormalization {
 #[derive(Deserialize, Clone, Copy)]
 pub struct ConfigTokenization {
     pub detect_special_patterns: bool,
+
+    #[serde(alias = "split_special_patterns")]
+    pub compat_split_special_patterns: bool,
 }
 
 #[derive(Deserialize)]
@@ -161,6 +164,7 @@ pub(crate) mod tests {
 
         [tokenization]
         detect_special_patterns = true
+        compat_split_special_patterns = false
 
         [search]
         query_limit_default = 10

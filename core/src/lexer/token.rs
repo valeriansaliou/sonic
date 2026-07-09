@@ -23,7 +23,7 @@ use super::stopwords::LexerStopWord;
 
 pub struct TokenLexerBuilder;
 
-type WordsIter<'s> = Box<dyn Iterator<Item = &'s str> + 's>;
+type TokensIter<'s> = Box<dyn Iterator<Item = Token<'s>> + 's>;
 
 static SPECIAL_PATTERNS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(
@@ -39,11 +39,12 @@ static SPECIAL_PATTERNS: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 pub struct Tokenizer<'s> {
+    config: ConfigTokenization,
     text: &'s str,
     lang: Option<Lang>,
     regex_matches: Peekable<regex::CaptureMatches<'static, 's>>,
     regex_cursor: usize,
-    words: Option<(WordsIter<'s>, usize)>,
+    tokens: Option<(TokensIter<'s>, usize)>,
 }
 
 impl<'s> Tokenizer<'s> {
@@ -57,11 +58,12 @@ impl<'s> Tokenizer<'s> {
         };
 
         Self {
+            config: *config,
             lang,
             regex_matches,
             text,
             regex_cursor: 0,
-            words: None,
+            tokens: None,
         }
     }
 }
@@ -93,12 +95,12 @@ impl<'s> Iterator for Tokenizer<'s> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // If we were walking words, continue.
-        if let Some((words, end)) = self.words.as_mut() {
+        if let Some((words, end)) = self.tokens.as_mut() {
             match words.next() {
-                Some(w) => return Some(Token::Word(w)),
+                Some(word) => return Some(word),
                 None => {
                     self.regex_cursor = *end;
-                    self.words = None;
+                    self.tokens = None;
                 }
             }
         }
@@ -106,29 +108,48 @@ impl<'s> Iterator for Tokenizer<'s> {
         // Check where the next special chunk is located.
         match self.regex_matches.peek() {
             Some(captures) => {
-                let m = captures.get_match();
-                let start = m.start();
-                let end = m.end();
+                let regex_match = captures.get_match();
+                let start = regex_match.start();
+                let end = regex_match.end();
 
                 // Up until that special chunk, tokenize normally.
                 if start > self.regex_cursor {
                     let gap = &self.text[self.regex_cursor..start];
-                    let mut words = tokenize(gap, self.lang);
+                    let mut tokens = Box::new(tokenize(gap, self.lang).map(Token::Word));
 
-                    if let Some(w) = words.next() {
-                        self.words = Some((words, end));
-                        return Some(Token::Word(w));
+                    if let Some(token) = tokens.next() {
+                        self.tokens = Some((tokens, end));
+                        return Some(token);
                     }
                 }
 
                 // Once all normal words have been visited, yield the special
                 // chunk.
-                self.regex_cursor = end;
-                let next = Some(Token::special(captures));
+                let next = if self.config.compat_split_special_patterns {
+                    let regex_match = captures.get_match().as_str();
+                    let words = tokenize(regex_match, self.lang);
+
+                    let mut words = Box::new(words.map(|raw| Token::Special {
+                        raw,
+                        normalized: Cow::Borrowed(raw),
+                    }));
+
+                    let next = words.next().unwrap_or(Token::Special {
+                        raw: regex_match,
+                        normalized: Cow::Borrowed(regex_match),
+                    });
+
+                    self.tokens = Some((words, end));
+
+                    Some(next)
+                } else {
+                    Some(Token::special(captures))
+                };
 
                 // Advance the iterator now that we’ve visited all previous
                 // tokens.
                 self.regex_matches.next();
+                self.regex_cursor = end;
 
                 next
             }
@@ -136,11 +157,11 @@ impl<'s> Iterator for Tokenizer<'s> {
                 // When there are no more special chunks, finish by tokenizing
                 // normally.
                 let gap = &self.text[self.regex_cursor..];
-                let mut words = tokenize(gap, self.lang);
+                let mut tokens = Box::from(tokenize(gap, self.lang).map(Token::Word));
 
-                if let Some(w) = words.next() {
-                    self.words = Some((words, self.text.len()));
-                    return Some(Token::Word(w));
+                if let Some(token) = tokens.next() {
+                    self.tokens = Some((tokens, self.text.len()));
+                    return Some(token);
                 }
 
                 None
@@ -659,6 +680,7 @@ mod tests {
     };
     const TOKENIZATION_CONFIG: ConfigTokenization = ConfigTokenization {
         detect_special_patterns: true,
+        compat_split_special_patterns: false,
     };
 
     #[test]
