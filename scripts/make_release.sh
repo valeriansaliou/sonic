@@ -208,11 +208,8 @@ fi
 
 GIT_BRANCH="$(git branch --show-current)"
 
-if [ -z "${NO_PULL-}" ]; then
-  # Ensure linear history.
-  log_info "Pulling 'origin'…"
-  git pull origin "${GIT_BRANCH:?}"
-fi
+log_info "Ensuring linear history with 'origin'…"
+git push --dry-run origin "${GIT_BRANCH:?}"
 
 # If bumping the server and the core has been updated since last version,
 # make sure the dependency version has been updated.
