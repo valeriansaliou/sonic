@@ -131,7 +131,7 @@ You might find it convenient to run Sonic via Docker. You can find the pre-built
 First, pull the `valeriansaliou/sonic` image:
 
 ```bash
-docker pull valeriansaliou/sonic:v1.7.3
+docker pull valeriansaliou/sonic:v1.7.4
 ```
 
 Then, seed it a configuration file and run it (replace `/path/to/your/sonic/config.cfg` with the path to your configuration file):

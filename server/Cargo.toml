@@ -1,6 +1,6 @@
 [package]
 name = "sonic-server"
-version = "1.7.3"
+version = "1.7.4"
 description = "Fast, lightweight and schema-less search backend."
 readme = "../README.md"
 license = { workspace = true }
