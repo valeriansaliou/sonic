@@ -160,6 +160,7 @@ fn test_no_fuzzy_matching_for_ids() {
             messages: vec![
                 "Contact me at alice@example.org",
                 "Son e-mail: alice@exemple.org",
+                "My name is Alice, I work at example.org.",
             ],
             query: "alice@example.org",
         },
