@@ -17,6 +17,8 @@ pub fn defaults_toml() -> &'static str {
     tcp_timeout = 300
 
     [normalization]
+    # TODO(major): Enable `"nfkc"` by default.
+    unicode_normalization = "none"
     # TODO(major): Enable by default.
     diacritic_folding_enabled = false
     stemming_enabled = false

@@ -51,10 +51,21 @@ impl Config {
 /// stemming, lemmatization…).
 #[derive(Deserialize, Clone, Copy)]
 pub struct ConfigNormalization {
+    #[serde(with = "crate::util::serde::none_string_as_none")]
+    pub unicode_normalization: Option<UnicodeNormalization>,
+
     pub diacritic_folding_enabled: bool,
 
     #[cfg(feature = "stemming")]
     pub stemming_enabled: bool,
+}
+
+#[derive(Deserialize, Debug, Clone, Copy)]
+pub enum UnicodeNormalization {
+    /// Unicode Normalization Form C.
+    Nfc,
+    /// Unicode Normalization Form KC.
+    Nfkc,
 }
 
 /// Configuration group for tokenization options.
@@ -159,6 +170,7 @@ pub(crate) mod tests {
         tcp_timeout = 300
 
         [normalization]
+        unicode_normalization = "none"
         diacritic_folding_enabled = true
         stemming_enabled = false
 
