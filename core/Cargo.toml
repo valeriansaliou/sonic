@@ -44,7 +44,7 @@ snowball = { package = "waken_snowball", optional = true, version = "0.1", defau
 
 [dev-dependencies]
 config = { version = "0.15", default-features = false, features = ["toml"] }
-tracing-subscriber = { version = "0.3", default-features = false }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "fmt"] }
 
 [features]
 default = ["stemming", "tokenizer-chinese"]
