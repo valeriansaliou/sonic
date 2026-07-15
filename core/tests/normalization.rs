@@ -47,3 +47,21 @@ fn test_unicode_normalization_ingest() {
 
     test(Some(UnicodeNormalization::Nfc), café_nfd, café_nfc);
 }
+
+/// See <https://github.com/valeriansaliou/sonic/issues/370>.
+#[test]
+fn test_unicode_normalization_query() {
+    use unicode_normalization::UnicodeNormalization as _;
+
+    let café = "café".nfc().to_string();
+    let café = café.as_str();
+
+    test_ingest_then_query!(
+        normalization_config: { diacritic_folding_enabled: false },
+        push: café LANG("none"),
+        query: [
+            ("café".nfc().to_string().as_str(), true),
+            ("café".nfd().to_string().as_str(), true),
+        ] LANG("none")
+    );
+}

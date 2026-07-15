@@ -76,10 +76,34 @@ impl super::Executor {
 
             // Look for exact matches.
             'matches: for (idx, (token, term_hash, _)) in tokens.iter().enumerate() {
-                let iids = kv_action
+                let mut iids = kv_action
                     .get_term_to_iids(*term_hash)
                     .unwrap_or(None)
                     .unwrap_or_default();
+
+                // Look for exact matches normalized differently if the Sonic
+                // index isn’t normalized.
+                if !token.is_special()
+                    && self.app_conf.normalization.unicode_normalization.is_none()
+                {
+                    use unicode_normalization::UnicodeNormalization as _;
+
+                    let mut nfc = kv_action
+                        .get_term_to_iids(StoreTermHash::from(
+                            token.as_str().nfc().to_string().as_str(),
+                        ))
+                        .unwrap_or(None)
+                        .unwrap_or_default();
+                    iids.append(&mut nfc);
+
+                    let mut nfd = kv_action
+                        .get_term_to_iids(StoreTermHash::from(
+                            token.as_str().nfd().to_string().as_str(),
+                        ))
+                        .unwrap_or(None)
+                        .unwrap_or_default();
+                    iids.append(&mut nfd);
+                };
 
                 tracing::debug!("got exact search executor iids: {iids:?} for term: {token:?}");
 
