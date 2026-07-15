@@ -6,8 +6,8 @@
 
 macro_rules! test_ingest_then_query {
     (
-        $(normalization_config: { $($nc_field:ident: $nc_value:expr$(,)?)+ },)?
-        $(search_config: { $($sc_field:ident: $sc_value:expr$(,)?)+ },)?
+        $(normalization_config: { $($nc_field:ident: $nc_value:expr),+ $(,)? },)?
+        $(search_config: { $($sc_field:ident: $sc_value:expr),+ $(,)? },)?
         push: $sentence:tt $([$check:ident])* $(LANG($ingest_lang:expr))?,
         query: $examples:tt $(LANG($query_lang:expr))? $(,)?
     ) => {
