@@ -10,9 +10,9 @@ mod common;
 
 use crate::common::*;
 
-/// Search should be language-aware.
+/// Language hints should not remove searchable terms.
 #[test]
-fn test_search_language_aware() {
+fn test_language_hints_preserve_terms() {
     let sentence = "J’ai envie de boire un thé";
 
     #[rustfmt::skip]
@@ -29,7 +29,7 @@ fn test_search_language_aware() {
         search_config: { fuzzy_matching_enabled: false, prefix_matching_enabled: false },
         push: sentence LANG("fra"),
         query: [
-            ("the", false),
+            ("the", true),
         ] LANG("eng"),
     );
 }

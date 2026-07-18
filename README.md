@@ -50,7 +50,7 @@ Sonic is integrated in all Crisp search products on the [Crisp](https://crisp.ch
 * **Search query typos are corrected** if there are not enough exact-match results for a given word in a search query, Sonic tries to correct the word and tries against alternate words. You're allowed to make mistakes when searching.
 * **Insert and remove items in the index**; index-altering operations are light and can be committed to the server while it is running. A background tasker handles the job of consolidating the index so that the entries you have pushed or popped are quickly made available for search.
 * **Auto-complete any word** in real-time via the suggest operation. This helps build a snappy word suggestion feature in your end-user search interface.
-* **Full Unicode compatibility** on 80+ most spoken languages in the world. Sonic removes useless stop words from any text (eg. 'the' in English), after guessing the text language. This ensures any searched or ingested text is clean before it hits the index; [see languages](https://github.com/valeriansaliou/sonic#which-text-languages-are-supported).
+* **Full Unicode compatibility** through Charabia's script-aware segmentation and language detection. All terms, including common words, remain searchable; [see languages](https://github.com/valeriansaliou/sonic#which-text-languages-are-supported).
 * **Simple protocol (Sonic Channel)**, that let you search your index, manage data ingestion (push in the index, pop from the index, flush a collection, flush a bucket, etc.) and perform administrative actions. Sonic Channel was designed to be lightweight on resources and simple to integrate with; [read protocol specification](https://github.com/valeriansaliou/sonic/blob/master/PROTOCOL.md).
 * **Easy-to-use libraries**, that let you connect to Sonic from your apps; [see libraries](https://github.com/valeriansaliou/sonic#-sonic-channel-libraries).
 
@@ -227,7 +227,7 @@ _ℹ️ Cannot find the library for your programming language? Build your own an
 
 ## Which text languages are supported?
 
-Sonic supports a wide range of languages in its lexing system. If a language is not in this list, you will still be able to push this language to the search index, but stop-words will not be eluded, which could lead to lower-quality search results.
+Sonic uses Charabia to detect scripts and languages and select an appropriate segmentation pipeline. Unknown languages still use Unicode-aware fallback segmentation.
 
 **The languages supported by the lexing system are:**
 

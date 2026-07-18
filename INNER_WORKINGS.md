@@ -26,9 +26,7 @@ In order to address the above, Sonic is capable to run queries over multiple CPU
 
 Sonic stores result objects in a key-value database (abbreviated KV), powered by RocksDB.
 
-When a text is pushed to Sonic, this text gets normalized, cleaned up and split in separate words. Each word is then associated to the pushed object result, and committed to the KV database as `word <-> object`.
-
-Upon cleaning the text, overhead is eluded. For instance, in the text `the lazy dog` there would be no point in indexing the word `the`, which is what is called a _stopword_. Sonic does not push stopwords to the index ([read more on stopwords](https://en.wikipedia.org/wiki/Stop_words)).
+When a text is pushed to Sonic, Charabia splits it into script-aware words and detects their language. Each normalized word is then associated to the pushed object result and committed to the KV database as `word <-> object`. Common words remain indexed so ingestion and queries cannot disagree because of language-dependent filtering.
 
 When objects are pushed to the search index for a given bucket in a given collection, for instance object `session_77f2e05e-5a81-49f0-89e3-177e9e1d1f32`, Sonic converts this object to a compact 32 bits format, for instance `10292198`. We call the user-provided object identifier the OID, while the compact internal identifier is named the IID. The IID is mapped internally to indexed words, and is much more compact in terms of storage than the OID. You can think of OIDs and IIDs as basically the same thing, except that the IID is the compact version of an OID. OIDs are only used for user-facing input and output objects, while IIDs are only used for internal storage of those objects. On very long indexed texts, this helps save **_a lot_** of disk space.
 
@@ -58,13 +56,9 @@ One downside of the FST implementation that Sonic uses, is that once built, an F
 
 ### How do texts get cleaned up? (via the lexer)
 
-Any text that gets pushed to Sonic needs to be normalized (eg. lower-cased) and cleaned up (eg. remove stopwords) before it can be added to the index. This task is handled by the lexer system, also called [tokenizer](https://en.wikipedia.org/wiki/Lexical_analysis#Tokenization).
+Any text pushed to Sonic is segmented by Charabia, then normalized by the lexer before it is added to the index. Charabia detects scripts and languages per token, while an explicit `LANG` hint restricts that detection. Structured values such as email addresses, URLs, phone numbers and identifiers remain atomic and bypass fuzzy matching.
 
-Sonic's tokenizer is built around an iterator pattern (_code: [Iterator->TokenLexer](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/lexer/token.rs#L244)_), and yields lexed words one-by-one. Iteration can be stopped before the end of the text is reached, for instance if we did not get enough search results for the first words of the query. This ensures no extraneous lexing work is done.
-
-Given that stopwords depend on the text language, Sonic first needs to detect the language of the text that is being cleaned up. This is done using an hybrid method of either counting the number of stopwords that appear in the text for long-enough texts (which is faster) (_code: [TokenLexerBuilder::detect_lang_fast](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/lexer/token.rs#L177)_), or performing an [n-gram](https://en.wikipedia.org/wiki/N-gram) pass on the text for smaller texts (which is **_an order of magnitude_** slower) (_code: [TokenLexerBuilder::detect_lang_slow](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/lexer/token.rs#L126)_).
-
-As the n-gram method is better at guessing the language for small texts than the stopwords method is, we prefer it, although it is crazy slow in comparison to the stopwords method. For long-enough texts, the stopwords method becomes reliable enough, so we can use it. In either cases, if the first chosen guessing method result is judged as non-reliable, Sonic fallbacks on the other method (_code: [!detector.is_reliable()](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/lexer/token.rs#L148)_).
+Sonic's tokenizer is built around an iterator pattern and yields lexed words one-by-one. Charabia's detected language is carried with each word and selects the optional stemming algorithm. Stopwords are not removed: this keeps all terms searchable and avoids inconsistent ingestion and query behavior on short or multilingual text.
 
 By the way, Sonic builds up its own list of stopwords for all supported languages, [which can be found here](https://github.com/valeriansaliou/sonic/blob/1d4c49ed348abbb8411afe7ecee6014703784d48/core/src/stopwords) (languages are referred to via their ISO 639-3 codes). People are welcome to improve those lists of stopwords by [submitting a Pull Request](https://github.com/valeriansaliou/sonic/pulls).
 

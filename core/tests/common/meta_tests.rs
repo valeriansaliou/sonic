@@ -53,9 +53,8 @@ macro_rules! test_ingest_then_query {
         drop(executor);
     };
 
-    (internal_ ensure_no_stopword: $executor:tt, $sentence:ident) => {
-        // Sanity check: ensure no stopword was provided (could make
-        // examples pass for the wrong reason).
+    (internal_ ensure_all_terms_indexed: $executor:tt, $sentence:ident) => {
+        // Sanity check that every example term was indexed.
         assert_eq!(
             exec!($executor -> COUNT "messages" "user:1" "chat:1"),
             Ok($sentence.split_ascii_whitespace().count() as u32)

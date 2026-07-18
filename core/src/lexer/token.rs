@@ -8,22 +8,35 @@
 use std::borrow::Cow;
 use std::iter::Peekable;
 use std::sync::LazyLock;
-use std::time::Instant;
 
+use charabia::{
+    Language as CharabiaLanguage, TokenKind, TokenizerBuilder as CharabiaTokenizerBuilder,
+};
 use hashbrown::HashSet;
 use regex::Regex;
-use unicode_segmentation::UnicodeSegmentation;
 use whatlang::Lang;
 
 use crate::config::{ConfigNormalization, ConfigTokenization};
 use crate::query::QueryGenericLang;
 use crate::store::identifiers::{StoreTermHash, StoreTermHashed};
 
-use super::stopwords::LexerStopWord;
-
 pub struct TokenLexerBuilder;
 
-type TokensIter<'s> = Box<dyn Iterator<Item = Token<'s>> + 's>;
+struct WordToken<'s> {
+    raw: &'s str,
+    language: Option<Lang>,
+}
+
+struct PendingToken<'s> {
+    token: Token<'s>,
+    language: Option<Lang>,
+}
+
+type WordsIter<'s> = Box<dyn Iterator<Item = WordToken<'s>> + 's>;
+type TokensIter<'s> = Box<dyn Iterator<Item = PendingToken<'s>> + 's>;
+
+static CHARABIA_TOKENIZER: LazyLock<charabia::Tokenizer<'static>> =
+    LazyLock::new(|| CharabiaTokenizerBuilder::default().into_tokenizer());
 
 static SPECIAL_PATTERNS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(
@@ -45,6 +58,7 @@ pub struct Tokenizer<'s> {
     regex_matches: Peekable<regex::CaptureMatches<'static, 's>>,
     regex_cursor: usize,
     tokens: Option<(TokensIter<'s>, usize)>,
+    last_language: Option<Lang>,
 }
 
 impl<'s> Tokenizer<'s> {
@@ -64,30 +78,44 @@ impl<'s> Tokenizer<'s> {
             text,
             regex_cursor: 0,
             tokens: None,
+            last_language: None,
         }
     }
 }
 
-fn tokenize<'s>(text: &'s str, lang: Option<Lang>) -> Box<dyn Iterator<Item = &'s str> + 's> {
-    match lang {
-        #[cfg(feature = "tokenizer-chinese")]
-        Some(Lang::Cmn) => Box::from(
-            TOKENIZER_JIEBA
-                .cut(text, false)
-                .into_iter()
-                .map(|token| token.word),
-        ),
-        #[cfg(feature = "tokenizer-japanese")]
-        Some(Lang::Jpn) => match TOKENIZER_LINDERA.tokenize(text) {
-            Ok(tokens) => Box::from(tokens.into_iter()),
-            Err(err) => {
-                tracing::warn!("unable to tokenize japanese, falling back: {}", err);
+fn tokenize<'s>(text: &'s str, lang: Option<Lang>) -> WordsIter<'s> {
+    let hinted_language = lang.and_then(|lang| CharabiaLanguage::from_code(lang.code()));
+    let allow_list = hinted_language.as_ref().map(std::slice::from_ref);
 
-                Box::from(text.unicode_words())
+    // Keep original slices so Sonic's configurable normalization remains authoritative.
+    let words: Vec<WordToken<'s>> = CHARABIA_TOKENIZER
+        .tokenize_with_allow_list(text, allow_list)
+        .filter_map(|token| {
+            let range = token.byte_start..token.byte_end;
+
+            match token.kind {
+                TokenKind::Word | TokenKind::StopWord
+                    if text[range.clone()].chars().any(char::is_alphanumeric) =>
+                {
+                    let language = token
+                        .language
+                        .and_then(|language| Lang::from_code(language.code()))
+                        .or(lang);
+
+                    Some(WordToken {
+                        raw: &text[range],
+                        language,
+                    })
+                }
+                TokenKind::Word
+                | TokenKind::StopWord
+                | TokenKind::Separator(_)
+                | TokenKind::Unknown => None,
             }
-        },
-        _ => Box::from(text.unicode_words()),
-    }
+        })
+        .collect();
+
+    Box::new(words.into_iter())
 }
 
 impl<'s> Iterator for Tokenizer<'s> {
@@ -95,9 +123,12 @@ impl<'s> Iterator for Tokenizer<'s> {
 
     fn next(&mut self) -> Option<Self::Item> {
         // If we were walking words, continue.
-        if let Some((words, end)) = self.tokens.as_mut() {
-            match words.next() {
-                Some(word) => return Some(word),
+        if let Some((tokens, end)) = self.tokens.as_mut() {
+            match tokens.next() {
+                Some(pending) => {
+                    self.last_language = pending.language;
+                    return Some(pending.token);
+                }
                 None => {
                     self.regex_cursor = *end;
                     self.tokens = None;
@@ -115,11 +146,16 @@ impl<'s> Iterator for Tokenizer<'s> {
                 // Up until that special chunk, tokenize normally.
                 if start > self.regex_cursor {
                     let gap = &self.text[self.regex_cursor..start];
-                    let mut tokens = Box::new(tokenize(gap, self.lang).map(Token::Word));
+                    let mut tokens: TokensIter<'s> =
+                        Box::new(tokenize(gap, self.lang).map(|word| PendingToken {
+                            token: Token::Word(word.raw),
+                            language: word.language,
+                        }));
 
-                    if let Some(token) = tokens.next() {
+                    if let Some(pending) = tokens.next() {
+                        self.last_language = pending.language;
                         self.tokens = Some((tokens, end));
-                        return Some(token);
+                        return Some(pending.token);
                     }
                 }
 
@@ -129,19 +165,25 @@ impl<'s> Iterator for Tokenizer<'s> {
                     let regex_match = captures.get_match().as_str();
                     let words = tokenize(regex_match, self.lang);
 
-                    let mut words = Box::new(words.map(|raw| Token::Special {
-                        raw,
-                        normalized: Cow::Borrowed(raw),
+                    let mut tokens: TokensIter<'s> = Box::new(words.map(|word| PendingToken {
+                        token: Token::Special {
+                            raw: word.raw,
+                            normalized: Cow::Borrowed(word.raw),
+                        },
+                        language: None,
                     }));
 
-                    let next = words.next().unwrap_or(Token::Special {
-                        raw: regex_match,
-                        normalized: Cow::Borrowed(regex_match),
+                    let next = tokens.next().unwrap_or(PendingToken {
+                        token: Token::Special {
+                            raw: regex_match,
+                            normalized: Cow::Borrowed(regex_match),
+                        },
+                        language: None,
                     });
 
-                    self.tokens = Some((words, end));
+                    self.tokens = Some((tokens, end));
 
-                    Some(next)
+                    Some(next.token)
                 } else {
                     Some(Token::special(captures))
                 };
@@ -150,6 +192,7 @@ impl<'s> Iterator for Tokenizer<'s> {
                 // tokens.
                 self.regex_matches.next();
                 self.regex_cursor = end;
+                self.last_language = None;
 
                 next
             }
@@ -157,11 +200,16 @@ impl<'s> Iterator for Tokenizer<'s> {
                 // When there are no more special chunks, finish by tokenizing
                 // normally.
                 let gap = &self.text[self.regex_cursor..];
-                let mut tokens = Box::from(tokenize(gap, self.lang).map(Token::Word));
+                let mut tokens: TokensIter<'s> =
+                    Box::new(tokenize(gap, self.lang).map(|word| PendingToken {
+                        token: Token::Word(word.raw),
+                        language: word.language,
+                    }));
 
-                if let Some(token) = tokens.next() {
+                if let Some(pending) = tokens.next() {
+                    self.last_language = pending.language;
                     self.tokens = Some((tokens, self.text.len()));
-                    return Some(token);
+                    return Some(pending.token);
                 }
 
                 None
@@ -263,10 +311,6 @@ impl From<NormalizedToken> for String {
 }
 
 pub struct TokenLexer<'a> {
-    mode: TokenLexerMode,
-    locale: Option<Lang>,
-    #[cfg(feature = "stemming")]
-    snowball_algorithm: Option<snowball::Algorithm>,
     tokenizer: Tokenizer<'a>,
     yields: HashSet<StoreTermHashed>,
     config: ConfigNormalization,
@@ -278,261 +322,32 @@ pub enum TokenLexerMode {
     NormalizeOnly,
 }
 
-impl TokenLexerMode {
-    pub fn should_cleanup(&self) -> bool {
-        match self {
-            Self::NormalizeAndCleanup => true,
-            Self::NormalizeOnly => false,
-        }
-    }
-}
-
-const TEXT_LANG_TRUNCATE_OVER_CHARS: usize = 200;
-const TEXT_LANG_DETECT_PROCEED_OVER_CHARS: usize = 20;
-const TEXT_LANG_DETECT_NGRAM_UNDER_CHARS: usize = 60;
-
-#[cfg(feature = "tokenizer-chinese")]
-static TOKENIZER_JIEBA: LazyLock<jieba_rs::Jieba> = LazyLock::new(jieba_rs::Jieba::new);
-
-#[cfg(feature = "tokenizer-japanese")]
-static TOKENIZER_LINDERA: LazyLock<lindera_tokenizer::tokenizer::Tokenizer> = LazyLock::new(|| {
-    lindera_tokenizer::tokenizer::Tokenizer::from_config(
-        lindera_tokenizer::tokenizer::TokenizerConfig {
-            dictionary: lindera_dictionary::DictionaryConfig {
-                kind: Some(lindera_dictionary::DictionaryKind::UniDic),
-                path: None,
-            },
-            user_dictionary: None,
-            mode: lindera_core::mode::Mode::Normal,
-        },
-    )
-    .expect("unable to initialize japanese tokenizer")
-});
-
 impl TokenLexerBuilder {
     pub fn from(
-        mode: TokenLexerMode,
+        _mode: TokenLexerMode,
         lang: Option<Lang>,
         text: &str,
         normalization_config: ConfigNormalization,
         tokenization_config: ConfigTokenization,
     ) -> Result<TokenLexer<'_>, ()> {
-        let locale = match lang {
-            // If user provided a language, use it.
-            Some(hinted_lang) => {
-                // Use hinted language (current lexer mode asks for a cleanup)
-                tracing::debug!(
-                    "using hinted locale: {} from lexer text: {}",
-                    hinted_lang,
-                    text
-                );
-
-                lang
-            }
-
-            None => match mode {
-                // If user asked to cleanup, detect the language.
-                TokenLexerMode::NormalizeAndCleanup => {
-                    let locale = Self::detect_lang(text);
-                    tracing::debug!("detected locale: {:?} from lexer text: {}", locale, text);
-                    locale
-                }
-
-                // If user asked not to cleanup but stemming is enabled, detect the language.
-                #[cfg(feature = "stemming")]
-                TokenLexerMode::NormalizeOnly if normalization_config.stemming_enabled => {
-                    let locale = Self::detect_lang(text);
-                    tracing::debug!("detected locale: {:?} from lexer text: {}", locale, text);
-                    locale
-                }
-
-                // Otherwise, don’t detect the language.
-                TokenLexerMode::NormalizeOnly => {
-                    tracing::debug!("not detecting locale from lexer text: {}", text);
-
-                    None
-                }
-            },
-        };
-
-        // Build final token builder iterator
         Ok(TokenLexer::new(
-            mode,
             text,
-            locale,
+            lang,
             normalization_config,
             tokenization_config,
         ))
-    }
-
-    fn detect_lang(text: &str) -> Option<Lang> {
-        tracing::debug!("detecting locale from lexer text: {}", text);
-
-        // Detect only if text is long-enough to allow the text locale detection system to \
-        //   function properly
-        if text.len() < TEXT_LANG_DETECT_PROCEED_OVER_CHARS {
-            return None;
-        }
-
-        // Truncate text if necessary, as to avoid the ngram or stopwords detector to be \
-        //   ran on more words than those that are enough to reliably detect a locale.
-        let safe_text = if text.len() > TEXT_LANG_TRUNCATE_OVER_CHARS {
-            tracing::debug!(
-                "lexer text needs to be truncated, as it is too long ({}/{}): {}",
-                text.len(),
-                TEXT_LANG_TRUNCATE_OVER_CHARS,
-                text
-            );
-
-            // Perform an UTF-8 aware truncation
-            let end_index = text.floor_char_boundary(TEXT_LANG_TRUNCATE_OVER_CHARS);
-            &text[..end_index]
-        } else {
-            text
-        };
-
-        tracing::debug!("will detect locale for lexer safe text: {}", safe_text);
-
-        // Attempt to detect the locale from text using an hybrid method that maximizes both \
-        //   accuracy and performance.
-        // Notice: as the 'ngram' method is almost 10x slower than the 'stopwords' method, we \
-        //   prefer using the 'stopwords' method on long texts where we can be sure to see quite \
-        //   a lot of stopwords which will produce a reliable result. However, for shorter texts \
-        //   there are not enough north none stopwords, thus we use the slower 'ngram' method as \
-        //   an attempt to extract the locale using trigrams. Still, if either of these methods \
-        //   fails at detecting a locale it will try using the other method in fallback as to \
-        //   produce the most reliable result while minimizing CPU cycles.
-        if safe_text.len() < TEXT_LANG_DETECT_NGRAM_UNDER_CHARS {
-            tracing::debug!(
-                "lexer text is shorter than {} characters, using the slow method",
-                TEXT_LANG_DETECT_NGRAM_UNDER_CHARS
-            );
-
-            Self::detect_lang_slow(safe_text)
-        } else {
-            tracing::debug!(
-                "lexer text is equal or longer than {} characters, using the fast method",
-                TEXT_LANG_DETECT_NGRAM_UNDER_CHARS
-            );
-
-            Self::detect_lang_fast(safe_text)
-        }
-    }
-
-    fn detect_lang_slow(safe_text: &str) -> Option<Lang> {
-        let ngram_start = Instant::now();
-
-        match whatlang::detect(safe_text) {
-            Some(info) => {
-                let ngram_took = ngram_start.elapsed();
-
-                let mut locale = info.lang();
-
-                tracing::info!(
-                    "[slow lexer] locale detected from text: {} ({} from {} at {}/1; {}s + {}ms)",
-                    safe_text,
-                    locale,
-                    info.script(),
-                    info.confidence(),
-                    ngram_took.as_secs(),
-                    ngram_took.subsec_millis()
-                );
-
-                // Confidence is low, try to detect locale from stop-words.
-                // Notice: this is a fallback but should not be too reliable for short \
-                //   texts.
-                if !info.is_reliable() {
-                    tracing::debug!("[slow lexer] trying to detect locale from stopwords instead");
-
-                    // Better alternate locale found?
-                    if let Some(alternate_locale) =
-                        LexerStopWord::guess_lang(safe_text, info.script())
-                    {
-                        tracing::info!(
-                            "[slow lexer] detected more accurate locale from stopwords: {}",
-                            alternate_locale
-                        );
-
-                        locale = alternate_locale;
-                    }
-                }
-
-                Some(locale)
-            }
-            None => {
-                tracing::info!(
-                    "[slow lexer] no locale could be detected from text: {}",
-                    safe_text
-                );
-
-                None
-            }
-        }
-    }
-
-    fn detect_lang_fast(safe_text: &str) -> Option<Lang> {
-        let stopwords_start = Instant::now();
-
-        match whatlang::detect_script(safe_text) {
-            Some(script) => {
-                // Locale found?
-                if let Some(locale) = LexerStopWord::guess_lang(safe_text, script) {
-                    let stopwords_took = stopwords_start.elapsed();
-
-                    tracing::info!(
-                        "[fast lexer] locale detected from text: {} ({}; {}s + {}ms)",
-                        safe_text,
-                        locale,
-                        stopwords_took.as_secs(),
-                        stopwords_took.subsec_millis()
-                    );
-
-                    Some(locale)
-                } else {
-                    tracing::debug!(
-                        "[fast lexer] trying to detect locale from fallback ngram instead"
-                    );
-
-                    // No locale found, fallback on slow ngram.
-                    whatlang::detect_lang(safe_text)
-                }
-            }
-            None => {
-                tracing::info!(
-                    "[fast lexer] no script could be detected from text: {}",
-                    safe_text
-                );
-
-                None
-            }
-        }
     }
 }
 
 impl<'a> TokenLexer<'a> {
     fn new(
-        mode: TokenLexerMode,
         text: &'a str,
-        locale: Option<Lang>,
+        lang: Option<Lang>,
         normalization_config: ConfigNormalization,
         tokenization_config: ConfigTokenization,
     ) -> TokenLexer<'a> {
-        // Tokenize words (depending on the locale)
-        let tokenizer = Tokenizer::new(text, locale, &tokenization_config);
-
-        // Identify Snowball algorithm now to avoid doing it for every token.
-        #[cfg(feature = "stemming")]
-        let snowball_algorithm = match &locale {
-            Some(locale) => super::stemming::snowball_algorithm(locale),
-            None => None,
-        };
-
         TokenLexer {
-            mode,
-            locale,
-            #[cfg(feature = "stemming")]
-            snowball_algorithm,
-            tokenizer,
+            tokenizer: Tokenizer::new(text, lang, &tokenization_config),
             yields: HashSet::new(),
             config: normalization_config,
         }
@@ -565,10 +380,11 @@ impl<'a> Iterator for TokenLexer<'a> {
     //   - Text is split per-word in a script-aware way \
     //   - Words are normalized (i.e. case is folded (≈ lower-cased), \
     //     diacritics are optionally folded, word is opionally stemmed) \
-    //   - Gibberish words are removed (ie. words that may just be junk) \
-    //   - Stop-words are removed
+    //   - Gibberish words are removed (ie. words that may just be junk)
     fn next(&mut self) -> Option<Self::Item> {
-        'tokenize: for token in self.tokenizer.by_ref() {
+        'tokenize: while let Some(token) = self.tokenizer.next() {
+            let language = self.tokenizer.last_language;
+
             let (word, original_len) = match token {
                 Token::Word(original_word) => {
                     let original_len = original_word.len();
@@ -619,7 +435,10 @@ impl<'a> Iterator for TokenLexer<'a> {
                     // Stemming
                     #[cfg(feature = "stemming")]
                     if self.config.stemming_enabled {
-                        if let Some(algo) = self.snowball_algorithm {
+                        if let Some(algo) = language
+                            .as_ref()
+                            .and_then(super::stemming::snowball_algorithm)
+                        {
                             new_word = String::from(snowball::stem(algo, &new_word));
 
                             tracing::debug!(
@@ -641,12 +460,6 @@ impl<'a> Iterator for TokenLexer<'a> {
                     (NormalizedToken::Special(normalized.into_owned()), len)
                 }
             };
-
-            // Check if normalized word is a stop-word? (if should normalize and cleanup)
-            if self.mode.should_cleanup() && LexerStopWord::is(&word, self.locale) {
-                tracing::debug!("lexer did not yield word {word:?}: word is a stop-word");
-                continue 'tokenize;
-            }
 
             // Hash the term (this is used by all iterator consumers, as well as internally \
             //   in the iterator to keep track of already-yielded words in a space-optimized \
@@ -816,7 +629,8 @@ mod tests {
             "I don’t put punctuation correctly .See?",
             vec![
                 Token::Word("I"),
-                Token::Word("don’t"),
+                Token::Word("don"),
+                Token::Word("t"),
                 Token::Word("put"),
                 Token::Word("punctuation"),
                 Token::Word("correctly"),
@@ -867,7 +681,8 @@ mod tests {
         test(
             "It’s tested in test_tokenizer.",
             vec![
-                Token::Word("It’s"),
+                Token::Word("It"),
+                Token::Word("s"),
                 Token::Word("tested"),
                 Token::Word("in"),
                 Token::Special {
@@ -879,7 +694,7 @@ mod tests {
     }
 
     #[test]
-    fn it_cleans_token_english() {
+    fn it_tokenizes_english_without_dropping_stopwords() {
         let token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup,
             None,
@@ -889,21 +704,20 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(token_cleaner.locale, Some(Lang::Eng));
+        let tokens = token_cleaner
+            .map(|(token, _, _)| token.into_inner())
+            .collect::<Vec<_>>();
 
-        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
-
-        assert_eq!(tokens.next(), Some("quick".to_owned()));
-        assert_eq!(tokens.next(), Some("brown".to_owned()));
-        assert_eq!(tokens.next(), Some("fox".to_owned()));
-        assert_eq!(tokens.next(), Some("jumps".to_owned()));
-        assert_eq!(tokens.next(), Some("lazy".to_owned()));
-        assert_eq!(tokens.next(), Some("dog".to_owned()));
-        assert_eq!(tokens.next(), None);
+        assert_eq!(
+            tokens,
+            [
+                "the", "quick", "brown", "fox", "jumps", "over", "lazy", "dog"
+            ]
+        );
     }
 
     #[test]
-    fn it_cleans_token_french() {
+    fn it_tokenizes_french_without_dropping_stopwords() {
         let token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup,
             None,
@@ -913,21 +727,29 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(token_cleaner.locale, Some(Lang::Fra));
+        let tokens = token_cleaner
+            .map(|(token, _, _)| token.into_inner())
+            .collect::<Vec<_>>();
 
-        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
-
-        assert_eq!(tokens.next(), Some("renard".to_owned()));
-        assert_eq!(tokens.next(), Some("brun".to_owned()));
-        assert_eq!(tokens.next(), Some("saute".to_owned()));
-        assert_eq!(tokens.next(), Some("chien".to_owned()));
-        assert_eq!(tokens.next(), Some("paresseux".to_owned()));
-        assert_eq!(tokens.next(), None);
+        assert_eq!(
+            tokens,
+            [
+                "le",
+                "vif",
+                "renard",
+                "brun",
+                "saute",
+                "par",
+                "dessus",
+                "chien",
+                "paresseux",
+            ]
+        );
     }
 
     #[cfg(feature = "tokenizer-chinese")]
     #[test]
-    fn it_cleans_token_chinese_jieba() {
+    fn it_tokenizes_chinese_without_dropping_stopwords() {
         let token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup,
             None,
@@ -937,11 +759,12 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(token_cleaner.locale, Some(Lang::Cmn));
-
         let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
 
+        assert_eq!(tokens.next(), Some("我们".to_owned()));
+        assert_eq!(tokens.next(), Some("中".to_owned()));
         assert_eq!(tokens.next(), Some("出".to_owned()));
+        assert_eq!(tokens.next(), Some("了".to_owned()));
         assert_eq!(tokens.next(), Some("一个".to_owned()));
         assert_eq!(tokens.next(), Some("叛徒".to_owned()));
         assert_eq!(tokens.next(), None);
@@ -958,8 +781,6 @@ mod tests {
             TOKENIZATION_CONFIG,
         )
         .unwrap();
-
-        assert_eq!(token_cleaner.locale, Some(Lang::Cmn));
 
         let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
 
@@ -983,8 +804,6 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(token_cleaner.locale, Some(Lang::Jpn));
-
         let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
 
         assert_eq!(tokens.next(), Some("関西".to_owned()));
@@ -999,7 +818,7 @@ mod tests {
     #[cfg(feature = "tokenizer-japanese")]
     #[test]
     fn it_cleans_token_japanese_lindera_food() {
-        let token_cleaner = TokenLexerBuilder::from(
+        let mut token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup,
             None,
             "𠮷野家",
@@ -1008,9 +827,9 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(token_cleaner.locale, None);
+        assert!(token_cleaner.next().is_some());
 
-        let token_cleaner = TokenLexerBuilder::from(
+        let mut token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup,
             None,
             "ヱビスビール",
@@ -1019,7 +838,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(token_cleaner.locale, None);
+        assert!(token_cleaner.next().is_some());
     }
 
     #[cfg(feature = "tokenizer-japanese")]
@@ -1033,8 +852,6 @@ mod tests {
             TOKENIZATION_CONFIG,
         )
         .unwrap();
-
-        assert_eq!(token_cleaner.locale, Some(Lang::Jpn));
 
         let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
 
@@ -1057,65 +874,15 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(token_cleaner.locale, None);
-
         assert_eq!(token_cleaner.next(), None);
     }
 
     #[test]
-    fn it_cleans_token_lang_hinted() {
-        let token_cleaner_right = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup,
-            Some(Lang::Eng),
-            "This will be cleaned properly, as English was hinted rightfully so.",
-            NORMALIZATION_CONFIG,
-            TOKENIZATION_CONFIG,
-        )
-        .unwrap();
-        let token_cleaner_wrong = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup,
-            Some(Lang::Fra),
-            "This will not be cleaned properly, as French was hinted but this is English.",
-            NORMALIZATION_CONFIG,
-            TOKENIZATION_CONFIG,
-        )
-        .unwrap();
+    fn it_passes_language_hint_to_charabia() {
+        let words = tokenize("A short ambiguous text", Some(Lang::Eng)).collect::<Vec<_>>();
 
-        assert_eq!(token_cleaner_right.locale, Some(Lang::Eng));
-        assert_eq!(token_cleaner_wrong.locale, Some(Lang::Fra));
-
-        let mut tokens_right = token_cleaner_right.map(|(token, _, _)| token.into_inner());
-        let mut tokens_wrong = token_cleaner_wrong.map(|(token, _, _)| token.into_inner());
-
-        assert_eq!(tokens_right.next(), Some("cleaned".to_owned()));
-        assert_eq!(tokens_wrong.next(), Some("this".to_owned()));
-    }
-
-    #[test]
-    fn it_detects_lang_english_regular() {
-        assert_eq!(
-            TokenLexerBuilder::detect_lang("The quick brown fox jumps over the lazy dog!"),
-            Some(Lang::Eng)
-        );
-    }
-
-    #[test]
-    fn it_detects_lang_english_long() {
-        assert_eq!(
-            TokenLexerBuilder::detect_lang(
-                r#"Running an electrical current through water splits it into oxygen and hydrogen,
-                the latter of which can be used as a reliable, zero-emission fuel source. In the past,
-                the process of purifying water beforehand was too energy intensive for this process to
-                be useful — but now scientists have figured out how to skip the process altogether and
-                convert seawater into usable hydrogen"#
-            ),
-            Some(Lang::Eng)
-        );
-    }
-
-    #[test]
-    fn it_doesnt_detect_lang_english_tiny() {
-        assert_eq!(TokenLexerBuilder::detect_lang("The quick"), None);
+        assert!(!words.is_empty());
+        assert!(words.iter().all(|word| word.language == Some(Lang::Eng)));
     }
 }
 
@@ -1285,33 +1052,5 @@ mod benches {
 
             token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
         });
-    }
-
-    #[bench]
-    fn bench_detect_lang_english_short(b: &mut Bencher) {
-        b.iter(|| TokenLexerBuilder::detect_lang("The quick brown fox."));
-    }
-
-    #[bench]
-    fn bench_detect_lang_english_regular(b: &mut Bencher) {
-        b.iter(|| TokenLexerBuilder::detect_lang("The quick brown fox jumps over the lazy dog!"));
-    }
-
-    #[bench]
-    fn bench_detect_lang_english_long(b: &mut Bencher) {
-        b.iter(|| {
-            TokenLexerBuilder::detect_lang(
-                r#"Running an electrical current through water splits it into oxygen and hydrogen,
-            the latter of which can be used as a reliable, zero-emission fuel source. In the past,
-            the process of purifying water beforehand was too energy intensive for this process to
-            be useful — but now scientists have figured out how to skip the process altogether and
-            convert seawater into usable hydrogen"#,
-            )
-        });
-    }
-
-    #[bench]
-    fn bench_dont_detect_lang_english_tiny(b: &mut Bencher) {
-        b.iter(|| TokenLexerBuilder::detect_lang("The quick"));
     }
 }
