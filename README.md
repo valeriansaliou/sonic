@@ -4,7 +4,7 @@
 
 **Sonic is a fast, lightweight and schema-less search backend. It ingests search texts and identifier tuples that can then be queried against in a microsecond's time.**
 
-Sonic can be used as a simple alternative to super-heavy and full-featured search backends such as Elasticsearch in some use-cases. It is capable of normalizing natural language search queries, auto-completing a search query and providing the most relevant results for a query. Sonic is an identifier index, rather than a document index; when queried, it returns IDs that can then be used to refer to the matched documents in an external database.
+Sonic can be used as a simple alternative to super-heavy and full-featured search backends such as Elasticsearch in some use-cases. It normalizes natural language queries, corrects likely typos and can return either identifiers or stored documents.
 
 A strong attention to performance and code cleanliness has been given when designing Sonic. It aims at being crash-free, super-fast and puts minimum strain on server resources (our measurements have shown that Sonic - when under load - responds to search queries in the μs range, eats ~30MB RAM and has a low CPU footprint; [see our benchmarks](https://github.com/valeriansaliou/sonic#how-fast--lightweight-is-it)).
 
@@ -37,7 +37,54 @@ _👋 You use Sonic and you want to be listed there? [Contact me](https://valeri
 
 Sonic is integrated in all Crisp search products on the [Crisp](https://crisp.chat/) platform. It is used to index half a billion objects on a $5/mth 1-vCPU SSD cloud server (as of 2019). Crisp users use it to search in their messages, conversations, contacts, helpdesk articles and more.
 
-**You can test Sonic live on: [Crisp Helpdesk](https://help.crisp.chat/), and get an idea of the speed and relevance of Sonic search results. You can also test search suggestions from there: start typing at least 2 characters for a word, and get suggested a full word (press the tab key to expand suggestion). _Both search and suggestions are powered by Sonic._**
+To build Sonic, download [MovieDB-JSON](https://github.com/tn3w/MovieDB-JSON),
+convert 1,000 movies, ingest them and run a document query:
+
+```bash
+./scripts/demo_moviedb.sh
+```
+
+Use `LIMIT=0` for the complete dataset, `BATCH_DOCUMENTS=1000` to tune bulk
+batching, `RESET=1` to rebuild the isolated demo index, or `KEEP_RUNNING=1` to
+leave the demo server available after import.
+
+The `sonic` binary is the server daemon. The separate `sonic-cli` binary
+contains import, export, query and control commands. Its generic importer accepts
+plain or Zstandard-compressed NDJSON.
+Each line contains its own bucket and a Sonic document:
+
+```json
+{"bucket":"default","oid":"movie:11","timestamp_ms":233366400000,"text":"Star Wars","metadata":{"title":"Star Wars"}}
+```
+
+```bash
+cargo run --release -p sonic_client --bin sonic-cli -- \
+  import --mode fresh --batch-documents 1000 \
+  --file documents.ndjson --collection movies
+```
+
+Export the complete collection, or add `--bucket default` to select one bucket:
+
+```bash
+cargo run --release -p sonic_client --bin sonic-cli -- \
+  export --collection movies --file movies.ndjson.zst
+```
+
+Query stored documents:
+
+```bash
+cargo run --release -p sonic_client --bin sonic-cli -- \
+  query --collection movies --bucket default --documents "star wars"
+```
+
+Inspect physical RocksDB usage, bitmap density and logical document sizes:
+
+```bash
+target/release/sonic-cli stats --collection movies
+target/release/sonic-cli stats --collection movies --deep
+```
+
+**You can test Sonic live on [Crisp Helpdesk](https://help.crisp.chat/) and get an idea of the speed and relevance of Sonic search results.**
 
 ![Demo on Crisp Helpdesk search](https://valeriansaliou.github.io/sonic/images/crisp-search-demo.gif)
 
@@ -46,10 +93,9 @@ Sonic is integrated in all Crisp search products on the [Crisp](https://crisp.ch
 ## Features
 
 * **Search terms are stored in collections, organized in buckets**; you may use a single bucket, or a bucket per user on your platform if you need to search in separate indexes.
-* **Search results return object identifiers**, that can be resolved from an external database if you need to enrich the search results. This makes Sonic a simple word index, that points to identifier results. Sonic doesn't store any direct textual data in its index, but it still holds a word graph for auto-completion and typo corrections.
-* **Search query typos are corrected** if there are not enough exact-match results for a given word in a search query, Sonic tries to correct the word and tries against alternate words. You're allowed to make mistakes when searching.
+* **Search results can return identifiers or documents**. PUSH/QUERY keeps the compact identifier-only workflow, while UPSERT/QUERYDOCS stores and returns timestamped text with JSON metadata.
+* **Search query typos are corrected** using an adaptive lexicon that retains frequent and recent corpus terms while evicting colder terms. Exact matches rank before fuzzy alternatives.
 * **Insert and remove items in the index**; index-altering operations are light and can be committed to the server while it is running. A background tasker handles the job of consolidating the index so that the entries you have pushed or popped are quickly made available for search.
-* **Auto-complete any word** in real-time via the suggest operation. This helps build a snappy word suggestion feature in your end-user search interface.
 * **Full Unicode compatibility** through Charabia's script-aware segmentation and language detection. All terms, including common words, remain searchable; [see languages](https://github.com/valeriansaliou/sonic#which-text-languages-are-supported).
 * **Simple protocol (Sonic Channel)**, that let you search your index, manage data ingestion (push in the index, pop from the index, flush a collection, flush a bucket, etc.) and perform administrative actions. Sonic Channel was designed to be lightweight on resources and simple to integrate with; [read protocol specification](https://github.com/valeriansaliou/sonic/blob/master/PROTOCOL.md).
 * **Easy-to-use libraries**, that let you connect to Sonic from your apps; [see libraries](https://github.com/valeriansaliou/sonic#-sonic-channel-libraries).
@@ -375,9 +421,9 @@ QUERY     | 880μs   | 852μs | 1ms
 
 ## Limitations
 
-* **Indexed data limits**: Sonic is designed for large search indexes split over thousands of search buckets per collection. An IID (ie. Internal-ID) is stored in the index as a 32 bits number, which theoretically allow up to ~4.2 billion objects to be indexed (ie. OID) per bucket. We've observed storage savings of 30% to 40%, which justifies the trade-off on large databases (versus Sonic using 64 bits IIDs). Also, Sonic only keeps the N most recently pushed results for a given word, in a sliding window way (the sliding window width can be configured).
-* **Search query limits**: Sonic Natural Language Processing system (NLP) does not work at the sentence-level, for storage compactness reasons (we keep the FST graph shallow as to reduce time and space complexity). It works at the word-level, and is thus able to search per-word and can predict a word based on user input, though it is unable to predict the next word in a sentence.
-* **Real-time limits**: the FST needs to be rebuilt every time a word is pushed or popped from the bucket graph. As this is quite heavy, Sonic batches rebuild cycles. If you have just pushed a new word to the index and you are not seeing it in the `SUGGEST` command yet, wait for the next rebuild cycle to kick-in, or force it with `TRIGGER consolidate` in a `control` channel.
+* **Indexed data limits**: Sonic is designed for large search indexes split over thousands of search buckets per collection. An IID (ie. Internal-ID) is stored in the index as a 32 bits number, which theoretically allows up to ~4.2 billion objects to be indexed (ie. OID) per bucket. Exact term-to-object associations are exhaustive and stored in bounded IID-range fragments.
+* **Search query limits**: Sonic works at the word level. Typo correction is best-effort and limited to frequent terms retained by the adaptive lexicon.
+* **Real-time limits**: typo-frequency updates are consolidated into immutable FST files in batches. Exact RocksDB search remains immediately available.
 * **Interoperability limits**: The Sonic Channel protocol is the only way to read and write search entries to the Sonic search index. Sonic does not expose any HTTP API. Sonic Channel has been designed with performance and minimal network footprint in mind. If you need to access Sonic from an unsupported programming language, you can either [open an issue](https://github.com/valeriansaliou/sonic/issues/new) or look at the reference [node-sonic-channel](https://github.com/valeriansaliou/node-sonic-channel) implementation and build it in your target programming language.
 * **Hardware limits**: Sonic performs the search on the file-system directly; ie. it does not fit the index in RAM. A search query results in a lot of random accesses on the disk, which means that it will be quite slow on old-school HDDs and super-fast on newer SSDs. Do store the Sonic database on SSD-backed file systems only.
 

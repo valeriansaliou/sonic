@@ -15,6 +15,7 @@ pub fn defaults_toml() -> &'static str {
     [channel]
     inet = "[::1]:1491"
     tcp_timeout = 300
+    bulk_buffer_size = 8388608
 
     [normalization]
     # TODO(major): Enable by default.
@@ -30,14 +31,12 @@ pub fn defaults_toml() -> &'static str {
     query_limit_default = 10
     query_limit_maximum = 100
     query_alternates_try = 4
-    suggest_limit_default = 5
-    suggest_limit_maximum = 20
+    query_candidates_maximum = 1000
     list_limit_default = 100
     list_limit_maximum = 500
 
     [store.kv]
     path = "./data/store/kv/"
-    retain_word_objects = 1000
     pool.inactive_after = 1800
     database.flush_after = 900
     database.compress = true
@@ -53,6 +52,7 @@ pub fn defaults_toml() -> &'static str {
     graph.consolidate_after = 180
     graph.max_size = 2048
     graph.max_words = 250000
+    graph.min_frequency = 2
     "#
 }
 
@@ -100,6 +100,10 @@ impl Config {
 
         // Validate configuration.
         core_config.validate();
+        assert!(
+            server_config.channel.bulk_buffer_size >= 20_000,
+            "bulk_buffer_size must be at least 20000"
+        );
 
         Config {
             channel: server_config.channel,
@@ -140,6 +144,8 @@ pub struct ConfigChannel {
     pub inet: std::net::SocketAddr,
 
     pub tcp_timeout: u64,
+
+    pub bulk_buffer_size: usize,
 
     #[serde(default, deserialize_with = "sonic::util::serde::env_var::opt_str")]
     pub auth_password: Option<String>,
@@ -214,12 +220,7 @@ mod back_compat {
             if let Some(query_alternates_try) = query_alternates_try {
                 sonic.search.query_alternates_try = query_alternates_try;
             }
-            if let Some(suggest_limit_default) = suggest_limit_default {
-                sonic.search.suggest_limit_default = suggest_limit_default;
-            }
-            if let Some(suggest_limit_maximum) = suggest_limit_maximum {
-                sonic.search.suggest_limit_maximum = suggest_limit_maximum;
-            }
+            let _ = (suggest_limit_default, suggest_limit_maximum);
             if let Some(list_limit_default) = list_limit_default {
                 sonic.search.list_limit_default = list_limit_default;
             }

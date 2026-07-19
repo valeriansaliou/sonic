@@ -734,6 +734,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fallible-iterator"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649"
+
+[[package]]
+name = "fallible-streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
+
+[[package]]
 name = "fastrand"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -825,17 +837,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fb3fe22f96106ccbb6d06cd738c4ae65f678811b2036ff63b736fd0814313e0b"
 dependencies = [
  "fst 0.3.5",
- "utf8-ranges",
-]
-
-[[package]]
-name = "fst-regex"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a661915a88dbce93ac018dc96fe0d67cbc3bc9899eea840891ee6a1367144b1"
-dependencies = [
- "fst 0.3.5",
- "regex-syntax 0.3.9",
  "utf8-ranges",
 ]
 
@@ -969,6 +970,15 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 dependencies = [
  "allocator-api2",
  "foldhash 0.2.0",
+]
+
+[[package]]
+name = "hashlink"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7382cf6263419f2d8df38c55d7da83da5c18aef87fc7a7fc1fb1e344edfe14c1"
+dependencies = [
+ "hashbrown 0.15.5",
 ]
 
 [[package]]
@@ -1408,7 +1418,19 @@ dependencies = [
  "cc",
  "libc",
  "libz-sys",
+ "lz4-sys",
  "zstd-sys",
+]
+
+[[package]]
+name = "libsqlite3-sys"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "133c182a6a2c87864fe97778797e46c7e999672690dc9fa3ee8e241aa4a9c13f"
+dependencies = [
+ "cc",
+ "pkg-config",
+ "vcpkg",
 ]
 
 [[package]]
@@ -1583,6 +1605,16 @@ name = "lru-slab"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
+
+[[package]]
+name = "lz4-sys"
+version = "1.11.1+lz4-1.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bd8c0d6c6ed0cd30b3652886bb8711dc4bb01d637a68105a3d5158039b418e6"
+dependencies = [
+ "cc",
+ "libc",
+]
 
 [[package]]
 name = "md5"
@@ -2027,7 +2059,7 @@ dependencies = [
  "aho-corasick",
  "memchr",
  "regex-automata",
- "regex-syntax 0.8.11",
+ "regex-syntax",
 ]
 
 [[package]]
@@ -2038,14 +2070,8 @@ checksum = "6e1dd4122fc1595e8162618945476892eefca7b88c52820e74af6262213cae8f"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-syntax 0.8.11",
+ "regex-syntax",
 ]
-
-[[package]]
-name = "regex-syntax"
-version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9ec002c35e86791825ed294b50008eea9ddfc8def4420124fbc6b08db834957"
 
 [[package]]
 name = "regex-syntax"
@@ -2119,6 +2145,20 @@ checksum = "ddb7af00d2b17dbd07d82c0063e25411959748ff03e8d4f96134c2ff41fce34f"
 dependencies = [
  "libc",
  "librocksdb-sys",
+]
+
+[[package]]
+name = "rusqlite"
+version = "0.37.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "165ca6e57b20e1351573e3729b958bc62f0e48025386970b6e4d29e7a7e71f3f"
+dependencies = [
+ "bitflags 2.13.0",
+ "fallible-iterator",
+ "fallible-streaming-iterator",
+ "hashlink",
+ "libsqlite3-sys",
+ "smallvec",
 ]
 
 [[package]]
@@ -2365,27 +2405,46 @@ dependencies = [
 name = "sonic-core"
 version = "0.1.3"
 dependencies = [
+ "base64",
  "byteorder",
  "caseless",
  "charabia",
  "config",
  "fst 0.3.5",
  "fst-levenshtein",
- "fst-regex",
  "hashbrown 0.17.1",
  "indexmap",
  "linked_hash_set",
  "radix",
  "regex",
- "regex-syntax 0.8.11",
  "rocksdb",
  "serde",
+ "serde_json",
  "tracing",
  "tracing-subscriber",
  "twox-hash",
  "unicode-normalization",
  "waken_snowball",
  "whatlang 0.18.0",
+ "zstd",
+]
+
+[[package]]
+name = "sonic-router"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "clap",
+ "config",
+ "nix",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "tracing-subscriber",
+ "windows-sys 0.61.2",
+ "zstd",
 ]
 
 [[package]]
@@ -2393,6 +2452,7 @@ name = "sonic-server"
 version = "1.7.4"
 dependencies = [
  "arrow-array",
+ "base64",
  "clap",
  "config",
  "criterion",
@@ -2401,26 +2461,33 @@ dependencies = [
  "parquet",
  "rand 0.10.2",
  "serde",
+ "serde_json",
  "sonic-core",
  "sonic_client",
  "tikv-jemallocator",
  "tracing",
  "tracing-subscriber",
  "windows-sys 0.61.2",
+ "zstd",
 ]
 
 [[package]]
 name = "sonic_client"
 version = "0.3.0"
 dependencies = [
+ "base64",
  "bytes",
+ "clap",
  "crossbeam-channel",
  "log",
  "mio",
  "oneshot",
+ "serde",
+ "serde_json",
  "slab",
  "tokio",
  "tracing",
+ "zstd",
 ]
 
 [[package]]
@@ -2502,6 +2569,19 @@ dependencies = [
  "filetime",
  "libc",
  "xattr",
+]
+
+[[package]]
+name = "tempfile"
+version = "3.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
+dependencies = [
+ "fastrand",
+ "getrandom 0.4.3",
+ "once_cell",
+ "rustix",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

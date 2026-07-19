@@ -26,6 +26,10 @@ in each document. Once that done, a documents’s score is calculated by summing
 up its scores for each term, and documents are finally sorted by score. When
 ties occur, results are sorted by reverse ingestion order[^rio].
 
+For queries using `FROM` or `TO`, date postings are intersected with term
+postings before scoring. Score remains the primary ordering key; ties are sorted
+by explicit timestamp descending, then IID descending.
+
 [^rio]: This happens at no cost and is invisible in the code, but happens because it’s the order in which results are yielded by the index (on purpose).
 
 Here is some more detailed and accurate pseudo-code:
@@ -34,7 +38,10 @@ Here is some more detailed and accurate pseudo-code:
 MISSING_MATCH_SCORE = 100
 
 fn query(query, app_config) -> [doc] {
-  limit = app_config.store.kv.retain_word_objects
+  limit = max(
+    app_config.search.query_candidates_maximum,
+    query_offset + query_limit,
+  )
   mut alternates_try = app_config.search.query_alternates_try
 
   // Updates the document’s score for a given term.
@@ -61,17 +68,6 @@ fn query(query, app_config) -> [doc] {
         score = 0
         update_score(results_matrix, doc, score, index, len(normalized(query)))
 
-  // Look for words containing `term` as prefix.
-  if len(results_matrix) < limit && alternates_try > 0:
-    for (index, term) in normalized(query):
-      for suggested_term in lookup_begins(term):
-        for doc in limit(find_exact_matches(term), alternates_try):
-          if len(results_matrix) < limit:
-            // Compute Levenshtein distance.
-            score = len(suggested_term) - len(term)
-            if update_score(results_matrix, doc, score, index, len(normalized(query))):
-              alternates_try -= 1
-
   fn typo_factor(word_len) -> u32 {
     if      word_len <= 3: return 0
     else if word_len <= 6: return 1
@@ -79,7 +75,7 @@ fn query(query, app_config) -> [doc] {
     else                 : return 3
   }
 
-  // Look for words like `term` (fuzzy matching).
+  // Look for frequent corpus words like `term` (fuzzy matching).
   if len(results_matrix) < limit && alternates_try > 0:
     for (index, term) in normalized(query):
       max_typo_factor = typo_factor(len(term))
@@ -118,7 +114,9 @@ fn query(query, app_config) -> [doc] {
 
 ### Algorithm properties
 
-- At most `store.kv.retain_word_objects` are returned.
+- Exact postings are exhaustive, while scoring is bounded by
+  `search.query_candidates_maximum` unless deeper pagination requires more
+  candidates.
 - Fuzzy matching yields at most `search.query_alternates_try` results.
 - Memory usage is linear, proportional to the number of results.
 - Although the pseudo-code doesn’t show it, most operations are lazy, meaning

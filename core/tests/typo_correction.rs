@@ -27,6 +27,21 @@ use crate::common::*;
 /// This test sentence contains words that are 3–10 characters-long.
 const ASTRONOMY_WORDS: &str = "sun moon comet nebula pulsars asteroid satellite spacecraft";
 
+#[test]
+fn test_search_finds_messenger_from_mesengr() {
+    init_logging();
+    let executor = make_test_executor();
+
+    exec!(
+        executor -> PUSH "messages" "default" "message:1"
+        "Use Messenger in your mobile application"
+    );
+    exec!(executor -> TRIGGER consolidate);
+
+    let response = exec!(executor -> QUERY "messages" "default" "mesengr");
+    assert_eq!(response, ["message:1"]);
+}
+
 /// Search should allow a certain number of typos (depending on token length).
 ///
 /// This covers missing letters, inverted letters and additional letters.

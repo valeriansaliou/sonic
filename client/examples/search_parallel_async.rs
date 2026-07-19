@@ -30,7 +30,6 @@ async fn worker(multiplexer: Arc<SonicMultiplexer>, queries: &[&str]) -> std::io
     for &query in queries.into_iter() {
         conn.query_with_options(COLLECTION, BUCKET, query, &[&Lang("eng")])
             .await?;
-        conn.suggest(COLLECTION, BUCKET, query).await?;
     }
 
     timed!({

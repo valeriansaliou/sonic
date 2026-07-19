@@ -141,18 +141,19 @@ impl Transport for SonicStream {
     }
 
     fn flush_writes(&mut self) -> std::io::Result<usize> {
+        use bytes::Buf as _;
         use std::io::Write as _;
 
         if self.write_buf.is_empty() {
             return Ok(0);
         }
 
-        match self.stream.write_all(&self.write_buf) {
-            Ok(()) => {
-                let written = self.write_buf.len();
-                self.write_buf.clear();
+        match self.stream.write(&self.write_buf) {
+            Ok(written) => {
+                self.write_buf.advance(written);
                 Ok(written)
             }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => Ok(0),
             Err(err) => Err(err),
         }
     }

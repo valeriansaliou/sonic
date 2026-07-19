@@ -98,6 +98,72 @@ impl_fns!(
 
 // MARK: INFO
 
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct CollectionStats {
+    pub collection: String,
+    #[serde(default)]
+    pub schema_version: u32,
+    pub index: ColumnFamilyStats,
+    #[serde(default)]
+    pub postings: ColumnFamilyStats,
+    pub documents: ColumnFamilyStats,
+    pub logical: Option<LogicalStats>,
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct ColumnFamilyStats {
+    pub live_data_bytes: u64,
+    pub sst_bytes: u64,
+    pub memtable_bytes: u64,
+    pub estimated_keys: u64,
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct LogicalStats {
+    pub index_key_bytes: u64,
+    pub index_value_bytes: u64,
+    pub document_key_bytes: u64,
+    pub document_encoded_bytes: u64,
+    pub document_text_bytes: u64,
+    pub document_metadata_bytes: u64,
+    pub document_count: u64,
+    pub term_postings: PostingStats,
+    pub time_postings: PostingStats,
+    pub families: Vec<IndexFamilyStats>,
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct PostingStats {
+    pub fragments: u64,
+    pub sparse_fragments: u64,
+    pub dense_fragments: u64,
+    pub encoded_bytes: u64,
+    pub associations: u64,
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct IndexFamilyStats {
+    pub index: u8,
+    pub name: String,
+    pub keys: u64,
+    pub key_bytes: u64,
+    pub value_bytes: u64,
+}
+
+impl_fns!(
+    #[doc = "Returns physical and optional deep logical collection statistics."]
+    fn stats(&self, collection: impl AsRef<str>, deep: bool) -> std::io::Result<CollectionStats> {
+        let command = if deep {
+            make_command!("STATS {} DEEP", collection)
+        } else {
+            make_command!("STATS {}", collection)
+        };
+        self.inner.send(command, Discriminant::Result, |data| {
+            serde_json::from_str(data).map_err(io_error_invalid_data)
+        })
+    }
+);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ServerStats {
     pub uptime: u32,

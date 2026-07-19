@@ -6,10 +6,11 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use super::Query;
-use super::types::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset};
+use super::types::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset, QueryTimeRange};
 use crate::config::{ConfigNormalization, ConfigTokenization};
 use crate::lexer::{TokenLexerBuilder, TokenLexerMode};
 use crate::store::StoreItemBuilder;
+use crate::store::document::StoreDocument;
 
 impl<'a> Query<'a> {
     #[allow(clippy::too_many_arguments)] // This will be reworked at some point.
@@ -24,6 +25,35 @@ impl<'a> Query<'a> {
         normalization_config: ConfigNormalization,
         tokenization_config: ConfigTokenization,
     ) -> Result<Self, ()> {
+        Self::search_with_range(
+            query_id,
+            collection,
+            bucket,
+            terms,
+            limit,
+            offset,
+            lang,
+            None,
+            normalization_config,
+            tokenization_config,
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn search_with_range(
+        query_id: &'a str,
+        collection: &'a str,
+        bucket: &'a str,
+        terms: &'a str,
+        limit: QuerySearchLimit,
+        offset: QuerySearchOffset,
+        lang: Option<QueryGenericLang>,
+        time_range: Option<QueryTimeRange>,
+        normalization_config: ConfigNormalization,
+        tokenization_config: ConfigTokenization,
+        documents: bool,
+    ) -> Result<Self, ()> {
         match (
             StoreItemBuilder::from_depth_2(collection, bucket),
             TokenLexerBuilder::from(
@@ -34,33 +64,12 @@ impl<'a> Query<'a> {
                 tokenization_config,
             ),
         ) {
-            (Ok(store), Ok(text_lexed)) => {
-                Ok(Query::Search(store, query_id, text_lexed, limit, offset))
-            }
-            _ => Err(()),
-        }
-    }
-
-    pub fn suggest(
-        query_id: &'a str,
-        collection: &'a str,
-        bucket: &'a str,
-        terms: &'a str,
-        limit: QuerySearchLimit,
-        normalization_config: ConfigNormalization,
-        tokenization_config: ConfigTokenization,
-    ) -> Result<Self, ()> {
-        match (
-            StoreItemBuilder::from_depth_2(collection, bucket),
-            TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeOnly,
-                None,
-                terms,
-                normalization_config,
-                tokenization_config,
-            ),
-        ) {
-            (Ok(store), Ok(text_lexed)) => Ok(Query::Suggest(store, query_id, text_lexed, limit)),
+            (Ok(store), Ok(text_lexed)) if documents => Ok(Query::SearchDocuments(
+                store, query_id, text_lexed, limit, offset, time_range,
+            )),
+            (Ok(store), Ok(text_lexed)) => Ok(Query::Search(
+                store, query_id, text_lexed, limit, offset, time_range,
+            )),
             _ => Err(()),
         }
     }
@@ -98,6 +107,34 @@ impl<'a> Query<'a> {
             ),
         ) {
             (Ok(store), Ok(text_lexed)) => Ok(Query::Push(store, text_lexed)),
+            _ => Err(()),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert(
+        collection: &'a str,
+        bucket: &'a str,
+        object: &'a str,
+        text: &'a str,
+        timestamp_ms: u64,
+        metadata: serde_json::Value,
+        lang: Option<QueryGenericLang>,
+        normalization_config: ConfigNormalization,
+        tokenization_config: ConfigTokenization,
+    ) -> Result<Self, ()> {
+        let document = StoreDocument::new(object, timestamp_ms, text, metadata)?;
+        match (
+            StoreItemBuilder::from_depth_3(collection, bucket, object),
+            TokenLexerBuilder::from(
+                TokenLexerMode::from_query_lang(&lang),
+                lang.and_then(QueryGenericLang::into_lang_opt),
+                text,
+                normalization_config,
+                tokenization_config,
+            ),
+        ) {
+            (Ok(store), Ok(text_lexed)) => Ok(Query::Upsert(store, text_lexed, document)),
             _ => Err(()),
         }
     }
@@ -190,21 +227,6 @@ mod tests {
         #[rustfmt::skip]
         assert!(Query::search(
             "id2", "c:test:1", "", "Michael Dake", 1, 0, None,
-            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG,
-        ).is_err());
-    }
-
-    #[test]
-    fn it_builds_suggest_query() {
-        #[rustfmt::skip]
-        assert!(Query::suggest(
-            "id1", "c:test:2", "b:test:2", "Micha", 5,
-            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG,
-        ).is_ok());
-
-        #[rustfmt::skip]
-        assert!(Query::suggest(
-            "id2", "c:test:2", "", "Micha", 1,
             NORMALIZATION_CONFIG, TOKENIZATION_CONFIG,
         ).is_err());
     }

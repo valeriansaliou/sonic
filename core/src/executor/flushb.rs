@@ -33,12 +33,15 @@ impl super::Executor {
                     );
 
                     let kv_action = StoreKVActionBuilder::access(bucket, kv_store);
+                    let Some(bucket_id) = kv_action.bucket_id() else {
+                        return Ok(0);
+                    };
 
                     // Notice: we cannot use the provided KV bucket erasure helper there, as \
                     //   erasing a bucket requires a database lock, which would incur a dead-lock, \
                     //   thus we need to perform the erasure from there.
                     if let Ok(erase_count) = kv_action.batch_erase_bucket() {
-                        if self.fst_pool.erase(collection, Some(bucket)).is_ok() {
+                        if self.fst_pool.erase_bucket_id(collection, bucket_id).is_ok() {
                             tracing::debug!("done with bucket erasure");
 
                             return Ok(erase_count);

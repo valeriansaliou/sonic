@@ -30,6 +30,10 @@ pub struct Config {
 
 impl Config {
     pub fn validate(&self) {
+        if self.search.query_candidates_maximum == 0 {
+            panic!("query_candidates_maximum must not be zero");
+        }
+
         // Check 'write_buffer' for KV
         if self.store.kv.database.write_buffer == 0 {
             panic!("write_buffer for kv must not be zero");
@@ -74,9 +78,7 @@ pub struct ConfigSearch {
 
     pub query_alternates_try: usize,
 
-    pub suggest_limit_default: u16,
-
-    pub suggest_limit_maximum: u16,
+    pub query_candidates_maximum: usize,
 
     pub list_limit_default: u16,
 
@@ -94,8 +96,6 @@ pub struct ConfigStore {
 pub struct ConfigStoreKV {
     #[serde(deserialize_with = "env_var::path_buf")]
     pub path: PathBuf,
-
-    pub retain_word_objects: usize,
 
     pub pool: ConfigStoreKVPool,
 
@@ -148,6 +148,8 @@ pub struct ConfigStoreFSTGraph {
     pub max_size: usize,
 
     pub max_words: usize,
+
+    pub min_frequency: u32,
 }
 
 #[cfg(test)]
@@ -170,14 +172,12 @@ pub(crate) mod tests {
         query_limit_default = 10
         query_limit_maximum = 100
         query_alternates_try = 4
-        suggest_limit_default = 5
-        suggest_limit_maximum = 20
+        query_candidates_maximum = 1000
         list_limit_default = 100
         list_limit_maximum = 500
 
         [store.kv]
         path = "./data/store/kv/"
-        retain_word_objects = 1000
         pool.inactive_after = 1800
         database.flush_after = 900
         database.compress = true
@@ -193,6 +193,7 @@ pub(crate) mod tests {
         graph.consolidate_after = 180
         graph.max_size = 2048
         graph.max_words = 250000
+        graph.min_frequency = 2
         "#
     }
 }

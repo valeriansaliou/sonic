@@ -7,7 +7,7 @@
 
 use crate::query::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
 use crate::store::StoreItem;
-use crate::store::fst::StoreFSTActionBuilder;
+use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
 impl super::Executor {
     pub fn list(
@@ -18,17 +18,18 @@ impl super::Executor {
         offset: QuerySearchOffset,
     ) -> Result<Vec<String>, ()> {
         if let StoreItem(collection, Some(bucket), None) = item {
-            // Important: acquire graph access read lock, and reference it in context. This \
-            //   prevents the graph from being erased while using it in this block.
-            let _fst_read_guard = self.fst_pool.lock_read_access();
-
-            if let Ok(fst_store) = self.fst_pool.acquire(collection, bucket) {
-                let fst_action = StoreFSTActionBuilder::access(fst_store);
-
-                tracing::debug!("running list");
-
-                return fst_action.list_words(limit as usize, offset as usize);
+            let _kv_read_guard = self.kv_pool.lock_read_access();
+            let kv_store = self
+                .kv_pool
+                .acquire(StoreKVAcquireMode::OpenOnly, collection)?;
+            executor_kv_lock_read!(kv_store);
+            let kv_action = StoreKVActionBuilder::access(bucket, kv_store);
+            if kv_action.bucket_id().is_none() {
+                return Ok(Vec::new());
             }
+
+            tracing::debug!("running list");
+            return Ok(kv_action.list_terms(limit as usize, offset as usize));
         }
 
         Err(())

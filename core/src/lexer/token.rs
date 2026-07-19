@@ -9,16 +9,13 @@ use std::borrow::Cow;
 use std::iter::Peekable;
 use std::sync::LazyLock;
 
-use charabia::{
-    Language as CharabiaLanguage, TokenKind, TokenizerBuilder as CharabiaTokenizerBuilder,
-};
+use charabia::{Language as CharabiaLanguage, Segment};
 use hashbrown::HashSet;
 use regex::Regex;
 use whatlang::Lang;
 
 use crate::config::{ConfigNormalization, ConfigTokenization};
 use crate::query::QueryGenericLang;
-use crate::store::identifiers::{StoreTermHash, StoreTermHashed};
 
 pub struct TokenLexerBuilder;
 
@@ -34,9 +31,6 @@ struct PendingToken<'s> {
 
 type WordsIter<'s> = Box<dyn Iterator<Item = WordToken<'s>> + 's>;
 type TokensIter<'s> = Box<dyn Iterator<Item = PendingToken<'s>> + 's>;
-
-static CHARABIA_TOKENIZER: LazyLock<charabia::Tokenizer<'static>> =
-    LazyLock::new(|| CharabiaTokenizerBuilder::default().into_tokenizer());
 
 static SPECIAL_PATTERNS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(
@@ -85,37 +79,33 @@ impl<'s> Tokenizer<'s> {
 
 fn tokenize<'s>(text: &'s str, lang: Option<Lang>) -> WordsIter<'s> {
     let hinted_language = lang.and_then(|lang| CharabiaLanguage::from_code(lang.code()));
-    let allow_list = hinted_language.as_ref().map(std::slice::from_ref);
 
-    // Keep original slices so Sonic's configurable normalization remains authoritative.
-    let words: Vec<WordToken<'s>> = CHARABIA_TOKENIZER
-        .tokenize_with_allow_list(text, allow_list)
-        .filter_map(|token| {
-            let range = token.byte_start..token.byte_end;
+    let to_word = move |token: charabia::Token<'s>| {
+        let range = token.byte_start..token.byte_end;
+        let raw = &text[range];
 
-            match token.kind {
-                TokenKind::Word | TokenKind::StopWord
-                    if text[range.clone()].chars().any(char::is_alphanumeric) =>
-                {
-                    let language = token
-                        .language
-                        .and_then(|language| Lang::from_code(language.code()))
-                        .or(lang);
-
-                    Some(WordToken {
-                        raw: &text[range],
-                        language,
-                    })
-                }
-                TokenKind::Word
-                | TokenKind::StopWord
-                | TokenKind::Separator(_)
-                | TokenKind::Unknown => None,
-            }
+        raw.chars().any(char::is_alphanumeric).then(|| WordToken {
+            raw,
+            language: token
+                .language
+                .and_then(|language| Lang::from_code(language.code()))
+                .or(lang),
         })
-        .collect();
+    };
 
-    Box::new(words.into_iter())
+    if let Some(hinted_language) = hinted_language {
+        // The allow list is local, so collect before returning the iterator.
+        let allow_list = [hinted_language];
+        let words = text
+            .segment_with_option(None, Some(&allow_list))
+            .filter_map(to_word)
+            .collect::<Vec<_>>();
+
+        Box::new(words.into_iter())
+    } else {
+        // Stream raw segments because Sonic applies its own normalization.
+        Box::new(text.segment().filter_map(to_word))
+    }
 }
 
 impl<'s> Iterator for Tokenizer<'s> {
@@ -312,7 +302,7 @@ impl From<NormalizedToken> for String {
 
 pub struct TokenLexer<'a> {
     tokenizer: Tokenizer<'a>,
-    yields: HashSet<StoreTermHashed>,
+    yields: HashSet<String>,
     config: ConfigNormalization,
 }
 
@@ -374,7 +364,7 @@ impl TokenLexerMode {
 }
 
 impl<'a> Iterator for TokenLexer<'a> {
-    type Item = (NormalizedToken, StoreTermHashed, usize);
+    type Item = (NormalizedToken, usize);
 
     // Guarantees provided by the lexer on the output: \
     //   - Text is split per-word in a script-aware way \
@@ -461,22 +451,15 @@ impl<'a> Iterator for TokenLexer<'a> {
                 }
             };
 
-            // Hash the term (this is used by all iterator consumers, as well as internally \
-            //   in the iterator to keep track of already-yielded words in a space-optimized \
-            //   manner, ie. by using 32-bit unsigned integer hashes)
-            let term_hash = StoreTermHash::from(&word);
-
             // Check if word was not already yielded? (we return unique words)
-            if self.yields.contains(&term_hash) {
+            if !self.yields.insert(word.to_string()) {
                 tracing::debug!("lexer did not yield word {word:?}: word already yielded");
                 continue 'tokenize;
             }
 
             tracing::debug!("lexer yielded word: {word:?}");
 
-            self.yields.insert(term_hash);
-
-            return Some((word, term_hash, original_len));
+            return Some((word, original_len));
         }
 
         None
@@ -705,7 +688,7 @@ mod tests {
         .unwrap();
 
         let tokens = token_cleaner
-            .map(|(token, _, _)| token.into_inner())
+            .map(|(token, _)| token.into_inner())
             .collect::<Vec<_>>();
 
         assert_eq!(
@@ -728,7 +711,7 @@ mod tests {
         .unwrap();
 
         let tokens = token_cleaner
-            .map(|(token, _, _)| token.into_inner())
+            .map(|(token, _)| token.into_inner())
             .collect::<Vec<_>>();
 
         assert_eq!(
@@ -759,7 +742,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
+        let mut tokens = token_cleaner.map(|(token, _)| token.into_inner());
 
         assert_eq!(tokens.next(), Some("我们".to_owned()));
         assert_eq!(tokens.next(), Some("中".to_owned()));
@@ -772,7 +755,7 @@ mod tests {
 
     #[cfg(not(feature = "tokenizer-chinese"))]
     #[test]
-    fn it_cleans_token_chinese_naive() {
+    fn it_uses_fallback_chinese_segmentation() {
         let token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup,
             None,
@@ -782,20 +765,16 @@ mod tests {
         )
         .unwrap();
 
-        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
+        let mut tokens = token_cleaner.map(|(token, _)| token.into_inner());
 
-        assert_eq!(tokens.next(), Some("快".to_owned()));
-        assert_eq!(tokens.next(), Some("狐".to_owned()));
-        assert_eq!(tokens.next(), Some("跨".to_owned()));
-        assert_eq!(tokens.next(), Some("懒".to_owned()));
-        assert_eq!(tokens.next(), Some("狗".to_owned()));
+        assert_eq!(tokens.next(), Some("快狐跨懒狗快狐跨懒狗".to_owned()));
         assert_eq!(tokens.next(), None);
     }
 
     #[cfg(feature = "tokenizer-japanese")]
     #[test]
-    fn it_cleans_token_japanese_lindera_product() {
-        let mut token_cleaner = TokenLexerBuilder::from(
+    fn it_tokenizes_japanese_product() {
+        let token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup,
             None,
             "関西国際空港限定トートバッグ",
@@ -804,7 +783,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
+        let mut tokens = token_cleaner.map(|(token, _)| token.into_inner());
 
         assert_eq!(tokens.next(), Some("関西".to_owned()));
         assert_eq!(tokens.next(), Some("国際".to_owned()));
@@ -817,7 +796,7 @@ mod tests {
 
     #[cfg(feature = "tokenizer-japanese")]
     #[test]
-    fn it_cleans_token_japanese_lindera_food() {
+    fn it_tokenizes_japanese_food() {
         let mut token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup,
             None,
@@ -843,8 +822,8 @@ mod tests {
 
     #[cfg(feature = "tokenizer-japanese")]
     #[test]
-    fn it_cleans_token_japanese_lindera_sentence() {
-        let mut token_cleaner = TokenLexerBuilder::from(
+    fn it_tokenizes_japanese_without_dropping_stopwords() {
+        let token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup,
             None,
             "𠮷野家でヱビスビールを飲んだ",
@@ -853,13 +832,16 @@ mod tests {
         )
         .unwrap();
 
-        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
+        let mut tokens = token_cleaner.map(|(token, _)| token.into_inner());
 
         assert_eq!(tokens.next(), Some("𠮷".to_owned()));
         assert_eq!(tokens.next(), Some("野家".to_owned()));
+        assert_eq!(tokens.next(), Some("で".to_owned()));
         assert_eq!(tokens.next(), Some("ヱビス".to_owned()));
         assert_eq!(tokens.next(), Some("ビール".to_owned()));
+        assert_eq!(tokens.next(), Some("を".to_owned()));
         assert_eq!(tokens.next(), Some("飲ん".to_owned()));
+        assert_eq!(tokens.next(), Some("だ".to_owned()));
         assert_eq!(tokens.next(), None);
     }
 
@@ -883,6 +865,54 @@ mod tests {
 
         assert!(!words.is_empty());
         assert!(words.iter().all(|word| word.language == Some(Lang::Eng)));
+    }
+
+    #[test]
+    fn segmentation_matches_previous_charabia_tokenization() {
+        use charabia::{TokenKind, TokenizerBuilder};
+
+        fn previous_words(text: &str, lang: Option<Lang>) -> Vec<(&str, Option<Lang>)> {
+            let tokenizer = TokenizerBuilder::default().into_tokenizer();
+            let hinted_language =
+                lang.and_then(|lang| CharabiaLanguage::from_code(lang.code()));
+            let allow_list = hinted_language.as_ref().map(std::slice::from_ref);
+
+            tokenizer
+                .tokenize_with_allow_list(text, allow_list)
+                .filter_map(|token| {
+                    let range = token.byte_start..token.byte_end;
+
+                    matches!(token.kind, TokenKind::Word | TokenKind::StopWord)
+                        .then(|| &text[range])
+                        .filter(|raw| raw.chars().any(char::is_alphanumeric))
+                        .map(|raw| {
+                            let language = token
+                                .language
+                                .and_then(|language| Lang::from_code(language.code()))
+                                .or(lang);
+
+                            (raw, language)
+                        })
+                })
+                .collect()
+        }
+
+        let cases = [
+            ("The quick brown fox jumps over the lazy dog!", None),
+            ("L'été à Paris coûte 25€.", Some(Lang::Fra)),
+            ("我们中出了一个叛徒", None),
+            ("فارسی و العربية 123", None),
+            ("関西国際空港限定トートバッグ", None),
+            ("Words 🚀 control\u{0}characters and@example.org", None),
+        ];
+
+        for (text, lang) in cases {
+            let segmented = tokenize(text, lang)
+                .map(|word| (word.raw, word.language))
+                .collect::<Vec<_>>();
+
+            assert_eq!(segmented, previous_words(text, lang), "{text:?}");
+        }
     }
 }
 
@@ -916,7 +946,7 @@ mod benches {
             )
             .unwrap();
 
-            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
+            token_cleaner.map(|value| value.1).collect::<Vec<usize>>()
         });
     }
 
@@ -945,7 +975,7 @@ mod benches {
             )
             .unwrap();
 
-            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
+            token_cleaner.map(|value| value.1).collect::<Vec<usize>>()
         });
     }
 
@@ -965,7 +995,7 @@ mod benches {
             )
             .unwrap();
 
-            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
+            token_cleaner.map(|value| value.1).collect::<Vec<usize>>()
         });
     }
 
@@ -992,7 +1022,7 @@ mod benches {
             )
             .unwrap();
 
-            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
+            token_cleaner.map(|value| value.1).collect::<Vec<usize>>()
         });
     }
 
@@ -1021,7 +1051,7 @@ mod benches {
             )
             .unwrap();
 
-            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
+            token_cleaner.map(|value| value.1).collect::<Vec<usize>>()
         });
     }
 
@@ -1050,7 +1080,7 @@ mod benches {
             )
             .unwrap();
 
-            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
+            token_cleaner.map(|value| value.1).collect::<Vec<usize>>()
         });
     }
 }

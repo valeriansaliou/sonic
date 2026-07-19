@@ -93,18 +93,6 @@ fn main() -> Result<(), std::io::Error> {
     });
 
     timed!({
-        eprintln!("\n=== Suggest (simple) ===");
-        let res = search.suggest(collection, bucket, "probabili")?;
-        eprintln!("Suggest (simple) result: {res:?}");
-    });
-
-    timed!({
-        eprintln!("\n=== Suggest (with options) ===");
-        let res = search.suggest_with_options(collection, bucket, "probabili", &[&Limit(10)])?;
-        eprintln!("Suggest (with options) result: {res:?}");
-    });
-
-    timed!({
         eprintln!("\n=== Quit search ===");
         search.quit()?;
     });

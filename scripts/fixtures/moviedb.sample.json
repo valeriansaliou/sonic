@@ -1,0 +1,21 @@
+[
+  {
+    "id": 11,
+    "title": "Star Wars",
+    "original_title": "Star Wars",
+    "overview": "A space opera.",
+    "tagline": "A long time ago in a galaxy far, far away...",
+    "release_date": "1977-05-25",
+    "genres": [{"id": 878, "name": "Science Fiction"}],
+    "popularity": 100.0,
+    "vote_average": 8.2,
+    "vote_count": 20000,
+    "poster_path": "/star-wars.jpg"
+  },
+  {
+    "id": 12,
+    "title": "Second Movie",
+    "release_date": "1980-01-01",
+    "genres": []
+  }
+]

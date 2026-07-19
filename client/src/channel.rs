@@ -5,7 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::SEND_TIMEOUT;
 use crate::SonicMultiplexer;
@@ -162,6 +162,45 @@ impl<Mode: ChannelMode + 'static> SonicChannel<Mode> {
         Ok(rx)
     }
 
+    pub(crate) fn send_bulk<T: Send + 'static>(
+        &self,
+        command: Command,
+        discriminant: Mode::Discriminant,
+        parse: impl Fn(&str) -> std::io::Result<T> + Send + 'static,
+    ) -> std::io::Result<oneshot::Receiver<std::io::Result<T>>> {
+        if command.len() > self.channel_info.bulk_buffer_size {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "Bulk command too long. Max bulk buffer size: {}",
+                    self.channel_info.bulk_buffer_size
+                ),
+            ));
+        }
+        let (tx, rx) = oneshot::channel();
+        self.dispatcher_tx
+            .send_timeout(
+                Task {
+                    command,
+                    discriminant,
+                    callback: Box::new(move |result| match result {
+                        Ok((data, _)) => {
+                            let _ = tx.send(parse(data));
+                        }
+                        Err(error) => {
+                            let _ = tx.send(Err(error));
+                        }
+                    }),
+                },
+                SEND_TIMEOUT,
+            )
+            .map_err(|error| {
+                std::io::Error::new(std::io::ErrorKind::BrokenPipe, error.to_string())
+            })?;
+        self.poll_waker.wake()?;
+        Ok(rx)
+    }
+
     /// Sends a command asynchronous at the protocol level (e.g. using the
     /// `PENDING` + `EVENT` pattern).
     pub(crate) fn send_async<T: Send + 'static>(
@@ -227,6 +266,101 @@ impl<Mode: ChannelMode + 'static> SonicChannel<Mode> {
         self.poll_waker.wake()?;
 
         Ok(rx)
+    }
+
+    pub(crate) fn send_async_stream<T: Default + Send + 'static>(
+        &self,
+        command: Command,
+        discriminant1: impl Into<Mode::Discriminant>,
+        make_discriminant2: impl FnOnce(&str) -> Mode::Discriminant + Send + Sync + 'static,
+        reduce: impl Fn(&mut T, &str) -> std::io::Result<bool> + Send + Sync + 'static,
+    ) -> std::io::Result<oneshot::Receiver<std::io::Result<T>>> {
+        if command.len() > self.channel_info.buffer_size {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "Command too long. Max buffer size: {}",
+                    self.channel_info.buffer_size
+                ),
+            ));
+        }
+        let (tx, rx) = oneshot::channel();
+        let sender = Arc::new(Mutex::new(Some(tx)));
+        let accumulator = Arc::new(Mutex::new(Some(T::default())));
+        let reduce: Arc<dyn Fn(&mut T, &str) -> std::io::Result<bool> + Send + Sync> =
+            Arc::new(reduce);
+        self.dispatcher_tx
+            .send_timeout(
+                Task {
+                    command,
+                    discriminant: discriminant1.into(),
+                    callback: Box::new(move |result| match result {
+                        Ok((data, dispatcher)) => {
+                            let discriminant = make_discriminant2(data);
+                            Self::register_stream_response(
+                                dispatcher,
+                                discriminant,
+                                Arc::clone(&sender),
+                                Arc::clone(&accumulator),
+                                Arc::clone(&reduce),
+                            );
+                        }
+                        Err(error) => {
+                            if let Some(tx) = sender.lock().unwrap().take() {
+                                let _ = tx.send(Err(error));
+                            }
+                        }
+                    }),
+                },
+                SEND_TIMEOUT,
+            )
+            .map_err(|error| {
+                std::io::Error::new(std::io::ErrorKind::BrokenPipe, error.to_string())
+            })?;
+        self.poll_waker.wake()?;
+        Ok(rx)
+    }
+
+    fn register_stream_response<T: Default + Send + 'static>(
+        dispatcher: &mut connection::Tasks<Mode::Discriminant>,
+        discriminant: Mode::Discriminant,
+        sender: Arc<Mutex<Option<oneshot::Sender<std::io::Result<T>>>>>,
+        accumulator: Arc<Mutex<Option<T>>>,
+        reduce: Arc<dyn Fn(&mut T, &str) -> std::io::Result<bool> + Send + Sync>,
+    ) {
+        let next_discriminant = discriminant.clone();
+        dispatcher.register_pending(
+            discriminant,
+            Box::new(move |data, dispatcher| {
+                let result = {
+                    let mut guard = accumulator.lock().unwrap();
+                    let value = guard.as_mut().expect("stream accumulator missing");
+                    reduce(value, data)
+                };
+                match result {
+                    Ok(true) => {
+                        if let (Some(tx), Some(value)) = (
+                            sender.lock().unwrap().take(),
+                            accumulator.lock().unwrap().take(),
+                        ) {
+                            let _ = tx.send(Ok(value));
+                        }
+                    }
+                    Ok(false) => Self::register_stream_response(
+                        dispatcher,
+                        next_discriminant,
+                        sender,
+                        accumulator,
+                        reduce,
+                    ),
+                    Err(error) => {
+                        if let Some(tx) = sender.lock().unwrap().take() {
+                            let _ = tx.send(Err(error));
+                        }
+                    }
+                }
+            }),
+        );
     }
 
     /// Sends a command as multiple commands if it’s too long.

@@ -179,7 +179,7 @@ impl<'this> ChannelMessageMode for ChannelMessageModeSearch<'this> {
     fn handle(&self, message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
         gen_channel_message_mode_handle!(message, COMMANDS_MODE_SEARCH, self, {
             "QUERY" => ChannelCommandSearch::dispatch_query,
-            "SUGGEST" => ChannelCommandSearch::dispatch_suggest,
+            "QUERYDOCS" => ChannelCommandSearch::dispatch_query_documents,
             "LIST" => ChannelCommandSearch::dispatch_list,
             "HELP" => ChannelCommandSearch::dispatch_help,
         })
@@ -190,8 +190,14 @@ impl<'this> ChannelMessageMode for ChannelMessageModeIngest<'this> {
     fn handle(&self, message: &str) -> Result<Vec<ChannelCommandResponse>, ChannelCommandError> {
         gen_channel_message_mode_handle!(message, COMMANDS_MODE_INGEST, self, {
             "PUSH" => ChannelCommandIngest::dispatch_push,
+            "UPSERT" => ChannelCommandIngest::dispatch_upsert,
+            "UPSERTBATCH" => ChannelCommandIngest::dispatch_upsert_batch,
             "POP" => ChannelCommandIngest::dispatch_pop,
             "COUNT" => ChannelCommandIngest::dispatch_count,
+            "DUMP" => ChannelCommandIngest::dispatch_dump,
+            "BUCKETS" => ChannelCommandIngest::dispatch_buckets,
+            "EXPORT" => ChannelCommandIngest::dispatch_export,
+            "IMPORT" => ChannelCommandIngest::dispatch_import,
             "FLUSHC" => ChannelCommandIngest::dispatch_flushc,
             "FLUSHB" => ChannelCommandIngest::dispatch_flushb,
             "FLUSHO" => ChannelCommandIngest::dispatch_flusho,
@@ -205,6 +211,7 @@ impl<'this> ChannelMessageMode for ChannelMessageModeControl<'this> {
         gen_channel_message_mode_handle!(message, COMMANDS_MODE_CONTROL, self, {
             "TRIGGER" => ChannelCommandControl::dispatch_trigger,
             "INFO" => ChannelCommandControl::dispatch_info,
+            "STATS" => ChannelCommandControl::dispatch_stats,
             "HELP" => ChannelCommandControl::dispatch_help,
         })
     }

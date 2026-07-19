@@ -23,11 +23,9 @@ caseless = { version = "0.2", default-features = false }
 tracing = { version = "0.1", default-features = false }
 serde = { version = "1", default-features = false, features = ["derive", "rc", "std"] }
 radix = { version = "0.6", default-features = false }
-rocksdb = { version = "0.24", default-features = false, features = ["bindgen-runtime", "zstd"] }
+rocksdb = { version = "0.24", default-features = false, features = ["bindgen-runtime", "lz4", "zstd"] }
 fst = { version = "0.3", default-features = false }
 fst-levenshtein = { version = "0.3", default-features = false }
-fst-regex = { version = "0.3", default-features = false }
-regex-syntax = { version = "0.8", default-features = false, features = ["std", "unicode"] }
 twox-hash = { version = "2", default-features = false, features = ["xxhash32"] }
 byteorder = { version = "1", default-features = false }
 hashbrown = { version = "0.17", default-features = false, features = ["allocator-api2", "default-hasher", "inline-more"] }
@@ -37,6 +35,9 @@ whatlang = { version = "0.18", default-features = false }
 regex = { version = "1", default-features = false, features = ["std", "unicode", "perf"] }
 snowball = { package = "waken_snowball", optional = true, version = "0.1", default-features = false }
 charabia = { version = "0.9.9", default-features = false }
+serde_json = "1.0.150"
+base64 = "0.22.1"
+zstd = "0.13.3"
 
 [dev-dependencies]
 config = { version = "0.15", default-features = false, features = ["toml"] }

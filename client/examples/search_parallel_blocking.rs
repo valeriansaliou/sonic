@@ -29,7 +29,6 @@ fn worker(multiplexer: Arc<SonicMultiplexer>, queries: &[&str]) -> std::io::Resu
 
     for &query in queries.into_iter() {
         conn.query_with_options(COLLECTION, BUCKET, query, &[&Lang("eng")])?;
-        conn.suggest(COLLECTION, BUCKET, query)?;
     }
 
     timed!({

@@ -4,9 +4,12 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use base64::Engine;
+use serde::{Deserialize, Serialize};
+
 use crate::channel::{ChannelMode, SonicChannel};
 use crate::events;
-use crate::options::{Lang, Limit, Offset};
+use crate::options::{FromTimestamp, Lang, Limit, Offset, ToTimestamp};
 use crate::util::errors::io_error_invalid_data;
 use crate::util::{impl_channel_structs, impl_fns, make_command};
 
@@ -27,7 +30,7 @@ enum SearchModeDiscriminant {
     Pong,
     Pending,
     EventQuery(Box<str>),
-    EventSuggest(Box<str>),
+    EventQueryDocuments(Box<str>),
     EventList(Box<str>),
     Ended,
 }
@@ -36,7 +39,7 @@ impl crate::channel::Discriminant for SearchModeDiscriminant {
     fn has_payload(&self) -> bool {
         matches!(
             self,
-            Self::EventQuery(_) | Self::EventSuggest(_) | Self::EventList(_)
+            Self::EventQuery(_) | Self::EventQueryDocuments(_) | Self::EventList(_)
         )
     }
 }
@@ -62,7 +65,7 @@ impl ChannelMode for SearchMode {
 
                 let discriminant = match discriminant {
                     "QUERY" => Discriminant::EventQuery,
-                    "SUGGEST" => Discriminant::EventSuggest,
+                    "QUERYDOCS" => Discriminant::EventQueryDocuments,
                     "LIST" => Discriminant::EventList,
                     s => {
                         return Err(io_error_invalid_data(format!(
@@ -93,6 +96,16 @@ pub trait QueryOption: std::fmt::Display + Sync {}
 impl QueryOption for Limit {}
 impl<'a> QueryOption for Lang<'a> {}
 impl QueryOption for Offset {}
+impl QueryOption for FromTimestamp {}
+impl QueryOption for ToTimestamp {}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Document {
+    pub oid: String,
+    pub timestamp_ms: u64,
+    pub text: String,
+    pub metadata: serde_json::Value,
+}
 
 impl_fns!(
     #[doc = "Time complexity: O(1) if enough exact word matches or O(N)"]
@@ -107,6 +120,34 @@ impl_fns!(
         text: impl AsRef<str>,
     ) -> std::io::Result<Vec<Box<str>>> {
         self.query_with_options(collection, bucket, text, &[])
+    }
+);
+
+impl_fns!(
+    #[doc = "Returns stored documents matching a query."]
+    fn query_documents<'a>(
+        &self,
+        collection: impl AsRef<str>,
+        bucket: impl AsRef<str>,
+        text: impl AsRef<str>,
+        options: &[&'a dyn QueryOption],
+    ) -> std::io::Result<Vec<Document>> {
+        self.inner.send_async_stream(
+            make_command!("QUERYDOCS {} {}", collection, bucket; text: text; options: options),
+            Discriminant::Pending,
+            |id| Discriminant::EventQueryDocuments(Box::from(id)),
+            |documents: &mut Vec<Document>, data| {
+                if data == "DONE" {
+                    return Ok(true);
+                }
+                let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(data)
+                    .map_err(io_error_invalid_data)?;
+                let document = serde_json::from_slice(&decoded).map_err(io_error_invalid_data)?;
+                documents.push(document);
+                Ok(false)
+            },
+        )
     }
 );
 
@@ -126,43 +167,6 @@ impl_fns!(
             make_command!("QUERY {} {}", collection, bucket; text: text; options: options),
             Discriminant::Pending,
             |id| Discriminant::EventQuery(Box::from(id)),
-            |data| Ok(events::parse_string_vec_naive(data)),
-        )
-    }
-);
-
-// MARK: SUGGEST
-
-pub trait SuggestOption: std::fmt::Display + Sync {}
-
-impl SuggestOption for Limit {}
-
-impl_fns!(
-    #[doc = "Time complexity: O(1)."]
-    #[inline]
-    fn suggest(
-        &self,
-        collection: impl AsRef<str>,
-        bucket: impl AsRef<str>,
-        word: impl AsRef<str>,
-    ) -> std::io::Result<Vec<Box<str>>> {
-        self.suggest_with_options(collection, bucket, word, &[])
-    }
-);
-
-impl_fns!(
-    #[doc = "Time complexity: O(1)."]
-    fn suggest_with_options<'a>(
-        &self,
-        collection: impl AsRef<str>,
-        bucket: impl AsRef<str>,
-        word: impl AsRef<str>,
-        options: &[&'a dyn SuggestOption],
-    ) -> std::io::Result<Vec<Box<str>>> {
-        self.inner.send_async(
-            make_command!("SUGGEST {} {}", collection, bucket; text: word; options: options),
-            Discriminant::Pending,
-            |id| Discriminant::EventSuggest(Box::from(id)),
             |data| Ok(events::parse_string_vec_naive(data)),
         )
     }

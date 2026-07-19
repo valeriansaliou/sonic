@@ -30,9 +30,12 @@ fn trigger_consolidate() {
     ingest
         .push("collection", "bucket", "object", "foo bar")
         .unwrap();
+    ingest
+        .push("collection", "bucket", "object:2", "foo bar")
+        .unwrap();
 
     let terms = search.list("collection", "bucket").unwrap();
-    assert_eq!(terms.len(), 0);
+    assert_eq!(terms.len(), 2);
 
     () = control.trigger_consolidate().unwrap();
 
