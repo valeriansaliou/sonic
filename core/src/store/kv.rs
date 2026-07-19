@@ -90,7 +90,7 @@ type StoreKVAtom = u32;
 type StoreKVBox = Arc<StoreKV>;
 
 const ATOM_HASH_RADIX: usize = 16;
-const STORE_SCHEMA_VERSION: u32 = 12;
+const STORE_SCHEMA_VERSION: u32 = 13;
 const DOCUMENTS_CF: &str = "documents";
 const POSTINGS_CF: &str = "postings";
 const DEFAULT_CF_ID: u32 = 0;
@@ -1407,25 +1407,14 @@ impl<'a> StoreKVAction<'a> {
     }
 
     pub fn get_term_frequency(&self, term: &str) -> Result<u32, ()> {
-        let Some(ref store) = self.store else {
-            return Ok(0);
-        };
-        let postings_cf = store.database.cf_handle(POSTINGS_CF).ok_or(())?;
-        let prefix = StoreKeyerBuilder::term_posting_prefix(self.bucket_id.ok_or(())?, term);
-        let mut frequency = 0u32;
-        for item in store
-            .database
-            .iterator_cf(postings_cf, IteratorMode::From(&prefix, Direction::Forward))
-        {
-            let (key, value) = item.or(Err(()))?;
-            if !key.starts_with(&prefix) {
-                break;
-            }
-            let fragment =
-                u32::try_from(StorePosting::len_from_encoded(&value)?).map_err(|_| ())?;
-            frequency = frequency.checked_add(fragment).ok_or(())?;
-        }
-        Ok(frequency)
+        let store = self.store.as_ref().ok_or(())?;
+        let key = StoreKeyerBuilder::term_frequency(self.bucket_id.ok_or(())?, term);
+        store
+            .get(key.as_bytes())
+            .or(Err(()))?
+            .map(|encoded| Self::decode_u32(&encoded))
+            .transpose()
+            .map(|frequency| frequency.unwrap_or(0))
     }
 
     pub fn insert_term_iid(&self, term: &str, iid: StoreObjectIID) -> Result<(bool, u32), ()> {
@@ -1533,6 +1522,10 @@ impl<'a> StoreKVAction<'a> {
         let mut delta = StorePosting::default();
         delta.insert(offset);
         batch.merge_cf(postings_cf, posting_key.as_bytes(), delta.encode());
+        batch.put(
+            StoreKeyerBuilder::term_frequency(bucket_id, term).as_bytes(),
+            Self::encode_u32(frequency),
+        );
         Ok((true, frequency))
     }
 
@@ -1563,6 +1556,12 @@ impl<'a> StoreKVAction<'a> {
             batch.delete_cf(postings_cf, posting_key.as_bytes());
         } else {
             batch.put_cf(postings_cf, posting_key.as_bytes(), posting.encode());
+        }
+        let frequency_key = StoreKeyerBuilder::term_frequency(bucket_id, term);
+        if frequency == 0 {
+            batch.delete(frequency_key.as_bytes());
+        } else {
+            batch.put(frequency_key.as_bytes(), Self::encode_u32(frequency));
         }
         Ok((true, frequency))
     }
@@ -1800,6 +1799,12 @@ impl<'a> StoreKVAction<'a> {
                 postings_cf,
                 StoreKeyerBuilder::time_posting(bucket_id, time_slice, shard).as_bytes(),
                 posting.encode(),
+            );
+        }
+        for (term, frequency) in &frequencies {
+            batch.put(
+                StoreKeyerBuilder::term_frequency(bucket_id, term).as_bytes(),
+                Self::encode_u32(*frequency),
             );
         }
         if let Some(iid_counter) = iid_counter {
@@ -2396,7 +2401,32 @@ mod tests {
         assert_eq!(action.remove_term_iid("hello", 65_536), Ok((false, 1)));
         assert_eq!(action.get_term_iids_desc("hello", 10), Ok(vec![1]));
         assert_eq!(action.remove_term_iid("hello", 1), Ok((true, 0)));
+        assert_eq!(action.get_term_frequency("hello"), Ok(0));
         assert_eq!(action.get_term_iids_desc("hello", 10), Ok(vec![]));
+
+        let first_batch = vec![(
+            StoreDocument::new("bulk:1", 1_000, "bulk", serde_json::json!({})).unwrap(),
+            vec!["bulk".to_owned()],
+        )];
+        let second_batch = vec![(
+            StoreDocument::new("bulk:2", 2_000, "bulk", serde_json::json!({})).unwrap(),
+            vec!["bulk".to_owned()],
+        )];
+        assert_eq!(
+            action
+                .batch_insert_fresh_documents(&first_batch, false)
+                .unwrap()
+                .frequencies,
+            vec![("bulk".to_owned(), 1)]
+        );
+        assert_eq!(
+            action
+                .batch_insert_fresh_documents(&second_batch, false)
+                .unwrap()
+                .frequencies,
+            vec![("bulk".to_owned(), 2)]
+        );
+        assert_eq!(action.get_term_frequency("bulk"), Ok(2));
 
         assert!(action.get_oid_to_iid(&"s".to_string()).is_ok());
         assert!(action.set_oid_to_iid(&"s".to_string(), 4).is_ok());

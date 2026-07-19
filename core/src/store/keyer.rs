@@ -33,6 +33,7 @@ const IDX_BUCKET_NAME_TO_ID: u8 = 5;
 const IDX_BUCKET_ID_TO_NAME: u8 = 6;
 const IDX_IID_TO_TIMESTAMP: u8 = 7;
 const IDX_TIME_POSTING: u8 = 8;
+const IDX_TERM_FREQUENCY: u8 = 9;
 
 impl StoreKeyerBuilder {
     pub fn family(key: &[u8]) -> Option<u8> {
@@ -63,6 +64,10 @@ impl StoreKeyerBuilder {
 
     pub fn term_posting_family_prefix(bucket_id: StoreBucketID) -> StoreKeyerPrefix {
         Self::bucket_prefix(IDX_TERM_POSTING, bucket_id)
+    }
+
+    pub fn term_frequency(bucket_id: StoreBucketID, term: &str) -> StoreKeyer {
+        Self::term_key(IDX_TERM_FREQUENCY, bucket_id, term)
     }
 
     pub fn decode_term_route_with_suffix(route: &[u8], suffix_len: usize) -> Option<&str> {
@@ -147,6 +152,7 @@ impl StoreKeyerBuilder {
             IDX_IID_TO_TERMS,
             IDX_IID_TO_TIMESTAMP,
             IDX_TIME_POSTING,
+            IDX_TERM_FREQUENCY,
         ]
     }
 
@@ -220,6 +226,10 @@ mod tests {
         assert_eq!(
             StoreKeyerBuilder::term_posting_prefix(42, "hello"),
             b"\0\0\0\x2a\x01\0\0\0\x05hello"
+        );
+        assert_eq!(
+            StoreKeyerBuilder::term_frequency(42, "hello").as_bytes(),
+            b"\0\0\0\x2a\x09\0\0\0\x05hello"
         );
         assert_eq!(
             StoreKeyerBuilder::iid_to_oid(42, 9).as_bytes(),

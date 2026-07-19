@@ -116,62 +116,6 @@ impl StorePosting {
         Ok(Self { representation })
     }
 
-    pub fn len_from_encoded(encoded: &[u8]) -> Result<usize, ()> {
-        let Some((&format, payload)) = encoded.split_first() else {
-            return Err(());
-        };
-        match format {
-            FORMAT_SPARSE_RAW if payload.len() % size_of::<u16>() == 0 => {
-                let mut previous = None;
-                for chunk in payload.chunks_exact(size_of::<u16>()) {
-                    let offset = LittleEndian::read_u16(chunk);
-                    if previous.is_some_and(|previous| previous >= offset) {
-                        return Err(());
-                    }
-                    previous = Some(offset);
-                }
-                let len = payload.len() / size_of::<u16>();
-                (len < SPARSE_TO_DENSE).then_some(len).ok_or(())
-            }
-            FORMAT_SPARSE_DELTA => {
-                let mut count = 0;
-                let mut cursor = 0;
-                let mut previous = 0u16;
-                while cursor < payload.len() {
-                    let mut delta = 0u32;
-                    let mut shift = 0;
-                    loop {
-                        let byte = *payload.get(cursor).ok_or(())?;
-                        cursor += 1;
-                        delta |= u32::from(byte & 0x7f) << shift;
-                        if byte & 0x80 == 0 {
-                            break;
-                        }
-                        shift += 7;
-                        if shift > 14 {
-                            return Err(());
-                        }
-                    }
-                    let delta = u16::try_from(delta).map_err(|_| ())?;
-                    if count > 0 && delta == 0 {
-                        return Err(());
-                    }
-                    previous = if count == 0 {
-                        delta
-                    } else {
-                        previous.checked_add(delta).ok_or(())?
-                    };
-                    count += 1;
-                }
-                (count < SPARSE_TO_DENSE).then_some(count).ok_or(())
-            }
-            FORMAT_DENSE if payload.len() == BITMAP_BYTES => {
-                Ok(payload.iter().map(|byte| byte.count_ones() as usize).sum())
-            }
-            _ => Err(()),
-        }
-    }
-
     pub fn encode(&self) -> Vec<u8> {
         match &self.representation {
             StorePostingRepresentation::Sparse(offsets) => {
@@ -370,8 +314,8 @@ mod tests {
 
         let encoded = posting.encode();
         assert_eq!(encoded, [FORMAT_SPARSE_DELTA, 1, 6]);
-        assert_eq!(StorePosting::len_from_encoded(&encoded), Ok(2));
         let decoded = StorePosting::decode(&encoded).unwrap();
+        assert_eq!(decoded.len(), 2);
         assert_eq!(decoded.offsets_desc().collect::<Vec<_>>(), [7, 1]);
         assert!(decoded.contains(1));
     }
@@ -388,10 +332,7 @@ mod tests {
         ));
 
         let mut decoded = StorePosting::decode(&posting.encode()).unwrap();
-        assert_eq!(
-            StorePosting::len_from_encoded(&posting.encode()),
-            Ok(SPARSE_TO_DENSE)
-        );
+        assert_eq!(decoded.len(), SPARSE_TO_DENSE);
         for offset in DENSE_TO_SPARSE as u16..SPARSE_TO_DENSE as u16 {
             assert!(decoded.remove(offset));
         }
