@@ -81,7 +81,12 @@ fn cli() -> Command {
             Command::new("import")
                 .about("Import generic Sonic NDJSON documents")
                 .arg(Arg::new("collection").long("collection").required(true))
-                .arg(Arg::new("file").long("file").required(true))
+                .arg(
+                    Arg::new("file")
+                        .long("file")
+                        .required(true)
+                        .help("NDJSON file path, .zst file, or - for standard input"),
+                )
                 .arg(
                     Arg::new("mode")
                         .long("mode")
@@ -679,6 +684,9 @@ fn human_bytes(bytes: u64) -> String {
 }
 
 fn open_reader(path: &str) -> Result<Box<dyn BufRead>, Box<dyn std::error::Error>> {
+    if path == "-" {
+        return Ok(Box::new(BufReader::new(std::io::stdin())));
+    }
     let file = File::open(path)?;
     if path.ends_with(".zst") {
         Ok(Box::new(BufReader::new(zstd::stream::read::Decoder::new(
