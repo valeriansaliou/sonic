@@ -19,6 +19,11 @@ name = "sonic_client"
 path = "src/lib.rs"
 doc = true
 
+[[bin]]
+name = "sonic-cli"
+path = "src/bin/sonic-cli.rs"
+required-features = ["ingest", "control", "search", "sync"]
+
 [dependencies]
 bytes = { version = "1", default-features = false }
 crossbeam-channel = { version = "0.5", default-features = false, features = ["std"] }
@@ -29,6 +34,11 @@ slab = { version = "0.4", default-features = false }
 # Optional dependencies
 log = { optional = true, version = "0.4", default-features = false }
 tracing = { optional = true, version = "0.1", default-features = false }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+base64 = "0.22.1"
+zstd = "0.13.3"
+clap = { version = "=4.6.1", default-features = false, features = ["std", "help", "usage", "error-context"] }
 
 [dev-dependencies]
 tokio = { version = "=1.52.3", default-features = false, features = ["rt-multi-thread", "macros"] }

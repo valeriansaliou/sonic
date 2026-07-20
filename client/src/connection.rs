@@ -94,7 +94,7 @@ impl<D: Discriminant> Tasks<D> {
 impl<T: Transport, D: Discriminant> SonicConnectionTrait for SonicConnection<T, D> {
     #[inline]
     fn wants_to_write(&self) -> bool {
-        !self.task_rx.is_empty()
+        !self.task_rx.is_empty() || self.stream.has_buffered_writes()
     }
 
     #[inline]

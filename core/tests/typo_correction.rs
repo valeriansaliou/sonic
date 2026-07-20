@@ -24,10 +24,23 @@ mod common;
 
 use crate::common::*;
 
-/// This test sentence contains words that are 3–10 characters-long, while
-/// not being stopwords. It’s not realistic but not having stopwords avoids
-/// false positives in tests.
+/// This test sentence contains words that are 3–10 characters-long.
 const ASTRONOMY_WORDS: &str = "sun moon comet nebula pulsars asteroid satellite spacecraft";
+
+#[test]
+fn test_search_finds_messenger_from_mesengr() {
+    init_logging();
+    let executor = make_test_executor();
+
+    exec!(
+        executor -> PUSH "messages" "default" "message:1"
+        "Use Messenger in your mobile application"
+    );
+    exec!(executor -> TRIGGER consolidate);
+
+    let response = exec!(executor -> QUERY "messages" "default" "mesengr");
+    assert_eq!(response, ["message:1"]);
+}
 
 /// Search should allow a certain number of typos (depending on token length).
 ///
@@ -40,7 +53,7 @@ fn test_search_allows_typos() {
     //   <https://github.com/valeriansaliou/sonic/issues/322#issuecomment-4638688602>.
     //   Will be fixed separately.
     #[rustfmt::skip]
-    test_ingest_then_query!(push: ASTRONOMY_WORDS [ensure_no_stopword] LANG("eng"), query: [
+    test_ingest_then_query!(push: ASTRONOMY_WORDS [ensure_all_terms_indexed] LANG("eng"), query: [
         // 3-letter word, distance = 1.
         ("sum", false),
         // 4-letter word, distance = 1.
@@ -70,7 +83,7 @@ fn test_search_allows_typos() {
 #[ignore = "Not supported yet (FIXME)"]
 fn test_search_term_order_insignificant() {
     #[rustfmt::skip]
-    test_ingest_then_query!(push: ASTRONOMY_WORDS [ensure_no_stopword], query: [
+    test_ingest_then_query!(push: ASTRONOMY_WORDS [ensure_all_terms_indexed], query: [
         ("satellite pulsars nebula", true),
         (&format!("missing {ASTRONOMY_WORDS}"), true),
     ]);

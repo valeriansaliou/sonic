@@ -13,21 +13,15 @@ mod common;
 
 use crate::common::*;
 
-/// Highlights the fact that without FST consolidation, queries seem out of
-/// sync with insertions.
+/// Counts use the exhaustive KV dictionaries and are immediately consistent.
 #[test]
-fn test_consolidation_required() {
+fn test_count_does_not_require_consolidation() {
     init_logging();
     let executor = make_test_executor();
 
     assert_eq!(exec!(executor -> COUNT "foo"), Ok(0));
 
     exec!(executor -> PUSH "foo" "bar" "baz" "Example");
-
-    assert_eq!(exec!(executor -> COUNT "foo"), Ok(0));
-    assert_eq!(exec!(executor -> COUNT "foo" "bar"), Ok(0));
-
-    exec!(executor -> TRIGGER consolidate);
 
     assert_eq!(exec!(executor -> COUNT "foo"), Ok(1));
     assert_eq!(exec!(executor -> COUNT "foo" "bar"), Ok(1));

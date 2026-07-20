@@ -10,5 +10,4 @@
 //! use.
 
 pub(crate) mod fmt;
-pub(crate) mod itertools;
 pub mod serde;

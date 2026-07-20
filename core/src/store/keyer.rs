@@ -4,10 +4,11 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
+use byteorder::{BigEndian, ByteOrder};
 use std::fmt;
 use std::hash::Hasher;
-use std::io::Cursor;
+use std::mem::size_of;
+use std::str;
 use twox_hash::XxHash32;
 
 use super::identifiers::*;
@@ -20,108 +21,180 @@ pub struct StoreKeyer {
 
 pub struct StoreKeyerHasher;
 
-enum StoreKeyerIdx<'a> {
-    MetaToValue(&'a StoreMetaKey),
-    TermToIIDs(StoreTermHashed),
-    OIDToIID(StoreObjectOID<'a>),
-    IIDToOID(StoreObjectIID),
-    IIDToTerms(StoreObjectIID),
-}
+pub type StoreKeyerKey = Vec<u8>;
+pub type StoreKeyerPrefix = Vec<u8>;
 
-pub type StoreKeyerKey = [u8; 9];
-pub type StoreKeyerPrefix = [u8; 5];
-
-impl<'a> StoreKeyerIdx<'a> {
-    pub fn to_index(&self) -> u8 {
-        match self {
-            StoreKeyerIdx::MetaToValue(_) => 0,
-            StoreKeyerIdx::TermToIIDs(_) => 1,
-            StoreKeyerIdx::OIDToIID(_) => 2,
-            StoreKeyerIdx::IIDToOID(_) => 3,
-            StoreKeyerIdx::IIDToTerms(_) => 4,
-        }
-    }
-}
+const IDX_META_TO_VALUE: u8 = 0;
+const IDX_TERM_POSTING: u8 = 1;
+const IDX_OID_TO_IID: u8 = 2;
+const IDX_IID_TO_OID: u8 = 3;
+const IDX_IID_TO_TERMS: u8 = 4;
+const IDX_BUCKET_NAME_TO_ID: u8 = 5;
+const IDX_BUCKET_ID_TO_NAME: u8 = 6;
+const IDX_IID_TO_TIMESTAMP: u8 = 7;
+const IDX_TIME_POSTING: u8 = 8;
+const IDX_TERM_FREQUENCY: u8 = 9;
 
 impl StoreKeyerBuilder {
-    pub fn meta_to_value<'a>(bucket: &'a str, meta: &'a StoreMetaKey) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::MetaToValue(meta), bucket)
+    pub fn family(key: &[u8]) -> Option<u8> {
+        key.get(size_of::<StoreBucketID>()).copied()
     }
 
-    pub fn term_to_iids(bucket: &str, term_hash: StoreTermHashed) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::TermToIIDs(term_hash), bucket)
+    pub fn decode_u32_ordered(encoded: &[u8]) -> Option<u32> {
+        encoded.try_into().ok().map(u32::from_be_bytes)
     }
 
-    pub fn oid_to_iid<'a>(bucket: &'a str, oid: StoreObjectOID<'a>) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::OIDToIID(oid), bucket)
+    pub fn meta_to_value(bucket_id: StoreBucketID, meta: &StoreMetaKey) -> StoreKeyer {
+        Self::fixed(IDX_META_TO_VALUE, bucket_id, meta.as_u32())
     }
 
-    pub fn iid_to_oid(bucket: &str, iid: StoreObjectIID) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::IIDToOID(iid), bucket)
+    pub fn term_posting(
+        bucket_id: StoreBucketID,
+        term: &str,
+        iid_shard: StoreIIDShard,
+    ) -> StoreKeyer {
+        let mut key = Self::term_posting_prefix(bucket_id, term);
+        key.extend_from_slice(&Self::encode_u16_ordered(iid_shard));
+        StoreKeyer { key }
     }
 
-    pub fn iid_to_terms(bucket: &str, iid: StoreObjectIID) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::IIDToTerms(iid), bucket)
+    pub fn term_posting_prefix(bucket_id: StoreBucketID, term: &str) -> StoreKeyerPrefix {
+        Self::term_key(IDX_TERM_POSTING, bucket_id, term).key
     }
 
-    fn make<'a>(idx: StoreKeyerIdx<'a>, bucket: &'a str) -> StoreKeyer {
-        StoreKeyer {
-            key: Self::build_key(idx, bucket),
-        }
+    pub fn term_posting_family_prefix(bucket_id: StoreBucketID) -> StoreKeyerPrefix {
+        Self::bucket_prefix(IDX_TERM_POSTING, bucket_id)
     }
 
-    fn build_key<'a>(idx: StoreKeyerIdx<'a>, bucket: &'a str) -> StoreKeyerKey {
-        // Key format: [idx<1B> | bucket<4B> | route<4B>]
+    pub fn term_frequency(bucket_id: StoreBucketID, term: &str) -> StoreKeyer {
+        Self::term_key(IDX_TERM_FREQUENCY, bucket_id, term)
+    }
 
-        // Encode key bucket + key route from u32 to array of u8 (ie. binary)
-        let (mut bucket_encoded, mut route_encoded) = ([0; 4], [0; 4]);
+    pub fn decode_term_route_with_suffix(route: &[u8], suffix_len: usize) -> Option<&str> {
+        let length = route
+            .get(..4)
+            .and_then(Self::decode_u32_ordered)
+            .and_then(|length| usize::try_from(length).ok())?;
+        let term = route.get(4..4 + length)?;
+        (route.len() == 4 + length + suffix_len)
+            .then(|| str::from_utf8(term).ok())
+            .flatten()
+    }
 
-        LittleEndian::write_u32(&mut bucket_encoded, StoreKeyerHasher::to_compact(bucket));
-        LittleEndian::write_u32(&mut route_encoded, Self::route_to_compact(&idx));
+    pub fn iid_to_timestamp(bucket_id: StoreBucketID, iid: StoreObjectIID) -> StoreKeyer {
+        Self::fixed(IDX_IID_TO_TIMESTAMP, bucket_id, iid)
+    }
 
-        // Generate final binary key
-        [
-            // [idx<1B>]
-            idx.to_index(),
-            // [bucket<4B>]
-            bucket_encoded[0],
-            bucket_encoded[1],
-            bucket_encoded[2],
-            bucket_encoded[3],
-            // [route<4B>]
-            route_encoded[0],
-            route_encoded[1],
-            route_encoded[2],
-            route_encoded[3],
+    pub fn time_posting(
+        bucket_id: StoreBucketID,
+        time_slice: u64,
+        iid_shard: StoreIIDShard,
+    ) -> StoreKeyer {
+        let mut key = Self::bucket_prefix(IDX_TIME_POSTING, bucket_id);
+        key.extend_from_slice(&time_slice.to_be_bytes());
+        key.extend_from_slice(&Self::encode_u16_ordered(iid_shard));
+        StoreKeyer { key }
+    }
+
+    pub fn time_posting_prefix(bucket_id: StoreBucketID) -> StoreKeyerPrefix {
+        Self::bucket_prefix(IDX_TIME_POSTING, bucket_id)
+    }
+
+    pub fn document(bucket_id: StoreBucketID, iid: StoreObjectIID) -> StoreKeyer {
+        let mut key = Self::document_prefix(bucket_id);
+        key.extend_from_slice(&Self::encode_u32_ordered(iid));
+        StoreKeyer { key }
+    }
+
+    pub fn document_prefix(bucket_id: StoreBucketID) -> StoreKeyerPrefix {
+        Self::encode_u32_ordered(bucket_id).to_vec()
+    }
+
+    pub fn oid_to_iid(bucket_id: StoreBucketID, oid: StoreObjectOID<'_>) -> StoreKeyer {
+        Self::variable(IDX_OID_TO_IID, bucket_id, oid.as_bytes())
+    }
+
+    pub fn iid_to_oid(bucket_id: StoreBucketID, iid: StoreObjectIID) -> StoreKeyer {
+        Self::fixed(IDX_IID_TO_OID, bucket_id, iid)
+    }
+
+    pub fn iid_to_terms(bucket_id: StoreBucketID, iid: StoreObjectIID) -> StoreKeyer {
+        Self::fixed(IDX_IID_TO_TERMS, bucket_id, iid)
+    }
+
+    pub fn bucket_name_to_id(bucket: &str) -> StoreKeyer {
+        let mut key = Self::bucket_name_prefix();
+        key.extend_from_slice(bucket.as_bytes());
+        StoreKeyer { key }
+    }
+
+    pub fn bucket_name_prefix() -> StoreKeyerPrefix {
+        Self::bucket_prefix(IDX_BUCKET_NAME_TO_ID, 0)
+    }
+
+    pub fn bucket_id_to_name(bucket_id: StoreBucketID) -> StoreKeyer {
+        Self::fixed(IDX_BUCKET_ID_TO_NAME, 0, bucket_id)
+    }
+
+    pub fn bucket_prefix(index: u8, bucket_id: StoreBucketID) -> StoreKeyerPrefix {
+        let mut prefix = Vec::with_capacity(5);
+        prefix.extend_from_slice(&Self::encode_u32_ordered(bucket_id));
+        prefix.push(index);
+        prefix
+    }
+
+    pub fn bucket_indexes() -> &'static [u8] {
+        &[
+            IDX_META_TO_VALUE,
+            IDX_TERM_POSTING,
+            IDX_OID_TO_IID,
+            IDX_IID_TO_OID,
+            IDX_IID_TO_TERMS,
+            IDX_IID_TO_TIMESTAMP,
+            IDX_TIME_POSTING,
+            IDX_TERM_FREQUENCY,
         ]
     }
 
-    fn route_to_compact(idx: &StoreKeyerIdx) -> u32 {
-        match idx {
-            StoreKeyerIdx::MetaToValue(route) => route.as_u32(),
-            StoreKeyerIdx::TermToIIDs(route) => *route,
-            StoreKeyerIdx::OIDToIID(route) => StoreKeyerHasher::to_compact(route),
-            StoreKeyerIdx::IIDToOID(route) => *route,
-            StoreKeyerIdx::IIDToTerms(route) => *route,
-        }
+    pub fn posting_indexes() -> &'static [u8] {
+        &[IDX_TERM_POSTING, IDX_TIME_POSTING]
+    }
+
+    fn fixed(index: u8, bucket_id: StoreBucketID, route: u32) -> StoreKeyer {
+        let mut key = Self::bucket_prefix(index, bucket_id);
+        key.extend_from_slice(&Self::encode_u32_ordered(route));
+        StoreKeyer { key }
+    }
+
+    fn variable(index: u8, bucket_id: StoreBucketID, route: &[u8]) -> StoreKeyer {
+        let mut key = Self::bucket_prefix(index, bucket_id);
+        key.extend_from_slice(route);
+        StoreKeyer { key }
+    }
+
+    fn term_key(index: u8, bucket_id: StoreBucketID, term: &str) -> StoreKeyer {
+        let mut key = Self::bucket_prefix(index, bucket_id);
+        key.extend_from_slice(&Self::encode_u32_ordered(term.len() as u32));
+        key.extend_from_slice(term.as_bytes());
+        StoreKeyer { key }
+    }
+
+    fn encode_u32_ordered(value: u32) -> [u8; 4] {
+        let mut encoded = [0; 4];
+        BigEndian::write_u32(&mut encoded, value);
+        encoded
+    }
+
+    fn encode_u16_ordered(value: u16) -> [u8; 2] {
+        let mut encoded = [0; 2];
+        BigEndian::write_u16(&mut encoded, value);
+        encoded
     }
 }
 
 impl StoreKeyer {
-    pub fn as_bytes(&self) -> StoreKeyerKey {
-        self.key
-    }
-
-    pub fn as_prefix(&self) -> StoreKeyerPrefix {
-        // Prefix format: [idx<1B> | bucket<4B>]
-
-        [
-            self.key[0],
-            self.key[1],
-            self.key[2],
-            self.key[3],
-            self.key[4],
-        ]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.key
     }
 }
 
@@ -129,7 +202,6 @@ impl StoreKeyerHasher {
     #![allow(clippy::wrong_self_convention)]
     pub fn to_compact(part: &str) -> u32 {
         let mut hasher = XxHash32::with_seed(0);
-
         hasher.write(part.as_bytes());
         hasher.finish() as u32
     }
@@ -137,21 +209,7 @@ impl StoreKeyerHasher {
 
 impl fmt::Display for StoreKeyer {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Convert to number
-        let (key_bucket, key_route) = (
-            Cursor::new(&self.key[1..5])
-                .read_u32::<LittleEndian>()
-                .unwrap_or(0),
-            Cursor::new(&self.key[5..9])
-                .read_u32::<LittleEndian>()
-                .unwrap_or(0),
-        );
-
-        write!(
-            f,
-            "'{}:{:x}:{:x}' {:?}",
-            self.key[0], key_bucket, key_route, self.key
-        )
+        write!(f, "{:?}", self.key)
     }
 }
 
@@ -160,121 +218,68 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_keys_meta_to_value() {
+    fn it_keys_fixed_routes() {
         assert_eq!(
-            StoreKeyerBuilder::meta_to_value("bucket:1", &StoreMetaKey::IIDIncr).as_bytes(),
-            [0, 108, 244, 29, 93, 0, 0, 0, 0]
+            StoreKeyerBuilder::term_posting(42, "hello", 9).as_bytes(),
+            b"\0\0\0\x2a\x01\0\0\0\x05hello\0\x09"
+        );
+        assert_eq!(
+            StoreKeyerBuilder::term_posting_prefix(42, "hello"),
+            b"\0\0\0\x2a\x01\0\0\0\x05hello"
+        );
+        assert_eq!(
+            StoreKeyerBuilder::term_frequency(42, "hello").as_bytes(),
+            b"\0\0\0\x2a\x09\0\0\0\x05hello"
+        );
+        assert_eq!(
+            StoreKeyerBuilder::iid_to_oid(42, 9).as_bytes(),
+            &[0, 0, 0, 42, 3, 0, 0, 0, 9]
+        );
+        assert_eq!(
+            StoreKeyerBuilder::time_posting(42, 7, 9).as_bytes(),
+            &[0, 0, 0, 42, 8, 0, 0, 0, 0, 0, 0, 0, 7, 0, 9]
+        );
+        assert_eq!(
+            StoreKeyerBuilder::document(42, 9).as_bytes(),
+            &[0, 0, 0, 42, 0, 0, 0, 9]
         );
     }
 
     #[test]
-    fn it_keys_term_to_iids() {
+    fn it_keeps_names_in_dictionary_keys() {
         assert_eq!(
-            StoreKeyerBuilder::term_to_iids("bucket:2", 772137347).as_bytes(),
-            [1, 50, 220, 166, 65, 131, 225, 5, 46]
+            StoreKeyerBuilder::bucket_name_to_id("bucket:1").as_bytes(),
+            b"\0\0\0\0\x05bucket:1"
         );
         assert_eq!(
-            StoreKeyerBuilder::term_to_iids("bucket:2", 3582484684).as_bytes(),
-            [1, 50, 220, 166, 65, 204, 96, 136, 213]
-        );
-    }
-
-    #[test]
-    fn it_keys_oid_to_iid() {
-        assert_eq!(
-            StoreKeyerBuilder::oid_to_iid("bucket:3", &"conversation:6501e83a".to_string())
-                .as_bytes(),
-            [2, 171, 194, 213, 57, 31, 156, 118, 213]
+            StoreKeyerBuilder::oid_to_iid(4, "message:123").as_bytes(),
+            b"\0\0\0\x04\x02message:123"
         );
     }
 
     #[test]
-    fn it_keys_iid_to_oid() {
+    fn it_orders_numeric_key_parts_and_groups_buckets() {
+        assert!(
+            StoreKeyerBuilder::document(1, 256).as_bytes()
+                < StoreKeyerBuilder::document(2, 1).as_bytes()
+        );
+        assert!(
+            StoreKeyerBuilder::document(2, 255).as_bytes()
+                < StoreKeyerBuilder::document(2, 256).as_bytes()
+        );
         assert_eq!(
-            StoreKeyerBuilder::iid_to_oid("bucket:4", 10292198).as_bytes(),
-            [3, 105, 12, 54, 147, 230, 11, 157, 0]
+            StoreKeyerBuilder::family(StoreKeyerBuilder::term_posting(2, "hello", 0).as_bytes()),
+            Some(IDX_TERM_POSTING)
+        );
+        assert_eq!(
+            StoreKeyerBuilder::decode_u32_ordered(&[0, 0, 1, 0]),
+            Some(256)
         );
     }
 
     #[test]
-    fn it_keys_iid_to_terms() {
-        assert_eq!(
-            StoreKeyerBuilder::iid_to_terms("bucket:5", 1).as_bytes(),
-            [4, 137, 142, 73, 67, 1, 0, 0, 0]
-        );
-        assert_eq!(
-            StoreKeyerBuilder::iid_to_terms("bucket:5", 20).as_bytes(),
-            [4, 137, 142, 73, 67, 20, 0, 0, 0]
-        );
-    }
-
-    #[test]
-    fn it_hashes_compact() {
+    fn it_hashes_collection_names() {
         assert_eq!(StoreKeyerHasher::to_compact("key:1"), 3370353088);
         assert_eq!(StoreKeyerHasher::to_compact("key:2"), 1042559698);
-    }
-
-    #[test]
-    fn it_formats_key() {
-        assert_eq!(
-            &format!("{}", StoreKeyerBuilder::term_to_iids("bucket:6", 72137347)),
-            "'1:71198b49:44cba83' [1, 73, 139, 25, 113, 131, 186, 76, 4]"
-        );
-        assert_eq!(
-            &format!(
-                "{}",
-                StoreKeyerBuilder::meta_to_value("bucket:6", &StoreMetaKey::IIDIncr)
-            ),
-            "'0:71198b49:0' [0, 73, 139, 25, 113, 0, 0, 0, 0]"
-        );
-    }
-}
-
-#[cfg(all(feature = "benchmark", test))]
-mod benches {
-    extern crate test;
-
-    use super::*;
-    use test::Bencher;
-
-    #[bench]
-    fn bench_hash_compact_short(b: &mut Bencher) {
-        b.iter(|| StoreKeyerHasher::to_compact("key:bench:1"));
-    }
-
-    #[bench]
-    fn bench_hash_compact_long(b: &mut Bencher) {
-        b.iter(|| {
-            StoreKeyerHasher::to_compact(
-                "key:bench:2:long:long:long:long:long:long:long:long:long:long:long:long:long:long",
-            )
-        });
-    }
-
-    #[bench]
-    fn bench_key_meta_to_value(b: &mut Bencher) {
-        b.iter(|| StoreKeyerBuilder::meta_to_value("bucket:bench:1", &StoreMetaKey::IIDIncr));
-    }
-
-    #[bench]
-    fn bench_key_term_to_iids(b: &mut Bencher) {
-        b.iter(|| StoreKeyerBuilder::term_to_iids("bucket:bench:2", 772137347));
-    }
-
-    #[bench]
-    fn bench_key_oid_to_iid(b: &mut Bencher) {
-        let key = "conversation:6501e83a".to_string();
-
-        b.iter(|| StoreKeyerBuilder::oid_to_iid("bucket:bench:3", &key));
-    }
-
-    #[bench]
-    fn bench_key_iid_to_oid(b: &mut Bencher) {
-        b.iter(|| StoreKeyerBuilder::iid_to_oid("bucket:bench:4", 10292198));
-    }
-
-    #[bench]
-    fn bench_key_iid_to_terms(b: &mut Bencher) {
-        b.iter(|| StoreKeyerBuilder::iid_to_terms("bucket:bench:5", 1));
     }
 }

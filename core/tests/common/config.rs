@@ -48,14 +48,12 @@ pub fn defaults_toml() -> String {
         query_limit_default = 10
         query_limit_maximum = 100
         query_alternates_try = 4
-        suggest_limit_default = 5
-        suggest_limit_maximum = 20
+        query_candidates_maximum = 1000
         list_limit_default = 100
         list_limit_maximum = 500
 
         [store.kv]
         path = {kv_store_path:?}
-        retain_word_objects = 1000
         pool.inactive_after = 1800
         database.flush_after = 900
         database.compress = true
@@ -71,6 +69,7 @@ pub fn defaults_toml() -> String {
         graph.consolidate_after = 180
         graph.max_size = 2048
         graph.max_words = 250000
+        graph.min_frequency = 1
         "#,
     )
 }

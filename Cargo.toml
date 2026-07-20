@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["core", "server", "client"]
+members = ["core", "server", "client", "router"]
 
 [workspace.package]
 license = "MPL-2.0"

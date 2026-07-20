@@ -133,18 +133,6 @@ fn main() -> Result<(), std::io::Error> {
     });
 
     timed!({
-        eprintln!("\n=== Suggest (simple) ===");
-        let res = search.suggest(collection, bucket, "quic")?;
-        eprintln!("Suggest (simple) result: {res:?}");
-    });
-
-    timed!({
-        eprintln!("\n=== Suggest (with options) ===");
-        let res = search.suggest_with_options(collection, bucket, "quic", &[&Limit(10)])?;
-        eprintln!("Suggest (with options) result: {res:?}");
-    });
-
-    timed!({
         eprintln!("\n=== List (simple) ===");
         let res = search.list(collection, bucket)?;
         eprintln!("List (simple) result: {res:?}");

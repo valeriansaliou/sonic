@@ -16,7 +16,7 @@ The search index server is responsible for organizing the index data in a way th
 
 As to provide flexibility to organized indexed data, the search index is organized into collections that contain buckets. Buckets contain indexed objects. This means that you can organize your search index within a depth of 2 layers. Objects are actual search results; you could push an object `result_1` to collection `messages` within bucket `user_1`. This would index `messages` for `user_1` with result `result_1`. Later on, one could search for `messages` matching a given query for `user_1`. If the Sonic user use case does not require using buckets, the bucket value can still be set to a generic value, eg. `default`.
 
-Sonic, unlike many other search index systems, does not serve actual documents as search results. A strategic choice was made to store only identifiers referring to primary keys in an external database, which makes the data stored on-disk as compact as it can be. Users can still refer to their external database to fetch actual search result documents, using identifiers provided by Sonic.
+Sonic can operate as a compact identifier-only index through PUSH and QUERY, or store complete documents through UPSERT and QUERYDOCS. Stored documents contain the searchable text, an explicit UTC timestamp and extensible JSON metadata.
 
 It is worth nothing that any project initiated as of 2019 should make use of modern server hardware, which is mostly all about multi-core CPUs and SSDs. Also, Sonic should be very wary of minimizing its resource requirements — _from a cold start to running under high load_ — as a lot of developers nowadays expect to run software on cheap VPS servers with limited CPU time, small disk space and little RAM. Those modern VPS are nonetheless powered by modern SSDs with fast random I/O. Last but not least, it would definitely be a plus if we could make software a bit greener.
 
@@ -26,47 +26,45 @@ In order to address the above, Sonic is capable to run queries over multiple CPU
 
 Sonic stores result objects in a key-value database (abbreviated KV), powered by RocksDB.
 
-When a text is pushed to Sonic, this text gets normalized, cleaned up and split in separate words. Each word is then associated to the pushed object result, and committed to the KV database as `word <-> object`.
-
-Upon cleaning the text, overhead is eluded. For instance, in the text `the lazy dog` there would be no point in indexing the word `the`, which is what is called a _stopword_. Sonic does not push stopwords to the index ([read more on stopwords](https://en.wikipedia.org/wiki/Stop_words)).
+When a text is pushed to Sonic, Charabia splits it into script-aware words and detects their language. Each normalized word is then associated to the pushed object result and committed to the KV database as `word <-> object`. Common words remain indexed so ingestion and queries cannot disagree because of language-dependent filtering.
 
 When objects are pushed to the search index for a given bucket in a given collection, for instance object `session_77f2e05e-5a81-49f0-89e3-177e9e1d1f32`, Sonic converts this object to a compact 32 bits format, for instance `10292198`. We call the user-provided object identifier the OID, while the compact internal identifier is named the IID. The IID is mapped internally to indexed words, and is much more compact in terms of storage than the OID. You can think of OIDs and IIDs as basically the same thing, except that the IID is the compact version of an OID. OIDs are only used for user-facing input and output objects, while IIDs are only used for internal storage of those objects. On very long indexed texts, this helps save **_a lot_** of disk space.
 
-The KV store has a simple schema, where we associate a binary key to binary data. The following types of keys exist:
+The KV schema uses collision-free dictionaries while keeping frequently repeated identifiers compact:
 
-1. **Meta-To-Value**: state data for the bucket, eg. stores the count increment of indexed objects (data is in arbitrary format) (_code: [StoreKeyerIdx::MetaToValue](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/store/keyer.rs#L24)_);
-2. **Term-To-IIDs**: maps a word (ie. term) to an internal identifier (ie. IID), which is essentially a word-to-result mapping (data is an array of 32 bits numbers encoded to binary as little-endian) (_code: [StoreKeyerIdx::TermToIIDs](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/store/keyer.rs#L25)_);
-3. **OID-To-IID**: maps an object identifier (ie. OID) to an internal identifier (ie. IID), which converts an user-provided object to a compact internal object (data is a 32 bits number encoded to binary as little-endian) (_code: [StoreKeyerIdx::OIDToIID](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/store/keyer.rs#L26)_);
-4. **IID-To-OID**: this is the reverse mapping of OID-To-IID, which lets convert an IID back to an OID (data is a variable-length UTF-8 string encoded in binary) (_code: [StoreKeyerIdx::IIDToOID](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/store/keyer.rs#L27)_);
-5. **IID-To-Terms**: this lists all words (ie. terms) associated to an internal identifier (ie. IID) (data is an array of 32 bits numbers encoded to binary as little-endian) (_code: [StoreKeyerIdx::IIDToTerms](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/store/keyer.rs#L28)_);
+1. **Bucket-Name-To-ID / Bucket-ID-To-Name** assign a sequential 32-bit ID to each complete bucket name.
+2. **Term-Postings** maps a length-prefixed normalized term and IID-range shard to the compact object IDs contained in that range.
+3. **OID-To-IID / IID-To-OID** map the complete user-provided object ID to a sequential 32-bit internal ID and back.
+4. **IID-To-Terms** lists sorted normalized UTF-8 terms associated with an IID using length-prefixed encoding.
+5. **Meta-To-Value** stores the bucket and object counters.
+6. **IID-To-Timestamp** stores the exact document timestamp used for boundary checks and ranking.
+7. **Time-Postings** map hourly UTC slices and IID shards to compact object offsets for date intersections.
 
-A key is formatted as such, in binary: `[idx<1B> | bucket<4B> | route<4B>]` (_code: [StoreKeyerBuilder::build_key](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/store/keyer.rs#L73)_), which makes it 9-bytes long. The index stands for the type of key, eg. Term-To-IIDs. The bucket and what we call the route are hashed as 32 bits numbers, and appended in little-endian binary format to the key.
+Each collection RocksDB has separate metadata, postings and document column families. Active levels use LZ4 compression and the bottommost level uses Zstandard. Keys are bucket-first and numeric components use ordered big-endian encoding. Posting keys include a length-prefixed normalized term and a 16-bit shard selected from the high IID bits, so each value covers at most 65,536 objects. Sparse shards choose the smaller of raw u16 and delta-VarInt encoding, while dense shards use an 8 KiB bitmap.
 
-Both IIDs and terms are stored as 32 bits numbers in binary format. 64 bits numbers could have been used instead, increasing the total number of objects that can be indexed per-bucket. Though, storing such 64 bits numbers instead of 32 bits numbers would double required storage space. As they make up most of stored space, it was important to keep them as small as possible. Those 32 bits numbers are generated using a fast and low-collision hash family called [XxHash](http://www.xxhash.com), from the OID in the case of the IID, and from the word in the case of the term hash (_code: [StoreTermHash](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/store/identifiers.rs#L32)_).
+Term frequencies are derived from posting cardinalities rather than stored in a separate count index. Multi-shard frequencies sum the cardinality of every shard sharing the same bucket and normalized-term prefix.
 
-### How do word suggestion and user typo auto-correction work?
+Bucket names, OIDs and terms are never identified solely by a hash. Exact postings are exhaustive, while query candidate scoring remains independently bounded. The schema is versioned and intentionally incompatible with earlier indexes; schema changes require a full re-ingestion.
 
-When most users input text to a computer system using an actual keyboard, they make typos and mistakes. A nice property of a good search system should be that those typos can be forgiven and accurate search results still come up for the bogus user query. Sonic implements a data structure that lets it correct typos or autocomplete incomplete words.
+Identifiers are scoped rather than global: bucket IDs are local to a collection and IIDs are local to a bucket. Normalized terms are encoded directly in posting and count keys, avoiding a separate term-ID namespace. Each numeric namespace can hold about 4.29 billion values. Allocation fails explicitly on overflow; deployments approaching that limit must split the affected collection or bucket.
 
-For instance, if our index has the word `english` but the user, for some reason, inputs `englich`, Sonic would still return results for `english`. Similarly, if the user inputs an incomplete word eg. `eng`, Sonic would expand this word to `english`, if there were no or not enough exact matches for `eng`.
+### How does adaptive typo correction work?
 
-The store system responsible for such a feat is the FST ([Finite-State Transducer](https://en.wikipedia.org/wiki/Finite-state_transducer)). It can be grossly compared to a graph of characters, where nodes are characters and edges connect those characters to produce words.
+When users type search queries, they make mistakes. Sonic uses a bounded typo lexicon to map misspelled query terms to close terms that occur frequently in the indexed corpus.
 
-Sonic stores a single FST file per bucket. This FST file is memory-mapped, and read directly from the disk when Sonic needs to read it. The [fst](https://crates.io/crates/fst) crate is used to implement the FST data structure.
+For instance, if the corpus frequently contains `messenger` and the user searches for `mesengr`, Sonic can include the postings for `messenger` with a lower score than exact matches.
 
-One downside of the FST implementation that Sonic uses, is that once built, an FST is immutable. It means that in order to add a new word to the search index (for a given bucket), Sonic needs to re-build the entire FST (ie. iterate word-by-word on the existing FST and stream those words plus the added word to a new on-disk FST file). In order to do that in an efficient manner, Sonic implements an FST consolidation tasker, which stores FST changes in-memory and consolidates them to disk at periodic intervals (this interval can be configured) (_code: [StoreFSTPool::consolidate](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/store/fst.rs#L173)_).
+The FST ([Finite-State Transducer](https://en.wikipedia.org/wiki/Finite-state_transducer)) stores terms with a score combining document frequency and recency. Terms below the configured admission threshold are ignored. During consolidation, the hottest terms are retained within the configured word and size budgets, while colder terms are evicted.
+
+Sonic stores one memory-mapped typo lexicon per bucket. RocksDB remains exhaustive and authoritative; the FST is only a best-effort correction index and never affects exact term availability.
+
+Because the FST is immutable, frequency changes are buffered and periodically consolidated into a new file. Consolidation selects terms by frequency before rebuilding the lexicographically ordered map.
 
 ### How do texts get cleaned up? (via the lexer)
 
-Any text that gets pushed to Sonic needs to be normalized (eg. lower-cased) and cleaned up (eg. remove stopwords) before it can be added to the index. This task is handled by the lexer system, also called [tokenizer](https://en.wikipedia.org/wiki/Lexical_analysis#Tokenization).
+Any text pushed to Sonic is segmented by Charabia, then normalized by the lexer before it is added to the index. Charabia detects scripts and languages per token, while an explicit `LANG` hint restricts that detection. Structured values such as email addresses, URLs, phone numbers and identifiers remain atomic and bypass fuzzy matching.
 
-Sonic's tokenizer is built around an iterator pattern (_code: [Iterator->TokenLexer](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/lexer/token.rs#L244)_), and yields lexed words one-by-one. Iteration can be stopped before the end of the text is reached, for instance if we did not get enough search results for the first words of the query. This ensures no extraneous lexing work is done.
-
-Given that stopwords depend on the text language, Sonic first needs to detect the language of the text that is being cleaned up. This is done using an hybrid method of either counting the number of stopwords that appear in the text for long-enough texts (which is faster) (_code: [TokenLexerBuilder::detect_lang_fast](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/lexer/token.rs#L177)_), or performing an [n-gram](https://en.wikipedia.org/wiki/N-gram) pass on the text for smaller texts (which is **_an order of magnitude_** slower) (_code: [TokenLexerBuilder::detect_lang_slow](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/lexer/token.rs#L126)_).
-
-As the n-gram method is better at guessing the language for small texts than the stopwords method is, we prefer it, although it is crazy slow in comparison to the stopwords method. For long-enough texts, the stopwords method becomes reliable enough, so we can use it. In either cases, if the first chosen guessing method result is judged as non-reliable, Sonic fallbacks on the other method (_code: [!detector.is_reliable()](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/lexer/token.rs#L148)_).
-
-By the way, Sonic builds up its own list of stopwords for all supported languages, [which can be found here](https://github.com/valeriansaliou/sonic/blob/1d4c49ed348abbb8411afe7ecee6014703784d48/core/src/stopwords) (languages are referred to via their ISO 639-3 codes). People are welcome to improve those lists of stopwords by [submitting a Pull Request](https://github.com/valeriansaliou/sonic/pulls).
+Sonic's tokenizer is built around an iterator pattern and yields lexed words one-by-one. Charabia's detected language is carried with each word and selects the optional stemming algorithm. Stopwords are not removed: this keeps all terms searchable and avoids inconsistent ingestion and query behavior on short or multilingual text.
 
 ### What is the purpose of the tasker system?
 
@@ -109,7 +107,7 @@ First off, John Doe would connect to Sonic over a Sonic Channel client, for inst
 5. Run the search executor (_code: [ExecutorSearch::search](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/executor/search.rs#L21)_);
 6. Open both the KV and FST stores for the collection `messages` and bucket `acme_corp` (_code: [StoreKVPool::acquire + StoreFSTPool::acquire](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/executor/search.rs#L34)_);
 7. Perform search query text lexing, and search word-by-word, which would yield in order: `robber`, `stolen`, `corporate`, `car` (_code: [lexer.next](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/executor/search.rs#L50)_);
-8. If not enough search results are found, tries to suggest other words eg. typos corrections (_code: [fst_action.suggest_words](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/executor/search.rs#L81)_);
+8. Expand eligible query terms through the adaptive typo lexicon and merge matching postings with a Levenshtein penalty;
 9. Perform paging on found OIDs from KV store to limit results (_code: [found_iids.iter](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/executor/search.rs#L163)_);
 10. Return found OIDs from the executor (_code: [result_oids](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/executor/search.rs#L180)_);
 11. Write back the final results to the TCP stream (_code: [response_args_groups](https://github.com/valeriansaliou/sonic/blob/5320b81afc1598ac1cd2af938df0b2ef6cb96dc4/src/channel/message.rs#L81)_);

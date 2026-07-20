@@ -86,7 +86,7 @@ fn test_no_implicit_and() {
 }
 
 #[test]
-fn test_no_implicit_and_with_stopwords() {
+fn test_ranking_with_common_terms() {
     init_logging();
     let mut executor = make_test_executor();
 
@@ -106,19 +106,13 @@ fn test_no_implicit_and_with_stopwords() {
 
     {
         let response = exec!(executor -> QUERY "movies" "default" "Back to the Future");
-        #[rustfmt::skip]
-        assert_eq!(response, [
-            // Exact match.
-            "movie:1",
-            // Then reverse ingestion order.
-            "movie:4", "movie:3", "movie:2",
-        ]);
+        // Every title contains all query terms, so reverse ingestion order wins.
+        assert_eq!(response, ["movie:4", "movie:3", "movie:2", "movie:1"]);
     }
 
     {
         let response = exec!(executor -> QUERY "movies" "default" "Back to the Future Part II");
-        // Reverse ingestion order, because `ii` and `part` are stopwords in English.
-        assert_eq!(response, ["movie:4", "movie:3", "movie:2", "movie:1"]);
+        assert_eq!(response, ["movie:2", "movie:3", "movie:4", "movie:1"]);
     }
 
     {

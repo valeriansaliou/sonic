@@ -91,10 +91,6 @@ pub trait StoreGenericPool<
     ) {
         tracing::debug!("scanning for {} store pool items to janitor", kind);
 
-        // Acquire access lock (in blocking write mode), and reference it in context
-        // Notice: this prevents store to be acquired from any context
-        let _access = access_lock.write().unwrap();
-
         let mut removal_register: Vec<K> = Vec::new();
 
         for (collection_bucket, store) in pool.read().unwrap().iter() {
@@ -141,10 +137,19 @@ pub trait StoreGenericPool<
         }
 
         if !removal_register.is_empty() {
+            // Block structural operations only when there is actual removal work.
+            let _access = access_lock.write().unwrap();
             let mut store_pool_write = pool.write().unwrap();
 
             for collection_bucket in &removal_register {
-                store_pool_write.remove(collection_bucket);
+                let should_remove = store_pool_write
+                    .get(collection_bucket)
+                    .and_then(|store| store.ref_last_used().read().ok())
+                    .and_then(|last_used| last_used.elapsed().ok())
+                    .is_some_and(|elapsed| elapsed.as_secs() >= inactive_after);
+                if should_remove {
+                    store_pool_write.remove(collection_bucket);
+                }
             }
         }
 

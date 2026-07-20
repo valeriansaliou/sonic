@@ -77,4 +77,4 @@ const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 /// This timeout has to take into account TCP packets travel time, parsing and
 /// processing, hence why it’s so high. It should not be reached, but it’s there
 /// as a safety precaution.
-const RECV_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const RECV_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);

@@ -18,10 +18,27 @@ pub type QuerySearchOffset = u32;
 
 pub type QueryMatchScore = u16;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct QueryTimeRange {
+    pub from_ms: u64,
+    pub to_ms: u64,
+}
+
+impl QueryTimeRange {
+    pub fn new(from_ms: u64, to_ms: u64) -> Result<Self, ()> {
+        if from_ms > to_ms {
+            return Err(());
+        }
+        Ok(Self { from_ms, to_ms })
+    }
+}
+
 pub type QueryMetaData = (
     Option<QuerySearchLimit>,
     Option<QuerySearchOffset>,
     Option<QueryGenericLang>,
+    Option<u64>,
+    Option<u64>,
 );
 
 pub type ListMetaData = (Option<QuerySearchLimit>, Option<QuerySearchOffset>);

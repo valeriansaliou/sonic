@@ -90,7 +90,7 @@ fn test_search_is_unicode_normalized() {
 
 /// Search should be diacritics-insensitive.
 ///
-/// NOTE: In this test, we disable matching via prefix or Levenstein distance
+/// NOTE: In this test, we disable matching via Levenshtein distance
 ///   to avoid false positives. For example, `cinema` used to match `cinéma`,
 ///   but it was because of typo correction and not because normalization was
 ///   done properly. This is likely why it went under the radar that up until
@@ -99,7 +99,7 @@ fn test_search_is_unicode_normalized() {
 fn test_search_is_diacritics_insensitive() {
     test_ingest_then_query!(
         normalization_config: { diacritic_folding_enabled: true },
-        search_config: { fuzzy_matching_enabled: false, prefix_matching_enabled: false },
+        search_config: { fuzzy_matching_enabled: false },
         push: "Cinéma",
         query: [
             ("cinema", true),
@@ -109,11 +109,11 @@ fn test_search_is_diacritics_insensitive() {
     // Example from <https://github.com/valeriansaliou/sonic/issues/245>.
     test_ingest_then_query!(
         normalization_config: { diacritic_folding_enabled: true },
-        search_config: { fuzzy_matching_enabled: false, prefix_matching_enabled: true },
+        search_config: { fuzzy_matching_enabled: false },
         push: "Veronika Šibanová",
         query: [
             ("Sibanova", true),
-            ("Veronika S", true),
+            ("Veronika Sibanova", true),
         ],
     );
 }

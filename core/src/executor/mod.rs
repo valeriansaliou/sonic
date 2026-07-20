@@ -11,6 +11,7 @@ use std::sync::Arc;
 mod macros;
 
 mod count;
+mod dump;
 mod flushb;
 mod flushc;
 mod flusho;
@@ -18,7 +19,10 @@ mod list;
 mod pop;
 mod push;
 mod search;
-mod suggest;
+mod stats;
+mod upsert;
+
+pub use upsert::IngestProfile;
 
 pub struct Executor {
     pub app_conf: Arc<crate::Config>,

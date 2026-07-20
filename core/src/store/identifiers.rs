@@ -4,38 +4,30 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use std::hash::Hasher;
-use twox_hash::XxHash32;
-
+pub type StoreBucketID = u32;
+pub type StoreIIDShard = u16;
 pub type StoreObjectIID = u32;
 pub type StoreObjectOID<'a> = &'a str;
-pub type StoreTermHashed = u32;
-
-pub struct StoreTermHash;
 
 pub enum StoreMetaKey {
     IIDIncr,
+    BucketIDIncr,
+    SchemaVersion,
 }
 
 pub enum StoreMetaValue {
     IIDIncr(StoreObjectIID),
+    BucketIDIncr(StoreBucketID),
+    SchemaVersion(u32),
 }
 
 impl StoreMetaKey {
     pub fn as_u32(&self) -> u32 {
         match self {
             StoreMetaKey::IIDIncr => 0,
+            StoreMetaKey::BucketIDIncr => 2,
+            StoreMetaKey::SchemaVersion => 3,
         }
-    }
-}
-
-impl StoreTermHash {
-    pub fn from(term: &str) -> StoreTermHashed {
-        let mut hasher = XxHash32::with_seed(0);
-
-        hasher.write(term.as_bytes());
-
-        hasher.finish() as u32
     }
 }
 
@@ -46,11 +38,7 @@ mod tests {
     #[test]
     fn it_converts_meta_key_to_u32() {
         assert_eq!(StoreMetaKey::IIDIncr.as_u32(), 0);
-    }
-
-    #[test]
-    fn it_hashes_term() {
-        assert_eq!(StoreTermHash::from("hash:1"), 3637660813);
-        assert_eq!(StoreTermHash::from("hash:2"), 3577985381);
+        assert_eq!(StoreMetaKey::BucketIDIncr.as_u32(), 2);
+        assert_eq!(StoreMetaKey::SchemaVersion.as_u32(), 3);
     }
 }

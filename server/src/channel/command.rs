@@ -5,6 +5,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use base64::Engine;
 use hashbrown::HashMap;
 use rand::RngExt;
 use rand::distr::Alphanumeric;
@@ -12,6 +13,7 @@ use std::fmt;
 use std::path::Path;
 use std::str::{self, SplitWhitespace};
 use std::sync::LazyLock;
+use std::time::Instant;
 use std::vec::Vec;
 
 use sonic::query::{
@@ -24,6 +26,7 @@ use super::format::unescape;
 use super::message::{
     ChannelMessageModeControl, ChannelMessageModeIngest, ChannelMessageModeSearch,
 };
+use super::profile::{self, IngestCommandProfile};
 use super::statistics::ChannelStatistics;
 
 #[derive(PartialEq)]
@@ -71,12 +74,31 @@ const META_PART_GROUP_CLOSE: char = ')';
 static BACKUP_KV_PATH: &str = "kv";
 static BACKUP_FST_PATH: &str = "fst";
 
-pub static COMMANDS_MODE_SEARCH: [&str; 6] = ["QUERY", "SUGGEST", "LIST", "PING", "HELP", "QUIT"];
-pub static COMMANDS_MODE_INGEST: [&str; 9] = [
-    "PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT",
+pub static COMMANDS_MODE_SEARCH: [&str; 6] = ["QUERY", "QUERYDOCS", "LIST", "PING", "HELP", "QUIT"];
+pub static COMMANDS_MODE_INGEST: [&str; 15] = [
+    "PUSH",
+    "UPSERT",
+    "UPSERTBATCH",
+    "POP",
+    "COUNT",
+    "DUMP",
+    "BUCKETS",
+    "EXPORT",
+    "IMPORT",
+    "FLUSHC",
+    "FLUSHB",
+    "FLUSHO",
+    "PING",
+    "HELP",
+    "QUIT",
 ];
-pub static COMMANDS_MODE_CONTROL: [&str; 5] = ["TRIGGER", "INFO", "PING", "HELP", "QUIT"];
+pub static COMMANDS_MODE_CONTROL: [&str; 6] = ["TRIGGER", "INFO", "STATS", "PING", "HELP", "QUIT"];
 pub static CONTROL_TRIGGER_ACTIONS: [&str; 3] = ["consolidate", "backup", "restore"];
+
+// Wire-streamed dump pagination bounds; kept small enough that a page always fits within the \
+//   ordinary command response buffer, unlike `UPSERTBATCH` which gets a dedicated bulk buffer.
+const DUMP_LIMIT_DEFAULT: QuerySearchLimit = 1_000;
+const DUMP_LIMIT_MAXIMUM: QuerySearchLimit = 10_000;
 
 static MANUAL_MODE_SEARCH: LazyLock<HashMap<&str, Vec<&str>>> =
     LazyLock::new(|| HashMap::from_iter([("commands", COMMANDS_MODE_SEARCH.to_vec())]));
@@ -323,6 +345,35 @@ impl ChannelCommandBase {
         //   consumer via a worker thread pool.
 
         match StoreOperationDispatch::dispatch(query, executor) {
+            Ok(results) if query_type == "QUERYDOCS" => {
+                let documents: Vec<sonic::store::document::StoreDocument> =
+                    serde_json::from_str(&results.unwrap_or_else(|| "[]".to_owned()))
+                        .map_err(|_| ChannelCommandError::InternalError)?;
+                let mut responses = Vec::with_capacity(documents.len() + 2);
+                responses.push(ChannelCommandResponse::Pending(query_id.to_string()));
+                for document in documents {
+                    let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+                        serde_json::to_vec(&document)
+                            .map_err(|_| ChannelCommandError::InternalError)?,
+                    );
+                    if encoded.len() > 19_900 {
+                        return Err(ChannelCommandError::PolicyReject(
+                            "stored document exceeds channel response buffer",
+                        ));
+                    }
+                    responses.push(ChannelCommandResponse::Event(
+                        query_type,
+                        query_id.to_string(),
+                        encoded,
+                    ));
+                }
+                responses.push(ChannelCommandResponse::Event(
+                    query_type,
+                    query_id.to_string(),
+                    "DONE".to_owned(),
+                ));
+                Ok(responses)
+            }
             Ok(results) => Ok(vec![
                 ChannelCommandResponse::Pending(query_id.to_string()),
                 ChannelCommandResponse::Event(
@@ -345,9 +396,21 @@ impl ChannelCommandBase {
 }
 
 impl ChannelCommandSearch {
-    pub fn dispatch_query(
+    pub fn dispatch_query(parts: SplitWhitespace, ctx: &ChannelMessageModeSearch) -> ChannelResult {
+        Self::dispatch_query_inner(parts, ctx, false)
+    }
+
+    pub fn dispatch_query_documents(
+        parts: SplitWhitespace,
+        ctx: &ChannelMessageModeSearch,
+    ) -> ChannelResult {
+        Self::dispatch_query_inner(parts, ctx, true)
+    }
+
+    fn dispatch_query_inner(
         mut parts: SplitWhitespace,
         ctx: &ChannelMessageModeSearch,
+        documents: bool,
     ) -> ChannelResult {
         match (
             parts.next(),
@@ -366,8 +429,8 @@ impl ChannelCommandSearch {
                 );
 
                 // Define query parameters
-                let (mut query_limit, mut query_offset, mut query_lang) =
-                    (ctx.search_config.query_limit_default, 0, None);
+                let (mut query_limit, mut query_offset, mut query_lang, mut from_ms, mut to_ms) =
+                    (ctx.search_config.query_limit_default, 0, None, None, None);
 
                 // Parse meta parts (meta comes after text; extract meta parts second)
                 let mut last_meta_err = None;
@@ -375,15 +438,17 @@ impl ChannelCommandSearch {
                 while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
                 {
                     match Self::handle_query_meta(meta_result) {
-                        Ok((Some(query_limit_parsed), None, None)) => {
+                        Ok((Some(query_limit_parsed), None, None, None, None)) => {
                             query_limit = query_limit_parsed
                         }
-                        Ok((None, Some(query_offset_parsed), None)) => {
+                        Ok((None, Some(query_offset_parsed), None, None, None)) => {
                             query_offset = query_offset_parsed
                         }
-                        Ok((None, None, Some(query_lang_parsed))) => {
+                        Ok((None, None, Some(query_lang_parsed), None, None)) => {
                             query_lang = Some(query_lang_parsed)
                         }
+                        Ok((None, None, None, Some(value), None)) => from_ms = Some(value),
+                        Ok((None, None, None, None, Some(value))) => to_ms = Some(value),
                         Err(parse_err) => last_meta_err = Some(parse_err),
                         _ => {}
                     }
@@ -405,7 +470,19 @@ impl ChannelCommandSearch {
                         query_lang
                     );
 
-                    let query = Query::search(
+                    let time_range = match (from_ms, to_ms) {
+                        (None, None) => None,
+                        (from, to) => Some(
+                            sonic::query::QueryTimeRange::new(
+                                from.unwrap_or(0),
+                                to.unwrap_or(u64::MAX),
+                            )
+                            .map_err(|()| {
+                                ChannelCommandError::PolicyReject("FROM must be lower than TO")
+                            })?,
+                        ),
+                    };
+                    let query = Query::search_with_range(
                         &event_id,
                         collection,
                         bucket,
@@ -413,14 +490,16 @@ impl ChannelCommandSearch {
                         query_limit,
                         query_offset,
                         query_lang,
+                        time_range,
                         *ctx.normalization_config,
                         *ctx.tokenization_config,
+                        documents,
                     )
                     .map_err(|()| ChannelCommandError::QueryError)?;
 
                     // Commit 'search' query
                     ChannelCommandBase::commit_pending_operation(
-                        "QUERY",
+                        if documents { "QUERYDOCS" } else { "QUERY" },
                         &event_id,
                         query,
                         ctx.executor,
@@ -428,82 +507,8 @@ impl ChannelCommandSearch {
                 }
             }
             _ => Err(ChannelCommandError::InvalidFormat(
-                "QUERY <collection> <bucket> \"<terms>\" [LIMIT(<count>)]? [OFFSET(<count>)]? \
-                 [LANG(<locale>)]?",
-            )),
-        }
-    }
-
-    pub fn dispatch_suggest(
-        mut parts: SplitWhitespace,
-        ctx: &ChannelMessageModeSearch,
-    ) -> ChannelResult {
-        match (
-            parts.next(),
-            parts.next(),
-            ChannelCommandBase::parse_text_parts(&mut parts),
-        ) {
-            (Some(collection), Some(bucket), Some(text)) => {
-                // Generate command identifier
-                let event_id = ChannelCommandBase::generate_event_id();
-
-                tracing::debug!(
-                    "dispatching search suggest #{} on collection: {} and bucket: {}",
-                    event_id,
-                    collection,
-                    bucket
-                );
-
-                // Define suggest parameters
-                let mut suggest_limit = ctx.search_config.suggest_limit_default;
-
-                // Parse meta parts (meta comes after text; extract meta parts second)
-                let mut last_meta_err = None;
-
-                while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
-                {
-                    match Self::handle_suggest_meta(meta_result) {
-                        Ok(Some(suggest_limit_parsed)) => suggest_limit = suggest_limit_parsed,
-                        Err(parse_err) => last_meta_err = Some(parse_err),
-                        _ => {}
-                    }
-                }
-
-                if let Some(err) = last_meta_err {
-                    Err(err)
-                } else if suggest_limit < 1
-                    || suggest_limit > ctx.search_config.suggest_limit_maximum
-                {
-                    Err(ChannelCommandError::PolicyReject(
-                        "LIMIT out of minimum/maximum bounds",
-                    ))
-                } else {
-                    tracing::debug!(
-                        "will suggest for #{} with text: {}, limit: {}",
-                        event_id,
-                        text,
-                        suggest_limit
-                    );
-
-                    #[rustfmt::skip]
-                    let query = Query::suggest(
-                        &event_id, collection, bucket, &text, suggest_limit,
-                        *ctx.normalization_config,
-                        *ctx.tokenization_config,
-                    )
-                    .map_err(|()| ChannelCommandError::QueryError)?;
-
-                    // Commit 'suggest' query
-                    ChannelCommandBase::commit_pending_operation(
-                        "SUGGEST",
-                        &event_id,
-                        query,
-                        ctx.executor,
-                    )
-                }
-            }
-            _ => Err(ChannelCommandError::InvalidFormat(
-                "SUGGEST <collection> <bucket> \"<word>\" [LIMIT(<count>)]?",
+                "QUERY[DOCS] <collection> <bucket> \"<terms>\" [LIMIT(<count>)]? \
+                 [OFFSET(<count>)]? [LANG(<locale>)]? [FROM(<unix_ms>)]? [TO(<unix_ms>)]?",
             )),
         }
     }
@@ -582,7 +587,7 @@ impl ChannelCommandSearch {
                     "LIMIT" => {
                         // 'LIMIT(<count>)' where 0 <= <count> < 2^16
                         if let Ok(query_limit_parsed) = meta_value.parse::<QuerySearchLimit>() {
-                            Ok((Some(query_limit_parsed), None, None))
+                            Ok((Some(query_limit_parsed), None, None, None, None))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
                                 meta_key, meta_value,
@@ -592,7 +597,7 @@ impl ChannelCommandSearch {
                     "OFFSET" => {
                         // 'OFFSET(<count>)' where 0 <= <count> < 2^32
                         if let Ok(query_offset_parsed) = meta_value.parse::<QuerySearchOffset>() {
-                            Ok((None, Some(query_offset_parsed), None))
+                            Ok((None, Some(query_offset_parsed), None, None, None))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
                                 meta_key, meta_value,
@@ -602,42 +607,25 @@ impl ChannelCommandSearch {
                     "LANG" => {
                         // 'LANG(<locale>)' where <locale> ∈ ISO 639-3
                         if let Some(query_lang_parsed) = QueryGenericLang::from_value(meta_value) {
-                            Ok((None, None, Some(query_lang_parsed)))
+                            Ok((None, None, Some(query_lang_parsed), None, None))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
                                 meta_key, meta_value,
                             ))
                         }
                     }
-                    _ => Err(ChannelCommandBase::make_error_invalid_meta_key(
-                        meta_key, meta_value,
-                    )),
-                }
-            }
-            Err(err) => Err(ChannelCommandBase::make_error_invalid_meta_key(
-                err.0, err.1,
-            )),
-        }
-    }
-
-    fn handle_suggest_meta(
-        meta_result: MetaPartsResult,
-    ) -> Result<Option<QuerySearchLimit>, ChannelCommandError> {
-        match meta_result {
-            Ok((meta_key, meta_value)) => {
-                tracing::debug!("handle suggest meta: {} = {}", meta_key, meta_value);
-
-                match meta_key {
-                    "LIMIT" => {
-                        // 'LIMIT(<count>)' where 0 <= <count> < 2^16
-                        if let Ok(suggest_limit_parsed) = meta_value.parse::<QuerySearchLimit>() {
-                            Ok(Some(suggest_limit_parsed))
-                        } else {
-                            Err(ChannelCommandBase::make_error_invalid_meta_value(
-                                meta_key, meta_value,
-                            ))
-                        }
-                    }
+                    "FROM" => meta_value
+                        .parse::<u64>()
+                        .map(|value| (None, None, None, Some(value), None))
+                        .map_err(|_| {
+                            ChannelCommandBase::make_error_invalid_meta_value(meta_key, meta_value)
+                        }),
+                    "TO" => meta_value
+                        .parse::<u64>()
+                        .map(|value| (None, None, None, None, Some(value)))
+                        .map_err(|_| {
+                            ChannelCommandBase::make_error_invalid_meta_value(meta_key, meta_value)
+                        }),
                     _ => Err(ChannelCommandBase::make_error_invalid_meta_key(
                         meta_key, meta_value,
                     )),
@@ -749,6 +737,152 @@ impl ChannelCommandIngest {
         }
     }
 
+    pub fn dispatch_upsert(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeIngest,
+    ) -> ChannelResult {
+        let (Some(collection), Some(bucket), Some(object), Some(text)) = (
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            ChannelCommandBase::parse_text_parts(&mut parts),
+        ) else {
+            return Err(ChannelCommandError::InvalidFormat(
+                "UPSERT <collection> <bucket> <object> \"<text>\" TS(<unix_ms>) \
+                 [META(<base64url-json>)]? [LANG(<locale>)]?",
+            ));
+        };
+        let mut timestamp_ms = None;
+        let mut metadata = serde_json::json!({});
+        let mut lang = None;
+        while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts) {
+            let (key, value) = meta_result.map_err(|(key, value)| {
+                ChannelCommandBase::make_error_invalid_meta_key(key, value)
+            })?;
+            match key {
+                "TS" => {
+                    timestamp_ms = Some(value.parse::<u64>().map_err(|_| {
+                        ChannelCommandBase::make_error_invalid_meta_value(key, value)
+                    })?);
+                }
+                "META" => {
+                    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                        .decode(value)
+                        .map_err(|_| {
+                            ChannelCommandBase::make_error_invalid_meta_value(key, value)
+                        })?;
+                    metadata = serde_json::from_slice(&decoded).map_err(|_| {
+                        ChannelCommandBase::make_error_invalid_meta_value(key, value)
+                    })?;
+                    if !metadata.is_object() {
+                        return Err(ChannelCommandBase::make_error_invalid_meta_value(
+                            key, value,
+                        ));
+                    }
+                }
+                "LANG" => {
+                    lang = Some(QueryGenericLang::from_value(value).ok_or_else(|| {
+                        ChannelCommandBase::make_error_invalid_meta_value(key, value)
+                    })?);
+                }
+                _ => {
+                    return Err(ChannelCommandBase::make_error_invalid_meta_key(key, value));
+                }
+            }
+        }
+        let timestamp_ms = timestamp_ms.ok_or(ChannelCommandError::PolicyReject(
+            "UPSERT requires an explicit TS",
+        ))?;
+        let query = Query::upsert(
+            collection,
+            bucket,
+            object,
+            &text,
+            timestamp_ms,
+            metadata,
+            lang,
+            *ctx.normalization_config,
+            *ctx.tokenization_config,
+        )
+        .map_err(|()| ChannelCommandError::QueryError)?;
+        ChannelCommandBase::commit_ok_operation(query, ctx.executor)
+    }
+
+    pub fn dispatch_upsert_batch(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeIngest,
+    ) -> ChannelResult {
+        let (Some(collection), Some(mode), Some(payload), None) =
+            (parts.next(), parts.next(), parts.next(), parts.next())
+        else {
+            return Err(ChannelCommandError::InvalidFormat(
+                "UPSERTBATCH <collection> <fresh|upsert> <base64-zstd-ndjson>",
+            ));
+        };
+        let fresh = match mode {
+            "fresh" => true,
+            "upsert" => false,
+            _ => {
+                return Err(ChannelCommandError::InvalidMetaValue((
+                    "mode".to_owned(),
+                    mode.to_owned(),
+                )));
+            }
+        };
+        let total_started = Instant::now();
+        let base64_started = Instant::now();
+        let compressed = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(payload)
+            .map_err(|_| ChannelCommandError::QueryError)?;
+        let base64_decode = base64_started.elapsed();
+        let decompress_started = Instant::now();
+        let decoded = zstd::stream::decode_all(compressed.as_slice())
+            .map_err(|_| ChannelCommandError::QueryError)?;
+        let decompress = decompress_started.elapsed();
+        let json_started = Instant::now();
+        let mut records = Vec::new();
+        for line in decoded.split(|byte| *byte == b'\n') {
+            if !line.is_empty() {
+                records.push(
+                    serde_json::from_slice(line).map_err(|_| ChannelCommandError::QueryError)?,
+                );
+            }
+        }
+        let json_decode = json_started.elapsed();
+        let profiling = profile::enabled();
+        let (result, executor_profile) = if profiling {
+            let (result, executor_profile) = ctx
+                .executor
+                .upsert_batch_profiled(collection, records, fresh)
+                .map_err(|()| ChannelCommandError::QueryError)?;
+            (result, Some(executor_profile))
+        } else {
+            let result = ctx
+                .executor
+                .upsert_batch(collection, records, fresh)
+                .map_err(|()| ChannelCommandError::QueryError)?;
+            (result, None)
+        };
+        let total = total_started.elapsed();
+        if let Some(executor_profile) = executor_profile {
+            profile::record(&IngestCommandProfile {
+                timestamp_ms: IngestCommandProfile::timestamp_ms(),
+                payload_bytes: payload.len(),
+                compressed_bytes: compressed.len(),
+                decoded_bytes: decoded.len(),
+                command_total_us: total.as_micros(),
+                base64_decode_us: base64_decode.as_micros(),
+                decompress_us: decompress.as_micros(),
+                json_decode_us: json_decode.as_micros(),
+                executor: executor_profile,
+            });
+        }
+        Ok(vec![ChannelCommandResponse::Result(format!(
+            "{} {}",
+            result.written, result.rejected
+        ))])
+    }
+
     pub fn dispatch_pop(
         mut parts: SplitWhitespace,
         ctx: &ChannelMessageModeIngest,
@@ -786,6 +920,143 @@ impl ChannelCommandIngest {
                 "POP <collection> <bucket> <object> \"<text>\"",
             )),
         }
+    }
+
+    pub fn dispatch_dump(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeIngest,
+    ) -> ChannelResult {
+        match (parts.next(), parts.next()) {
+            (Some(collection), Some(bucket)) => {
+                let (mut limit, mut offset) = (DUMP_LIMIT_DEFAULT, 0);
+                let mut last_meta_err = None;
+
+                while let Some(meta_result) =
+                    ChannelCommandBase::parse_next_meta_parts(&mut parts)
+                {
+                    match ChannelCommandSearch::handle_list_meta(meta_result) {
+                        Ok((Some(limit_parsed), None)) => limit = limit_parsed,
+                        Ok((None, Some(offset_parsed))) => offset = offset_parsed,
+                        Ok(_) => {}
+                        Err(parse_err) => last_meta_err = Some(parse_err),
+                    }
+                }
+
+                if let Some(err) = last_meta_err {
+                    return Err(err);
+                }
+                if limit < 1 || limit > DUMP_LIMIT_MAXIMUM {
+                    return Err(ChannelCommandError::PolicyReject(
+                        "LIMIT out of minimum/maximum bounds",
+                    ));
+                }
+
+                let records = ctx
+                    .executor
+                    .dump_bucket(collection, bucket, u64::from(offset), u64::from(limit))
+                    .map_err(|()| ChannelCommandError::QueryError)?;
+
+                let payload = Self::encode_dump_payload(&records)
+                    .map_err(|()| ChannelCommandError::QueryError)?;
+
+                Ok(vec![ChannelCommandResponse::Result(payload)])
+            }
+            _ => Err(ChannelCommandError::InvalidFormat(
+                "DUMP <collection> <bucket> [LIMIT(<count>)]? [OFFSET(<count>)]?",
+            )),
+        }
+    }
+
+    pub fn dispatch_buckets(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeIngest,
+    ) -> ChannelResult {
+        match parts.next() {
+            Some(collection) => {
+                let (mut limit, mut offset) = (DUMP_LIMIT_DEFAULT, 0);
+                let mut last_meta_err = None;
+
+                while let Some(meta_result) =
+                    ChannelCommandBase::parse_next_meta_parts(&mut parts)
+                {
+                    match ChannelCommandSearch::handle_list_meta(meta_result) {
+                        Ok((Some(limit_parsed), None)) => limit = limit_parsed,
+                        Ok((None, Some(offset_parsed))) => offset = offset_parsed,
+                        Ok(_) => {}
+                        Err(parse_err) => last_meta_err = Some(parse_err),
+                    }
+                }
+
+                if let Some(err) = last_meta_err {
+                    return Err(err);
+                }
+                if limit < 1 || limit > DUMP_LIMIT_MAXIMUM {
+                    return Err(ChannelCommandError::PolicyReject(
+                        "LIMIT out of minimum/maximum bounds",
+                    ));
+                }
+
+                let buckets = ctx
+                    .executor
+                    .list_buckets(collection, u64::from(offset), u64::from(limit))
+                    .map_err(|()| ChannelCommandError::QueryError)?;
+
+                Ok(vec![ChannelCommandResponse::Result(buckets.join(" "))])
+            }
+            None => Err(ChannelCommandError::InvalidFormat(
+                "BUCKETS <collection> [LIMIT(<count>)]? [OFFSET(<count>)]?",
+            )),
+        }
+    }
+
+    fn encode_dump_payload(records: &[sonic::store::document::StoreDocumentRecord]) -> Result<String, ()> {
+        let mut ndjson = Vec::new();
+        for record in records {
+            serde_json::to_writer(&mut ndjson, record).map_err(|_| ())?;
+            ndjson.push(b'\n');
+        }
+        let compressed = zstd::stream::encode_all(ndjson.as_slice(), 1).map_err(|_| ())?;
+        Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(compressed))
+    }
+
+    pub fn dispatch_export(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeIngest,
+    ) -> ChannelResult {
+        let Some(collection) = parts.next() else {
+            return Err(ChannelCommandError::InvalidFormat(
+                "EXPORT <collection> [<bucket>]? <path>",
+            ));
+        };
+        let (bucket, path) = match (parts.next(), parts.next(), parts.next()) {
+            (Some(path), None, None) => (None, path),
+            (Some(bucket), Some(path), None) => (Some(bucket), path),
+            _ => {
+                return Err(ChannelCommandError::InvalidFormat(
+                    "EXPORT <collection> [<bucket>]? <path>",
+                ));
+            }
+        };
+        ctx.executor
+            .export_documents(collection, bucket, Path::new(path))
+            .map(|count| vec![ChannelCommandResponse::Result(count.to_string())])
+            .map_err(|()| ChannelCommandError::QueryError)
+    }
+
+    pub fn dispatch_import(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeIngest,
+    ) -> ChannelResult {
+        let (Some(collection), Some(path), None) = (parts.next(), parts.next(), parts.next())
+        else {
+            return Err(ChannelCommandError::InvalidFormat(
+                "IMPORT <collection> <path>",
+            ));
+        };
+        ctx.executor
+            .import_documents(collection, Path::new(path))
+            .map(|count| vec![ChannelCommandResponse::Result(count.to_string())])
+            .map_err(|()| ChannelCommandError::QueryError)
     }
 
     pub fn dispatch_count(
@@ -913,6 +1184,33 @@ impl ChannelCommandIngest {
 }
 
 impl ChannelCommandControl {
+    pub fn dispatch_stats(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeControl,
+    ) -> ChannelResult {
+        let (Some(collection), deep, None) = (parts.next(), parts.next(), parts.next()) else {
+            return Err(ChannelCommandError::InvalidFormat(
+                "STATS <collection> [DEEP]?",
+            ));
+        };
+        let deep = match deep {
+            None => false,
+            Some("DEEP") | Some("deep") => true,
+            Some(_) => {
+                return Err(ChannelCommandError::InvalidFormat(
+                    "STATS <collection> [DEEP]?",
+                ));
+            }
+        };
+        let stats = ctx
+            .executor
+            .stats(collection, deep)
+            .map_err(|()| ChannelCommandError::QueryError)?;
+        Ok(vec![ChannelCommandResponse::Result(
+            serde_json::to_string(&stats).map_err(|_| ChannelCommandError::InternalError)?,
+        )])
+    }
+
     pub fn dispatch_trigger(
         mut parts: SplitWhitespace,
         ctx: &ChannelMessageModeControl,

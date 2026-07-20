@@ -6,7 +6,6 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::store::StoreItem;
-use crate::store::fst::{StoreFSTActionBuilder, StoreFSTMisc};
 use crate::store::kv::StoreKVAcquireMode;
 use crate::store::kv::StoreKVActionBuilder;
 
@@ -48,24 +47,30 @@ impl super::Executor {
                     Err(())
                 }
             }
-            // Count terms in (collection, bucket) from FST
+            // Count terms in (collection, bucket) from KV
             StoreItem(collection, Some(bucket), None) => {
-                // Important: acquire graph access read lock, and reference it in context. This \
-                //   prevents the graph from being erased while using it in this block.
-                let _fst_read_guard = self.fst_pool.lock_read_access();
-
-                if let Ok(fst_store) = self.fst_pool.acquire(collection, bucket) {
-                    let fst_action = StoreFSTActionBuilder::access(fst_store);
-
-                    Ok(fst_action.count_words() as u32)
-                } else {
-                    Err(())
+                let _kv_read_guard = self.kv_pool.lock_read_access();
+                let kv_store = self
+                    .kv_pool
+                    .acquire(StoreKVAcquireMode::OpenOnly, collection)?;
+                executor_kv_lock_read!(kv_store);
+                let kv_action = StoreKVActionBuilder::access(bucket, kv_store);
+                if kv_action.bucket_id().is_none() {
+                    return Ok(0);
                 }
+                Ok(kv_action.count_terms() as u32)
             }
-            // Count buckets in (collection) from FS
+            // Count buckets in (collection) from KV
             StoreItem(collection, None, None) => {
-                StoreFSTMisc::count_collection_buckets(collection, &self.app_conf.store.fst)
-                    .map(|count| count as u32)
+                let _kv_read_guard = self.kv_pool.lock_read_access();
+                let kv_store = self
+                    .kv_pool
+                    .acquire(StoreKVAcquireMode::OpenOnly, collection)?;
+
+                Ok(kv_store
+                    .as_ref()
+                    .map(|store| store.count_buckets() as u32)
+                    .unwrap_or(0))
             }
             _ => Err(()),
         }

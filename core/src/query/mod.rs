@@ -10,6 +10,7 @@ mod types;
 
 use crate::lexer::TokenLexer;
 use crate::store::StoreItem;
+use crate::store::document::StoreDocument;
 
 pub use self::types::*;
 
@@ -20,12 +21,15 @@ pub enum Query<'a> {
         TokenLexer<'a>,
         QuerySearchLimit,
         QuerySearchOffset,
+        Option<QueryTimeRange>,
     ),
-    Suggest(
+    SearchDocuments(
         StoreItem<'a>,
         QuerySearchID<'a>,
         TokenLexer<'a>,
         QuerySearchLimit,
+        QuerySearchOffset,
+        Option<QueryTimeRange>,
     ),
     List(
         StoreItem<'a>,
@@ -34,6 +38,7 @@ pub enum Query<'a> {
         QuerySearchOffset,
     ),
     Push(StoreItem<'a>, TokenLexer<'a>),
+    Upsert(StoreItem<'a>, TokenLexer<'a>, StoreDocument),
     Pop(StoreItem<'a>, TokenLexer<'a>),
     Count(StoreItem<'a>),
     FlushC(StoreItem<'a>),

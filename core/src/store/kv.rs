@@ -6,32 +6,41 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use radix::RadixNum;
 use rocksdb::backup::{
     BackupEngine as DBBackupEngine, BackupEngineOptions as DBBackupEngineOptions,
     RestoreOptions as DBRestoreOptions,
 };
 use rocksdb::{
-    DB, DBCompactionStyle, DBCompressionType, Env as DBEnv, Error as DBError, FlushOptions,
-    Options as DBOptions, WriteBatch, WriteOptions,
+    BlockBasedOptions, ColumnFamilyDescriptor, DB, DBCompactionStyle, DBCompressionType, Direction,
+    Env as DBEnv, Error as DBError, FlushOptions, IteratorMode, Options as DBOptions, WriteBatch,
+    WriteBatchIteratorCf, WriteOptions,
 };
 use std::fmt;
 use std::fs;
-use std::io::{self, Cursor};
+use std::io::{self, BufWriter, Cursor, Write};
 use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::thread;
-use std::time::{Duration, SystemTime};
-use std::vec::Drain;
+use std::time::{Duration, Instant, SystemTime};
 
+use super::document::{
+    StoreDocument, StoreDocumentRecord, StoreFreshBatchResult, StoreFreshBatchTimings,
+    StoreKVHealth, TIME_SLICE_MS,
+};
 use super::generic::{
     StoreGeneric, StoreGenericActionBuilder, StoreGenericBuilder, StoreGenericPool,
 };
 use super::identifiers::*;
 use super::item::StoreItemPart;
-use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher, StoreKeyerKey, StoreKeyerPrefix};
+use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher, StoreKeyerPrefix};
+use super::posting::StorePosting;
+use super::stats::{
+    StoreCollectionStats, StoreColumnFamilyStats, StoreIndexFamilyStats, StoreLogicalStats,
+    StorePostingStats,
+};
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
@@ -63,6 +72,7 @@ pub struct StoreKVActionBuilder<'build> {
 pub struct StoreKVAction<'a> {
     store: Option<StoreKVBox>,
     bucket: StoreItemPart<'a>,
+    bucket_id: Option<StoreBucketID>,
 }
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
@@ -80,6 +90,82 @@ type StoreKVAtom = u32;
 type StoreKVBox = Arc<StoreKV>;
 
 const ATOM_HASH_RADIX: usize = 16;
+const STORE_SCHEMA_VERSION: u32 = 14;
+const DOCUMENTS_CF: &str = "documents";
+const POSTINGS_CF: &str = "postings";
+const DOCUMENTS_BLOCK_SIZE: usize = 64 * 1024;
+const DEFAULT_CF_ID: u32 = 0;
+const DOCUMENTS_CF_ID: u32 = 1;
+const POSTINGS_CF_ID: u32 = 2;
+
+#[derive(Default)]
+struct StoreWriteProfile {
+    wal_nanos: u64,
+    memtable_nanos: u64,
+    delay_nanos: u64,
+    pre_and_post_nanos: u64,
+    db_mutex_nanos: u64,
+    db_condition_wait_nanos: u64,
+    merge_operator_nanos: u64,
+    batch: StoreWriteBatchProfile,
+}
+
+#[derive(Default)]
+struct StoreWriteBatchProfile {
+    bytes: [u64; 3],
+    puts: u64,
+    deletes: u64,
+    merges: u64,
+}
+
+impl StoreWriteBatchProfile {
+    fn add_bytes(&mut self, cf_id: u32, bytes: usize) {
+        if let Some(total) = self.bytes.get_mut(cf_id as usize) {
+            *total += bytes as u64;
+        }
+    }
+}
+
+impl WriteBatchIteratorCf for StoreWriteBatchProfile {
+    fn put_cf(&mut self, cf_id: u32, key: &[u8], value: &[u8]) {
+        self.add_bytes(cf_id, key.len() + value.len());
+        self.puts += 1;
+    }
+
+    fn delete_cf(&mut self, cf_id: u32, key: &[u8]) {
+        self.add_bytes(cf_id, key.len());
+        self.deletes += 1;
+    }
+
+    fn merge_cf(&mut self, cf_id: u32, key: &[u8], value: &[u8]) {
+        self.add_bytes(cf_id, key.len() + value.len());
+        self.merges += 1;
+    }
+}
+
+fn profile_started(enabled: bool) -> Option<Instant> {
+    enabled.then(Instant::now)
+}
+
+fn profile_elapsed(started: Option<Instant>) -> Duration {
+    started.map(|started| started.elapsed()).unwrap_or_default()
+}
+
+fn merge_postings(
+    _key: &[u8],
+    existing: Option<&[u8]>,
+    operands: &rocksdb::MergeOperands,
+) -> Option<Vec<u8>> {
+    let mut merged = existing
+        .map(StorePosting::decode)
+        .transpose()
+        .ok()?
+        .unwrap_or_default();
+    for operand in operands {
+        merged.union_with(&StorePosting::decode(operand).ok()?);
+    }
+    Some(merged.encode())
+}
 
 impl StoreKVPool {
     pub fn new(kv_store_config: Arc<crate::config::ConfigStoreKV>) -> Self {
@@ -215,10 +301,6 @@ impl StoreKVPool {
         let mut keys_flush: Vec<StoreKVKey> = Vec::new();
 
         {
-            // Acquire access lock (in blocking write mode), and reference it in context
-            // Notice: this prevents store to be acquired from any context
-            let _access = self.store_access_lock.write().unwrap();
-
             let store_pool_read = self.pool.read().unwrap();
 
             for (key, store) in &*store_pool_read {
@@ -274,9 +356,8 @@ impl StoreKVPool {
         {
             for key in &keys_flush {
                 {
-                    // Acquire access lock (in blocking write mode), and reference it in context
-                    // Notice: this prevents store to be acquired from any context
-                    let _access = self.store_access_lock.write().unwrap();
+                    // Prevent destructive pool operations without blocking ordinary access.
+                    let _access = self.store_access_lock.read().unwrap();
 
                     if let Some(store) = self.pool.read().unwrap().get(key) {
                         tracing::debug!("kv key: {} flush started", key);
@@ -466,13 +547,28 @@ impl StoreKVBuilder {
         );
 
         // Configure database options
-        let db_options = self.configure();
+        let db_options = self.configure(None, DBCompressionType::Lz4);
 
-        // Open database at path for collection
-        DB::open(&db_options, self.kv_store_config.path(collection_hash))
+        let documents_options =
+            self.configure(Some(DOCUMENTS_BLOCK_SIZE), DBCompressionType::Zstd);
+        let mut postings_options = self.configure(None, DBCompressionType::Lz4);
+        postings_options.set_merge_operator_associative("posting_union", merge_postings);
+        DB::open_cf_descriptors(
+            &db_options,
+            self.kv_store_config.path(collection_hash),
+            [
+                ColumnFamilyDescriptor::new("default", db_options.clone()),
+                ColumnFamilyDescriptor::new(DOCUMENTS_CF, documents_options),
+                ColumnFamilyDescriptor::new(POSTINGS_CF, postings_options),
+            ],
+        )
     }
 
-    fn configure(&self) -> DBOptions {
+    fn configure(
+        &self,
+        block_size: Option<usize>,
+        compression_type: DBCompressionType,
+    ) -> DBOptions {
         tracing::debug!("configuring key-value database");
 
         let db_conf = &self.kv_store_config.database;
@@ -482,17 +578,37 @@ impl StoreKVBuilder {
 
         // Set static options
         db_options.create_if_missing(true);
+        db_options.create_missing_column_families(true);
         db_options.set_use_fsync(false);
         db_options.set_compaction_style(DBCompactionStyle::Level);
         db_options.set_min_write_buffer_number(1);
         db_options.set_max_write_buffer_number(2);
+        // Without this, RocksDB keeps piling data into the last level until it grows large \
+        //   enough to justify redistributing it across more levels; every L0->base compaction \
+        //   in the meantime has to rewrite the entire (growing) base level alongside the new \
+        //   L0 files, so write amplification grows with total data size until that one big \
+        //   redistribution happens. Dynamic level bytes picks level target sizes based on \
+        //   actual data size from the start instead, which RocksDB's own tuning guide \
+        //   recommends enabling for essentially all new use cases.
+        db_options.set_level_compaction_dynamic_level_bytes(true);
+        let mut table_options = BlockBasedOptions::default();
+        table_options.set_bloom_filter(10.0, false);
+        table_options.set_whole_key_filtering(true);
+        table_options.set_optimize_filters_for_memory(true);
+        if let Some(block_size) = block_size {
+            table_options.set_block_size(block_size);
+        }
+        db_options.set_block_based_table_factory(&table_options);
+        db_options.set_memtable_whole_key_filtering(true);
 
         // Set dynamic options
-        db_options.set_compression_type(if db_conf.compress {
-            DBCompressionType::Zstd
+        if db_conf.compress {
+            db_options.set_compression_type(compression_type);
+            db_options.set_bottommost_compression_type(DBCompressionType::Zstd);
+            db_options.set_bottommost_zstd_max_train_bytes(0, true);
         } else {
-            DBCompressionType::None
-        });
+            db_options.set_compression_type(DBCompressionType::None);
+        }
 
         db_options.set_max_open_files(if let Some(value) = db_conf.max_files {
             value as i32
@@ -517,25 +633,323 @@ impl crate::config::ConfigStoreKV {
 
 impl StoreGenericBuilder<StoreKVKey, StoreKV> for StoreKVBuilder {
     fn build(&self, pool_key: StoreKVKey) -> Result<StoreKV, ()> {
-        self.open(pool_key.collection_hash)
-            .map(|db| {
-                let now = SystemTime::now();
+        let database = self.open(pool_key.collection_hash).map_err(|err| {
+            tracing::error!("failed opening kv: {}", err);
+        })?;
+        let now = SystemTime::now();
+        let store = StoreKV {
+            database,
+            last_used: Arc::new(RwLock::new(now)),
+            last_flushed: Arc::new(RwLock::new(now)),
+            lock: RwLock::new(false),
+            kv_store_config: Arc::clone(&self.kv_store_config),
+        };
+        store.initialize_schema()?;
 
-                StoreKV {
-                    database: db,
-                    last_used: Arc::new(RwLock::new(now)),
-                    last_flushed: Arc::new(RwLock::new(now)),
-                    lock: RwLock::new(false),
-                    kv_store_config: Arc::clone(&self.kv_store_config),
-                }
-            })
-            .map_err(|err| {
-                tracing::error!("failed opening kv: {}", err);
-            })
+        Ok(store)
     }
 }
 
 impl StoreKV {
+    pub fn count_buckets(&self) -> usize {
+        self.count_prefix(&StoreKeyerBuilder::bucket_name_prefix())
+    }
+
+    pub fn stats(&self, collection: &str, deep: bool) -> Result<StoreCollectionStats, ()> {
+        let default_cf = self.database.cf_handle("default").ok_or(())?;
+        let documents_cf = self.database.cf_handle(DOCUMENTS_CF).ok_or(())?;
+        let postings_cf = self.database.cf_handle(POSTINGS_CF).ok_or(())?;
+        let schema_version = self
+            .get(StoreKeyerBuilder::meta_to_value(0, &StoreMetaKey::SchemaVersion).as_bytes())
+            .or(Err(()))?
+            .and_then(|value| String::from_utf8(value).ok())
+            .and_then(|value| value.parse().ok())
+            .ok_or(())?;
+        let mut stats = StoreCollectionStats {
+            collection: collection.to_owned(),
+            schema_version,
+            index: self.cf_stats(default_cf)?,
+            postings: self.cf_stats(postings_cf)?,
+            documents: self.cf_stats(documents_cf)?,
+            logical: None,
+        };
+        if !deep {
+            return Ok(stats);
+        }
+
+        const FAMILY_NAMES: [&str; 9] = [
+            "meta",
+            "term_postings",
+            "oid_to_iid",
+            "iid_to_oid",
+            "iid_to_terms",
+            "bucket_name_to_id",
+            "bucket_id_to_name",
+            "iid_to_timestamp",
+            "time_postings",
+        ];
+        let mut logical = StoreLogicalStats {
+            families: FAMILY_NAMES
+                .iter()
+                .enumerate()
+                .map(|(index, name)| StoreIndexFamilyStats {
+                    index: index as u8,
+                    name: (*name).to_owned(),
+                    ..StoreIndexFamilyStats::default()
+                })
+                .collect(),
+            ..StoreLogicalStats::default()
+        };
+        for item in self.database.iterator(IteratorMode::Start) {
+            let (key, value) = item.or(Err(()))?;
+            logical.index_key_bytes += key.len() as u64;
+            logical.index_value_bytes += value.len() as u64;
+            let Some(family_index) = StoreKeyerBuilder::family(&key) else {
+                continue;
+            };
+            let Some(family) = logical.families.get_mut(usize::from(family_index)) else {
+                continue;
+            };
+            family.keys += 1;
+            family.key_bytes += key.len() as u64;
+            family.value_bytes += value.len() as u64;
+            match family_index {
+                1 => Self::accumulate_posting(&mut logical.term_postings, &value)?,
+                8 => Self::accumulate_posting(&mut logical.time_postings, &value)?,
+                _ => {}
+            }
+        }
+        for item in self.database.iterator_cf(postings_cf, IteratorMode::Start) {
+            let (key, value) = item.or(Err(()))?;
+            logical.index_key_bytes += key.len() as u64;
+            logical.index_value_bytes += value.len() as u64;
+            let Some(family_index) = StoreKeyerBuilder::family(&key) else {
+                continue;
+            };
+            let Some(family) = logical.families.get_mut(usize::from(family_index)) else {
+                continue;
+            };
+            family.keys += 1;
+            family.key_bytes += key.len() as u64;
+            family.value_bytes += value.len() as u64;
+            match family_index {
+                1 => Self::accumulate_posting(&mut logical.term_postings, &value)?,
+                8 => Self::accumulate_posting(&mut logical.time_postings, &value)?,
+                _ => {}
+            }
+        }
+        for item in self.database.iterator_cf(documents_cf, IteratorMode::Start) {
+            let (key, value) = item.or(Err(()))?;
+            let (text_bytes, metadata_bytes) = StoreDocument::encoded_lengths(&value)?;
+            logical.document_count += 1;
+            logical.document_key_bytes += key.len() as u64;
+            logical.document_encoded_bytes += value.len() as u64;
+            logical.document_text_bytes += text_bytes as u64;
+            logical.document_metadata_bytes += metadata_bytes as u64;
+        }
+        stats.logical = Some(logical);
+        Ok(stats)
+    }
+
+    fn cf_stats(&self, cf: &impl rocksdb::AsColumnFamilyRef) -> Result<StoreColumnFamilyStats, ()> {
+        let property = |name| {
+            self.database
+                .property_int_value_cf(cf, name)
+                .or(Err(()))
+                .map(|value| value.unwrap_or(0))
+        };
+        Ok(StoreColumnFamilyStats {
+            live_data_bytes: property("rocksdb.estimate-live-data-size")?,
+            sst_bytes: property("rocksdb.total-sst-files-size")?,
+            memtable_bytes: property("rocksdb.cur-size-all-mem-tables")?,
+            estimated_keys: property("rocksdb.estimate-num-keys")?,
+        })
+    }
+
+    fn accumulate_posting(stats: &mut StorePostingStats, encoded: &[u8]) -> Result<(), ()> {
+        let posting = StorePosting::decode(encoded)?;
+        stats.fragments += 1;
+        stats.encoded_bytes += encoded.len() as u64;
+        stats.associations += posting.len() as u64;
+        if posting.is_dense() {
+            stats.dense_fragments += 1;
+        } else {
+            stats.sparse_fragments += 1;
+        }
+        Ok(())
+    }
+
+    // Streams one page of a bucket's documents over the wire (as opposed to `export_documents`, \
+    //   which writes a full collection dump to a server-local file); this is what lets a router \
+    //   proxy a dump request to a single backend without needing shared server-local storage.
+    pub fn dump_bucket(
+        &self,
+        bucket: &str,
+        offset: u64,
+        limit: u64,
+    ) -> Result<Vec<StoreDocumentRecord>, ()> {
+        let Some(bucket_id) = self.resolve_bucket_id(bucket, false)? else {
+            return Ok(Vec::new());
+        };
+
+        let cf = self.database.cf_handle(DOCUMENTS_CF).ok_or(())?;
+        let prefix = StoreKeyerBuilder::document_prefix(bucket_id);
+        let mut records = Vec::new();
+
+        let iterator = self
+            .database
+            .iterator_cf(cf, IteratorMode::From(&prefix, Direction::Forward))
+            .map_while(|item| item.ok())
+            .take_while(|(key, _)| key.starts_with(prefix.as_slice()))
+            .skip(offset as usize)
+            .take(limit as usize);
+
+        for (key, value) in iterator {
+            if key.len() != 8 {
+                return Err(());
+            }
+
+            let iid = StoreKeyerBuilder::decode_u32_ordered(&key[4..]).ok_or(())?;
+            let oid = self
+                .get(StoreKeyerBuilder::iid_to_oid(bucket_id, iid).as_bytes())
+                .or(Err(()))?
+                .and_then(|encoded| String::from_utf8(encoded).ok())
+                .ok_or(())?;
+
+            records.push(StoreDocumentRecord {
+                bucket: bucket.to_owned(),
+                document: StoreDocument::decode(oid, &value)?,
+            });
+        }
+
+        Ok(records)
+    }
+
+    // Enumerates bucket names for a collection, one page at a time; used to let a client (or a \
+    //   router, broadcasting across backends) discover the full bucket set before dumping it.
+    pub fn list_buckets(&self, offset: u64, limit: u64) -> Result<Vec<String>, ()> {
+        let prefix = StoreKeyerBuilder::bucket_name_prefix();
+
+        self.database
+            .iterator(IteratorMode::From(&prefix, Direction::Forward))
+            .map_while(|item| item.ok())
+            .take_while(|(key, _)| key.starts_with(prefix.as_slice()))
+            .skip(offset as usize)
+            .take(limit as usize)
+            .map(|(key, _)| String::from_utf8(key[prefix.len()..].to_vec()).map_err(|_| ()))
+            .collect()
+    }
+
+    pub fn export_documents(&self, bucket_filter: Option<&str>, path: &Path) -> Result<u64, ()> {
+        let cf = self.database.cf_handle(DOCUMENTS_CF).ok_or(())?;
+        let file = fs::File::create(path).map_err(|_| ())?;
+        let writer = BufWriter::new(file);
+        let mut encoder = zstd::stream::write::Encoder::new(writer, 3).map_err(|_| ())?;
+        let mut count = 0;
+        for item in self.database.iterator_cf(cf, IteratorMode::Start) {
+            let (key, value) = item.map_err(|_| ())?;
+            if key.len() != 8 {
+                return Err(());
+            }
+            let bucket_id = StoreKeyerBuilder::decode_u32_ordered(&key[..4]).ok_or(())?;
+            let iid = StoreKeyerBuilder::decode_u32_ordered(&key[4..]).ok_or(())?;
+            let bucket = self
+                .get(StoreKeyerBuilder::bucket_id_to_name(bucket_id).as_bytes())
+                .or(Err(()))?
+                .and_then(|encoded| String::from_utf8(encoded).ok())
+                .ok_or(())?;
+            if bucket_filter.is_some_and(|filter| filter != bucket) {
+                continue;
+            }
+            let oid = self
+                .get(StoreKeyerBuilder::iid_to_oid(bucket_id, iid).as_bytes())
+                .or(Err(()))?
+                .and_then(|encoded| String::from_utf8(encoded).ok())
+                .ok_or(())?;
+            let record = StoreDocumentRecord {
+                bucket,
+                document: StoreDocument::decode(oid, &value)?,
+            };
+            serde_json::to_writer(&mut encoder, &record).map_err(|_| ())?;
+            encoder.write_all(b"\n").map_err(|_| ())?;
+            count += 1;
+        }
+        encoder.finish().map_err(|_| ())?.flush().map_err(|_| ())?;
+        Ok(count)
+    }
+
+    fn count_prefix(&self, prefix: &[u8]) -> usize {
+        self.database
+            .iterator(IteratorMode::From(prefix, Direction::Forward))
+            .map_while(|item| item.ok())
+            .take_while(|(key, _)| key.starts_with(prefix))
+            .count()
+    }
+
+    fn initialize_schema(&self) -> Result<(), ()> {
+        let key = StoreKeyerBuilder::meta_to_value(0, &StoreMetaKey::SchemaVersion);
+
+        match self.get(key.as_bytes()).or(Err(()))? {
+            Some(encoded) => {
+                let version = String::from_utf8(encoded)
+                    .ok()
+                    .and_then(|value| value.parse::<u32>().ok());
+
+                if version == Some(STORE_SCHEMA_VERSION) {
+                    Ok(())
+                } else {
+                    tracing::error!(
+                        "unsupported KV schema version: {:?}, expected {}",
+                        version,
+                        STORE_SCHEMA_VERSION
+                    );
+                    Err(())
+                }
+            }
+            None => {
+                if self.database.iterator(IteratorMode::Start).next().is_some() {
+                    tracing::error!("legacy KV schema detected; full re-ingestion is required");
+                    return Err(());
+                }
+
+                self.put(key.as_bytes(), STORE_SCHEMA_VERSION.to_string().as_bytes())
+                    .or(Err(()))
+            }
+        }
+    }
+
+    fn resolve_bucket_id(&self, bucket: &str, create: bool) -> Result<Option<StoreBucketID>, ()> {
+        let name_key = StoreKeyerBuilder::bucket_name_to_id(bucket);
+
+        if let Some(encoded) = self.get(name_key.as_bytes()).or(Err(()))? {
+            return Ok(StoreKVAction::decode_u32(&encoded).ok());
+        }
+
+        if !create {
+            return Ok(None);
+        }
+
+        let counter_key = StoreKeyerBuilder::meta_to_value(0, &StoreMetaKey::BucketIDIncr);
+        let next_id = self
+            .get(counter_key.as_bytes())
+            .or(Err(()))?
+            .and_then(|encoded| String::from_utf8(encoded).ok())
+            .and_then(|encoded| encoded.parse::<StoreBucketID>().ok())
+            .unwrap_or(0)
+            .checked_add(1)
+            .ok_or(())?;
+        let encoded_id = StoreKVAction::encode_u32(next_id);
+        let reverse_key = StoreKeyerBuilder::bucket_id_to_name(next_id);
+
+        let mut batch = WriteBatch::default();
+        batch.put(counter_key.as_bytes(), next_id.to_string().as_bytes());
+        batch.put(name_key.as_bytes(), encoded_id);
+        batch.put(reverse_key.as_bytes(), bucket.as_bytes());
+        self.do_write(batch).or(Err(()))?;
+
+        Ok(Some(next_id))
+    }
+
     pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, DBError> {
         self.database.get(key)
     }
@@ -562,8 +976,20 @@ impl StoreKV {
 
         flush_options.set_wait(true);
 
-        // Perform flush (in blocking mode)
-        self.database.flush_opt(&flush_options)
+        let default_cf = self
+            .database
+            .cf_handle("default")
+            .expect("default column family missing");
+        let documents_cf = self
+            .database
+            .cf_handle(DOCUMENTS_CF)
+            .expect("documents column family missing");
+        let postings_cf = self
+            .database
+            .cf_handle(POSTINGS_CF)
+            .expect("postings column family missing");
+        self.database
+            .flush_cfs_opt(&[default_cf, documents_cf, postings_cf], &flush_options)
     }
 
     fn do_write(&self, batch: WriteBatch) -> Result<(), DBError> {
@@ -584,6 +1010,68 @@ impl StoreKV {
         // Commit this write
         self.database.write_opt(batch, &write_options)
     }
+
+    fn do_write_profiled(&self, batch: WriteBatch) -> Result<StoreWriteProfile, DBError> {
+        use rocksdb::{PerfContext, PerfMetric, PerfStatsLevel};
+
+        let mut profile = StoreWriteProfile::default();
+        batch.iterate_cf(&mut profile.batch);
+        rocksdb::perf::set_perf_stats(PerfStatsLevel::EnableTime);
+        let mut context = PerfContext::default();
+        context.reset();
+        let result = self.do_write(batch);
+        profile.wal_nanos = context.metric(PerfMetric::WriteWalTime);
+        profile.memtable_nanos = context.metric(PerfMetric::WriteMemtableTime);
+        profile.delay_nanos = context.metric(PerfMetric::WriteDelayTime);
+        profile.pre_and_post_nanos = context.metric(PerfMetric::WritePreAndPostProcessTime);
+        profile.db_mutex_nanos = context.metric(PerfMetric::DbMutexLockNanos);
+        profile.db_condition_wait_nanos = context.metric(PerfMetric::DbConditionWaitNanos);
+        profile.merge_operator_nanos = context.metric(PerfMetric::MergeOperatorTimeNanos);
+        rocksdb::perf::set_perf_stats(PerfStatsLevel::Disable);
+        result.map(|()| profile)
+    }
+
+    // Snapshot compaction pressure after a profiled bulk write.
+    fn health(&self) -> StoreKVHealth {
+        let Some(index_cf) = self.database.cf_handle("default") else {
+            return StoreKVHealth::default();
+        };
+        let Some(documents_cf) = self.database.cf_handle(DOCUMENTS_CF) else {
+            return StoreKVHealth::default();
+        };
+        let Some(postings_cf) = self.database.cf_handle(POSTINGS_CF) else {
+            return StoreKVHealth::default();
+        };
+        let cf_property = |cf, name| self.database.property_int_value_cf(cf, name).ok().flatten();
+
+        StoreKVHealth {
+            index_l0_files: cf_property(&index_cf, "rocksdb.num-files-at-level0"),
+            postings_l0_files: cf_property(&postings_cf, "rocksdb.num-files-at-level0"),
+            documents_l0_files: cf_property(&documents_cf, "rocksdb.num-files-at-level0"),
+            index_pending_compaction_bytes: cf_property(
+                &index_cf,
+                "rocksdb.estimate-pending-compaction-bytes",
+            ),
+            documents_pending_compaction_bytes: cf_property(
+                &documents_cf,
+                "rocksdb.estimate-pending-compaction-bytes",
+            ),
+            postings_pending_compaction_bytes: cf_property(
+                &postings_cf,
+                "rocksdb.estimate-pending-compaction-bytes",
+            ),
+            delayed_write_rate: self
+                .database
+                .property_int_value("rocksdb.actual-delayed-write-rate")
+                .ok()
+                .flatten(),
+            write_stopped: self
+                .database
+                .property_int_value("rocksdb.is-write-stopped")
+                .ok()
+                .flatten(),
+        }
+    }
 }
 
 impl StoreGeneric for StoreKV {
@@ -594,15 +1082,33 @@ impl StoreGeneric for StoreKV {
 
 impl<'build> StoreKVActionBuilder<'build> {
     pub fn access(bucket: StoreItemPart, store: Option<StoreKVBox>) -> StoreKVAction {
-        Self::build(bucket, store)
+        Self::build(bucket, store, false)
+    }
+
+    pub fn access_or_create(bucket: StoreItemPart, store: Option<StoreKVBox>) -> StoreKVAction {
+        Self::build(bucket, store, true)
     }
 
     pub fn erase<T: AsRef<str>>(&self, collection: T, bucket: Option<T>) -> Result<u32, ()> {
         self.dispatch_erase("kv", collection, bucket)
     }
 
-    fn build(bucket: StoreItemPart, store: Option<StoreKVBox>) -> StoreKVAction {
-        StoreKVAction { store, bucket }
+    fn build(bucket: StoreItemPart, store: Option<StoreKVBox>, create: bool) -> StoreKVAction {
+        let bucket_id = store.as_ref().and_then(|store| {
+            store
+                .resolve_bucket_id(bucket.as_str(), create)
+                .inspect_err(|_| {
+                    tracing::error!("failed resolving bucket identifier for {}", bucket.as_str())
+                })
+                .ok()
+                .flatten()
+        });
+
+        StoreKVAction {
+            store,
+            bucket,
+            bucket_id,
+        }
     }
 }
 
@@ -650,12 +1156,87 @@ impl<'build> StoreGenericActionBuilder for StoreKVActionBuilder<'build> {
 }
 
 impl<'a> StoreKVAction<'a> {
+    pub fn bucket_id(&self) -> Option<StoreBucketID> {
+        self.bucket_id
+    }
+
+    pub fn count_terms(&self) -> usize {
+        let (Some(store), Some(bucket_id)) = (&self.store, self.bucket_id) else {
+            return 0;
+        };
+        let Some(postings_cf) = store.database.cf_handle(POSTINGS_CF) else {
+            return 0;
+        };
+        let prefix = StoreKeyerBuilder::term_posting_family_prefix(bucket_id);
+        let mut previous = None;
+        let mut count = 0;
+        for item in store
+            .database
+            .iterator_cf(postings_cf, IteratorMode::From(&prefix, Direction::Forward))
+        {
+            let Ok((key, _)) = item else { break };
+            if !key.starts_with(&prefix) {
+                break;
+            }
+            let Some(term) =
+                StoreKeyerBuilder::decode_term_route_with_suffix(&key[prefix.len()..], 2)
+            else {
+                continue;
+            };
+            if previous.as_deref() != Some(term) {
+                count += 1;
+                previous = Some(term.to_owned());
+            }
+        }
+        count
+    }
+
+    pub fn list_terms(&self, limit: usize, offset: usize) -> Vec<String> {
+        let (Some(store), Some(bucket_id)) = (&self.store, self.bucket_id) else {
+            return Vec::new();
+        };
+        let Some(postings_cf) = store.database.cf_handle(POSTINGS_CF) else {
+            return Vec::new();
+        };
+        let prefix = StoreKeyerBuilder::term_posting_family_prefix(bucket_id);
+        let mut previous = None;
+        let mut skipped = 0;
+        let mut terms = Vec::with_capacity(limit);
+        for item in store
+            .database
+            .iterator_cf(postings_cf, IteratorMode::From(&prefix, Direction::Forward))
+        {
+            let Ok((key, _)) = item else { break };
+            if !key.starts_with(&prefix) {
+                break;
+            }
+            let Some(term) =
+                StoreKeyerBuilder::decode_term_route_with_suffix(&key[prefix.len()..], 2)
+            else {
+                continue;
+            };
+            if previous.as_deref() == Some(term) {
+                continue;
+            }
+            previous = Some(term.to_owned());
+            if skipped < offset {
+                skipped += 1;
+                continue;
+            }
+            terms.push(term.to_owned());
+            if terms.len() == limit {
+                break;
+            }
+        }
+        terms
+    }
+
     /// Meta-to-Value mapper
     ///
     /// [IDX=0] ((meta)) ~> ((value))
     pub fn get_meta_to_value(&self, meta: StoreMetaKey) -> Result<Option<StoreMetaValue>, ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::meta_to_value(self.bucket.as_str(), &meta);
+            let store_key = StoreKeyerBuilder::meta_to_value(self.bucket_id.ok_or(())?, &meta);
 
             tracing::debug!("store get meta-to-value: {}", store_key);
 
@@ -669,6 +1250,16 @@ impl<'a> StoreKVAction<'a> {
                                 .parse::<StoreObjectIID>()
                                 .ok()
                                 .map(StoreMetaValue::IIDIncr)
+                                .or(None),
+                            StoreMetaKey::BucketIDIncr => value
+                                .parse::<StoreBucketID>()
+                                .ok()
+                                .map(StoreMetaValue::BucketIDIncr)
+                                .or(None),
+                            StoreMetaKey::SchemaVersion => value
+                                .parse::<u32>()
+                                .ok()
+                                .map(StoreMetaValue::SchemaVersion)
                                 .or(None),
                         }
                     } else {
@@ -697,12 +1288,14 @@ impl<'a> StoreKVAction<'a> {
 
     pub fn set_meta_to_value(&self, meta: StoreMetaKey, value: StoreMetaValue) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::meta_to_value(self.bucket.as_str(), &meta);
+            let store_key = StoreKeyerBuilder::meta_to_value(self.bucket_id.ok_or(())?, &meta);
 
             tracing::debug!("store set meta-to-value: {}", store_key);
 
             let value_string = match value {
                 StoreMetaValue::IIDIncr(iid_incr) => iid_incr.to_string(),
+                StoreMetaValue::BucketIDIncr(bucket_id_incr) => bucket_id_incr.to_string(),
+                StoreMetaValue::SchemaVersion(version) => version.to_string(),
             };
 
             store
@@ -713,93 +1306,609 @@ impl<'a> StoreKVAction<'a> {
         }
     }
 
-    /// Term-to-IIDs mapper
-    ///
-    /// [IDX=1] ((term)) ~> [((iid))]
-    pub fn get_term_to_iids(
-        &self,
-        term_hashed: StoreTermHashed,
-    ) -> Result<Option<Vec<StoreObjectIID>>, ()> {
-        if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed);
+    /// Read a bounded posting list in reverse IID order.
+    pub fn get_term_iids_desc(&self, term: &str, limit: usize) -> Result<Vec<StoreObjectIID>, ()> {
+        let Some(ref store) = self.store else {
+            return Ok(Vec::new());
+        };
+        let postings_cf = store.database.cf_handle(POSTINGS_CF).ok_or(())?;
+        let bucket_id = self.bucket_id.ok_or(())?;
+        let prefix = StoreKeyerBuilder::term_posting_prefix(bucket_id, term);
+        let end = Self::prefix_end(&prefix).ok_or(())?;
+        let mut iids = Vec::with_capacity(limit.min(256));
 
-            tracing::debug!("store get term-to-iids: {}", store_key);
-
-            match store.get(&store_key.as_bytes()) {
-                Ok(Some(value)) => {
-                    tracing::debug!(
-                        "got term-to-iids: {} with encoded value: {:?}",
-                        store_key,
-                        &*value
-                    );
-
-                    Self::decode_u32_list(&*value)
-                        .or(Err(()))
-                        .map(|value_decoded| {
-                            tracing::debug!(
-                                "got term-to-iids: {} with decoded value: {:?}",
-                                store_key,
-                                &value_decoded
-                            );
-
-                            Some(value_decoded)
-                        })
+        for item in store
+            .database
+            .iterator_cf(postings_cf, IteratorMode::From(&end, Direction::Reverse))
+        {
+            let (key, value) = item.or(Err(()))?;
+            if !key.starts_with(&prefix) {
+                if key.as_ref() < prefix.as_slice() {
+                    break;
                 }
-                Ok(None) => {
-                    tracing::debug!("no term-to-iids found: {}", store_key);
-
-                    Ok(None)
-                }
-                Err(err) => {
-                    tracing::error!(
-                        "error getting term-to-iids: {} with trace: {}",
-                        store_key,
-                        err
-                    );
-
-                    Err(())
+                continue;
+            }
+            let shard = key
+                .get(prefix.len()..prefix.len() + 2)
+                .and_then(|encoded| encoded.try_into().ok())
+                .map(u16::from_be_bytes)
+                .ok_or(())?;
+            let posting = StorePosting::decode(&value)?;
+            for offset in posting.offsets_desc() {
+                iids.push(StorePosting::iid(shard, offset));
+                if iids.len() == limit {
+                    return Ok(iids);
                 }
             }
-        } else {
-            Ok(None)
         }
+
+        Ok(iids)
     }
 
-    pub fn set_term_to_iids(
+    pub fn get_term_iids_in_time_range(
         &self,
-        term_hashed: StoreTermHashed,
-        iids: &[StoreObjectIID],
-    ) -> Result<(), ()> {
-        if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed);
+        term: &str,
+        from_ms: u64,
+        to_ms: u64,
+        limit: usize,
+    ) -> Result<Vec<StoreObjectIID>, ()> {
+        let Some(ref store) = self.store else {
+            return Ok(Vec::new());
+        };
+        let postings_cf = store.database.cf_handle(POSTINGS_CF).ok_or(())?;
+        let bucket_id = self.bucket_id.ok_or(())?;
+        let prefix = StoreKeyerBuilder::time_posting_prefix(bucket_id);
+        let from_slice = from_ms / TIME_SLICE_MS;
+        let to_slice = to_ms / TIME_SLICE_MS;
+        let start = StoreKeyerBuilder::time_posting(bucket_id, to_slice, u16::MAX);
+        let mut iids = Vec::new();
+        let mut accepted_slice = None;
 
-            tracing::debug!("store set term-to-iids: {}", store_key);
-
-            // Encode IID list into storage serialized format
-            let iids_encoded = Self::encode_u32_list(iids);
-
-            tracing::debug!(
-                "store set term-to-iids: {} with encoded value: {:?}",
-                store_key,
-                iids_encoded
-            );
-
-            store.put(&store_key.as_bytes(), &iids_encoded).or(Err(()))
-        } else {
-            Err(())
+        for item in store.database.iterator_cf(
+            postings_cf,
+            IteratorMode::From(start.as_bytes(), Direction::Reverse),
+        ) {
+            let (key, value) = item.or(Err(()))?;
+            if !key.starts_with(&prefix) {
+                break;
+            }
+            let route = key.get(prefix.len()..).ok_or(())?;
+            if route.len() != 10 {
+                return Err(());
+            }
+            let time_slice = u64::from_be_bytes(route[..8].try_into().map_err(|_| ())?);
+            if time_slice < from_slice {
+                break;
+            }
+            if iids.len() >= limit && accepted_slice != Some(time_slice) {
+                break;
+            }
+            accepted_slice = Some(time_slice);
+            let shard = u16::from_be_bytes(route[8..].try_into().map_err(|_| ())?);
+            let time_posting = StorePosting::decode(&value)?;
+            let term_key = StoreKeyerBuilder::term_posting(bucket_id, term, shard);
+            let Some(term_encoded) = store
+                .database
+                .get_cf(postings_cf, term_key.as_bytes())
+                .or(Err(()))?
+            else {
+                continue;
+            };
+            let term_posting = StorePosting::decode(&term_encoded)?;
+            for offset in time_posting.intersection_offsets_desc(&term_posting) {
+                let iid = StorePosting::iid(shard, offset);
+                if self
+                    .get_iid_timestamp(iid)?
+                    .is_some_and(|timestamp| timestamp >= from_ms && timestamp <= to_ms)
+                {
+                    iids.push(iid);
+                }
+            }
         }
+
+        iids.sort_unstable_by(|left, right| {
+            let left_ts = self.get_iid_timestamp(*left).ok().flatten().unwrap_or(0);
+            let right_ts = self.get_iid_timestamp(*right).ok().flatten().unwrap_or(0);
+            right_ts.cmp(&left_ts).then_with(|| right.cmp(left))
+        });
+        iids.truncate(limit);
+        Ok(iids)
     }
 
-    pub fn delete_term_to_iids(&self, term_hashed: StoreTermHashed) -> Result<(), ()> {
-        if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), term_hashed);
+    pub fn get_term_frequency(&self, term: &str) -> Result<u32, ()> {
+        let store = self.store.as_ref().ok_or(())?;
+        let key = StoreKeyerBuilder::term_frequency(self.bucket_id.ok_or(())?, term);
+        store
+            .get(key.as_bytes())
+            .or(Err(()))?
+            .map(|encoded| Self::decode_u32(&encoded))
+            .transpose()
+            .map(|frequency| frequency.unwrap_or(0))
+    }
 
-            tracing::debug!("store delete term-to-iids: {}", store_key);
-
-            store.delete(&store_key.as_bytes()).or(Err(()))
-        } else {
-            Err(())
+    pub fn insert_term_iid(&self, term: &str, iid: StoreObjectIID) -> Result<(bool, u32), ()> {
+        let Some(ref store) = self.store else {
+            return Err(());
+        };
+        let mut batch = WriteBatch::default();
+        let result = self.append_insert_term_iid(&mut batch, term, iid)?;
+        if result.0 {
+            store.do_write(batch).or(Err(()))?;
         }
+        Ok(result)
+    }
+
+    pub fn batch_insert_iid_terms(
+        &self,
+        iid: StoreObjectIID,
+        existing_terms: &[String],
+        new_terms: &[String],
+    ) -> Result<Vec<(String, u32)>, ()> {
+        let Some(ref store) = self.store else {
+            return Err(());
+        };
+        let mut batch = WriteBatch::default();
+        let mut terms = existing_terms.to_vec();
+        let mut frequencies = Vec::with_capacity(new_terms.len());
+
+        for term in new_terms {
+            let (inserted, frequency) = self.append_insert_term_iid(&mut batch, term, iid)?;
+            if inserted {
+                terms.push(term.clone());
+                frequencies.push((term.clone(), frequency));
+            }
+        }
+
+        if !frequencies.is_empty() {
+            let key = StoreKeyerBuilder::iid_to_terms(self.bucket_id.ok_or(())?, iid);
+            batch.put(key.as_bytes(), Self::encode_terms(&terms)?);
+            store.do_write(batch).or(Err(()))?;
+        }
+        Ok(frequencies)
+    }
+
+    pub fn remove_term_iid(&self, term: &str, iid: StoreObjectIID) -> Result<(bool, u32), ()> {
+        let Some(ref store) = self.store else {
+            return Err(());
+        };
+        let mut batch = WriteBatch::default();
+        let result = self.append_remove_term_iid(&mut batch, term, iid)?;
+        if result.0 {
+            store.do_write(batch).or(Err(()))?;
+        }
+        Ok(result)
+    }
+
+    pub fn batch_remove_iid_terms(
+        &self,
+        iid: StoreObjectIID,
+        remaining_terms: &[String],
+        removed_terms: &[String],
+    ) -> Result<Vec<(String, u32)>, ()> {
+        let Some(ref store) = self.store else {
+            return Err(());
+        };
+        let mut batch = WriteBatch::default();
+        let mut frequencies = Vec::with_capacity(removed_terms.len());
+        for term in removed_terms {
+            let (removed, frequency) = self.append_remove_term_iid(&mut batch, term, iid)?;
+            if removed {
+                frequencies.push((term.clone(), frequency));
+            }
+        }
+        if !frequencies.is_empty() {
+            let key = StoreKeyerBuilder::iid_to_terms(self.bucket_id.ok_or(())?, iid);
+            batch.put(key.as_bytes(), Self::encode_terms(remaining_terms)?);
+            store.do_write(batch).or(Err(()))?;
+        }
+        Ok(frequencies)
+    }
+
+    fn append_insert_term_iid(
+        &self,
+        batch: &mut WriteBatch,
+        term: &str,
+        iid: StoreObjectIID,
+    ) -> Result<(bool, u32), ()> {
+        let store = self.store.as_ref().ok_or(())?;
+        let postings_cf = store.database.cf_handle(POSTINGS_CF).ok_or(())?;
+        let bucket_id = self.bucket_id.ok_or(())?;
+        let posting_key =
+            StoreKeyerBuilder::term_posting(bucket_id, term, StorePosting::shard(iid));
+        let posting = store
+            .database
+            .get_cf(postings_cf, posting_key.as_bytes())
+            .or(Err(()))?
+            .map(|encoded| StorePosting::decode(&encoded))
+            .transpose()?
+            .unwrap_or_default();
+        let old_frequency = self.get_term_frequency(term)?;
+        let offset = StorePosting::offset(iid);
+        if posting.contains(offset) {
+            return Ok((false, old_frequency));
+        }
+        let frequency = old_frequency.checked_add(1).ok_or(())?;
+        let mut delta = StorePosting::default();
+        delta.insert(offset);
+        batch.merge_cf(postings_cf, posting_key.as_bytes(), delta.encode());
+        batch.put(
+            StoreKeyerBuilder::term_frequency(bucket_id, term).as_bytes(),
+            Self::encode_u32(frequency),
+        );
+        Ok((true, frequency))
+    }
+
+    fn append_remove_term_iid(
+        &self,
+        batch: &mut WriteBatch,
+        term: &str,
+        iid: StoreObjectIID,
+    ) -> Result<(bool, u32), ()> {
+        let store = self.store.as_ref().ok_or(())?;
+        let postings_cf = store.database.cf_handle(POSTINGS_CF).ok_or(())?;
+        let bucket_id = self.bucket_id.ok_or(())?;
+        let posting_key =
+            StoreKeyerBuilder::term_posting(bucket_id, term, StorePosting::shard(iid));
+        let Some(encoded) = store
+            .database
+            .get_cf(postings_cf, posting_key.as_bytes())
+            .or(Err(()))?
+        else {
+            return Ok((false, self.get_term_frequency(term)?));
+        };
+        let mut posting = StorePosting::decode(&encoded)?;
+        if !posting.remove(StorePosting::offset(iid)) {
+            return Ok((false, self.get_term_frequency(term)?));
+        }
+        let frequency = self.get_term_frequency(term)?.checked_sub(1).ok_or(())?;
+        if posting.is_empty() {
+            batch.delete_cf(postings_cf, posting_key.as_bytes());
+        } else {
+            batch.put_cf(postings_cf, posting_key.as_bytes(), posting.encode());
+        }
+        let frequency_key = StoreKeyerBuilder::term_frequency(bucket_id, term);
+        if frequency == 0 {
+            batch.delete(frequency_key.as_bytes());
+        } else {
+            batch.put(frequency_key.as_bytes(), Self::encode_u32(frequency));
+        }
+        Ok((true, frequency))
+    }
+
+    pub fn get_document_by_iid(&self, iid: StoreObjectIID) -> Result<Option<StoreDocument>, ()> {
+        let store = self.store.as_ref().ok_or(())?;
+        let bucket_id = self.bucket_id.ok_or(())?;
+        let cf = store.database.cf_handle(DOCUMENTS_CF).ok_or(())?;
+        let key = StoreKeyerBuilder::document(bucket_id, iid);
+        let Some(encoded) = store.database.get_cf(cf, key.as_bytes()).or(Err(()))? else {
+            return Ok(None);
+        };
+        let oid = self.get_iid_to_oid(iid)?.ok_or(())?;
+        StoreDocument::decode(oid, &encoded).map(Some)
+    }
+
+    pub fn get_document(&self, oid: StoreObjectOID<'a>) -> Result<Option<StoreDocument>, ()> {
+        let Some(iid) = self.get_oid_to_iid(oid)? else {
+            return Ok(None);
+        };
+        self.get_document_by_iid(iid)
+    }
+
+    pub fn get_iid_timestamp(&self, iid: StoreObjectIID) -> Result<Option<u64>, ()> {
+        let store = self.store.as_ref().ok_or(())?;
+        let key = StoreKeyerBuilder::iid_to_timestamp(self.bucket_id.ok_or(())?, iid);
+        store
+            .get(key.as_bytes())
+            .or(Err(()))?
+            .map(|encoded| Self::decode_u64(&encoded))
+            .transpose()
+    }
+
+    pub fn batch_upsert_document(
+        &self,
+        iid: StoreObjectIID,
+        oid: StoreObjectOID<'a>,
+        is_new_iid: bool,
+        old_terms: &[String],
+        new_terms: &[String],
+        document: &StoreDocument,
+    ) -> Result<Vec<(String, u32)>, ()> {
+        let store = self.store.as_ref().ok_or(())?;
+        let bucket_id = self.bucket_id.ok_or(())?;
+        let document_cf = store.database.cf_handle(DOCUMENTS_CF).ok_or(())?;
+        let old_term_set = old_terms.iter().collect::<HashSet<_>>();
+        let new_term_set = new_terms.iter().collect::<HashSet<_>>();
+        let mut frequencies = Vec::new();
+        let mut batch = WriteBatch::default();
+
+        if is_new_iid {
+            batch.put(
+                StoreKeyerBuilder::meta_to_value(bucket_id, &StoreMetaKey::IIDIncr).as_bytes(),
+                iid.to_string().as_bytes(),
+            );
+            batch.put(
+                StoreKeyerBuilder::oid_to_iid(bucket_id, oid).as_bytes(),
+                Self::encode_u32(iid),
+            );
+            batch.put(
+                StoreKeyerBuilder::iid_to_oid(bucket_id, iid).as_bytes(),
+                oid.as_bytes(),
+            );
+        }
+
+        for term in old_term_set.difference(&new_term_set) {
+            let (removed, frequency) = self.append_remove_term_iid(&mut batch, term, iid)?;
+            if removed {
+                frequencies.push(((*term).clone(), frequency));
+            }
+        }
+        for term in new_term_set.difference(&old_term_set) {
+            let (inserted, frequency) = self.append_insert_term_iid(&mut batch, term, iid)?;
+            if inserted {
+                frequencies.push(((*term).clone(), frequency));
+            }
+        }
+
+        if let Some(old_timestamp) = self.get_iid_timestamp(iid)? {
+            if old_timestamp != document.timestamp_ms {
+                self.append_remove_time_iid(&mut batch, old_timestamp, iid)?;
+                self.append_insert_time_iid(&mut batch, document.timestamp_ms, iid)?;
+            }
+        } else {
+            self.append_insert_time_iid(&mut batch, document.timestamp_ms, iid)?;
+        }
+
+        batch.put(
+            StoreKeyerBuilder::iid_to_terms(bucket_id, iid).as_bytes(),
+            Self::encode_terms(new_terms)?,
+        );
+        batch.put(
+            StoreKeyerBuilder::iid_to_timestamp(bucket_id, iid).as_bytes(),
+            Self::encode_u64(document.timestamp_ms),
+        );
+        batch.put_cf(
+            document_cf,
+            StoreKeyerBuilder::document(bucket_id, iid).as_bytes(),
+            document.encode()?,
+        );
+        store.do_write(batch).or(Err(()))?;
+        Ok(frequencies)
+    }
+
+    pub(crate) fn batch_insert_fresh_documents(
+        &self,
+        documents: &[(StoreDocument, Vec<String>)],
+        profiling: bool,
+    ) -> Result<StoreFreshBatchResult, ()> {
+        let store = self.store.as_ref().ok_or(())?;
+        let bucket_id = self.bucket_id.ok_or(())?;
+        let document_cf = store.database.cf_handle(DOCUMENTS_CF).ok_or(())?;
+        let postings_cf = store.database.cf_handle(POSTINGS_CF).ok_or(())?;
+        let mut timings = StoreFreshBatchTimings::default();
+        let mut batch = WriteBatch::default();
+        let mut postings = HashMap::<(String, StoreIIDShard), StorePosting>::new();
+        let mut frequencies = HashMap::<String, u32>::new();
+        let mut time_postings = HashMap::<(u64, StoreIIDShard), StorePosting>::new();
+        let mut seen_oids = HashSet::<String>::new();
+        let metadata_started = profile_started(profiling);
+        let mut iid_counter = match self.get_meta_to_value(StoreMetaKey::IIDIncr)? {
+            Some(StoreMetaValue::IIDIncr(value)) => Some(value),
+            Some(_) => return Err(()),
+            None => None,
+        };
+        timings.metadata_reads = profile_elapsed(metadata_started);
+        let empty_bucket = iid_counter.is_none();
+        let mut written = 0;
+        let mut rejected = 0;
+
+        for (document, terms) in documents {
+            let document_encode_started = profile_started(profiling);
+            let encoded_document = match document.encode() {
+                Ok(encoded) => encoded,
+                Err(()) => {
+                    timings.document_encode += profile_elapsed(document_encode_started);
+                    rejected += 1;
+                    continue;
+                }
+            };
+            timings.document_encode += profile_elapsed(document_encode_started);
+            if !seen_oids.insert(document.oid.clone()) {
+                rejected += 1;
+                continue;
+            }
+            if !empty_bucket {
+                let oid_read_started = profile_started(profiling);
+                let oid_exists = self.get_oid_to_iid(&document.oid)?.is_some();
+                timings.oid_reads += profile_elapsed(oid_read_started);
+                timings.oid_read_count += 1;
+                if oid_exists {
+                    rejected += 1;
+                    continue;
+                }
+            }
+            let iid = match iid_counter {
+                Some(value) => value.checked_add(1).ok_or(())?,
+                None => 0,
+            };
+            iid_counter = Some(iid);
+            let mut document_terms = Vec::new();
+
+            for term in terms {
+                if document_terms.contains(term) {
+                    continue;
+                }
+                document_terms.push(term.clone());
+                let shard = StorePosting::shard(iid);
+                let posting = match postings.entry((term.clone(), shard)) {
+                    hashbrown::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                    hashbrown::hash_map::Entry::Vacant(entry) => {
+                        entry.insert(StorePosting::default())
+                    }
+                };
+                if posting.insert(StorePosting::offset(iid)) {
+                    if let hashbrown::hash_map::Entry::Vacant(entry) =
+                        frequencies.entry(term.clone())
+                    {
+                        entry.insert(if empty_bucket {
+                            0
+                        } else {
+                            let frequency_read_started = profile_started(profiling);
+                            let frequency = self.get_term_frequency(term)?;
+                            timings.frequency_reads += profile_elapsed(frequency_read_started);
+                            timings.frequency_read_count += 1;
+                            frequency
+                        });
+                    }
+                    let frequency = frequencies.get_mut(term).ok_or(())?;
+                    *frequency = frequency.checked_add(1).ok_or(())?;
+                }
+            }
+
+            let time_slice = document.timestamp_ms / TIME_SLICE_MS;
+            let shard = StorePosting::shard(iid);
+            let time_posting = match time_postings.entry((time_slice, shard)) {
+                hashbrown::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                hashbrown::hash_map::Entry::Vacant(entry) => entry.insert(StorePosting::default()),
+            };
+            time_posting.insert(StorePosting::offset(iid));
+            batch.put(
+                StoreKeyerBuilder::oid_to_iid(bucket_id, &document.oid).as_bytes(),
+                Self::encode_u32(iid),
+            );
+            batch.put(
+                StoreKeyerBuilder::iid_to_oid(bucket_id, iid).as_bytes(),
+                document.oid.as_bytes(),
+            );
+            batch.put(
+                StoreKeyerBuilder::iid_to_terms(bucket_id, iid).as_bytes(),
+                Self::encode_terms(&document_terms)?,
+            );
+            batch.put(
+                StoreKeyerBuilder::iid_to_timestamp(bucket_id, iid).as_bytes(),
+                Self::encode_u64(document.timestamp_ms),
+            );
+            batch.put_cf(
+                document_cf,
+                StoreKeyerBuilder::document(bucket_id, iid).as_bytes(),
+                encoded_document,
+            );
+            written += 1;
+        }
+
+        let batch_finalize_started = profile_started(profiling);
+        for ((term, shard), posting) in postings {
+            batch.merge_cf(
+                postings_cf,
+                StoreKeyerBuilder::term_posting(bucket_id, &term, shard).as_bytes(),
+                posting.encode(),
+            );
+        }
+        for ((time_slice, shard), posting) in time_postings {
+            batch.merge_cf(
+                postings_cf,
+                StoreKeyerBuilder::time_posting(bucket_id, time_slice, shard).as_bytes(),
+                posting.encode(),
+            );
+        }
+        for (term, frequency) in &frequencies {
+            batch.put(
+                StoreKeyerBuilder::term_frequency(bucket_id, term).as_bytes(),
+                Self::encode_u32(*frequency),
+            );
+        }
+        if let Some(iid_counter) = iid_counter {
+            batch.put(
+                StoreKeyerBuilder::meta_to_value(bucket_id, &StoreMetaKey::IIDIncr).as_bytes(),
+                iid_counter.to_string().as_bytes(),
+            );
+        }
+        timings.batch_finalize = profile_elapsed(batch_finalize_started);
+        if written > 0 {
+            let database_write_started = profile_started(profiling);
+            if profiling {
+                let write_profile = store.do_write_profiled(batch).or(Err(()))?;
+                timings.write_wal = Duration::from_nanos(write_profile.wal_nanos);
+                timings.write_memtable = Duration::from_nanos(write_profile.memtable_nanos);
+                timings.write_delay = Duration::from_nanos(write_profile.delay_nanos);
+                timings.write_pre_and_post = Duration::from_nanos(write_profile.pre_and_post_nanos);
+                timings.write_db_mutex = Duration::from_nanos(write_profile.db_mutex_nanos);
+                timings.write_db_condition_wait =
+                    Duration::from_nanos(write_profile.db_condition_wait_nanos);
+                timings.write_merge_operator =
+                    Duration::from_nanos(write_profile.merge_operator_nanos);
+                timings.batch_index_bytes = write_profile.batch.bytes[DEFAULT_CF_ID as usize];
+                timings.batch_documents_bytes = write_profile.batch.bytes[DOCUMENTS_CF_ID as usize];
+                timings.batch_postings_bytes = write_profile.batch.bytes[POSTINGS_CF_ID as usize];
+                timings.batch_put_count = write_profile.batch.puts;
+                timings.batch_delete_count = write_profile.batch.deletes;
+                timings.batch_merge_count = write_profile.batch.merges;
+            } else {
+                store.do_write(batch).or(Err(()))?;
+            }
+            timings.database_write = profile_elapsed(database_write_started);
+        }
+        let health = if profiling {
+            store.health()
+        } else {
+            StoreKVHealth::default()
+        };
+        Ok(StoreFreshBatchResult {
+            written,
+            rejected,
+            frequencies: frequencies.into_iter().collect(),
+            timings,
+            health,
+        })
+    }
+
+    fn append_insert_time_iid(
+        &self,
+        batch: &mut WriteBatch,
+        timestamp_ms: u64,
+        iid: StoreObjectIID,
+    ) -> Result<(), ()> {
+        let store = self.store.as_ref().ok_or(())?;
+        let postings_cf = store.database.cf_handle(POSTINGS_CF).ok_or(())?;
+        let key = StoreKeyerBuilder::time_posting(
+            self.bucket_id.ok_or(())?,
+            timestamp_ms / TIME_SLICE_MS,
+            StorePosting::shard(iid),
+        );
+        let mut delta = StorePosting::default();
+        delta.insert(StorePosting::offset(iid));
+        batch.merge_cf(postings_cf, key.as_bytes(), delta.encode());
+        Ok(())
+    }
+
+    fn append_remove_time_iid(
+        &self,
+        batch: &mut WriteBatch,
+        timestamp_ms: u64,
+        iid: StoreObjectIID,
+    ) -> Result<(), ()> {
+        let store = self.store.as_ref().ok_or(())?;
+        let postings_cf = store.database.cf_handle(POSTINGS_CF).ok_or(())?;
+        let key = StoreKeyerBuilder::time_posting(
+            self.bucket_id.ok_or(())?,
+            timestamp_ms / TIME_SLICE_MS,
+            StorePosting::shard(iid),
+        );
+        let Some(encoded) = store
+            .database
+            .get_cf(postings_cf, key.as_bytes())
+            .or(Err(()))?
+        else {
+            return Ok(());
+        };
+        let mut posting = StorePosting::decode(&encoded)?;
+        if posting.remove(StorePosting::offset(iid)) {
+            if posting.is_empty() {
+                batch.delete_cf(postings_cf, key.as_bytes());
+            } else {
+                batch.put_cf(postings_cf, key.as_bytes(), posting.encode());
+            }
+        }
+        Ok(())
     }
 
     /// OID-to-IID mapper
@@ -807,7 +1916,7 @@ impl<'a> StoreKVAction<'a> {
     /// [IDX=2] ((oid)) ~> ((iid))
     pub fn get_oid_to_iid(&self, oid: StoreObjectOID<'a>) -> Result<Option<StoreObjectIID>, ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
+            let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket_id.ok_or(())?, oid);
 
             tracing::debug!("store get oid-to-iid: {}", store_key);
 
@@ -849,9 +1958,52 @@ impl<'a> StoreKVAction<'a> {
         }
     }
 
+    pub fn get_or_create_iid(&self, oid: StoreObjectOID<'a>) -> Result<StoreObjectIID, ()> {
+        if let Some(iid) = self.get_oid_to_iid(oid)? {
+            return Ok(iid);
+        }
+        let store = self.store.as_ref().ok_or(())?;
+        let bucket_id = self.bucket_id.ok_or(())?;
+        let iid = match self.get_meta_to_value(StoreMetaKey::IIDIncr)? {
+            Some(StoreMetaValue::IIDIncr(value)) => value.checked_add(1).ok_or(())?,
+            Some(_) => return Err(()),
+            None => 0,
+        };
+        let mut batch = WriteBatch::default();
+        batch.put(
+            StoreKeyerBuilder::meta_to_value(bucket_id, &StoreMetaKey::IIDIncr).as_bytes(),
+            iid.to_string().as_bytes(),
+        );
+        batch.put(
+            StoreKeyerBuilder::oid_to_iid(bucket_id, oid).as_bytes(),
+            Self::encode_u32(iid),
+        );
+        batch.put(
+            StoreKeyerBuilder::iid_to_oid(bucket_id, iid).as_bytes(),
+            oid.as_bytes(),
+        );
+        store.do_write(batch).or(Err(()))?;
+        Ok(iid)
+    }
+
+    pub fn resolve_or_reserve_iid(
+        &self,
+        oid: StoreObjectOID<'a>,
+    ) -> Result<(StoreObjectIID, bool), ()> {
+        if let Some(iid) = self.get_oid_to_iid(oid)? {
+            return Ok((iid, false));
+        }
+        let iid = match self.get_meta_to_value(StoreMetaKey::IIDIncr)? {
+            Some(StoreMetaValue::IIDIncr(value)) => value.checked_add(1).ok_or(())?,
+            Some(_) => return Err(()),
+            None => 0,
+        };
+        Ok((iid, true))
+    }
+
     pub fn set_oid_to_iid(&self, oid: StoreObjectOID<'a>, iid: StoreObjectIID) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
+            let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket_id.ok_or(())?, oid);
 
             tracing::debug!("store set oid-to-iid: {}", store_key);
 
@@ -872,7 +2024,7 @@ impl<'a> StoreKVAction<'a> {
 
     pub fn delete_oid_to_iid(&self, oid: StoreObjectOID<'a>) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), oid);
+            let store_key = StoreKeyerBuilder::oid_to_iid(self.bucket_id.ok_or(())?, oid);
 
             tracing::debug!("store delete oid-to-iid: {}", store_key);
 
@@ -887,7 +2039,7 @@ impl<'a> StoreKVAction<'a> {
     /// [IDX=3] ((iid)) ~> ((oid))
     pub fn get_iid_to_oid(&self, iid: StoreObjectIID) -> Result<Option<String>, ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
+            let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket_id.ok_or(())?, iid);
 
             tracing::debug!("store get iid-to-oid: {}", store_key);
 
@@ -903,7 +2055,7 @@ impl<'a> StoreKVAction<'a> {
 
     pub fn set_iid_to_oid(&self, iid: StoreObjectIID, oid: StoreObjectOID<'a>) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
+            let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket_id.ok_or(())?, iid);
 
             tracing::debug!("store set iid-to-oid: {}", store_key);
 
@@ -915,7 +2067,7 @@ impl<'a> StoreKVAction<'a> {
 
     pub fn delete_iid_to_oid(&self, iid: StoreObjectIID) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), iid);
+            let store_key = StoreKeyerBuilder::iid_to_oid(self.bucket_id.ok_or(())?, iid);
 
             tracing::debug!("store delete iid-to-oid: {}", store_key);
 
@@ -928,12 +2080,9 @@ impl<'a> StoreKVAction<'a> {
     /// IID-to-Terms mapper
     ///
     /// [IDX=4] ((iid)) ~> [((term))]
-    pub fn get_iid_to_terms(
-        &self,
-        iid: StoreObjectIID,
-    ) -> Result<Option<Vec<StoreTermHashed>>, ()> {
+    pub fn get_iid_to_terms(&self, iid: StoreObjectIID) -> Result<Option<Vec<String>>, ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
+            let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket_id.ok_or(())?, iid);
 
             tracing::debug!("store get iid-to-terms: {}", store_key);
 
@@ -945,21 +2094,19 @@ impl<'a> StoreKVAction<'a> {
                         &*value
                     );
 
-                    Self::decode_u32_list(&*value)
-                        .or(Err(()))
-                        .map(|value_decoded| {
-                            tracing::debug!(
-                                "got iid-to-terms: {} with decoded value: {:?}",
-                                store_key,
-                                &value_decoded
-                            );
+                    Self::decode_terms(&value).or(Err(())).map(|value_decoded| {
+                        tracing::debug!(
+                            "got iid-to-terms: {} with decoded value: {:?}",
+                            store_key,
+                            &value_decoded
+                        );
 
-                            if !value_decoded.is_empty() {
-                                Some(value_decoded)
-                            } else {
-                                None
-                            }
-                        })
+                        if !value_decoded.is_empty() {
+                            Some(value_decoded)
+                        } else {
+                            None
+                        }
+                    })
                 }
                 Ok(None) => Ok(None),
                 Err(_) => Err(()),
@@ -969,18 +2116,14 @@ impl<'a> StoreKVAction<'a> {
         }
     }
 
-    pub fn set_iid_to_terms(
-        &self,
-        iid: StoreObjectIID,
-        terms_hashed: &[StoreTermHashed],
-    ) -> Result<(), ()> {
+    pub fn set_iid_to_terms(&self, iid: StoreObjectIID, terms: &[String]) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
+            let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket_id.ok_or(())?, iid);
 
             tracing::debug!("store set iid-to-terms: {}", store_key);
 
             // Encode term list into storage serialized format
-            let terms_hashed_encoded = Self::encode_u32_list(terms_hashed);
+            let terms_hashed_encoded = Self::encode_terms(terms)?;
 
             tracing::debug!(
                 "store set iid-to-terms: {} with encoded value: {:?}",
@@ -998,7 +2141,7 @@ impl<'a> StoreKVAction<'a> {
 
     pub fn delete_iid_to_terms(&self, iid: StoreObjectIID) -> Result<(), ()> {
         if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), iid);
+            let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket_id.ok_or(())?, iid);
 
             tracing::debug!("store delete iid-to-terms: {}", store_key);
 
@@ -1012,183 +2155,88 @@ impl<'a> StoreKVAction<'a> {
         &self,
         iid: StoreObjectIID,
         oid: StoreObjectOID<'a>,
-        iid_terms_hashed: &[StoreTermHashed],
+        iid_terms: &[String],
     ) -> Result<u32, ()> {
+        let Some(ref store) = self.store else {
+            return Err(());
+        };
+        let bucket_id = self.bucket_id.ok_or(())?;
         let mut count = 0;
 
         tracing::debug!(
-            "store batch flush bucket: {} with hashed terms: {:?}",
+            "store batch flush bucket: {} with terms: {:?}",
             iid,
-            iid_terms_hashed
+            iid_terms
         );
 
-        // Delete OID <> IID association
-        match (
-            self.delete_oid_to_iid(oid),
-            self.delete_iid_to_oid(iid),
-            self.delete_iid_to_terms(iid),
-        ) {
-            (Ok(_), Ok(_), Ok(_)) => {
-                // Delete IID from each associated term
-                for iid_term in iid_terms_hashed {
-                    if let Ok(Some(mut iid_term_iids)) = self.get_term_to_iids(*iid_term) {
-                        if iid_term_iids.contains(&iid) {
-                            count += 1;
-
-                            // Remove IID from list of IIDs
-                            iid_term_iids.retain(|cur_iid| cur_iid != &iid);
-                        }
-
-                        let is_ok = if iid_term_iids.is_empty() {
-                            self.delete_term_to_iids(*iid_term).is_ok()
-                        } else {
-                            self.set_term_to_iids(*iid_term, &iid_term_iids).is_ok()
-                        };
-
-                        if !is_ok {
-                            return Err(());
-                        }
-                    }
-                }
-
-                Ok(count)
-            }
-            _ => Err(()),
+        let mut batch = WriteBatch::default();
+        batch.delete(StoreKeyerBuilder::oid_to_iid(bucket_id, oid).as_bytes());
+        batch.delete(StoreKeyerBuilder::iid_to_oid(bucket_id, iid).as_bytes());
+        batch.delete(StoreKeyerBuilder::iid_to_terms(bucket_id, iid).as_bytes());
+        if let Some(timestamp_ms) = self.get_iid_timestamp(iid)? {
+            self.append_remove_time_iid(&mut batch, timestamp_ms, iid)?;
+            batch.delete(StoreKeyerBuilder::iid_to_timestamp(bucket_id, iid).as_bytes());
         }
-    }
-
-    pub fn batch_truncate_object(
-        &self,
-        term_hashed: StoreTermHashed,
-        term_iids_drain: Drain<StoreObjectIID>,
-    ) -> Result<u32, ()> {
-        let mut count = 0;
-
-        for term_iid_drain in term_iids_drain {
-            tracing::debug!("store batch truncate object iid: {}", term_iid_drain);
-
-            // Nuke term in IID to Terms list
-            if let Ok(Some(mut term_iid_drain_terms)) = self.get_iid_to_terms(term_iid_drain) {
+        let document_cf = store.database.cf_handle(DOCUMENTS_CF).ok_or(())?;
+        batch.delete_cf(
+            document_cf,
+            StoreKeyerBuilder::document(bucket_id, iid).as_bytes(),
+        );
+        for term in iid_terms {
+            if self.append_remove_term_iid(&mut batch, term, iid)?.0 {
                 count += 1;
-
-                term_iid_drain_terms.retain(|cur_term| cur_term != &term_hashed);
-
-                // IID to Terms list is empty? Flush whole object.
-                if term_iid_drain_terms.is_empty() {
-                    // Acquire OID for this drained IID
-                    if let Ok(Some(term_iid_drain_oid)) = self.get_iid_to_oid(term_iid_drain) {
-                        if self
-                            .batch_flush_bucket(term_iid_drain, &term_iid_drain_oid, &Vec::new())
-                            .is_err()
-                        {
-                            tracing::error!(
-                                "failed executing store batch truncate object batch-flush-bucket"
-                            );
-                        }
-                    } else {
-                        tracing::error!("failed getting store batch truncate object iid-to-oid");
-                    }
-                } else {
-                    // Update IID to Terms list
-                    if self
-                        .set_iid_to_terms(term_iid_drain, &term_iid_drain_terms)
-                        .is_err()
-                    {
-                        tracing::error!("failed setting store batch truncate object iid-to-terms");
-                    }
-                }
             }
         }
-
+        store.do_write(batch).or(Err(()))?;
         Ok(count)
     }
 
     pub fn batch_erase_bucket(&self) -> Result<u32, ()> {
-        if let Some(ref store) = self.store {
-            // Generate all key prefix values (with dummy post-prefix values; we dont care)
-            let (k_meta_to_value, k_term_to_iids, k_oid_to_iid, k_iid_to_oid, k_iid_to_terms) = (
-                StoreKeyerBuilder::meta_to_value(self.bucket.as_str(), &StoreMetaKey::IIDIncr),
-                StoreKeyerBuilder::term_to_iids(self.bucket.as_str(), 0),
-                StoreKeyerBuilder::oid_to_iid(self.bucket.as_str(), ""),
-                StoreKeyerBuilder::iid_to_oid(self.bucket.as_str(), 0),
-                StoreKeyerBuilder::iid_to_terms(self.bucket.as_str(), 0),
-            );
+        let Some(ref store) = self.store else {
+            return Err(());
+        };
+        let Some(bucket_id) = self.bucket_id else {
+            return Ok(0);
+        };
 
-            let key_prefixes: [StoreKeyerPrefix; 5] = [
-                k_meta_to_value.as_prefix(),
-                k_term_to_iids.as_prefix(),
-                k_oid_to_iid.as_prefix(),
-                k_iid_to_oid.as_prefix(),
-                k_iid_to_terms.as_prefix(),
-            ];
-
-            // Scan all keys per-prefix and nuke them right away
-            for key_prefix in &key_prefixes {
-                tracing::debug!(
-                    "store batch erase bucket: {} for prefix: {:?}",
-                    self.bucket.as_str(),
-                    key_prefix
-                );
-
-                // Generate start and end prefix for batch delete (in other words, the minimum \
-                //   key value possible, and the highest key value possible)
-                let key_prefix_start: StoreKeyerKey = [
-                    key_prefix[0],
-                    key_prefix[1],
-                    key_prefix[2],
-                    key_prefix[3],
-                    key_prefix[4],
-                    0,
-                    0,
-                    0,
-                    0,
-                ];
-                let key_prefix_end: StoreKeyerKey = [
-                    key_prefix[0],
-                    key_prefix[1],
-                    key_prefix[2],
-                    key_prefix[3],
-                    key_prefix[4],
-                    255,
-                    255,
-                    255,
-                    255,
-                ];
-
-                // Batch-delete keys matching range
-                let mut batch = WriteBatch::default();
-
-                batch.delete_range(&key_prefix_start, &key_prefix_end);
-
-                // Commit operation to database
-                if let Err(err) = store.do_write(batch) {
-                    tracing::error!(
-                        "failed in store batch erase bucket: {} with error: {}",
-                        self.bucket.as_str(),
-                        err
-                    );
-                } else {
-                    // Ensure last key is deleted (as RocksDB end key is exclusive; while \
-                    //   start key is inclusive, we need to ensure the end-of-range key is \
-                    //   deleted)
-                    store.delete(&key_prefix_end).ok();
-
-                    tracing::debug!(
-                        "succeeded in store batch erase bucket: {}",
-                        self.bucket.as_str()
-                    );
-                }
-            }
-
-            tracing::info!(
-                "done processing store batch erase bucket: {}",
-                self.bucket.as_str()
-            );
-
-            Ok(1)
-        } else {
-            Err(())
+        let mut batch = WriteBatch::default();
+        for index in StoreKeyerBuilder::bucket_indexes()
+            .iter()
+            .filter(|index| !StoreKeyerBuilder::posting_indexes().contains(index))
+        {
+            let prefix = StoreKeyerBuilder::bucket_prefix(*index, bucket_id);
+            let end = Self::prefix_end(&prefix).ok_or(())?;
+            batch.delete_range(&prefix, &end);
         }
+        let postings_cf = store.database.cf_handle(POSTINGS_CF).ok_or(())?;
+        for index in StoreKeyerBuilder::posting_indexes() {
+            let prefix = StoreKeyerBuilder::bucket_prefix(*index, bucket_id);
+            let end = Self::prefix_end(&prefix).ok_or(())?;
+            batch.delete_range_cf(postings_cf, &prefix, &end);
+        }
+        let document_prefix = StoreKeyerBuilder::document_prefix(bucket_id);
+        let document_end = Self::prefix_end(&document_prefix).ok_or(())?;
+        let document_cf = store.database.cf_handle(DOCUMENTS_CF).ok_or(())?;
+        batch.delete_range_cf(document_cf, &document_prefix, &document_end);
+        batch.delete(StoreKeyerBuilder::bucket_name_to_id(self.bucket.as_str()).as_bytes());
+        batch.delete(StoreKeyerBuilder::bucket_id_to_name(bucket_id).as_bytes());
+        store.do_write(batch).or(Err(()))?;
+
+        Ok(1)
+    }
+
+    fn prefix_end(prefix: &[u8]) -> Option<StoreKeyerPrefix> {
+        let mut end = prefix.to_vec();
+
+        for index in (0..end.len()).rev() {
+            if end[index] != u8::MAX {
+                end[index] += 1;
+                end.truncate(index + 1);
+                return Some(end);
+            }
+        }
+
+        None
     }
 
     fn encode_u32(decoded: u32) -> [u8; 4] {
@@ -1203,32 +2251,64 @@ impl<'a> StoreKVAction<'a> {
         Cursor::new(encoded).read_u32::<LittleEndian>().or(Err(()))
     }
 
-    fn encode_u32_list(decoded: &[u32]) -> Vec<u8> {
-        // Pre-reserve required capacity as to avoid heap resizes (50% performance gain relative \
-        //   to initializing this with a zero-capacity)
-        let mut encoded = Vec::with_capacity(decoded.len() * 4);
-
-        for decoded_item in decoded {
-            encoded.extend(&Self::encode_u32(*decoded_item))
-        }
-
-        encoded
+    fn encode_u64(decoded: u64) -> [u8; 8] {
+        decoded.to_le_bytes()
     }
 
-    fn decode_u32_list(encoded: &[u8]) -> Result<Vec<u32>, ()> {
-        // Pre-reserve required capacity as to avoid heap resizes (50% performance gain relative \
-        //   to initializing this with a zero-capacity)
-        let mut decoded = Vec::with_capacity(encoded.len() / 4);
+    fn decode_u64(encoded: &[u8]) -> Result<u64, ()> {
+        encoded.try_into().map(u64::from_le_bytes).map_err(|_| ())
+    }
 
-        for encoded_chunk in encoded.chunks(4) {
-            if let Ok(decoded_chunk) = Self::decode_u32(encoded_chunk) {
-                decoded.push(decoded_chunk);
-            } else {
+    fn encode_terms(terms: &[String]) -> Result<Vec<u8>, ()> {
+        let mut terms = terms.to_vec();
+        terms.sort_unstable();
+        terms.dedup();
+        let mut encoded = Vec::new();
+        for term in terms {
+            let length = u32::try_from(term.len()).map_err(|_| ())?;
+            Self::encode_varint(length, &mut encoded);
+            encoded.extend_from_slice(term.as_bytes());
+        }
+        Ok(encoded)
+    }
+
+    fn decode_terms(encoded: &[u8]) -> Result<Vec<String>, ()> {
+        let mut terms = Vec::new();
+        let mut cursor = 0;
+        while cursor < encoded.len() {
+            let length = Self::decode_varint(encoded, &mut cursor)? as usize;
+            let term_end = cursor.checked_add(length).ok_or(())?;
+            let term = str::from_utf8(encoded.get(cursor..term_end).ok_or(())?)
+                .map_err(|_| ())?
+                .to_owned();
+            terms.push(term);
+            cursor = term_end;
+        }
+        Ok(terms)
+    }
+
+    fn encode_varint(mut value: u32, encoded: &mut Vec<u8>) {
+        while value >= 0x80 {
+            encoded.push((value as u8 & 0x7f) | 0x80);
+            value >>= 7;
+        }
+        encoded.push(value as u8);
+    }
+
+    fn decode_varint(encoded: &[u8], cursor: &mut usize) -> Result<u32, ()> {
+        let mut value = 0u32;
+        for shift in (0..=28).step_by(7) {
+            let byte = *encoded.get(*cursor).ok_or(())?;
+            *cursor = cursor.checked_add(1).ok_or(())?;
+            if shift == 28 && byte > 0x0f {
                 return Err(());
             }
+            value |= u32::from(byte & 0x7f) << shift;
+            if byte & 0x80 == 0 {
+                return Ok(value);
+            }
         }
-
-        Ok(decoded)
+        Err(())
     }
 }
 
@@ -1254,6 +2334,9 @@ impl fmt::Display for StoreKVKey {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static TEST_STORE_ID: AtomicUsize = AtomicUsize::new(0);
 
     #[test]
     fn it_acquires_database() {
@@ -1287,6 +2370,28 @@ mod tests {
     }
 
     #[test]
+    fn it_profiles_write_batches_by_column_family() {
+        let kv_pool = StoreKVPool::new(test_kv_store_config());
+        let store = kv_pool
+            .acquire(StoreKVAcquireMode::Any, "c:test:profile")
+            .unwrap()
+            .unwrap();
+        let documents_cf = store.database.cf_handle(DOCUMENTS_CF).unwrap();
+        let postings_cf = store.database.cf_handle(POSTINGS_CF).unwrap();
+        let mut batch = WriteBatch::default();
+        batch.put(b"i", b"index");
+        batch.put_cf(documents_cf, b"d", b"document");
+        batch.merge_cf(postings_cf, b"p", StorePosting::default().encode());
+
+        let profile = store.do_write_profiled(batch).unwrap();
+        assert_eq!(profile.batch.puts, 2);
+        assert_eq!(profile.batch.merges, 1);
+        assert_eq!(profile.batch.bytes[DEFAULT_CF_ID as usize], 6);
+        assert_eq!(profile.batch.bytes[DOCUMENTS_CF_ID as usize], 9);
+        assert_eq!(profile.batch.bytes[POSTINGS_CF_ID as usize], 2);
+    }
+
+    #[test]
     fn it_proceeds_actions() {
         let kv_store_config = test_kv_store_config();
         let kv_pool = StoreKVPool::new(kv_store_config);
@@ -1294,8 +2399,16 @@ mod tests {
         let store = kv_pool
             .acquire(StoreKVAcquireMode::Any, "c:test:3")
             .unwrap();
-        let action =
-            StoreKVActionBuilder::access(StoreItemPart::from_str("b:test:3").unwrap(), store);
+        let action = StoreKVActionBuilder::access_or_create(
+            StoreItemPart::from_str("b:test:3").unwrap(),
+            store.clone(),
+        );
+        assert_eq!(action.bucket_id(), Some(1));
+        let other_action = StoreKVActionBuilder::access_or_create(
+            StoreItemPart::from_str("b:test:4").unwrap(),
+            store.clone(),
+        );
+        assert_eq!(other_action.bucket_id(), Some(2));
 
         assert!(action.get_meta_to_value(StoreMetaKey::IIDIncr).is_ok());
         assert!(
@@ -1304,12 +2417,48 @@ mod tests {
                 .is_ok()
         );
 
-        assert!(action.get_term_to_iids(1).is_ok());
-        assert!(action.set_term_to_iids(1, &[0, 1, 2]).is_ok());
-        assert!(action.delete_term_to_iids(1).is_ok());
+        assert_eq!(action.insert_term_iid("hello", 1), Ok((true, 1)));
+        assert_eq!(action.count_terms(), 1);
+        assert_eq!(other_action.count_terms(), 0);
+        assert_eq!(action.insert_term_iid("hello", 65_536), Ok((true, 2)));
+        assert_eq!(action.insert_term_iid("hello", 1), Ok((false, 2)));
+        assert_eq!(action.get_term_iids_desc("hello", 10), Ok(vec![65_536, 1]));
+        assert_eq!(action.remove_term_iid("hello", 65_536), Ok((true, 1)));
+        assert_eq!(action.remove_term_iid("hello", 65_536), Ok((false, 1)));
+        assert_eq!(action.get_term_iids_desc("hello", 10), Ok(vec![1]));
+        assert_eq!(action.remove_term_iid("hello", 1), Ok((true, 0)));
+        assert_eq!(action.get_term_frequency("hello"), Ok(0));
+        assert_eq!(action.get_term_iids_desc("hello", 10), Ok(vec![]));
+
+        let first_batch = vec![(
+            StoreDocument::new("bulk:1", 1_000, "bulk", serde_json::json!({})).unwrap(),
+            vec!["bulk".to_owned()],
+        )];
+        let second_batch = vec![(
+            StoreDocument::new("bulk:2", 2_000, "bulk", serde_json::json!({})).unwrap(),
+            vec!["bulk".to_owned()],
+        )];
+        assert_eq!(
+            action
+                .batch_insert_fresh_documents(&first_batch, false)
+                .unwrap()
+                .frequencies,
+            vec![("bulk".to_owned(), 1)]
+        );
+        assert_eq!(
+            action
+                .batch_insert_fresh_documents(&second_batch, false)
+                .unwrap()
+                .frequencies,
+            vec![("bulk".to_owned(), 2)]
+        );
+        assert_eq!(action.get_term_frequency("bulk"), Ok(2));
 
         assert!(action.get_oid_to_iid(&"s".to_string()).is_ok());
         assert!(action.set_oid_to_iid(&"s".to_string(), 4).is_ok());
+        assert!(action.set_oid_to_iid("another-object", 5).is_ok());
+        assert_eq!(action.get_oid_to_iid("s"), Ok(Some(4)));
+        assert_eq!(action.get_oid_to_iid("another-object"), Ok(Some(5)));
         assert!(action.delete_oid_to_iid(&"s".to_string()).is_ok());
 
         assert!(action.get_iid_to_oid(4).is_ok());
@@ -1317,7 +2466,11 @@ mod tests {
         assert!(action.delete_iid_to_oid(4).is_ok());
 
         assert!(action.get_iid_to_terms(4).is_ok());
-        assert!(action.set_iid_to_terms(4, &[45402]).is_ok());
+        assert!(
+            action
+                .set_iid_to_terms(4, &["hello".to_owned(), "world".to_owned()])
+                .is_ok()
+        );
         assert!(action.delete_iid_to_terms(4).is_ok());
     }
 
@@ -1336,38 +2489,47 @@ mod tests {
     }
 
     #[test]
-    fn it_encodes_atom_list() {
+    fn it_round_trips_term_lists() {
+        let terms = vec!["world".to_owned(), "hello".to_owned(), "hello".to_owned()];
+        let encoded = StoreKVAction::encode_terms(&terms).unwrap();
+        assert_eq!(encoded, b"\x05hello\x05world");
         assert_eq!(
-            StoreKVAction::encode_u32_list(&[0, 2, 3]),
-            [0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]
+            StoreKVAction::decode_terms(&encoded),
+            Ok(vec!["hello".to_owned(), "world".to_owned()])
         );
-        assert_eq!(StoreKVAction::encode_u32_list(&[45402]), [90, 177, 0, 0]);
+
+        let long_term = "x".repeat(300);
+        let encoded = StoreKVAction::encode_terms(std::slice::from_ref(&long_term)).unwrap();
+        assert_eq!(&encoded[..2], &[0xac, 0x02]);
+        assert_eq!(StoreKVAction::decode_terms(&encoded), Ok(vec![long_term]));
     }
 
     #[test]
-    fn it_decodes_atom_list() {
+    fn it_rejects_invalid_term_lists() {
+        assert_eq!(StoreKVAction::decode_terms(&[0x80]), Err(()));
         assert_eq!(
-            StoreKVAction::decode_u32_list(&[0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]),
-            Ok(vec![0, 2, 3])
+            StoreKVAction::decode_terms(&[0xff, 0xff, 0xff, 0xff, 0x10]),
+            Err(())
         );
-        assert_eq!(
-            StoreKVAction::decode_u32_list(&[90, 177, 0, 0]),
-            Ok(vec![45402])
-        );
+        assert_eq!(StoreKVAction::decode_terms(&[2, b'a']), Err(()));
     }
 
     fn test_kv_store_config() -> Arc<crate::config::ConfigStoreKV> {
-        Arc::new(
-            config::Config::builder()
-                .add_source(config::File::from_str(
-                    crate::config::tests::defaults_toml(),
-                    config::FileFormat::Toml,
-                ))
-                .build()
-                .unwrap()
-                .get::<crate::config::ConfigStoreKV>("store.kv")
-                .unwrap(),
-        )
+        let mut config = config::Config::builder()
+            .add_source(config::File::from_str(
+                crate::config::tests::defaults_toml(),
+                config::FileFormat::Toml,
+            ))
+            .build()
+            .unwrap()
+            .get::<crate::config::ConfigStoreKV>("store.kv")
+            .unwrap();
+        config.path = std::env::temp_dir().join(format!(
+            "sonic-kv-unit-{}-{}",
+            std::process::id(),
+            TEST_STORE_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        Arc::new(config)
     }
 }
 
@@ -1388,20 +2550,6 @@ mod benches {
         let encoded_atom = [0, 0, 0, 0];
 
         b.iter(|| StoreKVAction::decode_u32(&encoded_atom));
-    }
-
-    #[bench]
-    fn bench_encode_atom_list(b: &mut Bencher) {
-        let atom_list = [0, 2, 3];
-
-        b.iter(|| StoreKVAction::encode_u32_list(&atom_list));
-    }
-
-    #[bench]
-    fn bench_decode_atom_list(b: &mut Bencher) {
-        let encoded_atom_list = [0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0];
-
-        b.iter(|| StoreKVAction::decode_u32_list(&encoded_atom_list));
     }
 }
 

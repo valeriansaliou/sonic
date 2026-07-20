@@ -5,34 +5,28 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use fst::automaton::AlwaysMatch;
-use fst::set::Stream as FSTStream;
 use fst::{
-    Automaton, Error as FSTError, IntoStreamer, Set as FSTSet, SetBuilder as FSTSetBuilder,
+    Automaton, Error as FSTError, IntoStreamer, Map as FSTMap, MapBuilder as FSTMapBuilder,
     Streamer,
 };
 use fst_levenshtein::Levenshtein;
-use fst_regex::Regex;
 use hashbrown::{HashMap, HashSet};
-use indexmap::IndexMap;
 use radix::RadixNum;
-use regex_syntax::escape as regex_escape;
-use std::collections::VecDeque;
 use std::fmt;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
-use std::iter::FromIterator;
+use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use super::generic::{
     StoreGeneric, StoreGenericActionBuilder, StoreGenericBuilder, StoreGenericPool,
 };
+use super::identifiers::StoreBucketID;
 use super::keyer::StoreKeyerHasher;
-use crate::lexer::ranges::LexerRegexRange;
 use crate::query::QueryMatchScore;
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
@@ -57,7 +51,7 @@ pub struct StoreFSTBuilder<'build> {
 }
 
 pub struct StoreFST {
-    graph: FSTSet,
+    graph: RwLock<Arc<FSTMap>>,
     target: StoreFSTKey,
     pending: StoreFSTPending,
     last_used: Arc<RwLock<SystemTime>>,
@@ -70,7 +64,7 @@ pub struct StoreFST {
 #[derive(Default)]
 pub struct StoreFSTPending {
     pop: Arc<RwLock<HashSet<Vec<u8>>>>,
-    push: Arc<RwLock<HashSet<Vec<u8>>>>,
+    push: Arc<RwLock<HashMap<Vec<u8>, u64>>>,
 }
 
 pub struct StoreFSTActionBuilder<'build> {
@@ -90,10 +84,8 @@ impl StoreFSTAction {
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct StoreFSTKey {
     collection_hash: StoreFSTAtom,
-    bucket_hash: StoreFSTAtom,
+    bucket_id: StoreFSTAtom,
 }
-
-pub struct StoreFSTMisc;
 
 #[derive(Copy, Clone)]
 enum StoreFSTPathMode {
@@ -107,14 +99,12 @@ type StoreFSTBox = Arc<StoreFST>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct StoreFSTActionConfig {
-    pub prefix_matching_enabled: bool,
     pub fuzzy_matching_enabled: bool,
 }
 
 impl Default for StoreFSTActionConfig {
     fn default() -> Self {
         Self {
-            prefix_matching_enabled: true,
             fuzzy_matching_enabled: true,
         }
     }
@@ -122,6 +112,8 @@ impl Default for StoreFSTActionConfig {
 
 const WORD_LIMIT_LENGTH: usize = 40;
 const ATOM_HASH_RADIX: usize = 16;
+const CONSOLIDATE_BATCH_SIZE: usize = 8;
+const CONSOLIDATE_WARN_MILLIS: u128 = 100;
 
 impl StoreFSTPathMode {
     fn extension(&self) -> &'static str {
@@ -164,10 +156,14 @@ impl StoreFSTPool {
         self.graph_access_lock.write().unwrap()
     }
 
-    pub fn acquire<T: AsRef<str>>(&self, collection: T, bucket: T) -> Result<StoreFSTBox, ()> {
-        let (collection_str, bucket_str) = (collection.as_ref(), bucket.as_ref());
-
-        let pool_key = StoreFSTKey::from_str(collection_str, bucket_str);
+    pub fn acquire(
+        &self,
+        collection: impl AsRef<str>,
+        bucket_id: StoreBucketID,
+    ) -> Result<StoreFSTBox, ()> {
+        let collection_str = collection.as_ref();
+        let pool_key =
+            StoreFSTKey::from_atom(StoreKeyerHasher::to_compact(collection_str), bucket_id);
 
         // Freeze acquire lock, and reference it in context
         // Notice: this prevents two graphs on the same collection to be opened at the same time.
@@ -180,11 +176,10 @@ impl StoreFSTPool {
             Self::proceed_acquire_cache("fst", collection_str, pool_key, store_fst)
         } else {
             tracing::info!(
-                "fst store not in pool for collection: {} <{:x}> / bucket: {} <{:x}>, opening it",
+                "fst store not in pool for collection: {} <{:x}> / bucket ID: {}, opening it",
                 collection_str,
                 pool_key.collection_hash,
-                bucket_str,
-                pool_key.bucket_hash
+                pool_key.bucket_id
             );
 
             // Important: we need to drop the read reference first, to avoid dead-locking \
@@ -241,42 +236,19 @@ impl StoreFSTPool {
 
     pub fn consolidate(&self, force: bool) {
         tracing::debug!("scanning for fst store pool items to consolidate");
-
-        // Notice: we do not consolidate all items at each tick, we try to even out multiple \
-        //   consolidation tasks over time. This lowers the overall HZ of the tasker system for \
-        //   certain heavy tasks, which is better to spread out consolidation steps over time over \
-        //   a large number of very active buckets.
-
-        // Acquire rebuild lock, and reference it in context
-        // Notice: this prevents two consolidate operations to be executed at the same time.
         let _rebuild = self.graph_rebuild_lock.lock().unwrap();
-
-        // Exit trap: Register is empty? Abort there.
         if self.graph_consolidate.read().unwrap().is_empty() {
             tracing::info!("no fst store pool items to consolidate in register");
-
             return;
         }
-
-        // Step 1: List keys to be consolidated
         let mut keys_consolidate: Vec<StoreFSTKey> = Vec::new();
-
         {
-            // Acquire access lock (in blocking write mode), and reference it in context
-            // Notice: this prevents store to be acquired from any context
-            let _access = self.graph_access_lock.write().unwrap();
-
             let (graph_pool_read, graph_consolidate_read) = (
                 self.graph_pool.read().unwrap(),
                 self.graph_consolidate.read().unwrap(),
             );
-
             for key in &*graph_consolidate_read {
                 if let Some(store) = graph_pool_read.get(key) {
-                    // Important: be lenient with system clock going back to a past duration, \
-                    //   since we may be running in a virtualized environment where clock is not \
-                    //   guaranteed to be monotonic. This is done to avoid poisoning associated \
-                    //   mutexes by crashing on unwrap().
                     let not_consolidated_for = store
                         .last_consolidated
                         .read()
@@ -302,7 +274,6 @@ impl StoreFSTPool {
                             key,
                             not_consolidated_for
                         );
-
                         keys_consolidate.push(*key);
                     } else {
                         tracing::debug!(
@@ -314,79 +285,54 @@ impl StoreFSTPool {
                 }
             }
         }
-
-        // Exit trap: Nothing to consolidate yet? Abort there.
         if keys_consolidate.is_empty() {
             tracing::info!("no fst store pool items need to consolidate at the moment");
-
             return;
         }
-
-        // Step 2: Clear keys to be consolidated from register
+        keys_consolidate.sort_unstable_by_key(|key| (key.collection_hash, key.bucket_id));
+        if !force {
+            keys_consolidate.truncate(CONSOLIDATE_BATCH_SIZE);
+        }
         {
-            // Acquire access lock (in blocking write mode), and reference it in context
-            // Notice: this prevents store to be acquired from any context
-            let _access = self.graph_access_lock.write().unwrap();
-
             let mut graph_consolidate_write = self.graph_consolidate.write().unwrap();
-
             for key in &keys_consolidate {
                 graph_consolidate_write.remove(key);
-
                 tracing::debug!("fst key: {} cleared from consolidate register", key);
             }
         }
-
-        // Step 3: Consolidate FSTs, one-by-one (sequential locking; this avoids global locks)
         let (mut count_moved, mut count_pushed, mut count_popped) = (0, 0, 0);
-
-        {
-            for key in &keys_consolidate {
-                {
-                    // As we may be renaming the FST file, ensure no consumer out of this is \
-                    //   trying to access the FST file as it gets processed. This also waits for \
-                    //   current consumers to finish reading the FST, and prevents any new \
-                    //   consumer from opening it while we are not done there.
-                    let _access = self.graph_access_lock.write().unwrap();
-
-                    let do_close = if let Some(store) = self.graph_pool.read().unwrap().get(key) {
-                        tracing::debug!("fst key: {} consolidate started", key);
-
-                        let consolidate_counts = self.consolidate_item(store);
-
-                        count_moved += consolidate_counts.1;
-                        count_pushed += consolidate_counts.2;
-                        count_popped += consolidate_counts.3;
-
-                        tracing::debug!("fst key: {} consolidate complete", key);
-
-                        // Should close this FST?
-                        consolidate_counts.0
-                    } else {
-                        false
-                    };
-
-                    // Nuke old opened FST?
-                    // Notice: last consolidated date will be bumped to a new date in the future \
-                    //   when a push or pop operation will be done, thus effectively scheduling \
-                    //   a consolidation in the future properly.
-                    // Notice: we remove this one early as to release write lock early
-                    if do_close {
-                        self.graph_pool.write().unwrap().remove(key);
-                    }
-                }
-
-                // Give a bit of time to other threads before continuing (a consolidate operation \
-                //   must not block all other threads until it completes); this method tells the \
-                //   thread scheduler to give a bit of priority to other threads, and get back \
-                //   to this thread's work when other threads are done. On large setups, this \
-                //   loop can starve other threads due to the locks used (unfortunately they \
-                //   are all necessary).
-                thread::yield_now();
+        for key in &keys_consolidate {
+            let _access = self.graph_access_lock.read().unwrap();
+            let store = self.graph_pool.read().unwrap().get(key).cloned();
+            let Some(store) = store else {
+                continue;
+            };
+            let started = Instant::now();
+            let consolidate_counts = self.consolidate_item(&store);
+            count_moved += consolidate_counts.1;
+            count_pushed += consolidate_counts.2;
+            count_popped += consolidate_counts.3;
+            let elapsed_millis = started.elapsed().as_millis();
+            if elapsed_millis >= CONSOLIDATE_WARN_MILLIS {
+                tracing::warn!(
+                    fst_key = %key,
+                    elapsed_ms = elapsed_millis,
+                    success = consolidate_counts.0,
+                    "slow fst consolidation finished"
+                );
+            } else {
+                tracing::info!(
+                    fst_key = %key,
+                    elapsed_ms = elapsed_millis,
+                    success = consolidate_counts.0,
+                    "fst consolidation finished"
+                );
             }
+            thread::yield_now();
         }
-
         tracing::info!(
+            remaining = self.graph_consolidate.read().unwrap().len(),
+            processed = keys_consolidate.len(),
             "done scanning for fst store pool items to consolidate (move: {}, push: {}, pop: {})",
             count_moved,
             count_pushed,
@@ -502,24 +448,26 @@ impl StoreFSTPool {
             RadixNum::from_str(collection_name, ATOM_HASH_RADIX),
             RadixNum::from_str(bucket_name, ATOM_HASH_RADIX),
         ) {
-            if let (Ok(collection_hash), Ok(bucket_hash)) =
+            if let (Ok(collection_hash), Ok(bucket_id)) =
                 (collection_radix.as_decimal(), bucket_radix.as_decimal())
             {
                 let origin_fst = StoreFSTBuilder::open(
                     collection_hash as StoreFSTAtom,
-                    bucket_hash as StoreFSTAtom,
+                    bucket_id as StoreFSTAtom,
                     &self.fst_store_config,
                 )
                 .map_err(|_| io::Error::other("graph open failure"))?;
 
                 let mut origin_fst_stream = origin_fst.stream();
 
-                while let Some(word) = origin_fst_stream.next() {
+                while let Some((word, frequency)) = origin_fst_stream.next() {
                     count_words += 1;
 
-                    // Write word, and append a new line
-                    backup_fst_writer.write_all(word)?;
-                    backup_fst_writer.write_all(b"\n")?;
+                    writeln!(
+                        backup_fst_writer,
+                        "{frequency}\t{}",
+                        String::from_utf8_lossy(word)
+                    )?;
                 }
 
                 tracing::info!(
@@ -559,17 +507,17 @@ impl StoreFSTPool {
             RadixNum::from_str(collection_name, ATOM_HASH_RADIX),
             RadixNum::from_str(bucket_name, ATOM_HASH_RADIX),
         ) {
-            if let (Ok(collection_hash), Ok(bucket_hash)) =
+            if let (Ok(collection_hash), Ok(bucket_id)) =
                 (collection_radix.as_decimal(), bucket_radix.as_decimal())
             {
                 // Force a FST store close
-                self.close(collection_hash as StoreFSTAtom, bucket_hash as StoreFSTAtom);
+                self.close(collection_hash as StoreFSTAtom, bucket_id as StoreFSTAtom);
 
                 // Generate path to FST
                 let fst_path = self.fst_store_config.path(
                     StoreFSTPathMode::Permanent,
                     collection_hash as StoreFSTAtom,
-                    Some(bucket_hash as StoreFSTAtom),
+                    Some(bucket_id as StoreFSTAtom),
                 );
 
                 // Remove existing FST data?
@@ -581,14 +529,20 @@ impl StoreFSTPool {
                 let fst_writer = BufWriter::new(File::create(&fst_path)?);
                 let fst_backup_reader = BufReader::new(File::open(&origin_path)?);
 
-                let mut fst_builder = FSTSetBuilder::new(fst_writer)
+                let mut fst_builder = FSTMapBuilder::new(fst_writer)
                     .map_err(|_| io::Error::other("graph restore builder failure"))?;
 
-                for word in fst_backup_reader.lines() {
-                    let word = word?;
+                for entry in fst_backup_reader.lines() {
+                    let entry = entry?;
+                    let (frequency, word) = entry
+                        .split_once('\t')
+                        .ok_or_else(|| io::Error::other("invalid graph backup entry"))?;
+                    let frequency = frequency
+                        .parse::<u64>()
+                        .map_err(|_| io::Error::other("invalid graph backup frequency"))?;
 
                     fst_builder
-                        .insert(word)
+                        .insert(word, frequency)
                         .map_err(|_| io::Error::other("graph restore word insert failure"))?;
                 }
 
@@ -610,245 +564,143 @@ impl StoreFSTPool {
     }
 
     fn consolidate_item(&self, store: &StoreFSTBox) -> (bool, usize, usize, usize) {
-        let (mut should_close, mut count_moved, mut count_pushed, mut count_popped) =
-            (false, 0, 0, 0);
-
-        // Acquire write references to pending sets
-        let (mut pending_push_write, mut pending_pop_write) = (
-            store.pending.push.write().unwrap(),
-            store.pending.pop.write().unwrap(),
+        let (pending_push, pending_pop) = {
+            let push = store.pending.push.read().unwrap();
+            let pop = store.pending.pop.read().unwrap();
+            (push.clone(), pop.clone())
+        };
+        if pending_push.is_empty() && pending_pop.is_empty() {
+            return (false, 0, 0, 0);
+        }
+        let old_fst = Arc::clone(&store.graph.read().unwrap());
+        let mut candidates = HashMap::<Vec<u8>, u64>::with_capacity(
+            old_fst.len().saturating_add(pending_push.len()),
         );
+        let mut old_stream = old_fst.stream();
+        while let Some((word, frequency)) = old_stream.next() {
+            candidates.insert(word.to_vec(), frequency);
+        }
+        let old_count = candidates.len();
 
-        // Do consolidate? (any change committed)
-        // Notice: if both pending sets are empty do not consolidate as there may have been a \
-        //   push then a pop of this push, nulling out any committed change.
-        if !(pending_push_write.is_empty() && pending_pop_write.is_empty()) {
-            // Read old FST (or default to empty FST)
-            if let Ok(old_fst) = StoreFSTBuilder::open(
-                store.target.collection_hash,
-                store.target.bucket_hash,
-                &self.fst_store_config,
-            ) {
-                // Initialize the new FST (temporary)
-                let bucket_tmp_path = self.fst_store_config.path(
-                    StoreFSTPathMode::Temporary,
-                    store.target.collection_hash,
-                    Some(store.target.bucket_hash),
-                );
-
-                let bucket_tmp_path_parent = bucket_tmp_path.parent().unwrap();
-
-                if fs::create_dir_all(&bucket_tmp_path_parent).is_ok() {
-                    // Erase any previously-existing temporary FST (eg. process stopped while \
-                    //   writing the temporary FST); there is no guarantee this succeeds.
-                    fs::remove_file(&bucket_tmp_path).ok();
-
-                    if let Ok(tmp_fst_file) = File::create(&bucket_tmp_path) {
-                        let tmp_fst_writer = BufWriter::new(tmp_fst_file);
-
-                        // Create a builder that can be used to insert new key-value pairs.
-                        if let Ok(mut tmp_fst_builder) = FSTSetBuilder::new(tmp_fst_writer) {
-                            // Convert push keys to an ordered vector
-                            // Notice: we must go from a Vec to a VecDeque as to sort values, \
-                            //   which is a requirement for FST insertions.
-                            let mut ordered_push_vec: Vec<&[u8]> =
-                                Vec::from_iter(pending_push_write.iter().map(|item| item.as_ref()));
-
-                            ordered_push_vec.sort();
-
-                            let mut ordered_push: VecDeque<&[u8]> =
-                                VecDeque::from_iter(ordered_push_vec);
-
-                            // Append words not in pop list to new FST (ie. old words minus pop \
-                            //   words)
-                            let mut old_fst_stream = old_fst.stream();
-
-                            'old: while let Some(old_fst_word) = old_fst_stream.next() {
-                                // Append new words from front? (ie. push words)
-                                // Notice: as an FST is ordered, inserts would fail if they are \
-                                //   committed out-of-order. Thus, the only way to check for \
-                                //   order is there.
-                                // Notice: a quick check is done before engaging in the loop, to \
-                                //   prevent any de-optimized jump instruction, as we may call \
-                                //   this code block a lot on large FSTs, and the loop should not \
-                                //   be engaged that often on stabilized FSTs (ie. mature FSTs).
-                                if let Some(push_first_ref) = ordered_push.front() {
-                                    // Engage the loop?
-                                    if *push_first_ref <= old_fst_word {
-                                        while let Some(push_front_ref) = ordered_push.front() {
-                                            if *push_front_ref <= old_fst_word {
-                                                // Pop front item and consume it
-                                                // Notice: as we validated previously that there \
-                                                //   is a front value, this unwrap is safe.
-                                                let push_front = ordered_push.pop_front().unwrap();
-
-                                                if StoreFSTMisc::check_over_limits(
-                                                    tmp_fst_builder.bytes_written() as usize,
-                                                    count_pushed + count_moved,
-                                                    &self.fst_store_config.graph,
-                                                ) {
-                                                    // FST cannot accept more items (limits reached)
-                                                    tracing::warn!(
-                                                        "limit reached on new from old in fst"
-                                                    );
-
-                                                    // Important: stop the main loop (limit reached)
-                                                    break 'old;
-                                                }
-
-                                                if let Err(err) = tmp_fst_builder.insert(push_front)
-                                                {
-                                                    // Could not insert word in FST
-                                                    tracing::error!(
-                                                        "failed inserting new from old in fst: {}",
-                                                        err
-                                                    );
-                                                } else {
-                                                    // Word inserted in FST
-                                                    count_pushed += 1;
-                                                }
-
-                                                // Continue scanning next word (may also come \
-                                                //   before this FST word in order)
-                                                continue;
-                                            }
-
-                                            // Important: stop loop on next front item (always \
-                                            //   the same)
-                                            break;
-                                        }
-                                    }
-                                }
-
-                                // Restore old word (if not popped)
-                                if !pending_pop_write.contains(old_fst_word) {
-                                    if StoreFSTMisc::check_over_limits(
-                                        tmp_fst_builder.bytes_written() as usize,
-                                        count_pushed + count_moved,
-                                        &self.fst_store_config.graph,
-                                    ) {
-                                        // FST cannot accept more items (limits reached)
-                                        tracing::warn!("limit reached on old word in fst");
-
-                                        // Important: stop the main loop (limit reached)
-                                        break 'old;
-                                    }
-
-                                    if let Err(err) = tmp_fst_builder.insert(old_fst_word) {
-                                        // Could not move word to FST
-                                        tracing::error!(
-                                            "failed inserting old word in fst: {}",
-                                            err
-                                        );
-                                    } else {
-                                        // Word moved to FST
-                                        count_moved += 1;
-                                    }
-                                } else {
-                                    count_popped += 1;
-                                }
-                            }
-
-                            // Complete FST with last pushed items
-                            // Notice: this is necessary if the FST was empty, or if we have push \
-                            //   items that come after the last ordered word of the FST.
-                            while let Some(push_front) = ordered_push.pop_front() {
-                                if StoreFSTMisc::check_over_limits(
-                                    tmp_fst_builder.bytes_written() as usize,
-                                    count_pushed + count_moved,
-                                    &self.fst_store_config.graph,
-                                ) {
-                                    // FST cannot accept more items (limits reached)
-                                    tracing::warn!(
-                                        "limit reached on new word from complete in fst"
-                                    );
-
-                                    // Important: stop the main loop (limit reached)
-                                    break;
-                                }
-
-                                if let Err(err) = tmp_fst_builder.insert(push_front) {
-                                    // Could not insert word in FST
-                                    tracing::error!(
-                                        "failed inserting new word from complete in fst: {}",
-                                        err
-                                    );
-                                } else {
-                                    // Word inserted in FST
-                                    count_pushed += 1;
-                                }
-                            }
-
-                            // Finish building new FST
-                            if tmp_fst_builder.finish().is_ok() {
-                                // Should close open store reference to old FST
-                                should_close = true;
-
-                                // Replace old FST with new FST (this nukes the old FST)
-                                // Notice: there is no need to re-open the new FST, as it will be \
-                                //   automatically opened on its next access.
-                                let bucket_final_path = self.fst_store_config.path(
-                                    StoreFSTPathMode::Permanent,
-                                    store.target.collection_hash,
-                                    Some(store.target.bucket_hash),
-                                );
-
-                                // Proceed temporary FST to final FST path rename
-                                if fs::rename(&bucket_tmp_path, &bucket_final_path).is_ok() {
-                                    tracing::info!(
-                                        "done consolidate fst at path: {:?}",
-                                        bucket_final_path
-                                    );
-                                } else {
-                                    tracing::error!(
-                                        "error consolidating fst at path: {:?}",
-                                        bucket_final_path
-                                    );
-                                }
-                            } else {
-                                tracing::error!(
-                                    "error finishing building temporary fst at path: {:?}",
-                                    bucket_tmp_path
-                                );
-                            }
-                        } else {
-                            tracing::error!(
-                                "error starting building temporary fst at path: {:?}",
-                                bucket_tmp_path
-                            );
-                        }
-                    } else {
-                        tracing::error!(
-                            "error initializing temporary fst at path: {:?}",
-                            bucket_tmp_path
-                        );
-                    }
-                } else {
-                    tracing::error!(
-                        "error initializing temporary fst directory at path: {:?}",
-                        bucket_tmp_path_parent
-                    );
-                }
-            } else {
-                tracing::error!("error opening old fst");
+        let mut count_popped = 0;
+        for word in pending_pop.iter() {
+            if candidates.remove(word).is_some() {
+                count_popped += 1;
             }
-
-            // Reset all pending sets
-            *pending_push_write = HashSet::new();
-            *pending_pop_write = HashSet::new();
         }
 
-        (should_close, count_moved, count_pushed, count_popped)
+        let mut count_pushed = 0;
+        for (word, frequency) in pending_push.iter() {
+            match candidates.entry(word.clone()) {
+                hashbrown::hash_map::Entry::Occupied(mut entry) => {
+                    *entry.get_mut() = *frequency;
+                }
+                hashbrown::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(*frequency);
+                    count_pushed += 1;
+                }
+            }
+        }
+
+        let mut hottest = candidates.into_iter().collect::<Vec<_>>();
+        hottest.sort_unstable_by(
+            |(left_word, left_frequency), (right_word, right_frequency)| {
+                right_frequency
+                    .cmp(left_frequency)
+                    .then_with(|| left_word.cmp(right_word))
+            },
+        );
+        hottest.truncate(self.fst_store_config.graph.max_words);
+
+        // Keep the hottest terms within a conservative serialized-size budget.
+        let max_bytes = self.fst_store_config.graph.max_size.saturating_mul(1024);
+        let mut estimated_bytes = 0usize;
+        hottest.retain(|(word, _)| {
+            let item_size = word.len().saturating_add(size_of::<u64>());
+            if estimated_bytes.saturating_add(item_size) > max_bytes {
+                false
+            } else {
+                estimated_bytes += item_size;
+                true
+            }
+        });
+        hottest.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+
+        let bucket_tmp_path = self.fst_store_config.path(
+            StoreFSTPathMode::Temporary,
+            store.target.collection_hash,
+            Some(store.target.bucket_id),
+        );
+        let Some(bucket_tmp_parent) = bucket_tmp_path.parent() else {
+            store.should_consolidate();
+            return (false, 0, 0, 0);
+        };
+
+        if fs::create_dir_all(bucket_tmp_parent).is_err() {
+            store.should_consolidate();
+            return (false, 0, 0, 0);
+        }
+        fs::remove_file(&bucket_tmp_path).ok();
+        let mut builder = FSTMapBuilder::memory();
+
+        for (word, frequency) in &hottest {
+            if let Err(err) = builder.insert(word, *frequency) {
+                tracing::error!(?err, "failed inserting adaptive typo term into fst");
+                store.should_consolidate();
+                return (false, 0, 0, 0);
+            }
+        }
+        let Ok(encoded) = builder.into_inner() else {
+            store.should_consolidate();
+            return (false, 0, 0, 0);
+        };
+        let Ok(new_fst) = FSTMap::from_bytes(encoded.clone()) else {
+            store.should_consolidate();
+            return (false, 0, 0, 0);
+        };
+        if fs::write(&bucket_tmp_path, encoded).is_err() {
+            store.should_consolidate();
+            return (false, 0, 0, 0);
+        }
+
+        let bucket_final_path = self.fst_store_config.path(
+            StoreFSTPathMode::Permanent,
+            store.target.collection_hash,
+            Some(store.target.bucket_id),
+        );
+        if fs::rename(&bucket_tmp_path, &bucket_final_path).is_err() {
+            store.should_consolidate();
+            return (false, 0, 0, 0);
+        }
+        *store.graph.write().unwrap() = Arc::new(new_fst);
+        let pending_remaining = {
+            let mut current_push = store.pending.push.write().unwrap();
+            let mut current_pop = store.pending.pop.write().unwrap();
+            current_push.retain(|word, frequency| pending_push.get(word) != Some(frequency));
+            current_pop.retain(|word| !pending_pop.contains(word));
+            !current_push.is_empty() || !current_pop.is_empty()
+        };
+        if pending_remaining {
+            store.should_consolidate();
+        }
+        tracing::info!(
+            terms = hottest.len(),
+            path = ?bucket_final_path,
+            "consolidated adaptive typo lexicon"
+        );
+
+        let count_moved = hottest.len().saturating_sub(count_pushed);
+        (true, count_moved.min(old_count), count_pushed, count_popped)
     }
 
-    fn close(&self, collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) {
+    fn close(&self, collection_hash: StoreFSTAtom, bucket_id: StoreFSTAtom) {
         tracing::debug!(
             "closing finite-state transducer graph for collection: <{:x}> and bucket: <{:x}>",
             collection_hash,
-            bucket_hash
+            bucket_id
         );
 
-        let bucket_target = StoreFSTKey::from_atom(collection_hash, bucket_hash);
+        let bucket_target = StoreFSTKey::from_atom(collection_hash, bucket_id);
 
         self.graph_pool.write().unwrap().remove(&bucket_target);
         self.graph_consolidate
@@ -863,19 +715,19 @@ impl<'build> StoreGenericPool<StoreFSTKey, StoreFST, StoreFSTBuilder<'build>> fo
 impl<'build> StoreFSTBuilder<'build> {
     fn open(
         collection_hash: StoreFSTAtom,
-        bucket_hash: StoreFSTAtom,
+        bucket_id: StoreFSTAtom,
         fst_store_config: &crate::config::ConfigStoreFST,
-    ) -> Result<FSTSet, FSTError> {
+    ) -> Result<FSTMap, FSTError> {
         tracing::debug!(
             "opening finite-state transducer graph for collection: <{:x}> and bucket: <{:x}>",
             collection_hash,
-            bucket_hash
+            bucket_id
         );
 
         let collection_bucket_path = fst_store_config.path(
             StoreFSTPathMode::Permanent,
             collection_hash,
-            Some(bucket_hash),
+            Some(bucket_id),
         );
 
         if collection_bucket_path.exists() {
@@ -883,13 +735,13 @@ impl<'build> StoreFSTBuilder<'build> {
             // Notice: this is unsafe, as loaded memory is a memory-mapped file, that cannot be \
             //   guaranteed not to be muted while we own a read handle to it. Though, we use \
             //   higher-level locking mechanisms on all callers of this method, so we are safe.
-            unsafe { FSTSet::from_path(collection_bucket_path) }
+            unsafe { FSTMap::from_path(collection_bucket_path) }
         } else {
             // FST does not exist on disk, generate an empty FST for now; until a consolidation \
             //   task occurs and populates the on-disk-FST.
-            let empty_iter: Vec<&str> = Vec::new();
+            let empty_iter: Vec<(&str, u64)> = Vec::new();
 
-            FSTSet::from_iter(empty_iter)
+            FSTMap::from_iter(empty_iter)
         }
     }
 }
@@ -899,12 +751,12 @@ impl crate::config::ConfigStoreFST {
         &self,
         mode: StoreFSTPathMode,
         collection_hash: StoreFSTAtom,
-        bucket_hash: Option<StoreFSTAtom>,
+        bucket_id: Option<StoreFSTAtom>,
     ) -> PathBuf {
         let mut final_path = self.path.join(format!("{:x}", collection_hash));
 
-        if let Some(bucket_hash) = bucket_hash {
-            final_path = final_path.join(format!("{:x}{}", bucket_hash, mode.extension()));
+        if let Some(bucket_id) = bucket_id {
+            final_path = final_path.join(format!("{:x}{}", bucket_id, mode.extension()));
         }
 
         final_path
@@ -915,14 +767,14 @@ impl<'build> StoreGenericBuilder<StoreFSTKey, StoreFST> for StoreFSTBuilder<'bui
     fn build(&self, pool_key: StoreFSTKey) -> Result<StoreFST, ()> {
         Self::open(
             pool_key.collection_hash,
-            pool_key.bucket_hash,
+            pool_key.bucket_id,
             self.fst_store_config,
         )
         .map(|graph| {
             let now = SystemTime::now();
 
             StoreFST {
-                graph,
+                graph: RwLock::new(Arc::new(graph)),
                 target: pool_key,
                 pending: StoreFSTPending::default(),
                 last_used: Arc::new(RwLock::new(now)),
@@ -939,59 +791,31 @@ impl<'build> StoreGenericBuilder<StoreFSTKey, StoreFST> for StoreFSTBuilder<'bui
 
 impl StoreFST {
     pub fn cardinality(&self) -> usize {
-        self.graph.len()
+        self.graph.read().unwrap().len()
     }
 
-    pub fn as_stream(&self) -> FSTStream<'_, AlwaysMatch> {
-        self.graph.into_stream()
+    pub fn list_words(&self, limit: usize, offset: usize) -> Vec<String> {
+        let graph = self.graph.read().unwrap();
+        FSTStreamIterator(graph.into_stream())
+            .skip(offset)
+            .take(limit)
+            .collect()
     }
 
-    pub fn lookup_begins(&self, word: &str) -> Result<FSTStream<'_, Regex>, ()> {
-        // Notice: this regex maps over an unicode range, for speed reasons at scale. \
-        //   We found out that the 'match any' syntax ('.*') was super-slow. Using the restrictive \
-        //   syntax below divided the cost of eg. a search query by 2. The regex below has been \
-        //   found out to be nearly zero-cost to compile and execute, for whatever reason.
-        // Regex format: '{escaped_word}([{unicode_range}]*)'
-        let mut regex_str = regex_escape(word);
-
-        regex_str.push('(');
-
-        let write_result = LexerRegexRange::from(word)
-            .unwrap_or_default()
-            .write_to(&mut regex_str);
-
-        regex_str.push_str("*)");
-
-        // Regex write failed? (this should not happen)
-        if let Err(err) = write_result {
-            tracing::error!(
-                "could not lookup word in fst via 'begins': {} because regex write failed: {}",
-                word,
-                err
-            );
-
-            return Err(());
+    pub fn lookup_begins(&self, word: &str) -> Result<Vec<(String, u64)>, ()> {
+        let upper_bound = Self::prefix_upper_bound(word.as_bytes()).ok_or(())?;
+        let graph = self.graph.read().unwrap();
+        let mut stream = graph.range().ge(word).lt(upper_bound).into_stream();
+        let mut candidates = Vec::new();
+        while let Some((word, frequency)) = stream.next() {
+            if let Ok(word) = str::from_utf8(word) {
+                candidates.push((word.to_owned(), frequency));
+            }
         }
-
-        // Proceed word lookup
-        tracing::debug!(
-            "looking-up word in fst via 'begins': {} with regex: {}",
-            word,
-            regex_str
-        );
-
-        if let Ok(regex) = Regex::new(&regex_str) {
-            Ok(self.graph.search(regex).into_stream())
-        } else {
-            Err(())
-        }
+        Ok(candidates)
     }
 
-    pub fn lookup_typos(
-        &self,
-        word: &str,
-        typo_factor: u32,
-    ) -> Result<FSTStream<'_, Levenshtein>, ()> {
+    pub fn lookup_typos(&self, word: &str, typo_factor: u32) -> Result<Vec<(String, u64)>, ()> {
         tracing::debug!(
             "looking-up word in fst via 'typos': {} with typo factor: {}",
             word,
@@ -999,7 +823,15 @@ impl StoreFST {
         );
 
         if let Ok(fuzzy) = Levenshtein::new(word, typo_factor) {
-            Ok(self.graph.search(fuzzy).into_stream())
+            let graph = self.graph.read().unwrap();
+            let mut stream = graph.search(fuzzy).into_stream();
+            let mut candidates = Vec::new();
+            while let Some((word, frequency)) = stream.next() {
+                if let Ok(word) = str::from_utf8(word) {
+                    candidates.push((word.to_owned(), frequency));
+                }
+            }
+            Ok(candidates)
         } else {
             Err(())
         }
@@ -1033,6 +865,20 @@ impl StoreFST {
             );
         }
     }
+
+    fn prefix_upper_bound(prefix: &[u8]) -> Option<Vec<u8>> {
+        let mut upper_bound = prefix.to_vec();
+
+        for index in (0..upper_bound.len()).rev() {
+            if upper_bound[index] != u8::MAX {
+                upper_bound[index] += 1;
+                upper_bound.truncate(index + 1);
+                return Some(upper_bound);
+            }
+        }
+
+        None
+    }
 }
 
 impl StoreGeneric for StoreFST {
@@ -1055,6 +901,26 @@ impl StoreFSTPool {
     pub fn erase<T: AsRef<str>>(&self, collection: T, bucket: Option<T>) -> Result<u32, ()> {
         self.dispatch_erase("fst", collection, bucket)
     }
+
+    pub fn erase_bucket_id(
+        &self,
+        collection: impl AsRef<str>,
+        bucket_id: StoreBucketID,
+    ) -> Result<u32, ()> {
+        let collection_hash = StoreKeyerHasher::to_compact(collection.as_ref());
+        let bucket_path = self.fst_store_config.path(
+            StoreFSTPathMode::Permanent,
+            collection_hash,
+            Some(bucket_id),
+        );
+        self.close(collection_hash, bucket_id);
+
+        if bucket_path.exists() {
+            fs::remove_file(bucket_path).map(|_| 1).or(Err(()))
+        } else {
+            Ok(0)
+        }
+    }
 }
 
 impl StoreGenericActionBuilder for StoreFSTPool {
@@ -1074,7 +940,7 @@ impl StoreGenericActionBuilder for StoreFSTPool {
 
             for target_key in graph_pool_read.keys() {
                 if target_key.collection_hash == collection_atom {
-                    bucket_atoms.push(target_key.bucket_hash);
+                    bucket_atoms.push(target_key.bucket_id);
                 }
             }
         }
@@ -1188,10 +1054,18 @@ impl StoreGenericActionBuilder for StoreFSTPool {
 }
 
 impl StoreFSTAction {
-    pub fn push_word(&self, word: &str, fst_store_config: &crate::config::ConfigStoreFST) -> bool {
+    pub fn push_word(
+        &self,
+        word: &str,
+        frequency: u32,
+        fst_store_config: &crate::config::ConfigStoreFST,
+    ) -> bool {
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(word) {
             return false;
+        }
+        if frequency < fst_store_config.graph.min_frequency {
+            return self.pop_word(word);
         }
 
         let word_bytes = word.as_bytes();
@@ -1201,33 +1075,28 @@ impl StoreFSTAction {
             self.store.pending.pop.write().unwrap().remove(word_bytes);
         }
 
-        // Add word in 'push' set? (only if word is not in FST)
-        // Notice: also check whether FST is over limits or not from there, to avoid stacking \
-        //   words that could never be consolidated to final FST anyway.
-        let graph_fst = self.store.graph.as_fst();
+        let score = Self::hot_score(frequency);
+        let stored_score = self.store.graph.read().unwrap().get(word).unwrap_or(0);
+        let effective_score = self
+            .store
+            .pending
+            .push
+            .read()
+            .unwrap()
+            .get(word_bytes)
+            .copied()
+            .unwrap_or(stored_score);
 
-        if !self.store.graph.contains(&word)
-            && !self.store.pending.push.read().unwrap().contains(word_bytes)
-            && self.store.pending.push.read().unwrap().len() < fst_store_config.graph.max_words
-            && !StoreFSTMisc::check_over_limits(
-                graph_fst.size(),
-                graph_fst.len(),
-                &fst_store_config.graph,
-            )
-        {
+        if score != effective_score {
             self.store
                 .pending
                 .push
                 .write()
                 .unwrap()
-                .insert(word_bytes.to_vec());
-
+                .insert(word_bytes.to_vec(), score);
             self.store.should_consolidate();
-
-            // Pushed
             true
         } else {
-            // Not pushed
             false
         }
     }
@@ -1241,12 +1110,27 @@ impl StoreFSTAction {
         let word_bytes = word.as_bytes();
 
         // Nuke word from 'push' set? (void a previous un-consolidated commit)
-        if self.store.pending.push.read().unwrap().contains(word_bytes) {
-            self.store.pending.push.write().unwrap().remove(word_bytes);
-        }
+        let removed_pending_push = if self
+            .store
+            .pending
+            .push
+            .read()
+            .unwrap()
+            .contains_key(word_bytes)
+        {
+            self.store
+                .pending
+                .push
+                .write()
+                .unwrap()
+                .remove(word_bytes)
+                .is_some()
+        } else {
+            false
+        };
 
-        // Add word in 'pop' set? (only if word is in FST)
-        if self.store.graph.contains(word_bytes)
+        // Keep an explicit pop when canceling a pending push, as it may be in an in-flight rebuild.
+        if (removed_pending_push || self.store.graph.read().unwrap().contains_key(word_bytes))
             && !self.store.pending.pop.read().unwrap().contains(word_bytes)
         {
             self.store
@@ -1266,108 +1150,21 @@ impl StoreFSTAction {
         }
     }
 
-    pub fn suggest_words(
-        &self,
-        from_word: &str,
-        // Length before stemming. Useful to apply fuzzy matching rules based
-        // on user input.
-        original_word_len: usize,
-        limit: usize,
-        max_typo_factor: Option<u32>,
-    ) -> Option<
-        impl ExactSizeIterator<Item = (String, QueryMatchScore)> + DoubleEndedIterator + use<>,
-    > {
-        // Word over limit? (abort, the FST does not perform well over large words)
-        if Self::word_over_limit(from_word) {
-            return None;
-        }
-
-        let mut found_words: IndexMap<String, QueryMatchScore> = IndexMap::with_capacity(limit);
-
-        if self.config().prefix_matching_enabled {
-            // Try to complete provided word
-            if let Some(stream) = self.lookup_begins(from_word, original_word_len) {
-                for (word, score) in stream {
-                    if found_words.contains_key(&word) {
-                        continue;
-                    }
-
-                    found_words.insert(word, score);
-
-                    // Requested limit reached? Stop there.
-                    if found_words.len() >= limit {
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Try to fuzzy-suggest other words? (eg. correct typos)
-        if self.config().fuzzy_matching_enabled && found_words.len() < limit {
-            // Allow more typos in word as the word gets longer, up to a maximum limit
-            let max_typo_factor = max_typo_factor.unwrap_or(typo_factor(original_word_len));
-            let mut typo_factor = 1u32;
-
-            // TODO: Rework the Levenshtein query feature to avoid repeating
-            //   the same query over and over again. Maybe try to see if
-            //   `fst_levenshtein` can return distances in its response.
-            while found_words.len() < limit && typo_factor <= max_typo_factor {
-                let Some(stream) = self.lookup_typos(from_word, typo_factor) else {
-                    break;
-                };
-
-                for (word, score) in stream {
-                    if found_words.contains_key(&word) {
-                        continue;
-                    }
-
-                    found_words.insert(word, score);
-
-                    // Requested limit reached? Stop there.
-                    if found_words.len() >= limit {
-                        break;
-                    }
-                }
-
-                typo_factor += 1;
-            }
-        }
-
-        if !found_words.is_empty() {
-            Some(found_words.into_iter())
-        } else {
-            None
-        }
-    }
-
     pub fn lookup_begins(
         &self,
         from_word: &str,
-        // Length before stemming. Useful to calculate correct score.
         original_word_len: usize,
     ) -> Option<impl Iterator<Item = (String, QueryMatchScore)>> {
-        // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(from_word) {
             return None;
         }
 
-        if !self.config().prefix_matching_enabled {
-            return None;
-        }
-
-        let Ok(stream) = self.store.lookup_begins(from_word) else {
+        let Ok(candidates) = self.store.lookup_begins(from_word) else {
             return None;
         };
 
-        tracing::debug!(
-            word = ?from_word,
-            "looking up for word in 'begins' fst stream"
-        );
-
-        Some(FSTStreamIterator(stream).map(move |word| {
-            // WARN: Calculating distance to original word length might
-            //   yield weird results when combines with stemming.
-            let distance: usize = original_word_len.abs_diff(word.len());
+        Some(candidates.into_iter().map(move |(word, _)| {
+            let distance = original_word_len.abs_diff(word.len());
             let score = u16::try_from(distance).unwrap_or(u16::MAX);
             (word, score)
         }))
@@ -1382,7 +1179,7 @@ impl StoreFSTAction {
             return None;
         }
 
-        let Ok(stream) = self.store.lookup_typos(from_word, typo_factor) else {
+        let Ok(mut candidates) = self.store.lookup_typos(from_word, typo_factor) else {
             return None;
         };
 
@@ -1397,24 +1194,19 @@ impl StoreFSTAction {
         //   values. As explained in previous TODO, we should try
         //   to get the real distance back from `fst_levenshtein`.
         let score = u16::try_from(typo_factor).unwrap_or(u16::MAX);
+        candidates.sort_unstable_by(
+            |(left_word, left_frequency), (right_word, right_frequency)| {
+                right_frequency
+                    .cmp(left_frequency)
+                    .then_with(|| left_word.cmp(right_word))
+            },
+        );
 
-        Some(FSTStreamIterator(stream).map(move |word| (word, score)))
+        Some(candidates.into_iter().map(move |(word, _)| (word, score)))
     }
 
     pub fn list_words(&self, limit: usize, offset: usize) -> Result<Vec<String>, ()> {
-        let stream = self.store.as_stream();
-
-        // Enumerate words from FST stream
-        match stream
-            .into_strs()
-            .map(|words| words.into_iter().skip(offset).take(limit).collect())
-        {
-            Err(err) => {
-                tracing::debug!("conversion of stream failed: {}", err);
-                Err(())
-            }
-            Ok(words) => Ok(words),
-        }
+        Ok(self.store.list_words(limit, offset))
     }
 
     pub fn count_words(&self) -> usize {
@@ -1430,6 +1222,14 @@ impl StoreFSTAction {
             false
         }
     }
+
+    fn hot_score(frequency: u32) -> u64 {
+        let recency = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs() as u32)
+            .unwrap_or(0);
+        (u64::from(frequency) << 32) | u64::from(recency)
+    }
 }
 
 /// Allow more typos in word as the word gets longer, up to a maximum limit.
@@ -1442,112 +1242,32 @@ pub(crate) fn typo_factor(word_len: usize) -> u32 {
     }
 }
 
-impl StoreFSTMisc {
-    pub fn count_collection_buckets(
-        collection: impl AsRef<str>,
-        fst_store_config: &crate::config::ConfigStoreFST,
-    ) -> Result<usize, ()> {
-        let mut count = 0;
-
-        let path_mode = StoreFSTPathMode::Permanent;
-
-        let collection_atom = StoreKeyerHasher::to_compact(collection.as_ref());
-        let collection_path = fst_store_config.path(path_mode, collection_atom, None);
-
-        if collection_path.exists() {
-            // Scan collection directory for contained buckets (count them)
-            if let Ok(entries) = fs::read_dir(&collection_path) {
-                let fst_extension = path_mode.extension();
-                let fst_extension_len = fst_extension.len();
-
-                for entry in entries.flatten() {
-                    if let Some(entry_name) = entry.file_name().to_str() {
-                        let entry_name_len = entry_name.len();
-
-                        // FST file found? This is a bucket.
-                        if entry_name_len > fst_extension_len && entry_name.ends_with(fst_extension)
-                        {
-                            count += 1;
-                        }
-                    }
-                }
-            } else {
-                tracing::error!("failed reading directory for count: {:?}", collection_path);
-
-                return Err(());
-            }
-        }
-
-        Ok(count)
-    }
-
-    fn check_over_limits(
-        bytes_count: usize,
-        words_count: usize,
-        fst_graph_config: &crate::config::ConfigStoreFSTGraph,
-    ) -> bool {
-        // Over bytes limit?
-        let max_size = fst_graph_config.max_size * 1024;
-
-        if bytes_count >= max_size {
-            tracing::info!(
-                "fst has exceeded maximum allowed bytes: {} over limit: {}",
-                bytes_count,
-                max_size
-            );
-
-            return true;
-        }
-
-        // Over words limit?
-        if words_count >= fst_graph_config.max_words {
-            tracing::info!(
-                "fst has exceeded maximum allowed words: {} over limit: {}",
-                words_count,
-                fst_graph_config.max_words
-            );
-
-            return true;
-        }
-
-        // Not over limit
-        false
-    }
-}
-
 impl StoreFSTKey {
-    pub fn from_atom(collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) -> StoreFSTKey {
+    pub fn from_atom(collection_hash: StoreFSTAtom, bucket_id: StoreFSTAtom) -> StoreFSTKey {
         StoreFSTKey {
             collection_hash,
-            bucket_hash,
-        }
-    }
-
-    pub fn from_str(collection_str: &str, bucket_str: &str) -> StoreFSTKey {
-        StoreFSTKey {
-            collection_hash: StoreKeyerHasher::to_compact(collection_str),
-            bucket_hash: StoreKeyerHasher::to_compact(bucket_str),
+            bucket_id,
         }
     }
 }
 
 impl fmt::Display for StoreFSTKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<{:x}>/<{:x}>", self.collection_hash, self.bucket_hash)
+        write!(f, "<{:x}>/<{:x}>", self.collection_hash, self.bucket_id)
     }
 }
 
 // MARK: - Helpers
 
 #[repr(transparent)]
-struct FSTStreamIterator<'a, A: Automaton>(fst::set::Stream<'a, A>);
+struct FSTStreamIterator<'a, A: Automaton>(fst::map::Stream<'a, A>);
 
 impl<'a, A: Automaton> Iterator for FSTStreamIterator<'a, A> {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.0.next() {
-            Some(bytes) => match str::from_utf8(bytes) {
+            Some((bytes, _frequency)) => match str::from_utf8(bytes) {
                 Ok(str) => Some(str.to_owned()),
                 Err(_) => None,
             },
@@ -1561,12 +1281,15 @@ impl<'a, A: Automaton> Iterator for FSTStreamIterator<'a, A> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static TEST_STORE_ID: AtomicUsize = AtomicUsize::new(0);
 
     #[test]
     fn it_acquires_graph() {
         let fst_pool = test_fst_pool();
 
-        assert!(fst_pool.acquire("c:test:1", "b:test:1").is_ok());
+        assert!(fst_pool.acquire("c:test:1", 1).is_ok());
     }
 
     #[test]
@@ -1580,9 +1303,41 @@ mod tests {
     fn it_proceeds_primitives() {
         let fst_pool = test_fst_pool();
 
-        let store = fst_pool.acquire("c:test:2", "b:test:2").unwrap();
+        let store = fst_pool.acquire("c:test:2", 2).unwrap();
 
         assert!(store.lookup_typos("valerien", 1).is_ok());
+    }
+
+    #[test]
+    fn it_retains_frequent_typo_terms() {
+        let mut config = test_fst_store_config_value();
+        config.graph.max_words = 2;
+        config.graph.min_frequency = 2;
+        let config = Arc::new(config);
+        let fst_pool = StoreFSTPool::new(Arc::clone(&config), Default::default());
+        let store = fst_pool.acquire("c:test:hot", 1).unwrap();
+        let action = StoreFSTActionBuilder::access(store);
+
+        assert!(!action.push_word("rare", 1, &config));
+        assert!(action.push_word("transient", 2, &config));
+        assert!(action.pop_word("transient"));
+        assert!(action.push_word("mesenter", 2, &config));
+        assert!(action.push_word("other", 5, &config));
+        assert!(action.push_word("messenger", 10, &config));
+        let access = fst_pool.lock_read_access();
+        fst_pool.consolidate(true);
+        drop(access);
+
+        let store = fst_pool.acquire("c:test:hot", 1).unwrap();
+        let action = StoreFSTActionBuilder::access(store);
+        let words = action.list_words(10, 0).unwrap();
+        assert_eq!(words, ["messenger", "other"]);
+        assert!(
+            action
+                .lookup_typos("mesengr", 2)
+                .unwrap()
+                .any(|(word, _)| word == "messenger")
+        );
     }
 
     fn test_fst_pool() -> StoreFSTPool {
@@ -1592,17 +1347,25 @@ mod tests {
     }
 
     fn test_fst_store_config() -> Arc<crate::config::ConfigStoreFST> {
-        Arc::new(
-            config::Config::builder()
-                .add_source(config::File::from_str(
-                    crate::config::tests::defaults_toml(),
-                    config::FileFormat::Toml,
-                ))
-                .build()
-                .unwrap()
-                .get::<crate::config::ConfigStoreFST>("store.fst")
-                .unwrap(),
-        )
+        Arc::new(test_fst_store_config_value())
+    }
+
+    fn test_fst_store_config_value() -> crate::config::ConfigStoreFST {
+        let mut config = config::Config::builder()
+            .add_source(config::File::from_str(
+                crate::config::tests::defaults_toml(),
+                config::FileFormat::Toml,
+            ))
+            .build()
+            .unwrap()
+            .get::<crate::config::ConfigStoreFST>("store.fst")
+            .unwrap();
+        config.path = std::env::temp_dir().join(format!(
+            "sonic-fst-unit-{}-{}",
+            std::process::id(),
+            TEST_STORE_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        config
     }
 }
 
@@ -1658,7 +1421,7 @@ impl fmt::Debug for StoreFST {
         } = self;
 
         f.debug_struct("StoreFST")
-            .field("graph", graph)
+            .field("graph", &AsPrettyRwLock(graph))
             .field("target", target)
             .field("pending", pending)
             .field("last_used", &AsPrettyRwLock(last_used))

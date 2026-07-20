@@ -4,6 +4,31 @@
 
 **Sonic Channel is the protocol used to perform searches and ingest index data. You can also use it for Sonic administration operations. Sonic listens on TCP port 1491 by default.**
 
+The `sonic` binary runs the server daemon. The separate `sonic-cli` binary is a
+convenience client exposing `import`, `export`, `query`, `ping` and `consolidate`
+subcommands over the protocol documented below.
+
+The optional `sonic-router` binary exposes the same channel protocol and assigns
+each `(collection, bucket)` to one Sonic backend. Bucket-scoped commands and
+`UPSERTBATCH` are routed transparently. Collection-wide `COUNT`, `FLUSHC`,
+`EXPORT`, `IMPORT`, `INFO` and `STATS` are rejected because one collection may
+span multiple backends. `TRIGGER consolidate`, `TRIGGER backup <path>` and
+`TRIGGER restore <path>` are broadcast to all online backends.
+
+The router control plane listens on its configured admin address and accepts
+newline-delimited commands after an optional `AUTH <password>` line:
+
+* `PLACEMENTS <backend-id>`
+* `MIGRATE START <collection> <bucket> <target>`
+* `MIGRATE CATCHUP|CUTOVER|DRAIN|CLEANUP|FINISH|ROLLBACK <collection> <bucket>`
+* `SNAPSHOT`
+
+Server topology is configured through `[[servers]]` entries in `router.cfg`.
+The router reloads topology changes every two seconds. New active servers
+receive new buckets, draining servers retain existing buckets but receive no new
+ones, and offline servers reject traffic. Removing a server from the file is
+accepted only after all of its buckets and in-progress migrations have moved.
+
 This document specifies the Sonic Channel protocol. Use it if you are looking to build your own Sonic Channel library, or if you are looking to debug Sonic using eg. `telnet` in command-line.
 
 To start a `telnet` session with your local Sonic instance, execute: `telnet ::1 1491`
@@ -17,7 +42,7 @@ _Refer to sections below to interact with Sonic._
 **Please consider the following upon integrating the Sonic Channel protocol:**
 
 1. Each command sent must be terminated with a new line character (`\n`) as to commit the command to the server;
-2. Upon starting a Sonic Channel session, your library should read the `buffer(20000)` parameter in the `STARTED` response, and use this value (in bytes) as to know when a command data should be truncated and split in multiple sub-commands (to avoid buffer overflows, ie. sending too much data in a single command);
+2. Upon starting a Sonic Channel session, your library should read `buffer(20000)` for ordinary commands and `bulk_buffer(8388608)` for authenticated `UPSERTBATCH` commands;
 
 ---
 
@@ -35,8 +60,8 @@ _The Sonic Channel Search mode is used for querying the search index. Once in th
 
 **➡️ Available commands:**
 
-* `QUERY`: query database (syntax: `QUERY <collection> <bucket> "<terms>" [LIMIT(<count>)]? [OFFSET(<count>)]? [LANG(<locale>)]?`; time complexity: `O(1)` if enough exact word matches or `O(N)` if not enough exact matches where `N` is the number of alternate words tried, in practice it approaches `O(1)`)
-* `SUGGEST`: auto-completes word (syntax: `SUGGEST <collection> <bucket> "<word>" [LIMIT(<count>)]?`; time complexity: `O(1)`)
+* `QUERY`: query database (syntax: `QUERY <collection> <bucket> "<terms>" [LIMIT(<count>)]? [OFFSET(<count>)]? [LANG(<locale>)]? [FROM(<unix_ms>)]? [TO(<unix_ms>)]?`)
+* `QUERYDOCS`: query stored documents with the same options as `QUERY`; returns one Base64URL-encoded JSON document per event followed by `EVENT QUERYDOCS <id> DONE`
 * `LIST`: enumerates all words in an index (syntax: `LIST <collection> <bucket> [LIMIT(<count>)]? [OFFSET(<count>)]?`; time complexity: `O(N)` where `N` is the number of words enumerated, within provided limits)
 * `PING`: ping server (syntax: `PING`; time complexity: `O(1)`)
 * `HELP`: show help (syntax: `HELP [<manual>]?`; time complexity: `O(1)`)
@@ -74,12 +99,9 @@ T15: PING
 T16: PONG
 T17: EVENT QUERY CjPvE5t9
 T18: EVENT QUERY y57KaB2d article:28d79959
-T19: SUGGEST messages user:0dcde3a6 "val"
-T20: PENDING z98uDE0f
-T21: EVENT SUGGEST z98uDE0f valerian valala
-T22: QUIT
-T23: ENDED quit
-T24: Connection closed by foreign host.
+T19: QUIT
+T20: ENDED quit
+T21: Connection closed by foreign host.
 ```
 
 _Notes on what happens:_
@@ -100,7 +122,11 @@ _The Sonic Channel Ingest mode is used for altering the search index (push, pop 
 **➡️ Available commands:**
 
 * `PUSH`: Push search data in the index (syntax: `PUSH <collection> <bucket> <object> "<text>" [LANG(<locale>)]?`; time complexity: `O(1)`)
+* `UPSERT`: Atomically replace a stored document and its index (syntax: `UPSERT <collection> <bucket> <object> "<text>" TS(<unix_ms>) [META(<base64url-json>)]? [LANG(<locale>)]?`)
+* `UPSERTBATCH`: Apply a compressed multi-document batch (syntax: `UPSERTBATCH <collection> <fresh|upsert> <base64-zstd-ndjson>`); `fresh` is insert-only and `upsert` replaces existing OIDs
 * `POP`: Pop search data from the index (syntax: `POP <collection> <bucket> <object> "<text>"`; time complexity: `O(1)`)
+* `EXPORT`: Stream a collection, or one optional bucket, to a server-local NDJSON Zstd file; every record contains its bucket (syntax: `EXPORT <collection> [<bucket>]? <path>`)
+* `IMPORT`: Rebuild buckets from a server-local NDJSON Zstd file containing a `bucket` field on each record (syntax: `IMPORT <collection> <path>`)
 * `COUNT`: Count indexed search data (syntax: `COUNT <collection> [<bucket> [<object>]?]?`; time complexity: `O(1)`)
 * `FLUSHC`: Flush all indexed data from a collection (syntax: `FLUSHC <collection>`; time complexity: `O(1)`)
 * `FLUSHB`: Flush all indexed data from a bucket in a collection (syntax: `FLUSHB <collection> <bucket>`; time complexity: `O(N)` where `N` is the number of bucket objects)
@@ -171,6 +197,7 @@ _The Sonic Channel Control mode is used for administration purposes. Once in thi
 
 * `TRIGGER`: trigger an action (syntax: `TRIGGER [<action>]? [<data>]?`; time complexity: `O(1)`)
 * `INFO`: get server information (syntax: `INFO`; time complexity: `O(1)`)
+* `STATS`: get physical collection storage statistics, optionally scanning logical index families and documents (syntax: `STATS <collection> [DEEP]?`)
 * `PING`: ping server (syntax: `PING`; time complexity: `O(1)`)
 * `HELP`: show help (syntax: `HELP [<manual>]?`; time complexity: `O(1)`)
 * `QUIT`: stop connection (syntax: `QUIT`; time complexity: `O(1)`)

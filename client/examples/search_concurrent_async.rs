@@ -24,7 +24,6 @@ async fn task(conn: &SonicChannelSearchAsync, queries: &[&str]) -> std::io::Resu
     for &query in queries.into_iter() {
         conn.query_with_options(COLLECTION, BUCKET, query, &[&Lang("eng")])
             .await?;
-        conn.suggest(COLLECTION, BUCKET, query).await?;
     }
 
     Ok(())

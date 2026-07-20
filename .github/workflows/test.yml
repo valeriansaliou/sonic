@@ -12,6 +12,9 @@ on:
       - "client/src/**"
       - "client/tests/**"
       - "client/Cargo.toml"
+      - "router/**"
+      - "router.cfg"
+      - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
       # We changed some configuration:
@@ -136,6 +139,9 @@ jobs:
 
       - name: Build Sonic server
         run: cargo build --locked --bin sonic --no-default-features -F stemming
+
+      - name: Build Sonic router
+        run: cargo build --locked --bin sonic-router
 
       - name: Test all
         run: cargo test --locked --no-default-features -F stemming

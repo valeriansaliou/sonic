@@ -9,6 +9,7 @@ mod format;
 mod handle;
 mod message;
 mod mode;
+mod profile;
 
 pub mod listen;
 pub mod statistics;

@@ -6,6 +6,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::store::StoreItem;
+use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
 impl super::Executor {
@@ -14,6 +15,7 @@ impl super::Executor {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
             let _kv_read_guard = self.kv_pool.lock_read_access();
+            let _fst_read_guard = self.fst_pool.lock_read_access();
 
             if let Ok(kv_store) = self
                 .kv_pool
@@ -23,6 +25,11 @@ impl super::Executor {
                 executor_kv_lock_write!(kv_store);
 
                 let kv_action = StoreKVActionBuilder::access(bucket, kv_store);
+                let Some(bucket_id) = kv_action.bucket_id() else {
+                    return Ok(0);
+                };
+                let fst_store = self.fst_pool.acquire(collection, bucket_id)?;
+                let fst_action = StoreFSTActionBuilder::access(fst_store);
 
                 // Try to resolve existing OID to IID (if it does not exist, there is nothing to \
                 //   be flushed)
@@ -42,11 +49,27 @@ impl super::Executor {
                                 Vec::new()
                             }
                         };
+                        let indexed_terms = iid_terms.clone();
 
                         // Flush bucket (batch operation, as it is shared w/ other executors)
                         if let Ok(batch_count) = kv_action.batch_flush_bucket(iid, oid, &iid_terms)
                         {
                             count_flushed += batch_count;
+                            for term in indexed_terms {
+                                match kv_action.get_term_frequency(&term) {
+                                    Ok(0) => {
+                                        fst_action.pop_word(&term);
+                                    }
+                                    Ok(frequency) => {
+                                        fst_action.push_word(
+                                            &term,
+                                            frequency,
+                                            &self.app_conf.store.fst,
+                                        );
+                                    }
+                                    Err(()) => return Err(()),
+                                }
+                            }
                         } else {
                             tracing::error!(
                                 "failed executing batch-flush-bucket in flusho executor"

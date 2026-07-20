@@ -26,6 +26,9 @@ serde = { version = "=1.0.228", default-features = false, features = ["derive", 
 rand = { version = "=0.10.2", default-features = false, features = ["std", "thread_rng"] }
 hashbrown = { version = "=0.17.1", default-features = false, features = ["default-hasher", "allocator-api2", "inline-more"] }
 config = { version = "=0.15.25", default-features = false, features = ["toml"] }
+serde_json = "1.0.150"
+base64 = "0.22.1"
+zstd = "0.13.3"
 
 [dev-dependencies]
 # Benchmarking dependencies.

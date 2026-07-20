@@ -4,5 +4,8 @@ target/
 *#
 .cargo
 .task
+__pycache__/
+*.py[cod]
 
 data/
+.data/

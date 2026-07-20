@@ -98,6 +98,7 @@ impl std::str::FromStr for ServerInfo {
 pub struct ChannelInfo {
     pub protocol_version: u8,
     pub buffer_size: usize,
+    pub bulk_buffer_size: usize,
 }
 
 impl std::str::FromStr for ChannelInfo {
@@ -111,7 +112,7 @@ impl std::str::FromStr for ChannelInfo {
     /// // Parsing works.
     /// assert_eq!(
     ///     ChannelInfo::from_str("protocol(1) buffer(20000)").unwrap(),
-    ///     ChannelInfo { protocol_version: 1, buffer_size: 20000 }
+    ///     ChannelInfo { protocol_version: 1, buffer_size: 20000, bulk_buffer_size: 20000 }
     /// );
     ///
     /// // Missing keys raise errors.
@@ -121,12 +122,13 @@ impl std::str::FromStr for ChannelInfo {
     /// // Unknown keys do not raise errors.
     /// assert_eq!(
     ///     ChannelInfo::from_str("protocol(1) buffer(20000) foo(bar)").unwrap(),
-    ///     ChannelInfo { protocol_version: 1, buffer_size: 20000 }
+    ///     ChannelInfo { protocol_version: 1, buffer_size: 20000, bulk_buffer_size: 20000 }
     /// );
     /// ```
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut protocol_version: Option<u8> = None;
         let mut buffer_size: Option<usize> = None;
+        let mut bulk_buffer_size: Option<usize> = None;
 
         for arg in s.split(' ') {
             let Some(stripped) = arg.strip_suffix(')') else {
@@ -158,6 +160,7 @@ impl std::str::FromStr for ChannelInfo {
             match (key, value) {
                 ("protocol", v) => update!(protocol_version with v),
                 ("buffer", v) => update!(buffer_size with v),
+                ("bulk_buffer", v) => update!(bulk_buffer_size with v),
                 _ => eprintln!("Unknown info: {arg:?}"),
             }
         }
@@ -179,6 +182,7 @@ impl std::str::FromStr for ChannelInfo {
         Ok(Self {
             protocol_version,
             buffer_size,
+            bulk_buffer_size: bulk_buffer_size.unwrap_or(buffer_size),
         })
     }
 }

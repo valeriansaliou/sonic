@@ -113,10 +113,10 @@ fn query_special_disabled() {
         &[
             Box::from("msg:6"),
             Box::from("msg:1"),
-            Box::from("msg:5"),
             Box::from("msg:4"),
             Box::from("msg:3"),
-            Box::from("msg:2")
+            Box::from("msg:2"),
+            Box::from("msg:5")
         ]
     );
 }
