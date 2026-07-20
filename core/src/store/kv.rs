@@ -151,7 +151,7 @@ fn profile_elapsed(started: Option<Instant>) -> Duration {
     started.map(|started| started.elapsed()).unwrap_or_default()
 }
 
-fn merge_postings(
+pub(super) fn merge_postings(
     _key: &[u8],
     existing: Option<&[u8]>,
     operands: &rocksdb::MergeOperands,

@@ -8,6 +8,7 @@ pub mod document;
 mod generic;
 mod keyer;
 mod posting;
+pub mod term_dump;
 
 pub mod fst;
 pub mod identifiers;

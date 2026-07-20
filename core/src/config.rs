@@ -33,6 +33,9 @@ impl Config {
         if self.search.query_candidates_maximum == 0 {
             panic!("query_candidates_maximum must not be zero");
         }
+        if self.tokenization.max_token_length == 0 {
+            panic!("max_token_length must not be zero");
+        }
 
         // Check 'write_buffer' for KV
         if self.store.kv.database.write_buffer == 0 {
@@ -68,6 +71,8 @@ pub struct ConfigTokenization {
 
     #[serde(alias = "split_special_patterns")]
     pub compat_split_special_patterns: bool,
+
+    pub max_token_length: usize,
 }
 
 #[derive(Deserialize)]
@@ -167,6 +172,7 @@ pub(crate) mod tests {
         [tokenization]
         detect_special_patterns = true
         compat_split_special_patterns = false
+        max_token_length = 128
 
         [search]
         query_limit_default = 10

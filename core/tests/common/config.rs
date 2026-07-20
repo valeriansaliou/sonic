@@ -43,6 +43,7 @@ pub fn defaults_toml() -> String {
         [tokenization]
         detect_special_patterns = true
         compat_split_special_patterns = false
+        max_token_length = 128
 
         [search]
         query_limit_default = 10

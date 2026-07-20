@@ -33,7 +33,7 @@ const IDX_BUCKET_NAME_TO_ID: u8 = 5;
 const IDX_BUCKET_ID_TO_NAME: u8 = 6;
 const IDX_IID_TO_TIMESTAMP: u8 = 7;
 const IDX_TIME_POSTING: u8 = 8;
-const IDX_TERM_FREQUENCY: u8 = 9;
+pub(super) const IDX_TERM_FREQUENCY: u8 = 9;
 
 impl StoreKeyerBuilder {
     pub fn family(key: &[u8]) -> Option<u8> {

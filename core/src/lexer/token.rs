@@ -12,6 +12,7 @@ use std::sync::LazyLock;
 use charabia::{Language as CharabiaLanguage, Segment};
 use hashbrown::HashSet;
 use regex::Regex;
+use unicode_segmentation::{GraphemeIndices, UnicodeSegmentation};
 use whatlang::Lang;
 
 use crate::config::{ConfigNormalization, ConfigTokenization};
@@ -31,6 +32,13 @@ struct PendingToken<'s> {
 
 type WordsIter<'s> = Box<dyn Iterator<Item = WordToken<'s>> + 's>;
 type TokensIter<'s> = Box<dyn Iterator<Item = PendingToken<'s>> + 's>;
+
+struct EmojiSeparated<'s> {
+    text: &'s str,
+    graphemes: Option<GraphemeIndices<'s>>,
+    start: usize,
+    finished: bool,
+}
 
 static SPECIAL_PATTERNS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(
@@ -77,7 +85,45 @@ impl<'s> Tokenizer<'s> {
     }
 }
 
-fn tokenize<'s>(text: &'s str, lang: Option<Lang>) -> WordsIter<'s> {
+impl<'s> EmojiSeparated<'s> {
+    fn new(text: &'s str) -> Self {
+        Self {
+            text,
+            graphemes: (!text.is_ascii()).then(|| text.grapheme_indices(true)),
+            start: 0,
+            finished: false,
+        }
+    }
+}
+
+impl<'s> Iterator for EmojiSeparated<'s> {
+    type Item = &'s str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(graphemes) = self.graphemes.as_mut() {
+            for (index, grapheme) in graphemes.by_ref() {
+                if emojis::get(grapheme).is_none() {
+                    continue;
+                }
+
+                let before = (self.start < index).then(|| &self.text[self.start..index]);
+                self.start = index + grapheme.len();
+                if before.is_some() {
+                    return before;
+                }
+            }
+        }
+
+        if !self.finished && self.start < self.text.len() {
+            self.finished = true;
+            return Some(&self.text[self.start..]);
+        }
+        self.finished = true;
+        None
+    }
+}
+
+fn tokenize_segment<'s>(text: &'s str, lang: Option<Lang>) -> WordsIter<'s> {
     let hinted_language = lang.and_then(|lang| CharabiaLanguage::from_code(lang.code()));
 
     let to_word = move |token: charabia::Token<'s>| {
@@ -106,6 +152,10 @@ fn tokenize<'s>(text: &'s str, lang: Option<Lang>) -> WordsIter<'s> {
         // Stream raw segments because Sonic applies its own normalization.
         Box::new(text.segment().filter_map(to_word))
     }
+}
+
+fn tokenize<'s>(text: &'s str, lang: Option<Lang>) -> WordsIter<'s> {
+    Box::new(EmojiSeparated::new(text).flat_map(move |segment| tokenize_segment(segment, lang)))
 }
 
 impl<'s> Iterator for Tokenizer<'s> {
@@ -451,6 +501,14 @@ impl<'a> Iterator for TokenLexer<'a> {
                 }
             };
 
+            if word.len() > self.tokenizer.config.max_token_length {
+                tracing::debug!(
+                    "lexer did not yield word {word:?}: length exceeds {} bytes",
+                    self.tokenizer.config.max_token_length
+                );
+                continue 'tokenize;
+            }
+
             // Check if word was not already yielded? (we return unique words)
             if !self.yields.insert(word.to_string()) {
                 tracing::debug!("lexer did not yield word {word:?}: word already yielded");
@@ -477,6 +535,7 @@ mod tests {
     const TOKENIZATION_CONFIG: ConfigTokenization = ConfigTokenization {
         detect_special_patterns: true,
         compat_split_special_patterns: false,
+        max_token_length: 128,
     };
 
     #[test]
@@ -674,6 +733,48 @@ mod tests {
                 },
             ],
         );
+    }
+
+    #[test]
+    fn it_uses_emojis_as_word_boundaries() {
+        let tokens = Tokenizer::new(
+            "hello🚀world 🤣🤣the 👨‍👩‍👧‍👦test foo@example.org🚀",
+            Some(Lang::Eng),
+            &TOKENIZATION_CONFIG,
+        )
+        .collect::<Vec<_>>();
+
+        assert_eq!(
+            tokens,
+            [
+                Token::Word("hello"),
+                Token::Word("world"),
+                Token::Word("the"),
+                Token::Word("test"),
+                Token::Special {
+                    raw: "foo@example.org",
+                    normalized: Cow::Borrowed("foo@example.org"),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn it_drops_oversized_tokens() {
+        let mut config = TOKENIZATION_CONFIG;
+        config.max_token_length = 5;
+        let tokens = TokenLexerBuilder::from(
+            TokenLexerMode::NormalizeAndCleanup,
+            None,
+            "short lengthy ééé a@b.co",
+            NORMALIZATION_CONFIG,
+            config,
+        )
+        .unwrap()
+        .map(|(token, _)| token.into_inner())
+        .collect::<Vec<_>>();
+
+        assert_eq!(tokens, ["short"]);
     }
 
     #[test]

@@ -214,6 +214,7 @@ mod tests {
     const TOKENIZATION_CONFIG: ConfigTokenization = ConfigTokenization {
         detect_special_patterns: true,
         compat_split_special_patterns: false,
+        max_token_length: 128,
     };
 
     #[test]
