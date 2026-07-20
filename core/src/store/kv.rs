@@ -93,6 +93,7 @@ const ATOM_HASH_RADIX: usize = 16;
 const STORE_SCHEMA_VERSION: u32 = 14;
 const DOCUMENTS_CF: &str = "documents";
 const POSTINGS_CF: &str = "postings";
+const DOCUMENTS_BLOCK_SIZE: usize = 64 * 1024;
 const DEFAULT_CF_ID: u32 = 0;
 const DOCUMENTS_CF_ID: u32 = 1;
 const POSTINGS_CF_ID: u32 = 2;
@@ -546,10 +547,11 @@ impl StoreKVBuilder {
         );
 
         // Configure database options
-        let db_options = self.configure();
+        let db_options = self.configure(None, DBCompressionType::Lz4);
 
-        let documents_options = self.configure();
-        let mut postings_options = self.configure();
+        let documents_options =
+            self.configure(Some(DOCUMENTS_BLOCK_SIZE), DBCompressionType::Zstd);
+        let mut postings_options = self.configure(None, DBCompressionType::Lz4);
         postings_options.set_merge_operator_associative("posting_union", merge_postings);
         DB::open_cf_descriptors(
             &db_options,
@@ -562,7 +564,11 @@ impl StoreKVBuilder {
         )
     }
 
-    fn configure(&self) -> DBOptions {
+    fn configure(
+        &self,
+        block_size: Option<usize>,
+        compression_type: DBCompressionType,
+    ) -> DBOptions {
         tracing::debug!("configuring key-value database");
 
         let db_conf = &self.kv_store_config.database;
@@ -589,12 +595,15 @@ impl StoreKVBuilder {
         table_options.set_bloom_filter(10.0, false);
         table_options.set_whole_key_filtering(true);
         table_options.set_optimize_filters_for_memory(true);
+        if let Some(block_size) = block_size {
+            table_options.set_block_size(block_size);
+        }
         db_options.set_block_based_table_factory(&table_options);
         db_options.set_memtable_whole_key_filtering(true);
 
         // Set dynamic options
         if db_conf.compress {
-            db_options.set_compression_type(DBCompressionType::Lz4);
+            db_options.set_compression_type(compression_type);
             db_options.set_bottommost_compression_type(DBCompressionType::Zstd);
             db_options.set_bottommost_zstd_max_train_bytes(0, true);
         } else {
