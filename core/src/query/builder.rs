@@ -171,6 +171,7 @@ mod tests {
     use super::*;
 
     const NORMALIZATION_CONFIG: ConfigNormalization = ConfigNormalization {
+        unicode_normalization: None,
         diacritic_folding_enabled: false,
         stemming_enabled: false,
     };

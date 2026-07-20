@@ -569,7 +569,7 @@ impl<'a> Iterator for TokenLexer<'a> {
     //   - Stop-words are removed
     fn next(&mut self) -> Option<Self::Item> {
         'tokenize: for token in self.tokenizer.by_ref() {
-            let (word, original_len) = match token {
+            let (mut word, original_len) = match token {
                 Token::Word(original_word) => {
                     let original_len = original_word.len();
 
@@ -648,6 +648,19 @@ impl<'a> Iterator for TokenLexer<'a> {
                 continue 'tokenize;
             }
 
+            if let Some(normalization) = self.config.unicode_normalization {
+                if let NormalizedToken::Word(word) = &mut word {
+                    use unicode_normalization::UnicodeNormalization as _;
+
+                    match normalization {
+                        crate::config::UnicodeNormalization::Nfc => *word = word.nfc().to_string(),
+                        crate::config::UnicodeNormalization::Nfkc => {
+                            *word = word.nfkc().to_string()
+                        }
+                    }
+                }
+            }
+
             // Hash the term (this is used by all iterator consumers, as well as internally \
             //   in the iterator to keep track of already-yielded words in a space-optimized \
             //   manner, ie. by using 32-bit unsigned integer hashes)
@@ -675,6 +688,7 @@ mod tests {
     use super::*;
 
     const NORMALIZATION_CONFIG: ConfigNormalization = ConfigNormalization {
+        unicode_normalization: None,
         diacritic_folding_enabled: false,
         stemming_enabled: false,
     };

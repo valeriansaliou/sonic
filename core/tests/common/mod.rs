@@ -109,13 +109,13 @@ macro_rules! exec {
             .expect("QUERY should succeed")
     }};
 
-    ($executor:ident -> LIST $collection:tt $bucket:tt) => {{
+    ($executor:ident -> LIST $collection:tt $bucket:tt $(LIMIT($limit:expr))?) => {{
         $executor.log(format!("LIST {:?} {:?}", $collection, $bucket));
         $executor
             .list(
                 crate::common::bucket_ref!($collection, $bucket),
                 "",
-                sonic::query::QuerySearchLimit::MAX,
+                exec!(internal_ limit $($limit)?),
                 0,
             )
             .expect("LIST should succeed")
@@ -143,7 +143,7 @@ macro_rules! exec {
     }};
 
     (internal_ lang) => { None };
-    (internal_ lang $lang:expr) => { Some(whatlang::Lang::from_code($lang).unwrap()) };
+    (internal_ lang $lang:expr) => { whatlang::Lang::from_code($lang) };
 
     (internal_ lang_txt) => { "" };
     (internal_ lang_txt $lang:expr) => { format!(" LANG({})", $lang) };

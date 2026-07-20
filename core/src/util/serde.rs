@@ -2,7 +2,40 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
+
+pub(crate) mod none_string_as_none {
+    use serde::{Deserialize, Deserializer};
+
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: Deserialize<'de>,
+    {
+        // First deserialize into a generic JSON-like value... but to keep this
+        // format-agnostic, easiest is to go through an enum of "string or T".
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum StringOrT<T> {
+            String(String),
+            T(T),
+        }
+
+        match Option::<StringOrT<T>>::deserialize(deserializer)? {
+            None => Ok(None),
+            Some(StringOrT::String(s)) if s.eq_ignore_ascii_case("none") => Ok(None),
+            Some(StringOrT::String(s)) => {
+                // Try to parse the string itself as T (in case T is String-like)
+                // For simple cases you may just want to error here instead.
+                Err(serde::de::Error::custom(format!(
+                    "unexpected string value: {s}"
+                )))
+            }
+            Some(StringOrT::T(v)) => Ok(Some(v)),
+        }
+    }
+}
 
 pub mod env_var {
     use regex::Regex;

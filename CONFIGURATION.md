@@ -41,6 +41,7 @@ override if you need consistency.
 
 Under `[normalization]`:
 
+* `unicode_normalization` (type: _string_ (optional), allowed: `"nfc"`, `"nfkc"`, default: none, recommended: `"nfkc"`) — Whether to normalize Unicode characters (see [“Unicode equivalence” on Wikipedia](https://en.wikipedia.org/wiki/Unicode_equivalence)) when ingesting and querying. It is recommended to enable Unicode normalization, but Sonic makes it opt-in (until next major release) for backward compatibility reasons. When enabled, Sonic queries will be faster and your Sonic index smaller, for better results.
 * `diacritic_folding_enabled` (type: _boolean_, allowed: `true`, `false`, default: `false`) — Whether to enable [diacritic](https://en.wikipedia.org/wiki/Diacritic) folding or not (it reduces the index size and improves results)
 * `stemming_enabled` (type: _boolean_, allowed: `true`, `false`, default: `false`) — Whether to enable [stemming](https://en.wikipedia.org/wiki/Stemming) or not (it avoids losing non-flushed data in case of server crash)
   * Warning: Enabling stemming greatly affects the quality of Sonic results. Enable only if you have a good reason to.
