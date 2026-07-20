@@ -111,7 +111,7 @@ fn test_bulk_upsert_handles_shared_postings_and_multiple_buckets() {
         "movie:3"
     );
     let stats = executor.stats("movies", true).unwrap();
-    assert_eq!(stats.schema_version, 13);
+    assert_eq!(stats.schema_version, 14);
     let logical = stats.logical.unwrap();
     assert_eq!(logical.document_count, 3);
     assert_eq!(logical.term_postings.associations, 6);

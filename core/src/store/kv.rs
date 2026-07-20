@@ -90,7 +90,7 @@ type StoreKVAtom = u32;
 type StoreKVBox = Arc<StoreKV>;
 
 const ATOM_HASH_RADIX: usize = 16;
-const STORE_SCHEMA_VERSION: u32 = 13;
+const STORE_SCHEMA_VERSION: u32 = 14;
 const DOCUMENTS_CF: &str = "documents";
 const POSTINGS_CF: &str = "postings";
 const DEFAULT_CF_ID: u32 = 0;
@@ -2257,7 +2257,7 @@ impl<'a> StoreKVAction<'a> {
         let mut encoded = Vec::new();
         for term in terms {
             let length = u32::try_from(term.len()).map_err(|_| ())?;
-            encoded.extend_from_slice(&length.to_be_bytes());
+            Self::encode_varint(length, &mut encoded);
             encoded.extend_from_slice(term.as_bytes());
         }
         Ok(encoded)
@@ -2267,22 +2267,39 @@ impl<'a> StoreKVAction<'a> {
         let mut terms = Vec::new();
         let mut cursor = 0;
         while cursor < encoded.len() {
-            let length_end = cursor.checked_add(4).ok_or(())?;
-            let length = u32::from_be_bytes(
-                encoded
-                    .get(cursor..length_end)
-                    .ok_or(())?
-                    .try_into()
-                    .map_err(|_| ())?,
-            ) as usize;
-            let term_end = length_end.checked_add(length).ok_or(())?;
-            let term = str::from_utf8(encoded.get(length_end..term_end).ok_or(())?)
+            let length = Self::decode_varint(encoded, &mut cursor)? as usize;
+            let term_end = cursor.checked_add(length).ok_or(())?;
+            let term = str::from_utf8(encoded.get(cursor..term_end).ok_or(())?)
                 .map_err(|_| ())?
                 .to_owned();
             terms.push(term);
             cursor = term_end;
         }
         Ok(terms)
+    }
+
+    fn encode_varint(mut value: u32, encoded: &mut Vec<u8>) {
+        while value >= 0x80 {
+            encoded.push((value as u8 & 0x7f) | 0x80);
+            value >>= 7;
+        }
+        encoded.push(value as u8);
+    }
+
+    fn decode_varint(encoded: &[u8], cursor: &mut usize) -> Result<u32, ()> {
+        let mut value = 0u32;
+        for shift in (0..=28).step_by(7) {
+            let byte = *encoded.get(*cursor).ok_or(())?;
+            *cursor = cursor.checked_add(1).ok_or(())?;
+            if shift == 28 && byte > 0x0f {
+                return Err(());
+            }
+            value |= u32::from(byte & 0x7f) << shift;
+            if byte & 0x80 == 0 {
+                return Ok(value);
+            }
+        }
+        Err(())
     }
 }
 
@@ -2466,10 +2483,26 @@ mod tests {
     fn it_round_trips_term_lists() {
         let terms = vec!["world".to_owned(), "hello".to_owned(), "hello".to_owned()];
         let encoded = StoreKVAction::encode_terms(&terms).unwrap();
+        assert_eq!(encoded, b"\x05hello\x05world");
         assert_eq!(
             StoreKVAction::decode_terms(&encoded),
             Ok(vec!["hello".to_owned(), "world".to_owned()])
         );
+
+        let long_term = "x".repeat(300);
+        let encoded = StoreKVAction::encode_terms(std::slice::from_ref(&long_term)).unwrap();
+        assert_eq!(&encoded[..2], &[0xac, 0x02]);
+        assert_eq!(StoreKVAction::decode_terms(&encoded), Ok(vec![long_term]));
+    }
+
+    #[test]
+    fn it_rejects_invalid_term_lists() {
+        assert_eq!(StoreKVAction::decode_terms(&[0x80]), Err(()));
+        assert_eq!(
+            StoreKVAction::decode_terms(&[0xff, 0xff, 0xff, 0xff, 0x10]),
+            Err(())
+        );
+        assert_eq!(StoreKVAction::decode_terms(&[2, b'a']), Err(()));
     }
 
     fn test_kv_store_config() -> Arc<crate::config::ConfigStoreKV> {
