@@ -5,16 +5,6 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 pub static STOPWORDS_SPA: &[&str] = &[
-    "0",
-    "1",
-    "2",
-    "3",
-    "4",
-    "5",
-    "6",
-    "7",
-    "8",
-    "9",
     "_",
     "a",
     "actualmente",
