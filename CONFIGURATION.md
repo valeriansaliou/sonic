@@ -56,7 +56,7 @@ override if you need consistency.
 
 Under `[tokenization]`:
 
-* `detect_special_patterns` (type: _boolean_, allowed: `true`, `false`, default: `true`) — Whether the tokenizer should detect special patterns or not
+* `detect_special_patterns` (type: _boolean_, allowed: `true`, `false`, default: `false`) — Whether the tokenizer should detect special patterns or not
   * Sonic does fuzzy matching by default. However, some search terms are
     usually expected to match exactly, like email addresses. To support this
     use case, Sonic detects common patterns (e.g. email addresses, phone
@@ -64,8 +64,8 @@ Under `[tokenization]`:
     (unless `tokenization.compat_split_special_patterns = true`) and matched
     exactly in queries.
   * For more information, see [docs/tokenizer-pattern-matching.md](./docs/tokenizer-pattern-matching.md).
-  * This feature adds negligible overhead, you should probably not disable it.
-* `compat_split_special_patterns` (type: _boolean_, allowed: `true`, `false`, default: `true`) — Whether the tokenizer should split special patterns or not
+  * Enable this only when exact matching of structured values is preferred over general-purpose text tokenization.
+* `compat_split_special_patterns` (type: _boolean_, allowed: `true`, `false`, default: `false`) — Whether the tokenizer should split special patterns or not
   * Special patterns are matched exactly when performing a query. However,
     doing so without rebuilding your Sonic index breaks queries with special
     patterns. This flag enables a compatibility feature that integrates with an
@@ -76,6 +76,7 @@ Under `[tokenization]`:
   * If you can easily rebuild your Sonic index and sometimes query things like
     email addresses, phone numbers or identifiers, it is recommended that you
     disable this feature.
+* `max_token_length` (type: _integer_, allowed: positive byte count, default: `128`) — Maximum encoded length of indexed words and special patterns. Longer tokens are ignored during both ingestion and querying.
 
 ### Search configuration
 
