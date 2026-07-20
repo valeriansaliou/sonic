@@ -106,7 +106,9 @@ impl<'a> Query<'a> {
                 tokenization_config,
             ),
         ) {
-            (Ok(store), Ok(text_lexed)) => Ok(Query::Push(store, text_lexed)),
+            (Ok(store), Ok(text_lexed)) => {
+                Ok(Query::Push(store, text_lexed, text.to_owned()))
+            }
             _ => Err(()),
         }
     }
@@ -144,22 +146,12 @@ impl<'a> Query<'a> {
         bucket: &'a str,
         object: &'a str,
         text: &'a str,
-        normalization_config: ConfigNormalization,
-        tokenization_config: ConfigTokenization,
+        _normalization_config: ConfigNormalization,
+        _tokenization_config: ConfigTokenization,
     ) -> Result<Self, ()> {
-        match (
-            StoreItemBuilder::from_depth_3(collection, bucket, object),
-            TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeOnly,
-                None,
-                text,
-                normalization_config,
-                tokenization_config,
-            ),
-        ) {
-            (Ok(store), Ok(text_lexed)) => Ok(Query::Pop(store, text_lexed)),
-            _ => Err(()),
-        }
+        StoreItemBuilder::from_depth_3(collection, bucket, object)
+            .map(|store| Query::Pop(store, text.to_owned()))
+            .map_err(|_| ())
     }
 
     pub fn count(

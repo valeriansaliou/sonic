@@ -12,7 +12,7 @@ use crate::store::kv::StoreKVActionBuilder;
 impl super::Executor {
     pub fn count(&self, item: StoreItem) -> Result<u32, ()> {
         match item {
-            // Count terms in (collection, bucket, object) from KV
+            // Count terms in a stored document.
             StoreItem(collection, Some(bucket), Some(object)) => {
                 // Important: acquire database access read lock, and reference it in context. This \
                 //   prevents the database from being erased while using it in this block.
@@ -27,20 +27,16 @@ impl super::Executor {
 
                     let kv_action = StoreKVActionBuilder::access(bucket, kv_store);
 
-                    // Try to resolve existing OID to IID
                     let oid = object.as_str();
 
                     kv_action
                         .get_oid_to_iid(oid)
                         .unwrap_or(None)
                         .map(|iid| {
-                            // List terms for IID
-                            if let Some(terms) = kv_action.get_iid_to_terms(iid).unwrap_or(None) {
-                                terms.len() as u32
-                            } else {
-                                0
-                            }
+                            self.indexed_terms_for_iid(&kv_action, iid)
+                                .map(|terms| terms.len() as u32)
                         })
+                        .transpose()?
                         .ok_or(())
                         .or(Ok(0))
                 } else {

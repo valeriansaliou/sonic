@@ -61,6 +61,7 @@ macro_rules! exec {
                     $executor.app_conf.tokenization,
                 )
                 .unwrap(),
+                $text.to_owned(),
             )
             .unwrap()
     }};

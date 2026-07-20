@@ -39,16 +39,7 @@ impl super::Executor {
                     let mut count_flushed = 0;
 
                     if let Some(iid) = iid_value {
-                        // Resolve terms associated to IID
-                        let iid_terms = {
-                            if let Ok(iid_terms_value) = kv_action.get_iid_to_terms(iid) {
-                                iid_terms_value.unwrap_or_default()
-                            } else {
-                                tracing::error!("failed getting flusho executor iid-to-terms");
-
-                                Vec::new()
-                            }
-                        };
+                        let iid_terms = self.indexed_terms_for_iid(&kv_action, iid)?;
                         let indexed_terms = iid_terms.clone();
 
                         // Flush bucket (batch operation, as it is shared w/ other executors)

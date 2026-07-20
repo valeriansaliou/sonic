@@ -90,7 +90,7 @@ type StoreKVAtom = u32;
 type StoreKVBox = Arc<StoreKV>;
 
 const ATOM_HASH_RADIX: usize = 16;
-const STORE_SCHEMA_VERSION: u32 = 14;
+const STORE_SCHEMA_VERSION: u32 = 15;
 const DOCUMENTS_CF: &str = "documents";
 const POSTINGS_CF: &str = "postings";
 const DOCUMENTS_BLOCK_SIZE: usize = 64 * 1024;
@@ -682,7 +682,7 @@ impl StoreKV {
             "term_postings",
             "oid_to_iid",
             "iid_to_oid",
-            "iid_to_terms",
+            "reserved_4",
             "bucket_name_to_id",
             "bucket_id_to_name",
             "iid_to_timestamp",
@@ -1438,35 +1438,6 @@ impl<'a> StoreKVAction<'a> {
         Ok(result)
     }
 
-    pub fn batch_insert_iid_terms(
-        &self,
-        iid: StoreObjectIID,
-        existing_terms: &[String],
-        new_terms: &[String],
-    ) -> Result<Vec<(String, u32)>, ()> {
-        let Some(ref store) = self.store else {
-            return Err(());
-        };
-        let mut batch = WriteBatch::default();
-        let mut terms = existing_terms.to_vec();
-        let mut frequencies = Vec::with_capacity(new_terms.len());
-
-        for term in new_terms {
-            let (inserted, frequency) = self.append_insert_term_iid(&mut batch, term, iid)?;
-            if inserted {
-                terms.push(term.clone());
-                frequencies.push((term.clone(), frequency));
-            }
-        }
-
-        if !frequencies.is_empty() {
-            let key = StoreKeyerBuilder::iid_to_terms(self.bucket_id.ok_or(())?, iid);
-            batch.put(key.as_bytes(), Self::encode_terms(&terms)?);
-            store.do_write(batch).or(Err(()))?;
-        }
-        Ok(frequencies)
-    }
-
     pub fn remove_term_iid(&self, term: &str, iid: StoreObjectIID) -> Result<(bool, u32), ()> {
         let Some(ref store) = self.store else {
             return Err(());
@@ -1477,31 +1448,6 @@ impl<'a> StoreKVAction<'a> {
             store.do_write(batch).or(Err(()))?;
         }
         Ok(result)
-    }
-
-    pub fn batch_remove_iid_terms(
-        &self,
-        iid: StoreObjectIID,
-        remaining_terms: &[String],
-        removed_terms: &[String],
-    ) -> Result<Vec<(String, u32)>, ()> {
-        let Some(ref store) = self.store else {
-            return Err(());
-        };
-        let mut batch = WriteBatch::default();
-        let mut frequencies = Vec::with_capacity(removed_terms.len());
-        for term in removed_terms {
-            let (removed, frequency) = self.append_remove_term_iid(&mut batch, term, iid)?;
-            if removed {
-                frequencies.push((term.clone(), frequency));
-            }
-        }
-        if !frequencies.is_empty() {
-            let key = StoreKeyerBuilder::iid_to_terms(self.bucket_id.ok_or(())?, iid);
-            batch.put(key.as_bytes(), Self::encode_terms(remaining_terms)?);
-            store.do_write(batch).or(Err(()))?;
-        }
-        Ok(frequencies)
     }
 
     fn append_insert_term_iid(
@@ -1659,10 +1605,6 @@ impl<'a> StoreKVAction<'a> {
         }
 
         batch.put(
-            StoreKeyerBuilder::iid_to_terms(bucket_id, iid).as_bytes(),
-            Self::encode_terms(new_terms)?,
-        );
-        batch.put(
             StoreKeyerBuilder::iid_to_timestamp(bucket_id, iid).as_bytes(),
             Self::encode_u64(document.timestamp_ms),
         );
@@ -1731,13 +1673,12 @@ impl<'a> StoreKVAction<'a> {
                 None => 0,
             };
             iid_counter = Some(iid);
-            let mut document_terms = Vec::new();
+            let mut document_terms = HashSet::new();
 
             for term in terms {
-                if document_terms.contains(term) {
+                if !document_terms.insert(term) {
                     continue;
                 }
-                document_terms.push(term.clone());
                 let shard = StorePosting::shard(iid);
                 let posting = match postings.entry((term.clone(), shard)) {
                     hashbrown::hash_map::Entry::Occupied(entry) => entry.into_mut(),
@@ -1778,10 +1719,6 @@ impl<'a> StoreKVAction<'a> {
             batch.put(
                 StoreKeyerBuilder::iid_to_oid(bucket_id, iid).as_bytes(),
                 document.oid.as_bytes(),
-            );
-            batch.put(
-                StoreKeyerBuilder::iid_to_terms(bucket_id, iid).as_bytes(),
-                Self::encode_terms(&document_terms)?,
             );
             batch.put(
                 StoreKeyerBuilder::iid_to_timestamp(bucket_id, iid).as_bytes(),
@@ -1958,34 +1895,6 @@ impl<'a> StoreKVAction<'a> {
         }
     }
 
-    pub fn get_or_create_iid(&self, oid: StoreObjectOID<'a>) -> Result<StoreObjectIID, ()> {
-        if let Some(iid) = self.get_oid_to_iid(oid)? {
-            return Ok(iid);
-        }
-        let store = self.store.as_ref().ok_or(())?;
-        let bucket_id = self.bucket_id.ok_or(())?;
-        let iid = match self.get_meta_to_value(StoreMetaKey::IIDIncr)? {
-            Some(StoreMetaValue::IIDIncr(value)) => value.checked_add(1).ok_or(())?,
-            Some(_) => return Err(()),
-            None => 0,
-        };
-        let mut batch = WriteBatch::default();
-        batch.put(
-            StoreKeyerBuilder::meta_to_value(bucket_id, &StoreMetaKey::IIDIncr).as_bytes(),
-            iid.to_string().as_bytes(),
-        );
-        batch.put(
-            StoreKeyerBuilder::oid_to_iid(bucket_id, oid).as_bytes(),
-            Self::encode_u32(iid),
-        );
-        batch.put(
-            StoreKeyerBuilder::iid_to_oid(bucket_id, iid).as_bytes(),
-            oid.as_bytes(),
-        );
-        store.do_write(batch).or(Err(()))?;
-        Ok(iid)
-    }
-
     pub fn resolve_or_reserve_iid(
         &self,
         oid: StoreObjectOID<'a>,
@@ -2077,80 +1986,6 @@ impl<'a> StoreKVAction<'a> {
         }
     }
 
-    /// IID-to-Terms mapper
-    ///
-    /// [IDX=4] ((iid)) ~> [((term))]
-    pub fn get_iid_to_terms(&self, iid: StoreObjectIID) -> Result<Option<Vec<String>>, ()> {
-        if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket_id.ok_or(())?, iid);
-
-            tracing::debug!("store get iid-to-terms: {}", store_key);
-
-            match store.get(&store_key.as_bytes()) {
-                Ok(Some(value)) => {
-                    tracing::debug!(
-                        "got iid-to-terms: {} with encoded value: {:?}",
-                        store_key,
-                        &*value
-                    );
-
-                    Self::decode_terms(&value).or(Err(())).map(|value_decoded| {
-                        tracing::debug!(
-                            "got iid-to-terms: {} with decoded value: {:?}",
-                            store_key,
-                            &value_decoded
-                        );
-
-                        if !value_decoded.is_empty() {
-                            Some(value_decoded)
-                        } else {
-                            None
-                        }
-                    })
-                }
-                Ok(None) => Ok(None),
-                Err(_) => Err(()),
-            }
-        } else {
-            Ok(None)
-        }
-    }
-
-    pub fn set_iid_to_terms(&self, iid: StoreObjectIID, terms: &[String]) -> Result<(), ()> {
-        if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket_id.ok_or(())?, iid);
-
-            tracing::debug!("store set iid-to-terms: {}", store_key);
-
-            // Encode term list into storage serialized format
-            let terms_hashed_encoded = Self::encode_terms(terms)?;
-
-            tracing::debug!(
-                "store set iid-to-terms: {} with encoded value: {:?}",
-                store_key,
-                terms_hashed_encoded
-            );
-
-            store
-                .put(&store_key.as_bytes(), &terms_hashed_encoded)
-                .or(Err(()))
-        } else {
-            Err(())
-        }
-    }
-
-    pub fn delete_iid_to_terms(&self, iid: StoreObjectIID) -> Result<(), ()> {
-        if let Some(ref store) = self.store {
-            let store_key = StoreKeyerBuilder::iid_to_terms(self.bucket_id.ok_or(())?, iid);
-
-            tracing::debug!("store delete iid-to-terms: {}", store_key);
-
-            store.delete(&store_key.as_bytes()).or(Err(()))
-        } else {
-            Err(())
-        }
-    }
-
     pub fn batch_flush_bucket(
         &self,
         iid: StoreObjectIID,
@@ -2172,7 +2007,6 @@ impl<'a> StoreKVAction<'a> {
         let mut batch = WriteBatch::default();
         batch.delete(StoreKeyerBuilder::oid_to_iid(bucket_id, oid).as_bytes());
         batch.delete(StoreKeyerBuilder::iid_to_oid(bucket_id, iid).as_bytes());
-        batch.delete(StoreKeyerBuilder::iid_to_terms(bucket_id, iid).as_bytes());
         if let Some(timestamp_ms) = self.get_iid_timestamp(iid)? {
             self.append_remove_time_iid(&mut batch, timestamp_ms, iid)?;
             batch.delete(StoreKeyerBuilder::iid_to_timestamp(bucket_id, iid).as_bytes());
@@ -2259,57 +2093,6 @@ impl<'a> StoreKVAction<'a> {
         encoded.try_into().map(u64::from_le_bytes).map_err(|_| ())
     }
 
-    fn encode_terms(terms: &[String]) -> Result<Vec<u8>, ()> {
-        let mut terms = terms.to_vec();
-        terms.sort_unstable();
-        terms.dedup();
-        let mut encoded = Vec::new();
-        for term in terms {
-            let length = u32::try_from(term.len()).map_err(|_| ())?;
-            Self::encode_varint(length, &mut encoded);
-            encoded.extend_from_slice(term.as_bytes());
-        }
-        Ok(encoded)
-    }
-
-    fn decode_terms(encoded: &[u8]) -> Result<Vec<String>, ()> {
-        let mut terms = Vec::new();
-        let mut cursor = 0;
-        while cursor < encoded.len() {
-            let length = Self::decode_varint(encoded, &mut cursor)? as usize;
-            let term_end = cursor.checked_add(length).ok_or(())?;
-            let term = str::from_utf8(encoded.get(cursor..term_end).ok_or(())?)
-                .map_err(|_| ())?
-                .to_owned();
-            terms.push(term);
-            cursor = term_end;
-        }
-        Ok(terms)
-    }
-
-    fn encode_varint(mut value: u32, encoded: &mut Vec<u8>) {
-        while value >= 0x80 {
-            encoded.push((value as u8 & 0x7f) | 0x80);
-            value >>= 7;
-        }
-        encoded.push(value as u8);
-    }
-
-    fn decode_varint(encoded: &[u8], cursor: &mut usize) -> Result<u32, ()> {
-        let mut value = 0u32;
-        for shift in (0..=28).step_by(7) {
-            let byte = *encoded.get(*cursor).ok_or(())?;
-            *cursor = cursor.checked_add(1).ok_or(())?;
-            if shift == 28 && byte > 0x0f {
-                return Err(());
-            }
-            value |= u32::from(byte & 0x7f) << shift;
-            if byte & 0x80 == 0 {
-                return Ok(value);
-            }
-        }
-        Err(())
-    }
 }
 
 impl StoreKVKey {
@@ -2465,13 +2248,6 @@ mod tests {
         assert!(action.set_iid_to_oid(4, &"s".to_string()).is_ok());
         assert!(action.delete_iid_to_oid(4).is_ok());
 
-        assert!(action.get_iid_to_terms(4).is_ok());
-        assert!(
-            action
-                .set_iid_to_terms(4, &["hello".to_owned(), "world".to_owned()])
-                .is_ok()
-        );
-        assert!(action.delete_iid_to_terms(4).is_ok());
     }
 
     #[test]
@@ -2486,32 +2262,6 @@ mod tests {
         assert_eq!(StoreKVAction::decode_u32(&[0, 0, 0, 0]), Ok(0));
         assert_eq!(StoreKVAction::decode_u32(&[1, 0, 0, 0]), Ok(1));
         assert_eq!(StoreKVAction::decode_u32(&[90, 177, 0, 0]), Ok(45402));
-    }
-
-    #[test]
-    fn it_round_trips_term_lists() {
-        let terms = vec!["world".to_owned(), "hello".to_owned(), "hello".to_owned()];
-        let encoded = StoreKVAction::encode_terms(&terms).unwrap();
-        assert_eq!(encoded, b"\x05hello\x05world");
-        assert_eq!(
-            StoreKVAction::decode_terms(&encoded),
-            Ok(vec!["hello".to_owned(), "world".to_owned()])
-        );
-
-        let long_term = "x".repeat(300);
-        let encoded = StoreKVAction::encode_terms(std::slice::from_ref(&long_term)).unwrap();
-        assert_eq!(&encoded[..2], &[0xac, 0x02]);
-        assert_eq!(StoreKVAction::decode_terms(&encoded), Ok(vec![long_term]));
-    }
-
-    #[test]
-    fn it_rejects_invalid_term_lists() {
-        assert_eq!(StoreKVAction::decode_terms(&[0x80]), Err(()));
-        assert_eq!(
-            StoreKVAction::decode_terms(&[0xff, 0xff, 0xff, 0xff, 0x10]),
-            Err(())
-        );
-        assert_eq!(StoreKVAction::decode_terms(&[2, b'a']), Err(()));
     }
 
     fn test_kv_store_config() -> Arc<crate::config::ConfigStoreKV> {

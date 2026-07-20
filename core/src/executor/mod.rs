@@ -7,6 +7,10 @@
 
 use std::sync::Arc;
 
+use crate::lexer::{TokenLexerBuilder, TokenLexerMode};
+use crate::store::identifiers::StoreObjectIID;
+use crate::store::kv::StoreKVAction;
+
 #[macro_use]
 mod macros;
 
@@ -45,5 +49,28 @@ impl std::fmt::Debug for Executor {
             .field("kv_pool", kv_pool)
             .field("fst_pool", fst_pool)
             .finish_non_exhaustive()
+    }
+}
+
+impl Executor {
+    fn indexed_terms_for_iid(
+        &self,
+        kv_action: &StoreKVAction<'_>,
+        iid: StoreObjectIID,
+    ) -> Result<Vec<String>, ()> {
+        if let Some(document) = kv_action.get_document_by_iid(iid)? {
+            let terms = TokenLexerBuilder::from(
+                TokenLexerMode::NormalizeAndCleanup,
+                None,
+                &document.text,
+                self.app_conf.normalization,
+                self.app_conf.tokenization,
+            )?
+            .map(|(token, _)| token.into_inner())
+            .collect::<Vec<_>>();
+            return Ok(terms);
+        }
+
+        Ok(Vec::new())
     }
 }

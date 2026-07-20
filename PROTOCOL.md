@@ -121,16 +121,16 @@ _The Sonic Channel Ingest mode is used for altering the search index (push, pop 
 
 **➡️ Available commands:**
 
-* `PUSH`: Push search data in the index (syntax: `PUSH <collection> <bucket> <object> "<text>" [LANG(<locale>)]?`; time complexity: `O(1)`)
+* `PUSH`: Append text to a stored document and update its index (syntax: `PUSH <collection> <bucket> <object> "<text>" [LANG(<locale>)]?`; time complexity: `O(N)`)
 * `UPSERT`: Atomically replace a stored document and its index (syntax: `UPSERT <collection> <bucket> <object> "<text>" TS(<unix_ms>) [META(<base64url-json>)]? [LANG(<locale>)]?`)
 * `UPSERTBATCH`: Apply a compressed multi-document batch (syntax: `UPSERTBATCH <collection> <fresh|upsert> <base64-zstd-ndjson>`); `fresh` is insert-only and `upsert` replaces existing OIDs
-* `POP`: Pop search data from the index (syntax: `POP <collection> <bucket> <object> "<text>"`; time complexity: `O(1)`)
+* `POP`: Remove the first exact text occurrence from a stored document and update its index (syntax: `POP <collection> <bucket> <object> "<text>"`; time complexity: `O(N)`)
 * `EXPORT`: Stream a collection, or one optional bucket, to a server-local NDJSON Zstd file; every record contains its bucket (syntax: `EXPORT <collection> [<bucket>]? <path>`)
 * `IMPORT`: Rebuild buckets from a server-local NDJSON Zstd file containing a `bucket` field on each record (syntax: `IMPORT <collection> <path>`)
-* `COUNT`: Count indexed search data (syntax: `COUNT <collection> [<bucket> [<object>]?]?`; time complexity: `O(1)`)
+* `COUNT`: Count indexed search data (syntax: `COUNT <collection> [<bucket> [<object>]?]?`; object counts retokenize the document in `O(N)`)
 * `FLUSHC`: Flush all indexed data from a collection (syntax: `FLUSHC <collection>`; time complexity: `O(1)`)
 * `FLUSHB`: Flush all indexed data from a bucket in a collection (syntax: `FLUSHB <collection> <bucket>`; time complexity: `O(N)` where `N` is the number of bucket objects)
-* `FLUSHO`: Flush all indexed data from an object in a bucket in collection (syntax: `FLUSHO <collection> <bucket> <object>`; time complexity: `O(1)`)
+* `FLUSHO`: Flush all indexed data from an object in a bucket in collection (syntax: `FLUSHO <collection> <bucket> <object>`; time complexity: `O(N)`)
 * `PING`: ping server (syntax: `PING`; time complexity: `O(1)`)
 * `HELP`: show help (syntax: `HELP [<manual>]?`; time complexity: `O(1)`)
 * `QUIT`: stop connection (syntax: `QUIT`; time complexity: `O(1)`)

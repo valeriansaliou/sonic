@@ -5,16 +5,14 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use linked_hash_set::LinkedHashSet;
-use std::iter::FromIterator;
-
 use crate::lexer::TokenLexer;
 use crate::store::StoreItem;
+use crate::store::document::StoreDocument;
 use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
 impl super::Executor {
-    pub fn push(&self, item: StoreItem, lexer: TokenLexer) -> Result<(), ()> {
+    pub fn push(&self, item: StoreItem, lexer: TokenLexer, text: String) -> Result<(), ()> {
         if let StoreItem(collection, Some(bucket), Some(object)) = item {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
@@ -33,35 +31,45 @@ impl super::Executor {
                 let fst_action = StoreFSTActionBuilder::access(fst_store);
 
                 let oid = object.as_str();
-                if let Ok(iid) = kv_action.get_or_create_iid(oid) {
-                    if kv_action.get_document_by_iid(iid)?.is_some() {
-                        tracing::error!("cannot PUSH an OID managed by UPSERT");
-                        return Err(());
+                if let Ok((iid, is_new_iid)) = kv_action.resolve_or_reserve_iid(oid) {
+                    let existing_document = kv_action.get_document_by_iid(iid)?;
+                    let old_terms = if existing_document.is_some() {
+                        self.indexed_terms_for_iid(&kv_action, iid)?
+                    } else {
+                        Vec::new()
+                    };
+                    let mut document = existing_document.unwrap_or(StoreDocument::new(
+                        oid,
+                        0,
+                        "",
+                        serde_json::json!({}),
+                    )?);
+                    if !document.text.is_empty() && !text.is_empty() {
+                        document.text.push(' ');
                     }
-                    // Acquire list of terms for IID
-                    let iid_terms: LinkedHashSet<String> = LinkedHashSet::from_iter(
-                        kv_action
-                            .get_iid_to_terms(iid)
-                            .unwrap_or(None)
-                            .unwrap_or_default(),
-                    );
+                    document.text.push_str(&text);
 
-                    tracing::debug!("got push executor stored iid-to-terms: {:?}", iid_terms);
-
-                    let mut new_terms = Vec::<String>::new();
+                    let mut new_terms = old_terms.clone();
                     for (token, _) in lexer {
                         let term = token.as_str().to_owned();
-                        if !iid_terms.contains(&term) && !new_terms.contains(&term) {
+                        if !new_terms.contains(&term) {
                             new_terms.push(term);
                         }
                     }
 
-                    let existing_terms = iid_terms.into_iter().collect::<Vec<_>>();
-                    let frequencies =
-                        kv_action.batch_insert_iid_terms(iid, &existing_terms, &new_terms)?;
+                    let frequencies = kv_action.batch_upsert_document(
+                        iid,
+                        oid,
+                        is_new_iid,
+                        &old_terms,
+                        &new_terms,
+                        &document,
+                    )?;
                     for (term, frequency) in frequencies {
-                        if fst_action.push_word(&term, frequency, &self.app_conf.store.fst) {
-                            tracing::debug!("push term committed to graph: {}", term);
+                        if frequency == 0 {
+                            fst_action.pop_word(&term);
+                        } else {
+                            fst_action.push_word(&term, frequency, &self.app_conf.store.fst);
                         }
                     }
 

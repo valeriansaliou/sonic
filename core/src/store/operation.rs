@@ -30,13 +30,11 @@ impl StoreOperationDispatch {
                 .list(store, query_id, limit, offset)
                 .map(|results| results.join(" "))
                 .map(Some),
-            Query::Push(store, lexer) => executor.push(store, lexer).map(|_| None),
+            Query::Push(store, lexer, text) => executor.push(store, lexer, text).map(|_| None),
             Query::Upsert(store, lexer, document) => {
                 executor.upsert(store, lexer, document).map(|_| None)
             }
-            Query::Pop(store, lexer) => executor
-                .pop(store, lexer)
-                .map(|count| Some(count.to_string())),
+            Query::Pop(store, text) => executor.pop(store, text).map(|count| Some(count.to_string())),
             Query::Count(store) => executor.count(store).map(|count| Some(count.to_string())),
             Query::FlushC(store) => executor.flushc(store).map(|count| Some(count.to_string())),
             Query::FlushB(store) => executor.flushb(store).map(|count| Some(count.to_string())),

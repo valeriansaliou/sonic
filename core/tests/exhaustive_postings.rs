@@ -26,6 +26,7 @@ fn test_common_term_keeps_more_than_one_thousand_objects() {
                     executor.app_conf.tokenization,
                 )
                 .unwrap(),
+                "commonterm".to_owned(),
             )
             .unwrap();
     }

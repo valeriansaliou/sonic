@@ -310,7 +310,7 @@ impl super::Executor {
         let fst_store = self.fst_pool.acquire(collection, bucket_id)?;
         let fst_action = StoreFSTActionBuilder::access(fst_store);
         let (iid, is_new_iid) = kv_action.resolve_or_reserve_iid(object.as_str())?;
-        let old_terms = kv_action.get_iid_to_terms(iid)?.unwrap_or_default();
+        let old_terms = self.indexed_terms_for_iid(&kv_action, iid)?;
         let mut new_terms = Vec::new();
         for (token, _) in lexer {
             let term = token.as_str().to_owned();

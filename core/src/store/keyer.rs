@@ -28,7 +28,6 @@ const IDX_META_TO_VALUE: u8 = 0;
 const IDX_TERM_POSTING: u8 = 1;
 const IDX_OID_TO_IID: u8 = 2;
 const IDX_IID_TO_OID: u8 = 3;
-const IDX_IID_TO_TERMS: u8 = 4;
 const IDX_BUCKET_NAME_TO_ID: u8 = 5;
 const IDX_BUCKET_ID_TO_NAME: u8 = 6;
 const IDX_IID_TO_TIMESTAMP: u8 = 7;
@@ -118,10 +117,6 @@ impl StoreKeyerBuilder {
         Self::fixed(IDX_IID_TO_OID, bucket_id, iid)
     }
 
-    pub fn iid_to_terms(bucket_id: StoreBucketID, iid: StoreObjectIID) -> StoreKeyer {
-        Self::fixed(IDX_IID_TO_TERMS, bucket_id, iid)
-    }
-
     pub fn bucket_name_to_id(bucket: &str) -> StoreKeyer {
         let mut key = Self::bucket_name_prefix();
         key.extend_from_slice(bucket.as_bytes());
@@ -149,7 +144,6 @@ impl StoreKeyerBuilder {
             IDX_TERM_POSTING,
             IDX_OID_TO_IID,
             IDX_IID_TO_OID,
-            IDX_IID_TO_TERMS,
             IDX_IID_TO_TIMESTAMP,
             IDX_TIME_POSTING,
             IDX_TERM_FREQUENCY,

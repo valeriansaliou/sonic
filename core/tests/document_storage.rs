@@ -111,7 +111,7 @@ fn test_bulk_upsert_handles_shared_postings_and_multiple_buckets() {
         "movie:3"
     );
     let stats = executor.stats("movies", true).unwrap();
-    assert_eq!(stats.schema_version, 14);
+    assert_eq!(stats.schema_version, 15);
     let logical = stats.logical.unwrap();
     assert_eq!(logical.document_count, 3);
     assert_eq!(logical.term_postings.associations, 6);
@@ -170,6 +170,36 @@ fn test_upsert_replaces_document_and_filters_by_date() {
         query_documents(&executor, "messages", "replacement", None)[0].timestamp_ms,
         500
     );
+    assert_eq!(
+        executor.count(object_ref!("messages", "default", "message:2")),
+        Ok(1)
+    );
+}
+
+#[test]
+fn test_push_appends_and_upsert_replaces_documents() {
+    init_logging();
+    let executor = make_test_executor();
+    exec!(executor -> PUSH "messages" "default" "message:1" "legacy terms");
+    exec!(executor -> PUSH "messages" "default" "message:1" "additional");
+    assert_eq!(
+        query_documents(&executor, "messages", "additional", None)[0].text,
+        "legacy terms additional"
+    );
+
+    upsert(
+        &executor,
+        "messages",
+        "message:1",
+        1_000,
+        "stored replacement",
+    );
+
+    assert!(query_documents(&executor, "messages", "legacy", None).is_empty());
+    assert_eq!(
+        query_documents(&executor, "messages", "replacement", None)[0].oid,
+        "message:1"
+    );
 }
 
 #[test]
@@ -200,7 +230,7 @@ fn test_document_export_import_rebuilds_index() {
 }
 
 #[test]
-fn test_document_lifecycle_rejects_partial_mutations_and_flushes() {
+fn test_document_lifecycle_appends_pops_and_flushes() {
     init_logging();
     let executor = make_test_executor();
     upsert(
@@ -219,21 +249,25 @@ fn test_document_lifecycle_rejects_partial_mutations_and_flushes() {
     )
     .unwrap();
     assert_eq!(
-        executor.push(object_ref!("messages", "default", "message:1"), push_lexer),
-        Err(())
+        executor.push(
+            object_ref!("messages", "default", "message:1"),
+            push_lexer,
+            "extra".to_owned(),
+        ),
+        Ok(())
     );
-    let pop_lexer = sonic::lexer::TokenLexerBuilder::from(
-        sonic::lexer::TokenLexerMode::NormalizeOnly,
-        None,
-        "managed",
-        executor.app_conf.normalization,
-        executor.app_conf.tokenization,
-    )
-    .unwrap();
     assert_eq!(
-        executor.pop(object_ref!("messages", "default", "message:1"), pop_lexer),
-        Err(())
+        query_documents(&executor, "messages", "extra", None)[0].text,
+        "managed document extra"
     );
+    assert_eq!(
+        executor.pop(
+            object_ref!("messages", "default", "message:1"),
+            "extra".to_owned(),
+        ),
+        Ok(1)
+    );
+    assert!(query_documents(&executor, "messages", "extra", None).is_empty());
     assert_eq!(
         executor.flusho(object_ref!("messages", "default", "message:1")),
         Ok(2)

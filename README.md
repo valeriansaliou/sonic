@@ -93,9 +93,9 @@ target/release/sonic-cli stats --collection movies --deep
 ## Features
 
 * **Search terms are stored in collections, organized in buckets**; you may use a single bucket, or a bucket per user on your platform if you need to search in separate indexes.
-* **Search results can return identifiers or documents**. PUSH/QUERY keeps the compact identifier-only workflow, while UPSERT/QUERYDOCS stores and returns timestamped text with JSON metadata.
+* **Search results can return identifiers or documents**. PUSH appends text, UPSERT replaces a document, and QUERY or QUERYDOCS returns identifiers or timestamped documents with JSON metadata.
 * **Search query typos are corrected** using an adaptive lexicon that retains frequent and recent corpus terms while evicting colder terms. Exact matches rank before fuzzy alternatives.
-* **Insert and remove items in the index**; index-altering operations are light and can be committed to the server while it is running. A background tasker handles the job of consolidating the index so that the entries you have pushed or popped are quickly made available for search.
+* **Insert and remove items in the index**; POP removes one exact text fragment while FLUSH commands remove larger scopes. A background tasker handles index consolidation.
 * **Full Unicode compatibility** through Charabia's script-aware segmentation and language detection. All terms, including common words, remain searchable; [see languages](https://github.com/valeriansaliou/sonic#which-text-languages-are-supported).
 * **Simple protocol (Sonic Channel)**, that let you search your index, manage data ingestion (push in the index, pop from the index, flush a collection, flush a bucket, etc.) and perform administrative actions. Sonic Channel was designed to be lightweight on resources and simple to integrate with; [read protocol specification](https://github.com/valeriansaliou/sonic/blob/master/PROTOCOL.md).
 * **Easy-to-use libraries**, that let you connect to Sonic from your apps; [see libraries](https://github.com/valeriansaliou/sonic#-sonic-channel-libraries).

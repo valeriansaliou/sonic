@@ -10,13 +10,13 @@ _If you feel something is missing from this document, or if it did not help you 
 
 ### Basics of a search index
 
-A search index is nothing more than a specialized database. It should expose primitives such as: query the index, push text in the index, pop text from the index, flush parts of the index.
+A search index is nothing more than a specialized database. It should expose primitives such as querying, appending, replacing, removing text and flushing parts of the index.
 
 The search index server is responsible for organizing the index data in a way that makes writes and reads efficient. It makes uses of specialized data structures for some very specific operations like typos corrections. The overall goal of such a search index system is: speed, lightweightness and data compactness (ie. it should minimize the resulting output database size given a text input size).
 
 As to provide flexibility to organized indexed data, the search index is organized into collections that contain buckets. Buckets contain indexed objects. This means that you can organize your search index within a depth of 2 layers. Objects are actual search results; you could push an object `result_1` to collection `messages` within bucket `user_1`. This would index `messages` for `user_1` with result `result_1`. Later on, one could search for `messages` matching a given query for `user_1`. If the Sonic user use case does not require using buckets, the bucket value can still be set to a generic value, eg. `default`.
 
-Sonic can operate as a compact identifier-only index through PUSH and QUERY, or store complete documents through UPSERT and QUERYDOCS. Stored documents contain the searchable text, an explicit UTC timestamp and extensible JSON metadata.
+Sonic stores complete documents. PUSH appends text, POP removes one exact text fragment, UPSERT replaces the document, and QUERY or QUERYDOCS returns identifiers or documents.
 
 It is worth nothing that any project initiated as of 2019 should make use of modern server hardware, which is mostly all about multi-core CPUs and SSDs. Also, Sonic should be very wary of minimizing its resource requirements — _from a cold start to running under high load_ — as a lot of developers nowadays expect to run software on cheap VPS servers with limited CPU time, small disk space and little RAM. Those modern VPS are nonetheless powered by modern SSDs with fast random I/O. Last but not least, it would definitely be a plus if we could make software a bit greener.
 
@@ -35,10 +35,9 @@ The KV schema uses collision-free dictionaries while keeping frequently repeated
 1. **Bucket-Name-To-ID / Bucket-ID-To-Name** assign a sequential 32-bit ID to each complete bucket name.
 2. **Term-Postings** maps a length-prefixed normalized term and IID-range shard to the compact object IDs contained in that range.
 3. **OID-To-IID / IID-To-OID** map the complete user-provided object ID to a sequential 32-bit internal ID and back.
-4. **IID-To-Terms** lists sorted normalized UTF-8 terms associated with an IID using length-prefixed encoding.
-5. **Meta-To-Value** stores the bucket and object counters.
-6. **IID-To-Timestamp** stores the exact document timestamp used for boundary checks and ranking.
-7. **Time-Postings** map hourly UTC slices and IID shards to compact object offsets for date intersections.
+4. **Meta-To-Value** stores the bucket and object counters.
+5. **IID-To-Timestamp** stores the exact document timestamp used for boundary checks and ranking.
+6. **Time-Postings** map hourly UTC slices and IID shards to compact object offsets for date intersections.
 
 Each collection RocksDB has separate metadata, postings and document column families. Active levels use LZ4 compression and the bottommost level uses Zstandard. Keys are bucket-first and numeric components use ordered big-endian encoding. Posting keys include a length-prefixed normalized term and a 16-bit shard selected from the high IID bits, so each value covers at most 65,536 objects. Sparse shards choose the smaller of raw u16 and delta-VarInt encoding, while dense shards use an 8 KiB bitmap.
 

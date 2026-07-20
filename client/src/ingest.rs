@@ -68,7 +68,7 @@ pub trait PushOption: std::fmt::Display + Sync {}
 impl<'a> PushOption for Lang<'a> {}
 
 impl_fns!(
-    #[doc = "Time complexity: O(1)."]
+    #[doc = "Time complexity: O(N)."]
     #[inline]
     fn push(
         &self,
@@ -194,7 +194,7 @@ impl_fns!(
 );
 
 impl_fns!(
-    #[doc = "Time complexity: O(1)."]
+    #[doc = "Time complexity: O(N)."]
     fn push_with_options<'a>(
         &self,
         collection: impl AsRef<str>,
@@ -214,7 +214,7 @@ impl_fns!(
 // MARK: POP
 
 impl_fns!(
-    #[doc = "Time complexity: O(1)."]
+    #[doc = "Time complexity: O(N)."]
     fn pop(
         &self,
         collection: impl AsRef<str>,
@@ -363,7 +363,7 @@ impl_fns!(
 );
 
 impl_fns!(
-    #[doc = "Time complexity: O(1)."]
+    #[doc = "Time complexity: O(N)."]
     fn counto(
         &self,
         collection: impl AsRef<str>,
@@ -407,7 +407,7 @@ impl_fns!(
 );
 
 impl_fns!(
-    #[doc = "Time complexity: O(1)."]
+    #[doc = "Time complexity: O(N)."]
     fn flusho(
         &self,
         collection: impl AsRef<str>,
