@@ -31,7 +31,9 @@ config = { version = "=0.15.25", default-features = false, features = ["toml"] }
 # Benchmarking dependencies.
 arrow-array = { version = "=59.1.0", default-features = false }
 criterion = { version = "=0.8.2", default-features = false, features = ["html_reports", "plotters"] }
+hf-hub = { version = "=0.4.3", default-features = false, features = ["ureq"] }
 parquet = { version = "=59.1.0", default-features = false, features = ["arrow", "snap"] }
+serde_json = { version = "=1.0.150", default-features = false, features = ["std"] }
 sonic_client = { version = "=0.3.0", path = "../client", features = ["sync", "tracing"] }
 
 [target.'cfg(unix)'.dependencies]
@@ -50,4 +52,8 @@ benchmark = []
 
 [[bench]]
 name = "wikipedia"
+harness = false
+
+[[bench]]
+name = "beir_quora"
 harness = false
