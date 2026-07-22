@@ -7,6 +7,25 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Download and cache specific files from a Huggingface dataset.
+pub fn download_files<const N: usize>(dataset: &str, filenames: [&str; N]) -> [PathBuf; N] {
+    let dataset_dir = dataset_dir(dataset);
+
+    filenames.map(|filename| {
+        let out = dataset_dir.join(filename);
+        if out.exists() {
+            tracing::debug!(?dataset, "Dataset file already exists: {filename:?}");
+            return out;
+        }
+
+        std::fs::create_dir_all(out.parent().unwrap()).unwrap();
+        let url = format!("https://huggingface.co/datasets/{dataset}/resolve/main/{filename}");
+        let status = Command::new("wget").arg(url).arg("-O").arg(&out).status();
+        assert!(status.unwrap().success());
+        out
+    })
+}
+
 /// Download and list Huggingface dataset shards, skipping already downloaded
 /// data.
 pub fn download_shards(dataset: &str, config: &str) -> Vec<PathBuf> {

@@ -54,3 +54,7 @@ benchmark = []
 [[bench]]
 name = "wikipedia"
 harness = false
+
+[[bench]]
+name = "beir_quora"
+harness = false
