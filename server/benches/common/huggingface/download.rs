@@ -6,42 +6,29 @@
 
 use std::path::PathBuf;
 
-use hf_hub::repository::RepoTreeEntry;
-use hf_hub::{HFClientSync, split_id};
+use hf_hub::api::sync::Api;
 
 /// Download and cache files from a Hugging Face dataset.
 #[allow(dead_code)]
 pub fn download_files<const N: usize>(dataset: &str, filenames: [&str; N]) -> [PathBuf; N] {
-    let client = HFClientSync::new().unwrap();
-    let (owner, name) = split_id(dataset);
-    let repository = client.dataset(owner, name);
+    let api = Api::new().unwrap();
+    let repository = api.dataset(dataset.to_owned());
 
-    filenames.map(|filename| {
-        repository
-            .download_file()
-            .filename(filename)
-            .send()
-            .unwrap()
-    })
+    filenames.map(|filename| repository.get(filename).unwrap())
 }
 
 /// Download and list the Parquet shards for a dataset configuration.
 #[allow(dead_code)]
 pub fn download_shards(dataset: &str, config: &str) -> Vec<PathBuf> {
-    let client = HFClientSync::new().unwrap();
-    let (owner, name) = split_id(dataset);
-    let repository = client.dataset(owner, name);
+    let api = Api::new().unwrap();
+    let repository = api.dataset(dataset.to_owned());
     let prefix = format!("{config}/");
     let mut filenames: Vec<_> = repository
-        .list_tree()
-        .recursive(true)
-        .send()
+        .info()
         .unwrap()
+        .siblings
         .into_iter()
-        .filter_map(|entry| match entry {
-            RepoTreeEntry::File { path, .. } => Some(path),
-            RepoTreeEntry::Directory { .. } => None,
-        })
+        .map(|file| file.rfilename)
         .filter(|filename| filename.starts_with(&prefix) && filename.ends_with(".parquet"))
         .collect();
     filenames.sort_unstable();
@@ -52,12 +39,6 @@ pub fn download_shards(dataset: &str, config: &str) -> Vec<PathBuf> {
     );
     filenames
         .iter()
-        .map(|filename| {
-            repository
-                .download_file()
-                .filename(filename)
-                .send()
-                .unwrap()
-        })
+        .map(|filename| repository.get(filename).unwrap())
         .collect()
 }
