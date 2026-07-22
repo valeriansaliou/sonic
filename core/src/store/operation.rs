@@ -34,7 +34,9 @@ impl StoreOperationDispatch {
             Query::Upsert(store, lexer, document) => {
                 executor.upsert(store, lexer, document).map(|_| None)
             }
-            Query::Pop(store, text) => executor.pop(store, text).map(|count| Some(count.to_string())),
+            Query::Pop(store, text) => executor
+                .pop(store, text)
+                .map(|count| Some(count.to_string())),
             Query::Count(store) => executor.count(store).map(|count| Some(count.to_string())),
             Query::FlushC(store) => executor.flushc(store).map(|count| Some(count.to_string())),
             Query::FlushB(store) => executor.flushb(store).map(|count| Some(count.to_string())),

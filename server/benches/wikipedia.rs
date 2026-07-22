@@ -8,7 +8,7 @@ mod common;
 
 use std::collections::HashMap;
 use std::hint::black_box;
-use std::net::Ipv6Addr;
+use std::net::{Ipv6Addr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{LazyLock, RwLock};
@@ -17,9 +17,9 @@ use std::time::{Duration, Instant};
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use sonic_client::SonicMultiplexer;
 use sonic_client::control::SonicChannelControlBlocking;
-use sonic_client::ingest::SonicChannelIngestBlocking;
+use sonic_client::ingest::{BulkDocument, BulkMode, SonicChannelIngestBlocking};
 use sonic_client::options::*;
-use sonic_client::search::SonicChannelSearchBlocking;
+use sonic_client::search::{Document, SonicChannelSearchBlocking};
 
 use crate::common::huggingface::WikipediaArticle;
 use crate::common::huggingface::download_shards;
@@ -52,7 +52,7 @@ fn articles_iter(limit: usize) -> impl Iterator<Item = WikipediaArticle> {
         .iter()
         .flat_map(iter_shard::<WikipediaArticle>)
         .filter(|a| a.text.as_bytes().len() > 2000)
-        // .filter(|a| a.text.as_bytes().len() < 8000)
+        .filter(|a| a.text.as_bytes().len() < 13000)
         // .filter(|a| a.text.as_bytes().len() > 20000)
         .take(limit)
 }
@@ -73,15 +73,17 @@ fn criterion_benchmark(c: &mut Criterion) {
     // No need to warm up for 3 seconds (default).
     group.warm_up_time(Duration::from_secs(1));
 
-    for config in [
-        PushBenchmarkConfig::default(),
-        PushBenchmarkConfig {
-            diacritic_folding_enabled: Some(false),
-        },
-        PushBenchmarkConfig {
-            diacritic_folding_enabled: Some(true),
-        },
-    ] {
+    for config in [IngestProtocol::Push, IngestProtocol::Batch]
+        .into_iter()
+        .flat_map(|protocol| {
+            [None, Some(false), Some(true)]
+                .into_iter()
+                .map(move |diacritic_folding_enabled| PushBenchmarkConfig {
+                    protocol,
+                    diacritic_folding_enabled,
+                })
+        })
+    {
         let articles = || articles_iter(1000);
 
         // Lower sample size as what we’re measuring is quite long to execute.
@@ -111,28 +113,70 @@ fn criterion_benchmark(c: &mut Criterion) {
                         // Ensure Sonic is running fine.
                         channel.ping().unwrap();
 
-                        let mut ingested_count = 0usize;
-                        let mut ingested_bytes = 0u32;
-
                         let start = Instant::now();
-                        for article in articles() {
-                            let len = article.text.as_bytes().len();
+                        let (ingested_count, ingested_bytes) = match config.protocol {
+                            IngestProtocol::Push => {
+                                let mut ingested_count = 0usize;
+                                let mut ingested_bytes = 0u32;
 
-                            match black_box(channel.push_with_options("wikipedia", "default", article.id, article.text, &[&Lang("eng")])) {
-                                Ok(()) => {
-                                    eprint!("{}", size_char(len));
+                                for article in articles() {
+                                    let len = article.text.len();
 
-                                    ingested_count += 1;
-                                    ingested_bytes += len as u32;
+                                    match black_box(channel.push_with_options("wikipedia", "default", article.id, article.text, &[&Lang("eng")])) {
+                                        Ok(()) => {
+                                            eprint!("{}", size_char(len));
+
+                                            ingested_count += 1;
+                                            ingested_bytes += len as u32;
+                                        }
+                                        Err(err) => {
+                                            panic!(
+                                                "Failed ingesting {:?} ({len}B) after {ingested_count} success(es) ({ingested_bytes}B): {err}",
+                                                article.title,
+                                            );
+                                        }
+                                    };
                                 }
-                                Err(err) => {
+
+                                (ingested_count, ingested_bytes)
+                            }
+                            IngestProtocol::Batch => {
+                                let documents = articles()
+                                    .map(|article| BulkDocument {
+                                        bucket: "default".to_owned(),
+                                        document: Document {
+                                            oid: article.id,
+                                            timestamp_ms: 0,
+                                            text: article.text,
+                                            metadata: serde_json::json!({}),
+                                        },
+                                    })
+                                    .collect::<Vec<_>>();
+                                let ingested_count = documents.len();
+                                let ingested_bytes = documents
+                                    .iter()
+                                    .map(|document| document.document.text.len() as u32)
+                                    .sum();
+                                let result = black_box(channel.upsert_batch(
+                                    "wikipedia",
+                                    BulkMode::Fresh,
+                                    &documents,
+                                ))
+                                .unwrap_or_else(|err| {
                                     panic!(
-                                        "Failed ingesting {:?} ({len}B) after {ingested_count} success(es) ({ingested_bytes}B): {err}",
-                                        article.title,
+                                        "Failed batch ingesting {ingested_count} articles ({ingested_bytes}B): {err}",
+                                    );
+                                });
+                                if result.written != ingested_count || result.rejected != 0 {
+                                    panic!(
+                                        "Batch ingestion wrote {} and rejected {} of {ingested_count} articles",
+                                        result.written, result.rejected,
                                     );
                                 }
-                            };
-                        }
+
+                                (result.written, ingested_bytes)
+                            }
+                        };
                         let elapsed = start.elapsed();
                         elapsed_total += elapsed;
 
@@ -342,7 +386,24 @@ criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum IngestProtocol {
+    #[default]
+    Push,
+    Batch,
+}
+
+impl std::fmt::Display for IngestProtocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Push => f.write_str("push"),
+            Self::Batch => f.write_str("batch"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct PushBenchmarkConfig {
+    protocol: IngestProtocol,
     diacritic_folding_enabled: Option<bool>,
 }
 
@@ -361,11 +422,11 @@ impl PushBenchmarkConfig {
 
 impl std::fmt::Display for PushBenchmarkConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "default")?;
-
         let Self {
+            protocol,
             diacritic_folding_enabled,
         } = self;
+        write!(f, "{protocol}")?;
 
         if let Some(diacritic_folding_enabled) = diacritic_folding_enabled {
             if *diacritic_folding_enabled {
@@ -540,10 +601,22 @@ fn start_sonic(
     // Auto-kill Sonic.
     let mut sonic = SpawnGuard(sonic);
 
-    std::thread::sleep(Duration::from_millis(500));
-    if let Some(status) = sonic.try_wait().unwrap() {
-        panic!("Sonic exited with {status}")
-    };
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(status) = sonic.try_wait().unwrap() {
+            panic!("Sonic exited with {status}")
+        }
+        match TcpStream::connect(ADDR) {
+            Ok(stream) => {
+                drop(stream);
+                break;
+            }
+            Err(_) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(err) => panic!("Sonic did not start listening on {ADDR:?}: {err}"),
+        }
+    }
     // println!("Started Sonic");
 
     sonic

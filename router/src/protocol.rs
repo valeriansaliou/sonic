@@ -288,7 +288,10 @@ mod tests {
             RoutedCommand::BroadcastList
         );
         assert_eq!(
-            classify(ChannelMode::Ingest, "BUCKETS messages LIMIT(100) OFFSET(200)"),
+            classify(
+                ChannelMode::Ingest,
+                "BUCKETS messages LIMIT(100) OFFSET(200)"
+            ),
             RoutedCommand::BroadcastList
         );
     }

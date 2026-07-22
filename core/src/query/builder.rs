@@ -106,9 +106,7 @@ impl<'a> Query<'a> {
                 tokenization_config,
             ),
         ) {
-            (Ok(store), Ok(text_lexed)) => {
-                Ok(Query::Push(store, text_lexed, text.to_owned()))
-            }
+            (Ok(store), Ok(text_lexed)) => Ok(Query::Push(store, text_lexed, text.to_owned())),
             _ => Err(()),
         }
     }

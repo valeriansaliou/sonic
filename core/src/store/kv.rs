@@ -549,8 +549,7 @@ impl StoreKVBuilder {
         // Configure database options
         let db_options = self.configure(None, DBCompressionType::Lz4);
 
-        let documents_options =
-            self.configure(Some(DOCUMENTS_BLOCK_SIZE), DBCompressionType::Zstd);
+        let documents_options = self.configure(Some(DOCUMENTS_BLOCK_SIZE), DBCompressionType::Zstd);
         let mut postings_options = self.configure(None, DBCompressionType::Lz4);
         postings_options.set_merge_operator_associative("posting_union", merge_postings);
         DB::open_cf_descriptors(
@@ -2092,7 +2091,6 @@ impl<'a> StoreKVAction<'a> {
     fn decode_u64(encoded: &[u8]) -> Result<u64, ()> {
         encoded.try_into().map(u64::from_le_bytes).map_err(|_| ())
     }
-
 }
 
 impl StoreKVKey {
@@ -2247,7 +2245,6 @@ mod tests {
         assert!(action.get_iid_to_oid(4).is_ok());
         assert!(action.set_iid_to_oid(4, &"s".to_string()).is_ok());
         assert!(action.delete_iid_to_oid(4).is_ok());
-
     }
 
     #[test]

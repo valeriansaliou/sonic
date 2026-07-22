@@ -25,12 +25,17 @@ impl super::Executor {
             .kv_pool
             .acquire(StoreKVAcquireMode::OpenOnly, collection)?;
         executor_kv_lock_read!(kv_store);
-        kv_store
-            .as_ref()
-            .map_or(Ok(Vec::new()), |store| store.dump_bucket(bucket, offset, limit))
+        kv_store.as_ref().map_or(Ok(Vec::new()), |store| {
+            store.dump_bucket(bucket, offset, limit)
+        })
     }
 
-    pub fn list_buckets(&self, collection: &str, offset: u64, limit: u64) -> Result<Vec<String>, ()> {
+    pub fn list_buckets(
+        &self,
+        collection: &str,
+        offset: u64,
+        limit: u64,
+    ) -> Result<Vec<String>, ()> {
         let _guard = self.kv_pool.lock_read_access();
         let kv_store = self
             .kv_pool

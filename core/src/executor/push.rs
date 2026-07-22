@@ -58,12 +58,7 @@ impl super::Executor {
                     }
 
                     let frequencies = kv_action.batch_upsert_document(
-                        iid,
-                        oid,
-                        is_new_iid,
-                        &old_terms,
-                        &new_terms,
-                        &document,
+                        iid, oid, is_new_iid, &old_terms, &new_terms, &document,
                     )?;
                     for (term, frequency) in frequencies {
                         if frequency == 0 {

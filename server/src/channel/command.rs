@@ -931,8 +931,7 @@ impl ChannelCommandIngest {
                 let (mut limit, mut offset) = (DUMP_LIMIT_DEFAULT, 0);
                 let mut last_meta_err = None;
 
-                while let Some(meta_result) =
-                    ChannelCommandBase::parse_next_meta_parts(&mut parts)
+                while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
                 {
                     match ChannelCommandSearch::handle_list_meta(meta_result) {
                         Ok((Some(limit_parsed), None)) => limit = limit_parsed,
@@ -976,8 +975,7 @@ impl ChannelCommandIngest {
                 let (mut limit, mut offset) = (DUMP_LIMIT_DEFAULT, 0);
                 let mut last_meta_err = None;
 
-                while let Some(meta_result) =
-                    ChannelCommandBase::parse_next_meta_parts(&mut parts)
+                while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
                 {
                     match ChannelCommandSearch::handle_list_meta(meta_result) {
                         Ok((Some(limit_parsed), None)) => limit = limit_parsed,
@@ -1009,7 +1007,9 @@ impl ChannelCommandIngest {
         }
     }
 
-    fn encode_dump_payload(records: &[sonic::store::document::StoreDocumentRecord]) -> Result<String, ()> {
+    fn encode_dump_payload(
+        records: &[sonic::store::document::StoreDocumentRecord],
+    ) -> Result<String, ()> {
         let mut ndjson = Vec::new();
         for record in records {
             serde_json::to_writer(&mut ndjson, record).map_err(|_| ())?;

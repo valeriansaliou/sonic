@@ -47,7 +47,11 @@ fn dump_bucket_paginates_and_round_trips_documents() {
     assert_eq!(
         oids,
         vec![
-            "message:0", "message:1", "message:2", "message:3", "message:4"
+            "message:0",
+            "message:1",
+            "message:2",
+            "message:3",
+            "message:4"
         ]
     );
     assert!(first_page.iter().all(|record| record.bucket == "user:1"));

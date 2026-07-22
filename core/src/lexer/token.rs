@@ -974,8 +974,7 @@ mod tests {
 
         fn previous_words(text: &str, lang: Option<Lang>) -> Vec<(&str, Option<Lang>)> {
             let tokenizer = TokenizerBuilder::default().into_tokenizer();
-            let hinted_language =
-                lang.and_then(|lang| CharabiaLanguage::from_code(lang.code()));
+            let hinted_language = lang.and_then(|lang| CharabiaLanguage::from_code(lang.code()));
             let allow_list = hinted_language.as_ref().map(std::slice::from_ref);
 
             tokenizer

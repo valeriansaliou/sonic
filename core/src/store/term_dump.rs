@@ -59,13 +59,9 @@ pub fn dump_term_frequencies(
         ColumnFamilyDescriptor::new(name, options)
     });
     let secondary = SecondaryDirectory::create()?;
-    let database = DB::open_cf_descriptors_as_secondary(
-        &options,
-        &database_path,
-        &secondary.0,
-        descriptors,
-    )
-    .map_err(|error| format!("cannot open {}: {error}", database_path.display()))?;
+    let database =
+        DB::open_cf_descriptors_as_secondary(&options, &database_path, &secondary.0, descriptors)
+            .map_err(|error| format!("cannot open {}: {error}", database_path.display()))?;
     database
         .try_catch_up_with_primary()
         .map_err(|error| format!("cannot catch up {}: {error}", database_path.display()))?;

@@ -246,8 +246,7 @@ fn handle_client(
                     // Use the bulk buffer here: unlike `FLUSHC`/`COUNT` (tiny numeric results), \
                     //   list-shaped broadcasts (eg. `BUCKETS`) can return a large payload per \
                     //   backend, well past the ordinary command buffer.
-                    match request_backend(mode, backend, line, sessions.timeout, bulk_buffer_size)
-                    {
+                    match request_backend(mode, backend, line, sessions.timeout, bulk_buffer_size) {
                         Ok(response) if response == "OK" => {}
                         Ok(response) => match parse_broadcast_result(&response) {
                             Some(count) => total = Some(total.unwrap_or(0) + count),
@@ -284,8 +283,7 @@ fn handle_client(
                     .values()
                     .filter(|backend| backend.status != BackendStatus::Offline)
                 {
-                    match request_backend(mode, backend, line, sessions.timeout, bulk_buffer_size)
-                    {
+                    match request_backend(mode, backend, line, sessions.timeout, bulk_buffer_size) {
                         Ok(response) => match parse_broadcast_list(&response) {
                             Some(tokens) => names.extend(tokens),
                             None => {
@@ -943,7 +941,9 @@ mod tests {
         second.1.join().unwrap();
     }
 
-    fn spawn_buckets_backend(names: &'static [&'static str]) -> (SocketAddr, thread::JoinHandle<()>) {
+    fn spawn_buckets_backend(
+        names: &'static [&'static str],
+    ) -> (SocketAddr, thread::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let handle = thread::spawn(move || {
