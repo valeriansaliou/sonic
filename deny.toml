@@ -58,6 +58,7 @@ allow-build-scripts = [
     "flatbuffers@25.12.19",
     "getrandom@0.3.4",
     "getrandom@0.4.3",
+    "httparse@1.10.1",
     "iana-time-zone-haiku@0.1.2",
     "libc@0.2.186",
     "libm@0.2.16",
