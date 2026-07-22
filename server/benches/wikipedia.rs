@@ -21,9 +21,9 @@ use sonic_client::ingest::SonicChannelIngestBlocking;
 use sonic_client::options::*;
 use sonic_client::search::SonicChannelSearchBlocking;
 
-use crate::common::huggingface::WikipediaArticle;
-use crate::common::huggingface::download_shards;
-use crate::common::huggingface::iter_shard;
+use crate::common::huggingface::download::download_shards;
+use crate::common::huggingface::load::iter_shard;
+use crate::common::huggingface::wikipedia::WikipediaArticle;
 use crate::common::spawn_guard::SpawnGuard;
 
 const ADDR: (Ipv6Addr, u16) = (Ipv6Addr::LOCALHOST, 1491);
@@ -539,11 +539,7 @@ fn start_sonic(
 
     // Auto-kill Sonic.
     let mut sonic = SpawnGuard(sonic);
-
-    std::thread::sleep(Duration::from_millis(500));
-    if let Some(status) = sonic.try_wait().unwrap() {
-        panic!("Sonic exited with {status}")
-    };
+    sonic.wait_until_ready(std::net::SocketAddr::from(ADDR));
     // println!("Started Sonic");
 
     sonic
