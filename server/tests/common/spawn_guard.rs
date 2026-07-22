@@ -47,7 +47,7 @@ impl std::ops::DerefMut for SpawnGuard {
 
 impl Drop for SpawnGuard {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        self.0.kill().unwrap();
+        self.0.wait().unwrap();
     }
 }
