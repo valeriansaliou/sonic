@@ -14,10 +14,8 @@ use crate::query::{
 use crate::store::StoreItem;
 use crate::store::document::StoreDocument;
 use crate::store::fst::{StoreFSTActionBuilder, typo_factor};
-use crate::store::identifiers::StoreObjectIID;
+use crate::store::identifiers::{StoreMetaKey, StoreMetaValue, StoreObjectIID};
 use crate::store::kv::{StoreKVAcquireMode, StoreKVAction, StoreKVActionBuilder};
-
-const MISSING_MATCH_SCORE: u16 = 100;
 
 impl super::Executor {
     pub fn search(
@@ -78,20 +76,35 @@ impl super::Executor {
             // PERF: This helps allocating the correct amounts of memory.
             let tokens: Vec<(NormalizedToken, usize)> = lexer.collect();
             let term_count = tokens.len();
+            let document_count = match kv_action.get_meta_to_value(StoreMetaKey::IIDIncr)? {
+                Some(StoreMetaValue::IIDIncr(last_iid)) => u64::from(last_iid) + 1,
+                Some(_) => return Err(()),
+                None => 0,
+            };
+            let term_relevances = tokens
+                .iter()
+                .map(|(token, _)| {
+                    kv_action
+                        .get_term_frequency(token)
+                        .map(|frequency| bm25_lite_idf(document_count, u64::from(frequency)))
+                })
+                .collect::<Result<Vec<_>, ()>>()?;
+            let mut exact_order = (0..term_count).collect::<Vec<_>>();
+            exact_order.sort_unstable_by(|left, right| {
+                term_relevances[*right].total_cmp(&term_relevances[*left])
+            });
 
-            // Store scores for each found IID. Results will then be sorted by
-            // score before being returned. Scores are basically the sum of
-            // Levenshtein distances for each term in the query. Lower score
-            // means better result.
+            // Store one BM25-lite relevance contribution per query term.
             // NOTE: We use `IndexMap` instead of `HashMap` to preserve
             //   insertion order, which correlates to reverse data ingestion
             //   order.
             // NOTE: `capacity = 24` to reduce initial grows.
-            let mut scoring_matrix: IndexMap<StoreObjectIID, Vec<QueryMatchScore>> =
+            let mut scoring_matrix: IndexMap<StoreObjectIID, Vec<Option<f64>>> =
                 IndexMap::with_capacity(24usize.min(usize::from(limit)));
 
-            // Look for exact matches.
-            for (idx, (token, _)) in tokens.iter().enumerate() {
+            // Look for exact matches, starting with the most selective term.
+            for idx in exact_order {
+                let token = &tokens[idx].0;
                 let iids = if let Some(range) = time_range {
                     kv_action
                         .get_term_iids_in_time_range(
@@ -113,8 +126,13 @@ impl super::Executor {
                     if scoring_matrix.len() >= higher_limit && !scoring_matrix.contains_key(&iid) {
                         continue;
                     }
-                    // Assign a score of `0` as those are exact matches.
-                    update_score(&mut scoring_matrix, iid, 0, idx, term_count);
+                    update_score(
+                        &mut scoring_matrix,
+                        iid,
+                        term_relevances[idx],
+                        idx,
+                        term_count,
+                    );
                 }
             }
 
@@ -138,6 +156,7 @@ impl super::Executor {
                         &mut alternates_try,
                         higher_limit,
                         time_range,
+                        document_count,
                     );
                 }
             }
@@ -181,6 +200,7 @@ impl super::Executor {
                             &mut alternates_try,
                             higher_limit,
                             time_range,
+                            document_count,
                         );
 
                         typo_factor += 1;
@@ -203,7 +223,7 @@ impl super::Executor {
                 let mut to_remove = Vec::<StoreObjectIID>::new();
 
                 for (&iid, scores) in scoring_matrix.iter() {
-                    if scores.contains(&MISSING_MATCH_SCORE) {
+                    if scores.iter().any(Option::is_none) {
                         to_remove.push(iid);
                     }
                 }
@@ -213,14 +233,13 @@ impl super::Executor {
                 }
             }
 
-            // Flatten scores, taking into account missing matches (thanks to
-            // `MISSING_MATCH_SCORE`).
+            // Flatten BM25-lite contributions; higher scores are more relevant.
             let mut found_iids = scoring_matrix
                 .into_iter()
                 .map(|(iid, scores)| {
                     Ok((
                         iid,
-                        scores.into_iter().sum::<QueryMatchScore>(),
+                        scores.into_iter().flatten().sum::<f64>(),
                         if time_range.is_some() {
                             kv_action.get_iid_timestamp(iid)?.unwrap_or(0)
                         } else {
@@ -230,8 +249,9 @@ impl super::Executor {
                 })
                 .collect::<Result<Vec<_>, ()>>()?;
             found_iids.sort_by(|left, right| {
-                left.1
-                    .cmp(&right.1)
+                right
+                    .1
+                    .total_cmp(&left.1)
                     .then_with(|| right.2.cmp(&left.2))
                     .then_with(|| {
                         if time_range.is_some() {
@@ -303,7 +323,7 @@ impl super::Executor {
 #[allow(clippy::too_many_arguments)] // We’ll refactor this someday, and it’ not public anyway.
 fn merge_suggestions(
     suggestions: impl Iterator<Item = (String, QueryMatchScore)>,
-    scoring_matrix: &mut IndexMap<StoreObjectIID, Vec<QueryMatchScore>>,
+    scoring_matrix: &mut IndexMap<StoreObjectIID, Vec<Option<f64>>>,
     term: &String,
     term_idx: usize,
     term_count: usize,
@@ -311,6 +331,7 @@ fn merge_suggestions(
     alternates_try: &mut usize,
     higher_limit: usize,
     time_range: Option<QueryTimeRange>,
+    document_count: u64,
 ) {
     'suggestions: for (suggested_word, suggestion_score) in suggestions {
         if *alternates_try == 0 {
@@ -339,12 +360,17 @@ fn merge_suggestions(
             Err(_) => continue,
         };
         *alternates_try -= 1;
+        let Ok(document_frequency) = kv_action.get_term_frequency(&suggested_word) else {
+            continue;
+        };
+        let relevance = bm25_lite_idf(document_count, u64::from(document_frequency))
+            / (1.0 + f64::from(suggestion_score));
 
         for suggested_iid in suggested_iids {
             let inserted = update_score(
                 scoring_matrix,
                 suggested_iid,
-                suggestion_score,
+                relevance,
                 term_idx,
                 term_count,
             );
@@ -369,36 +395,41 @@ fn merge_suggestions(
 }
 
 fn update_score(
-    scoring_matrix: &mut IndexMap<StoreObjectIID, Vec<QueryMatchScore>>,
+    scoring_matrix: &mut IndexMap<StoreObjectIID, Vec<Option<f64>>>,
     iid: StoreObjectIID,
-    score: QueryMatchScore,
+    relevance: f64,
     term_idx: usize,
     term_count: usize,
 ) -> bool {
     match scoring_matrix.entry(iid) {
-        // If entry already exists, use lowest score.
+        // Keep the strongest alternative for each query term.
         indexmap::map::Entry::Occupied(mut occupied_entry) => {
             // SAFETY: We always initialize vecs with `term_count` entries.
-            let entry_score = unsafe { occupied_entry.get_mut().get_unchecked_mut(term_idx) };
-
-            let new_score = score.min(*entry_score);
-
-            tracing::trace!(entry_score, new_score, "Updating to min score");
-            *entry_score = new_score;
+            let entry_relevance = unsafe { occupied_entry.get_mut().get_unchecked_mut(term_idx) };
+            let new_relevance = entry_relevance.map_or(relevance, |current| current.max(relevance));
+            tracing::trace!(?entry_relevance, new_relevance, "updating relevance");
+            *entry_relevance = Some(new_relevance);
 
             false
         }
-        // If entry does not exist, insert score.
+        // If entry does not exist, insert its first relevance contribution.
         indexmap::map::Entry::Vacant(vacant_entry) => {
-            let mut scores = vec![MISSING_MATCH_SCORE; term_count];
+            let mut scores = vec![None; term_count];
 
-            tracing::trace!(new_score = score, "Inserting new score");
+            tracing::trace!(relevance, "inserting relevance");
             // SAFETY: `scores` has `term_count` elements.
-            unsafe { *scores.get_unchecked_mut(term_idx) = score };
+            unsafe { *scores.get_unchecked_mut(term_idx) = Some(relevance) };
 
             vacant_entry.insert(scores);
 
             true
         }
     }
+}
+
+fn bm25_lite_idf(document_count: u64, document_frequency: u64) -> f64 {
+    let document_count = document_count.max(document_frequency);
+    (1.0 + (document_count as f64 - document_frequency as f64 + 0.5)
+        / (document_frequency as f64 + 0.5))
+        .ln()
 }
