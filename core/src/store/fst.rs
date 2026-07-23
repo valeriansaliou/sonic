@@ -33,7 +33,6 @@ use super::generic::{
 };
 use super::keyer::StoreKeyerHasher;
 use crate::lexer::ranges::LexerRegexRange;
-use crate::query::QueryMatchScore;
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
@@ -1274,15 +1273,13 @@ impl StoreFSTAction {
         original_word_len: usize,
         limit: usize,
         max_typo_factor: Option<u32>,
-    ) -> Option<
-        impl ExactSizeIterator<Item = (String, QueryMatchScore)> + DoubleEndedIterator + use<>,
-    > {
+    ) -> Option<impl ExactSizeIterator<Item = (String, u16)> + DoubleEndedIterator + use<>> {
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(from_word) {
             return None;
         }
 
-        let mut found_words: IndexMap<String, QueryMatchScore> = IndexMap::with_capacity(limit);
+        let mut found_words: IndexMap<String, u16> = IndexMap::with_capacity(limit);
 
         if self.config().prefix_matching_enabled {
             // Try to complete provided word
@@ -1345,7 +1342,7 @@ impl StoreFSTAction {
         from_word: &str,
         // Length before stemming. Useful to calculate correct score.
         original_word_len: usize,
-    ) -> Option<impl Iterator<Item = (String, QueryMatchScore)>> {
+    ) -> Option<impl Iterator<Item = (String, u16)>> {
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(from_word) {
             return None;
@@ -1377,7 +1374,7 @@ impl StoreFSTAction {
         &self,
         from_word: &str,
         typo_factor: u32,
-    ) -> Option<impl Iterator<Item = (String, QueryMatchScore)>> {
+    ) -> Option<impl Iterator<Item = (String, u16)>> {
         if !self.config().fuzzy_matching_enabled {
             return None;
         }

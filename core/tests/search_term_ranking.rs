@@ -176,3 +176,32 @@ fn test_query_limit_with_typos() {
         assert_eq!(response, ["article:1"]);
     }
 }
+
+/// See <https://github.com/valeriansaliou/sonic/pull/372#discussion_r3640485488>.
+#[test]
+fn test_prefix_matches_precedence() {
+    init_logging();
+    let mut executor = make_test_executor();
+
+    {
+        let app_conf = Arc::get_mut(&mut executor.app_conf).unwrap();
+        // Disable stemming to make results more predictable.
+        app_conf.normalization.stemming_enabled = false;
+    }
+
+    exec!(
+        executor -> PUSH "articles" "default" "article:1"
+        "directionality"
+    );
+    exec!(
+        executor -> PUSH "articles" "default" "article:2"
+        "digestion"
+    );
+
+    exec!(executor -> TRIGGER consolidate);
+
+    {
+        let response = exec!(executor -> QUERY "articles" "default" "directiona");
+        assert_eq!(response, ["article:1", "article:2"]);
+    }
+}

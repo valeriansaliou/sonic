@@ -6,16 +6,15 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use indexmap::IndexMap;
-use std::collections::BTreeMap;
 
 use crate::lexer::{NormalizedToken, TokenLexer};
-use crate::query::{QueryMatchScore, QuerySearchID, QuerySearchLimit, QuerySearchOffset};
+use crate::query::{
+    QueryMatchScore, QueryResultScore, QuerySearchID, QuerySearchLimit, QuerySearchOffset,
+};
 use crate::store::StoreItem;
 use crate::store::fst::{StoreFSTActionBuilder, typo_factor};
 use crate::store::identifiers::{StoreObjectIID, StoreTermHash, StoreTermHashed};
 use crate::store::kv::{StoreKVAcquireMode, StoreKVAction, StoreKVActionBuilder};
-
-const MISSING_MATCH_SCORE: u16 = 100;
 
 impl super::Executor {
     pub fn search(
@@ -71,7 +70,7 @@ impl super::Executor {
             //   insertion order, which correlates to reverse data ingestion
             //   order.
             // NOTE: `capacity = 24` to reduce initial grows.
-            let mut scoring_matrix: IndexMap<StoreObjectIID, Vec<QueryMatchScore>> =
+            let mut scoring_matrix: IndexMap<StoreObjectIID, Vec<Option<QueryMatchScore>>> =
                 IndexMap::with_capacity(24usize.min(usize::from(limit)));
 
             // Look for exact matches.
@@ -108,8 +107,8 @@ impl super::Executor {
                 tracing::debug!("got exact search executor iids: {iids:?} for term: {token:?}");
 
                 for iid in iids.into_iter() {
-                    // Assign a score of `0` as those are exact matches.
-                    let inserted = update_score(&mut scoring_matrix, iid, 0, idx, term_count);
+                    // Assign a score of `1` as those are exact matches.
+                    let inserted = update_score(&mut scoring_matrix, iid, 1., idx, term_count);
 
                     if inserted {
                         // Higher limit now reached?
@@ -141,7 +140,7 @@ impl super::Executor {
                     };
 
                     merge_suggestions(
-                        suggestions,
+                        suggestions.map(|(w, distance)| (w, prefix_score(distance, *original_len))),
                         &mut scoring_matrix,
                         token,
                         idx,
@@ -186,7 +185,8 @@ impl super::Executor {
                         };
 
                         merge_suggestions(
-                            suggestions,
+                            suggestions
+                                .map(|(w, distance)| (w, typo_score(distance, *original_word_len))),
                             &mut scoring_matrix,
                             term,
                             idx,
@@ -216,7 +216,7 @@ impl super::Executor {
                 let mut to_remove = Vec::<StoreObjectIID>::new();
 
                 for (&iid, scores) in scoring_matrix.iter() {
-                    if scores.contains(&MISSING_MATCH_SCORE) {
+                    if scores.iter().any(Option::is_none) {
                         to_remove.push(iid);
                     }
                 }
@@ -227,13 +227,17 @@ impl super::Executor {
             }
 
             // Flatten scores, taking into account missing matches (thanks to
-            // `MISSING_MATCH_SCORE`).
+            // `None`).
             let found_iids = scoring_matrix
                 .into_iter()
-                .map(|(iid, scores)| (iid, scores.into_iter().sum()));
+                .map(|(iid, scores)| (iid, overall_score(&scores)));
 
-            // Sort found IIDs, then flatten.
-            let all_iids = sorted_groups(found_iids).flat_map(|(_, v)| v);
+            // Sort found IIDs.
+            let all_iids = {
+                let mut all_iids = found_iids.collect::<Vec<_>>();
+                all_iids.sort_by(|a, b| a.1.total_cmp(&b.1).reverse());
+                all_iids.into_iter().map(|(iid, _score)| iid)
+            };
 
             // Resolve OIDs from IIDs
             // Notice: we also proceed paging from there
@@ -263,10 +267,190 @@ impl super::Executor {
     }
 }
 
+/// Inversely proportional to `lev_distance / word_len`, decreasing slowly
+/// towards `f(20) = 0.5`. Will never reach `0`.
+fn prefix_score(lev_distance: u16, word_len: usize) -> f32 {
+    // NOTE: Will be `> 1` in practice.
+    let lev_ratio = lev_distance as f32 / word_len as f32;
+
+    // NOTE: `20` means that auto-completed words 20 times longer than the
+    //   original word get a score of `0.5`. It’s just a magic number, it has
+    //   no further meaning. It just feels ok.
+    20. / (20. + lev_ratio)
+}
+
+#[cfg(test)]
+#[test]
+fn test_prefix_score() {
+    // Auto-complete 2 times longer.
+    for n in [2, 4, 8] {
+        assert_eq!(prefix_score(n, n as usize), 0.95238096);
+    }
+
+    // Auto-complete 4 times longer.
+    for n in [2, 4, 8] {
+        assert_eq!(prefix_score(3 * n, n as usize), 0.8695652);
+    }
+
+    // Auto-complete 1 character.
+    assert_eq!(prefix_score(1, 3), 0.9836065);
+    assert_eq!(prefix_score(1, 4), 0.9876543);
+    assert_eq!(prefix_score(1, 5), 0.99009895);
+    assert_eq!(prefix_score(1, 6), 0.9917356);
+
+    // Auto-complete 2 characters.
+    assert_eq!(prefix_score(2, 3), 0.96774197);
+    assert_eq!(prefix_score(2, 4), 0.9756098);
+    assert_eq!(prefix_score(2, 5), 0.98039216);
+    assert_eq!(prefix_score(2, 6), 0.9836065);
+
+    // More auto-complete means lower score.
+    for n in [1, 2, 4, 8] {
+        for word_len in [2, 4, 8, 10] {
+            assert!(prefix_score(n + 1, word_len as usize) < prefix_score(n, word_len as usize));
+        }
+    }
+}
+
+/// Levenshtein distance proportional to word length.
+fn typo_score(lev_distance: u16, word_len: usize) -> f32 {
+    debug_assert!(
+        (lev_distance as usize) < word_len,
+        "{lev_distance} >= {word_len}"
+    );
+
+    // SAFETY: `.min(1)` isn’t strictly necessary as `lev_distance` should
+    //   always be `< word_len`, but it’s there as a safety precaution.
+    let lev_ratio = (lev_distance as f32 / word_len as f32).min(1.);
+
+    1. - lev_ratio
+}
+
+#[cfg(test)]
+#[test]
+fn test_typo_score() {
+    // No typo.
+    assert_eq!(typo_score(0, 1), 1.);
+    assert_eq!(typo_score(0, 2), 1.);
+
+    // 1 typo.
+    assert_eq!(typo_score(1, 3), 0.6666666);
+    assert_eq!(typo_score(1, 4), 0.75);
+    assert_eq!(typo_score(1, 5), 0.8);
+    // 1 typo always scores lower than 0.
+    for n in 2..=8 {
+        assert!(typo_score(1, n) < typo_score(0, n), "n={n}");
+    }
+
+    // 2 typos.
+    assert_eq!(typo_score(2, 5), 0.6);
+    assert_eq!(typo_score(2, 6), 0.6666666);
+    assert_eq!(typo_score(2, 7), 0.71428573);
+    // 2 typos always scores lower than 1.
+    for n in 3..=8 {
+        assert!(typo_score(2, n) < typo_score(1, n), "n={n}");
+    }
+
+    // A lot of typos (length has no impact, proportion has).
+    assert_eq!(typo_score(1 * 20, 2 * 20), typo_score(1, 2));
+    assert_eq!(typo_score(3 * 20, 7 * 20), typo_score(3, 7));
+}
+
+// TODO: Use idf to weigh terms.
+fn overall_score(scores: &[Option<QueryMatchScore>]) -> QueryResultScore {
+    let total = scores
+        .into_iter()
+        .map(|opt| opt.unwrap_or(0f32))
+        .sum::<f32>();
+    let count = scores.len() as f32;
+
+    let average = total / count;
+
+    average
+}
+
+#[cfg(test)]
+#[test]
+fn test_overall_score() {
+    const MISSING: Option<QueryMatchScore> = None;
+    const EXACT_MATCH: Option<QueryMatchScore> = Some(1.);
+
+    // Max score for exact matches.
+    assert_eq!(overall_score(&[EXACT_MATCH; 1]), 1.);
+    assert_eq!(overall_score(&[EXACT_MATCH; 2]), 1.);
+    assert_eq!(overall_score(&[EXACT_MATCH; 3]), 1.);
+    assert_eq!(overall_score(&[EXACT_MATCH; 4]), 1.);
+
+    // Lowest score for missing matches.
+    assert_eq!(overall_score(&[MISSING; 1]), 0.);
+    assert_eq!(overall_score(&[MISSING; 2]), 0.);
+    assert_eq!(overall_score(&[MISSING; 3]), 0.);
+    assert_eq!(overall_score(&[MISSING; 4]), 0.);
+
+    // Auto-complete > fuzzy matching (not always, but in most cases).
+    assert!(overall_score(&[Some(prefix_score(5, 4))]) > overall_score(&[Some(typo_score(1, 10))]));
+
+    // Missing one term.
+    assert_eq!(overall_score(&[MISSING, EXACT_MATCH]), 1. / 2.);
+    assert_eq!(overall_score(&[MISSING, EXACT_MATCH, EXACT_MATCH]), 2. / 3.);
+    // Missing one term is better than missing all terms.
+    assert!(overall_score(&[MISSING, EXACT_MATCH]) > overall_score(&[MISSING]));
+
+    // Term order has no meaning.
+    assert_eq!(
+        overall_score(&[
+            EXACT_MATCH,
+            Some(prefix_score(2, 3)),
+            Some(typo_score(2, 7))
+        ]),
+        overall_score(&[
+            Some(typo_score(2, 7)),
+            Some(prefix_score(2, 3)),
+            EXACT_MATCH
+        ])
+    );
+
+    // All typos in one term is like the same total across multiple terms.
+    // NOTE: This is not a requirement, it’s just a non-regression test.
+    assert_eq!(
+        overall_score(&[Some(typo_score(1, 7)); 2]),
+        overall_score(&[Some(typo_score(2, 7)), EXACT_MATCH])
+    );
+    assert_eq!(
+        overall_score(&[Some(typo_score(1, 7)); 3]),
+        overall_score(&[Some(typo_score(3, 7)), EXACT_MATCH, EXACT_MATCH])
+    );
+
+    // Examples for “The brown fox jumps over the lazy dog”:
+    // “brown fox jumps”
+    assert_eq!(overall_score(&[EXACT_MATCH, EXACT_MATCH, EXACT_MATCH]), 1.);
+    // “brown fox jum”
+    assert_eq!(
+        overall_score(&[EXACT_MATCH, EXACT_MATCH, Some(prefix_score(2, 3))]),
+        0.9892473
+    );
+    // “bron fox jum”
+    assert_eq!(
+        overall_score(&[
+            Some(typo_score(1, 5)),
+            EXACT_MATCH,
+            Some(prefix_score(2, 3))
+        ]),
+        0.92258066
+    );
+    // “brown fox”
+    assert_eq!(overall_score(&[EXACT_MATCH, EXACT_MATCH,]), 1.);
+    // “brown fox eats”
+    assert_eq!(
+        overall_score(&[EXACT_MATCH, EXACT_MATCH, MISSING]),
+        0.6666667
+    ); // 2/3
+}
+
 #[allow(clippy::too_many_arguments)] // We’ll refactor this someday, and it’ not public anyway.
 fn merge_suggestions(
     suggestions: impl Iterator<Item = (String, QueryMatchScore)>,
-    scoring_matrix: &mut IndexMap<StoreObjectIID, Vec<QueryMatchScore>>,
+    scoring_matrix: &mut IndexMap<StoreObjectIID, Vec<Option<QueryMatchScore>>>,
     term: &String,
     term_idx: usize,
     term_count: usize,
@@ -321,7 +505,7 @@ fn merge_suggestions(
 }
 
 fn update_score(
-    scoring_matrix: &mut IndexMap<StoreObjectIID, Vec<QueryMatchScore>>,
+    scoring_matrix: &mut IndexMap<StoreObjectIID, Vec<Option<QueryMatchScore>>>,
     iid: StoreObjectIID,
     score: QueryMatchScore,
     term_idx: usize,
@@ -333,36 +517,24 @@ fn update_score(
             // SAFETY: We always initialize vecs with `term_count` entries.
             let entry_score = unsafe { occupied_entry.get_mut().get_unchecked_mut(term_idx) };
 
-            let new_score = score.min(*entry_score);
+            let new_score = entry_score.map_or(score, |entry_score| score.min(entry_score));
 
             tracing::trace!(entry_score, new_score, "Updating to min score");
-            *entry_score = new_score;
+            *entry_score = Some(new_score);
 
             false
         }
         // If entry does not exist, insert score.
         indexmap::map::Entry::Vacant(vacant_entry) => {
-            let mut scores = vec![MISSING_MATCH_SCORE; term_count];
+            let mut scores = vec![None; term_count];
 
             tracing::trace!(new_score = score, "Inserting new score");
             // SAFETY: `scores` has `term_count` elements.
-            unsafe { *scores.get_unchecked_mut(term_idx) = score };
+            unsafe { *scores.get_unchecked_mut(term_idx) = Some(score) };
 
             vacant_entry.insert(scores);
 
             true
         }
     }
-}
-
-fn sorted_groups(
-    map: impl ExactSizeIterator<Item = (StoreObjectIID, QueryMatchScore)>,
-) -> impl ExactSizeIterator<Item = (QueryMatchScore, Vec<StoreObjectIID>)> {
-    let mut btree: BTreeMap<QueryMatchScore, Vec<StoreObjectIID>> = BTreeMap::new();
-
-    for (k, v) in map.into_iter() {
-        btree.entry(v).or_default().push(k);
-    }
-
-    btree.into_iter()
 }
