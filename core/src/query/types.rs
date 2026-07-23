@@ -16,7 +16,8 @@ pub type QuerySearchID<'a> = &'a str;
 pub type QuerySearchLimit = u16;
 pub type QuerySearchOffset = u32;
 
-pub type QueryMatchScore = u16;
+pub type QueryMatchScore = f32;
+pub type QueryResultScore = f32;
 
 pub type QueryMetaData = (
     Option<QuerySearchLimit>,
