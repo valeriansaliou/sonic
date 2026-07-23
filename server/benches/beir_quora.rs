@@ -29,6 +29,7 @@ const ADDR: (Ipv6Addr, u16) = (Ipv6Addr::LOCALHOST, 1491);
 const COLLECTION: &str = "beir-quora";
 const BUCKET: &str = "default";
 const QUERY_LIMIT: usize = 100;
+const QUERY_CANDIDATES_MAXIMUM: usize = 1_0000;
 const DATASET: &str = "mteb/quora";
 const INDEX_FORMAT: &str = "bulk-v1";
 const SONIC_DATA_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/bench-data/beir-quora");
@@ -280,6 +281,10 @@ fn start_sonic() -> SpawnGuard {
         .env("SONIC_SERVER__LOG_LEVEL", "WARN")
         .env("SONIC_SEARCH__QUERY_LIMIT_DEFAULT", QUERY_LIMIT.to_string())
         .env("SONIC_SEARCH__QUERY_LIMIT_MAXIMUM", QUERY_LIMIT.to_string())
+        .env(
+            "SONIC_SEARCH__QUERY_CANDIDATES_MAXIMUM",
+            QUERY_CANDIDATES_MAXIMUM.to_string(),
+        )
         .env("SONIC_STORE__KV__PATH", data_path.join("kv"))
         .env("SONIC_STORE__FST__PATH", data_path.join("fst"))
         .spawn()
