@@ -46,6 +46,11 @@ impl super::Executor {
                 self.app_conf.search.query_alternates_try,
             );
 
+            let (mut minimum_idf, idf_min_doc_count) = (
+                self.app_conf.search.query_minimum_term_idf_default,
+                (self.app_conf.search).query_minimum_term_idf_minimum_object_count,
+            );
+
             let (prefix_matching_enabled, fuzzy_matching_enabled) = (
                 self.fst_pool.fst_action_config.prefix_matching_enabled,
                 self.fst_pool.fst_action_config.fuzzy_matching_enabled,
@@ -63,6 +68,13 @@ impl super::Executor {
                 Some(StoreMetaValue::IIDIncr(last_iid)) => u64::from(last_iid) + 1,
                 None => 0,
             };
+
+            if document_count < idf_min_doc_count {
+                tracing::debug!(
+                    "ignoring minimum_term_idf ({minimum_idf}) as document_count is too low ({document_count}<{idf_min_doc_count})"
+                );
+                minimum_idf = 0.;
+            }
 
             // Collect all terms so we know the count right ahead.
             // PERF: This helps allocating the correct amounts of memory.
@@ -114,6 +126,19 @@ impl super::Executor {
                 tracing::debug!("got exact search executor iids: {iids:?} for term: {token:?}");
 
                 let document_frequency = document_frequency(*term_hash, &kv_action);
+
+                // Filter out minimum IDF.
+                // PERF: Filtering `minimum_idf > 0` to save some computation.
+                if minimum_idf > 0. {
+                    let idf = (document_count as f32 / document_frequency as f32).ln();
+                    if idf < minimum_idf {
+                        tracing::debug!(
+                            "skipping term {token:?} because idf too low ({idf}<{minimum_idf})"
+                        );
+                        continue;
+                    }
+                }
+
                 let bm25_score = bm25_lite_idf(document_count, document_frequency);
 
                 for iid in iids.into_iter() {
@@ -160,6 +185,7 @@ impl super::Executor {
                         &mut alternates_try,
                         higher_limit,
                         document_count,
+                        minimum_idf,
                     );
                 }
             }
@@ -207,6 +233,7 @@ impl super::Executor {
                             &mut alternates_try,
                             higher_limit,
                             document_count,
+                            minimum_idf,
                         );
 
                         typo_factor += 1;
@@ -488,6 +515,7 @@ fn merge_suggestions(
     alternates_try: &mut usize,
     higher_limit: usize,
     document_count: u64,
+    minimum_idf: f32,
 ) {
     'suggestions: for (suggested_word, base_score) in suggestions {
         // Do not load base results twice for same term as base term
@@ -505,6 +533,19 @@ fn merge_suggestions(
         };
 
         let document_frequency = document_frequency(suggested_term_hash, kv_action);
+
+        // Filter out minimum IDF.
+        // PERF: Filtering `minimum_idf > 0` to save some computation.
+        if minimum_idf > 0. {
+            let idf = (document_count as f32 / document_frequency as f32).ln();
+            if idf < minimum_idf {
+                tracing::debug!(
+                    "skipping term {suggested_word:?} because idf too low ({idf}<{minimum_idf})"
+                );
+                continue;
+            }
+        }
+
         let bm25_score = bm25_lite_idf(document_count, document_frequency);
 
         let suggestion_score = base_score * bm25_score;

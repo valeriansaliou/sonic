@@ -49,6 +49,8 @@ pub fn defaults_toml() -> String {
         query_limit_default = 10
         query_limit_maximum = 100
         query_alternates_try = 4
+        query_minimum_term_idf_default = 0.1
+        query_minimum_term_idf_minimum_object_count = 100
         suggest_limit_default = 5
         suggest_limit_maximum = 20
         list_limit_default = 100
