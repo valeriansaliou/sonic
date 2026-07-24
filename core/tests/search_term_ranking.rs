@@ -205,3 +205,36 @@ fn test_prefix_matches_precedence() {
         assert_eq!(response, ["article:1", "article:2"]);
     }
 }
+
+/// See <https://github.com/valeriansaliou/sonic/pull/378>.
+#[test]
+fn test_ranking_uses_idf() {
+    init_logging();
+    let mut executor = make_test_executor();
+
+    {
+        let app_conf = Arc::get_mut(&mut executor.app_conf).unwrap();
+        // Disable stemming to make results more predictable.
+        app_conf.normalization.stemming_enabled = false;
+    }
+
+    exec!(
+        executor -> PUSH "articles" "default" "article:1"
+        "GDPR personal data security"
+    );
+    exec!(
+        executor -> PUSH "articles" "default" "article:2"
+        "GDPR Data Protection Impact Assessment"
+    );
+    exec!(
+        executor -> PUSH "articles" "default" "article:3"
+        "GDPR personal data identifiers"
+    );
+
+    exec!(executor -> TRIGGER consolidate);
+
+    {
+        let response = exec!(executor -> QUERY "articles" "default" "GDPR personal assessment");
+        assert_eq!(response, ["article:2", "article:3", "article:1"]);
+    }
+}
