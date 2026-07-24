@@ -13,7 +13,9 @@ use crate::query::{
 };
 use crate::store::StoreItem;
 use crate::store::fst::{StoreFSTActionBuilder, typo_factor};
-use crate::store::identifiers::{StoreObjectIID, StoreTermHash, StoreTermHashed};
+use crate::store::identifiers::{
+    StoreMetaKey, StoreMetaValue, StoreObjectIID, StoreTermHash, StoreTermHashed,
+};
 use crate::store::kv::{StoreKVAcquireMode, StoreKVAction, StoreKVActionBuilder};
 
 impl super::Executor {
@@ -56,6 +58,11 @@ impl super::Executor {
                 StoreKVActionBuilder::access(bucket, kv_store),
                 StoreFSTActionBuilder::access(fst_store),
             );
+
+            let document_count = match kv_action.get_meta_to_value(StoreMetaKey::IIDIncr)? {
+                Some(StoreMetaValue::IIDIncr(last_iid)) => u64::from(last_iid) + 1,
+                None => 0,
+            };
 
             // Collect all terms so we know the count right ahead.
             // PERF: This helps allocating the correct amounts of memory.
@@ -106,9 +113,13 @@ impl super::Executor {
 
                 tracing::debug!("got exact search executor iids: {iids:?} for term: {token:?}");
 
+                let document_frequency = document_frequency(*term_hash, &kv_action);
+                let bm25_score = bm25_lite_idf(document_count, document_frequency);
+
                 for iid in iids.into_iter() {
-                    // Assign a score of `1` as those are exact matches.
-                    let inserted = update_score(&mut scoring_matrix, iid, 1., idx, term_count);
+                    // Assign a base score of `1` as those are exact matches.
+                    let inserted =
+                        update_score(&mut scoring_matrix, iid, 1. * bm25_score, idx, term_count);
 
                     if inserted {
                         // Higher limit now reached?
@@ -148,6 +159,7 @@ impl super::Executor {
                         &kv_action,
                         &mut alternates_try,
                         higher_limit,
+                        document_count,
                     );
                 }
             }
@@ -194,6 +206,7 @@ impl super::Executor {
                             &kv_action,
                             &mut alternates_try,
                             higher_limit,
+                            document_count,
                         );
 
                         typo_factor += 1;
@@ -356,7 +369,6 @@ fn test_typo_score() {
     assert_eq!(typo_score(3 * 20, 7 * 20), typo_score(3, 7));
 }
 
-// TODO: Use idf to weigh terms.
 fn overall_score(scores: &[Option<QueryMatchScore>]) -> QueryResultScore {
     let total = scores.iter().map(|opt| opt.unwrap_or(0f32)).sum::<f32>();
     let count = scores.len() as f32;
@@ -445,6 +457,26 @@ fn test_overall_score() {
     ); // 2/3
 }
 
+fn document_frequency(term_hash: StoreTermHashed, kv_action: &StoreKVAction<'_>) -> u64 {
+    kv_action
+        .get_term_to_iids(term_hash)
+        .inspect_err(|err| tracing::error!("{err:?}"))
+        .unwrap_or(None)
+        .map_or(0, |iids| iids.len()) as u64
+}
+
+fn bm25_lite_idf(document_count: u64, document_frequency: u64) -> f32 {
+    debug_assert!(
+        document_frequency <= document_count,
+        "{document_frequency} > {document_count}"
+    );
+
+    let document_count = document_count.max(document_frequency) as f64;
+    let df = document_frequency as f64;
+
+    (1.0 + (document_count - df + 0.5) / (df + 0.5)).ln() as f32
+}
+
 #[allow(clippy::too_many_arguments)] // We’ll refactor this someday, and it’ not public anyway.
 fn merge_suggestions(
     suggestions: impl Iterator<Item = (String, QueryMatchScore)>,
@@ -455,8 +487,9 @@ fn merge_suggestions(
     kv_action: &StoreKVAction<'_>,
     alternates_try: &mut usize,
     higher_limit: usize,
+    document_count: u64,
 ) {
-    'suggestions: for (suggested_word, suggestion_score) in suggestions {
+    'suggestions: for (suggested_word, base_score) in suggestions {
         // Do not load base results twice for same term as base term
         if suggested_word.eq(term) {
             continue;
@@ -470,6 +503,11 @@ fn merge_suggestions(
             Ok(None) => continue,
             Err(_) => continue,
         };
+
+        let document_frequency = document_frequency(suggested_term_hash, kv_action);
+        let bm25_score = bm25_lite_idf(document_count, document_frequency);
+
+        let suggestion_score = base_score * bm25_score;
 
         for suggested_iid in suggested_iids.into_iter().take(*alternates_try) {
             // SAFETY: We can reach at most `alternates_try`.
