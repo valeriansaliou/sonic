@@ -18,7 +18,7 @@ use crate::common::*;
 #[test]
 fn test_consolidation_required() {
     init_logging();
-    let executor = make_test_executor();
+    let executor = make_test_executor(|_| {});
 
     assert_eq!(exec!(executor -> COUNT "foo"), Ok(0));
 
@@ -37,7 +37,7 @@ fn test_consolidation_required() {
 #[test]
 fn test_push_creates_collection_and_bucket() {
     init_logging();
-    let executor = make_test_executor();
+    let executor = make_test_executor(|_| {});
 
     assert_eq!(exec!(executor -> COUNT "foo"), Ok(0));
 

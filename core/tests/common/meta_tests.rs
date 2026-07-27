@@ -13,13 +13,9 @@ macro_rules! test_ingest_then_query {
     ) => {
         init_logging();
         #[allow(unused_mut)]
-        let mut executor = make_test_executor();
-
-        {
-            #[allow(unused)]
-            let app_conf = std::sync::Arc::get_mut(&mut executor.app_conf).unwrap();
+        let mut executor = make_test_executor(|#[allow(unused)] app_conf| {
             $($(app_conf.normalization.$nc_field = $nc_value;)+)?
-        }
+        });
         $($(executor.fst_pool.fst_action_config.$sc_field = $sc_value;)+)?
 
         #[allow(unused_mut, unused_assignments)]

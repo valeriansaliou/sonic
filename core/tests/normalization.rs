@@ -18,18 +18,13 @@ fn test_unicode_normalization_ingest() {
 
     fn test(unicode_normalization: Option<UnicodeNormalization>, ingest: &str, expected: &str) {
         init_logging();
-        #[allow(unused_mut)]
-        let mut executor = make_test_executor();
-
-        {
-            #[allow(unused)]
-            let app_conf = std::sync::Arc::get_mut(&mut executor.app_conf).unwrap();
+        let executor = make_test_executor(|app_conf| {
             app_conf.normalization = sonic::config::ConfigNormalization {
                 unicode_normalization,
                 diacritic_folding_enabled: false,
                 stemming_enabled: false,
             };
-        }
+        });
 
         exec!(executor -> PUSH "messages" "user:1" "chat:1" ingest LANG("none"));
         exec!(executor -> TRIGGER consolidate);

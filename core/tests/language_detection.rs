@@ -46,7 +46,7 @@ fn test_lang_is_case_insensitive() {
     ];
 
     for (n, (message, lang)) in examples.into_iter().enumerate() {
-        let executor = make_test_executor_with_id(n);
+        let executor = make_test_executor_with_id(n, |_| {});
 
         exec!(executor -> PUSH "messages" "user:1" "chat:1" message LANG(lang));
         exec!(executor -> TRIGGER consolidate);

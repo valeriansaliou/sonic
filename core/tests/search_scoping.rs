@@ -14,7 +14,7 @@ use crate::common::*;
 #[test]
 fn test_search_scoping_by_bucket() {
     init_logging();
-    let executor = make_test_executor();
+    let executor = make_test_executor(|_| {});
 
     exec!(executor -> PUSH "messages" "user:1" "chat:1" "Hey! Have you noticed how fast Sonic is?");
     exec!(executor -> PUSH "messages" "user:2" "chat:2" "Wow! Just found out about Sonic!");

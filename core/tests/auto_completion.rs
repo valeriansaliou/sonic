@@ -21,7 +21,7 @@ fn test_search_auto_completion() {
     ];
 
     for (n, (message, term)) in examples.into_iter().enumerate() {
-        let executor = make_test_executor_with_id(n);
+        let executor = make_test_executor_with_id(n, |_| {});
 
         exec!(executor -> PUSH "messages" "user:1" "chat:1" message);
         exec!(executor -> TRIGGER consolidate);

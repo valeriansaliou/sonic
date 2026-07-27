@@ -25,7 +25,7 @@ fn setup(executor: &ExecutorGuard) {
 #[ignore = "Known issue (FIXME)"]
 fn test_collection_deindexing() {
     init_logging();
-    let executor = make_test_executor();
+    let executor = make_test_executor(|_| {});
 
     setup(&executor);
 
@@ -40,7 +40,7 @@ fn test_collection_deindexing() {
 #[test]
 fn test_bucket_deindexing() {
     init_logging();
-    let executor = make_test_executor();
+    let executor = make_test_executor(|_| {});
 
     setup(&executor);
 
@@ -56,7 +56,7 @@ fn test_bucket_deindexing() {
 #[ignore = "Known issue (FIXME)"]
 fn test_object_deindexing() {
     init_logging();
-    let executor = make_test_executor();
+    let executor = make_test_executor(|_| {});
 
     setup(&executor);
 
