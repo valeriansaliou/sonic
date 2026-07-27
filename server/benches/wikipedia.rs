@@ -10,7 +10,6 @@ mod huggingface_wikipedia;
 
 use std::collections::HashMap;
 use std::hint::black_box;
-use std::net::Ipv6Addr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{LazyLock, RwLock};
@@ -23,28 +22,11 @@ use sonic_client::ingest::SonicChannelIngestBlocking;
 use sonic_client::options::*;
 use sonic_client::search::SonicChannelSearchBlocking;
 
+use crate::common::globals::*;
 use crate::common::huggingface::download::download_shards;
 use crate::common::huggingface::load::iter_shard;
 use crate::common::spawn_guard::SpawnGuard;
 use crate::huggingface_wikipedia::WikipediaArticle;
-
-const ADDR: (Ipv6Addr, u16) = (Ipv6Addr::LOCALHOST, 1491);
-
-// NOTE: We initialize `SONIC_BIN_PATH` lazily to avoid logging the
-//   “Environment variable "SONIC_BIN" not found” warning on
-//   `--load-baseline`.
-static SONIC_BIN_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
-    std::env::var("SONIC_BIN")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            let path = Path::new(env!("CARGO_TARGET_TMPDIR"))
-                .parent()
-                .unwrap()
-                .join("release/sonic");
-            eprintln!("Environment variable \"SONIC_BIN\" not found, using local build");
-            path
-        })
-});
 
 static SHARD_PATHS: LazyLock<Vec<PathBuf>> =
     LazyLock::new(|| download_shards("wikimedia/wikipedia", "20231101.simple"));
@@ -380,8 +362,6 @@ impl std::fmt::Display for PushBenchmarkConfig {
         Ok(())
     }
 }
-
-const SONIC_DATA_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/bench-data");
 
 fn new_sonic_data_path() -> PathBuf {
     let path = Path::new(SONIC_DATA_PATH).join("empty");

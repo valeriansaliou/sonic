@@ -9,7 +9,6 @@ mod common;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::net::Ipv6Addr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::LazyLock;
@@ -22,31 +21,22 @@ use sonic_client::ingest::SonicChannelIngestBlocking;
 use sonic_client::options::{Lang, Limit};
 use sonic_client::search::SonicChannelSearchBlocking;
 
+use crate::common::globals::*;
 use crate::common::huggingface::download::download_files;
 use crate::common::spawn_guard::SpawnGuard;
 
-const ADDR: (Ipv6Addr, u16) = (Ipv6Addr::LOCALHOST, 1491);
 const COLLECTION: &str = "beir-quora";
 const BUCKET: &str = "default";
-const QUERY_LIMIT: usize = 100;
-const DATASET: &str = "mteb/quora";
-const SONIC_DATA_PATH: &str = concat!(env!("CARGO_TARGET_TMPDIR"), "/bench-data/beir-quora");
-// BM25 baselines from Tables 2 and 9: https://arxiv.org/pdf/2104.08663
-const BM25_NDCG_AT_10: f64 = 0.789;
-const BM25_RECALL_AT_100: f64 = 0.973;
 
-static SONIC_BIN_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
-    std::env::var("SONIC_BIN")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            let path = Path::new(env!("CARGO_TARGET_TMPDIR"))
-                .parent()
-                .unwrap()
-                .join("release/sonic");
-            eprintln!("Environment variable \"SONIC_BIN\" not found, using local build");
-            path
-        })
-});
+const DATASET: &str = "mteb/quora";
+
+/// BM25 baselines from Tables 2 and 9: <https://arxiv.org/pdf/2104.08663>.
+mod baseline {
+    pub const BM25_NDCG_AT_10: f64 = 0.789;
+    pub const BM25_RECALL_AT_100: f64 = 0.973;
+}
+
+const QUERY_LIMIT: usize = 100;
 
 static RETAIN_WORD_OBJECTS: LazyLock<usize> = LazyLock::new(|| {
     std::env::var("BEIR_RETAIN_WORD_OBJECTS")
@@ -371,8 +361,8 @@ impl Metrics {
             percentile(latencies, 99).as_secs_f64() * 1000.0,
         );
         println!("\nGap from the BEIR BM25 baseline");
-        print_baseline_gap("nDCG@10", ndcg_at_10, BM25_NDCG_AT_10);
-        print_baseline_gap("Recall@100", recall_at_100, BM25_RECALL_AT_100);
+        print_baseline_gap("nDCG@10", ndcg_at_10, baseline::BM25_NDCG_AT_10);
+        print_baseline_gap("Recall@100", recall_at_100, baseline::BM25_RECALL_AT_100);
     }
 }
 
