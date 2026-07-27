@@ -44,9 +44,9 @@ static RETAIN_WORD_OBJECTS: LazyLock<usize> = LazyLock::new(|| {
             if value == "unlimited" {
                 usize::MAX
             } else {
-                value.parse().unwrap_or_else(|_| {
-                    panic!("BEIR_RETAIN_WORD_OBJECTS must be an integer or \"unlimited\"")
-                })
+                (value.parse()).expect(
+                    "env variable `BEIR_RETAIN_WORD_OBJECTS` should be an integer or \"unlimited\"",
+                )
             }
         })
         .unwrap_or(usize::MAX)
@@ -57,17 +57,20 @@ static STOPWORDS_ENABLED: LazyLock<bool> = LazyLock::new(|| {
         .map(|value| match value.as_str() {
             "true" | "1" => true,
             "false" | "0" => false,
-            _ => panic!("BEIR_STOPWORDS must be true or false"),
+            _ => panic!("env variable `BEIR_STOPWORDS` should be a boolean"),
         })
         .unwrap_or(true)
 });
+
+static BENCHMARK_LANG: LazyLock<Lang<'static>> =
+    LazyLock::new(|| Lang(if *STOPWORDS_ENABLED { "eng" } else { "none" }));
 
 #[derive(Deserialize)]
 struct TextItem {
     #[serde(rename = "_id")]
     id: String,
     #[serde(default)]
-    title: String,
+    title: Option<String>,
     text: String,
 }
 
@@ -84,6 +87,7 @@ fn main() {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::WARN)
         .without_time()
+        .with_writer(tracing_subscriber::fmt::TestWriter::new)
         .init();
 
     let dataset = download_dataset();
@@ -91,41 +95,39 @@ fn main() {
     let queries = load_queries(&dataset.queries, &qrels);
 
     ensure_index(&dataset.corpus);
-    let sonic = start_sonic();
+    let _sonic = start_sonic();
     let multiplexer = SonicMultiplexer::new().unwrap();
-    let mut channel =
-        SonicChannelSearchBlocking::connect(ADDR, "SecretPassword", &multiplexer).unwrap();
-    channel.ping().unwrap();
 
     let mut metrics = Metrics::default();
     let mut latencies = Vec::with_capacity(queries.len());
     let started_at = Instant::now();
 
-    for (index, (query_id, query_text)) in queries.iter().enumerate() {
-        let query_started_at = Instant::now();
-        let results = channel
-            .query_with_options(
-                COLLECTION,
-                BUCKET,
-                query_text,
-                &[&benchmark_lang(), &Limit(QUERY_LIMIT)],
-            )
-            .unwrap_or_else(|err| panic!("Failed querying {query_id:?}: {err}"));
-        latencies.push(query_started_at.elapsed());
+    {
+        let search =
+            SonicChannelSearchBlocking::connect(ADDR, "SecretPassword", &multiplexer).unwrap();
 
-        let relevant = qrels.get(query_id).unwrap();
-        metrics.add(&results, relevant);
+        for (index, (query_id, query_text)) in queries.iter().enumerate() {
+            let query_started_at = Instant::now();
+            let results = search
+                .query_with_options(
+                    COLLECTION,
+                    BUCKET,
+                    query_text,
+                    &[&*BENCHMARK_LANG, &Limit(QUERY_LIMIT)],
+                )
+                .unwrap_or_else(|err| panic!("Failed querying {query_id:?}: {err}"));
+            latencies.push(query_started_at.elapsed());
 
-        if (index + 1).is_multiple_of(1000) {
-            eprintln!("Evaluated {:>5}/{:>5} queries", index + 1, queries.len());
+            let relevant = qrels.get(query_id).unwrap();
+            metrics.add(&results, relevant);
+
+            if (index + 1).is_multiple_of(1000) {
+                eprintln!("Evaluated {:>5}/{:>5} queries", index + 1, queries.len());
+            }
         }
     }
 
     let elapsed = started_at.elapsed();
-    channel.quit().unwrap();
-    drop(channel);
-    drop(sonic);
-
     metrics.print(elapsed, &mut latencies);
 }
 
@@ -212,65 +214,71 @@ fn ensure_index(corpus_path: &Path) {
     }
     std::fs::create_dir_all(data_path).unwrap();
 
-    let sonic = start_sonic();
+    let _sonic = start_sonic();
     let multiplexer = SonicMultiplexer::new().unwrap();
-    let mut channel =
-        SonicChannelIngestBlocking::connect(ADDR, "SecretPassword", &multiplexer).unwrap();
-    channel.ping().unwrap();
 
     let started_at = Instant::now();
-    let mut count = 0usize;
+    let mut total_count = 0usize;
     let mut total_bytes = 0u64;
 
-    const CHUNK_SIZE: usize = 10_000;
-    let mut chunk_start = Instant::now();
-    let mut chunk_bytes = 0u64;
+    {
+        let ingest =
+            SonicChannelIngestBlocking::connect(ADDR, "SecretPassword", &multiplexer).unwrap();
 
-    for item in json_lines::<TextItem>(corpus_path) {
-        let text = if item.title.is_empty() {
-            item.text
-        } else {
-            format!("{}\n{}", item.title, item.text)
-        };
-        channel
-            .push_with_options(COLLECTION, BUCKET, &item.id, &text, &[&benchmark_lang()])
-            .unwrap_or_else(|err| panic!("Failed ingesting document {:?}: {err}", item.id));
-        count += 1;
-        total_bytes += text.len() as u64;
-        chunk_bytes += text.len() as u64;
+        const CHUNK_SIZE: usize = 10_000;
+        let mut chunk_start = Instant::now();
+        let mut chunk_bytes = 0u64;
 
-        if count.is_multiple_of(CHUNK_SIZE) {
-            let chunk_elapsed = chunk_start.elapsed();
-            eprintln!(
-                "Indexed {CHUNK_SIZE} documents ({chunk_bytes}B) in {chunk_elapsed:>9.3?} ({chunk_thrpt:>5}kB/s).\
-                \tTotal: {count:>6} ({total_bytes:>8}B)",
-                chunk_thrpt = (chunk_bytes as u128 / chunk_start.elapsed().as_millis())
-            );
-            chunk_start = Instant::now();
-            chunk_bytes = 0;
+        for TextItem { id, title, text } in json_lines::<TextItem>(corpus_path) {
+            let text = if let Some(title) = title {
+                format!("{title}\n{text}")
+            } else {
+                text
+            };
+
+            ingest
+                .push_with_options(COLLECTION, BUCKET, &id, &text, &[&*BENCHMARK_LANG])
+                .expect(&format!("Failed ingesting document {id:?}"));
+
+            total_count += 1;
+            total_bytes += text.len() as u64;
+            chunk_bytes += text.len() as u64;
+
+            if total_count.is_multiple_of(CHUNK_SIZE) {
+                let chunk_elapsed = chunk_start.elapsed();
+                eprintln!(
+                    "Indexed {CHUNK_SIZE} documents ({chunk_bytes}B) in {chunk_elapsed:>9.3?} ({chunk_thrpt:>5}kB/s).\
+                \tTotal: {total_count:>6} ({total_bytes:>8}B)",
+                    chunk_thrpt = (chunk_bytes as u128 / chunk_start.elapsed().as_millis())
+                );
+                chunk_start = Instant::now();
+                chunk_bytes = 0;
+            }
         }
     }
-    channel.quit().unwrap();
-    drop(channel);
 
-    let mut control =
-        SonicChannelControlBlocking::connect(ADDR, "SecretPassword", &multiplexer).unwrap();
-    control.trigger_consolidate().unwrap();
-    control.quit().unwrap();
-    drop(control);
-    drop(sonic);
+    {
+        let control =
+            SonicChannelControlBlocking::connect(ADDR, "SecretPassword", &multiplexer).unwrap();
+        control.trigger_consolidate().unwrap();
+    }
 
-    std::fs::write(&ready_path, format!("{index_config}\ncount={count}\n")).unwrap();
+    std::fs::write(
+        &ready_path,
+        format!("{index_config}\ncount={total_count}\n"),
+    )
+    .unwrap();
+
     let total_time = started_at.elapsed();
     eprintln!(
-        "Indexed {count} documents ({total_bytes}B) in {total_time:.3?} ({thrpt}kB/s)",
+        "Indexed {total_count} documents ({total_bytes}B) in {total_time:.3?} ({thrpt}kB/s)",
         thrpt = (total_bytes / started_at.elapsed().as_secs()) as f32 / 1000.
     );
 }
 
 fn start_sonic() -> SpawnGuard {
     let data_path = Path::new(SONIC_DATA_PATH);
-    eprintln!("Running BEIR Quora using {:?}", SONIC_BIN_PATH.as_path());
+    eprintln!("Running BEIR Quora using {SONIC_BIN_PATH:?}");
 
     let child = Command::new(SONIC_BIN_PATH.as_path())
         .env("SONIC_SERVER__LOG_LEVEL", "WARN")
@@ -286,12 +294,8 @@ fn start_sonic() -> SpawnGuard {
         .unwrap();
 
     let mut sonic = SpawnGuard(child);
-    sonic.wait_until_ready(std::net::SocketAddr::from(ADDR));
+    sonic.wait_until_ready(ADDR);
     sonic
-}
-
-fn benchmark_lang() -> Lang<'static> {
-    Lang(if *STOPWORDS_ENABLED { "eng" } else { "none" })
 }
 
 impl Metrics {

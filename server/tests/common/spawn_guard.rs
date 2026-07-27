@@ -12,7 +12,8 @@ pub struct SpawnGuard(pub std::process::Child);
 
 impl SpawnGuard {
     /// Wait until the child listens on the expected address.
-    pub fn wait_until_ready(&mut self, addr: SocketAddr) {
+    pub fn wait_until_ready(&mut self, addr: impl Into<SocketAddr>) {
+        let addr = addr.into();
         let deadline = Instant::now() + Duration::from_secs(30);
 
         loop {

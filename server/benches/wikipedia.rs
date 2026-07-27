@@ -521,7 +521,7 @@ fn start_sonic(
 
     // Auto-kill Sonic.
     let mut sonic = SpawnGuard(sonic);
-    sonic.wait_until_ready(std::net::SocketAddr::from(ADDR));
+    sonic.wait_until_ready(ADDR);
     // println!("Started Sonic");
 
     sonic
