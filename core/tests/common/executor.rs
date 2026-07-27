@@ -52,8 +52,12 @@ impl Drop for ExecutorGuard {
     }
 }
 
-pub fn make_test_executor_with_id(id: impl ToString) -> ExecutorGuard {
-    let app_conf = make_config(&defaults_toml());
+pub fn make_test_executor_with_id(
+    id: impl ToString,
+    update_app_conf: impl FnOnce(&mut sonic::Config),
+) -> ExecutorGuard {
+    let mut app_conf = make_config(&defaults_toml());
+    update_app_conf(&mut app_conf);
 
     // Create connection pools (does not open any connection yet)
     let kv_pool = StoreKVPool::new(Arc::clone(&app_conf.store.kv));
@@ -69,8 +73,8 @@ pub fn make_test_executor_with_id(id: impl ToString) -> ExecutorGuard {
     }
 }
 
-pub fn make_test_executor() -> ExecutorGuard {
-    make_test_executor_with_id("")
+pub fn make_test_executor(update_app_conf: impl FnOnce(&mut sonic::Config)) -> ExecutorGuard {
+    make_test_executor_with_id("", update_app_conf)
 }
 
 // MARK: - Boilerplate

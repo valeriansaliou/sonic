@@ -25,7 +25,7 @@ fn test_search_is_case_insensitive_simple() {
     let examples = examples.into_iter().flat_map(|(a, b)| [(a, b), (b, a)]);
 
     for (n, (message, term)) in examples.enumerate() {
-        let executor = make_test_executor_with_id(n);
+        let executor = make_test_executor_with_id(n, |_| {});
 
         exec!(executor -> PUSH "messages" "user:1" "chat:1" message);
         exec!(executor -> TRIGGER consolidate);
@@ -52,7 +52,7 @@ fn test_search_is_case_insensitive_proper() {
     let examples = examples.into_iter().flat_map(|(a, b)| [(a, b), (b, a)]);
 
     for (n, (message, term)) in examples.into_iter().enumerate() {
-        let executor = make_test_executor_with_id(n);
+        let executor = make_test_executor_with_id(n, |_| {});
 
         exec!(executor -> PUSH "messages" "user:1" "chat:1" message);
         exec!(executor -> TRIGGER consolidate);
@@ -78,7 +78,7 @@ fn test_search_is_unicode_normalized() {
     ];
 
     for (n, (message, term)) in examples.into_iter().enumerate() {
-        let executor = make_test_executor_with_id(n);
+        let executor = make_test_executor_with_id(n, |_| {});
 
         exec!(executor -> PUSH "messages" "user:1" "chat:1" message);
         exec!(executor -> TRIGGER consolidate);
@@ -226,7 +226,7 @@ fn test_no_fuzzy_matching_for_ids() {
     ];
 
     for (example_idx, TestMatches1st { messages, query }) in examples.into_iter().enumerate() {
-        let executor = make_test_executor_with_id(example_idx);
+        let executor = make_test_executor_with_id(example_idx, |_| {});
 
         for (message_idx, &message) in messages.iter().enumerate() {
             let id = &format!("chat:{message_idx}");

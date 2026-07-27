@@ -8,8 +8,6 @@
 
 mod common;
 
-use std::sync::Arc;
-
 use crate::common::*;
 
 /// Initially, terms in Sonic queries were separated by implicit `AND`s,
@@ -36,13 +34,10 @@ use crate::common::*;
 #[test]
 fn test_no_implicit_and() {
     init_logging();
-    let mut executor = make_test_executor();
-
-    {
-        let app_conf = Arc::get_mut(&mut executor.app_conf).unwrap();
+    let executor = make_test_executor(|app_conf| {
         // Disable stemming to make results more predictable.
         app_conf.normalization.stemming_enabled = false;
-    }
+    });
 
     // NOTE: This is NOT legal advice. It is solely for example purposes.
     exec!(
@@ -88,13 +83,10 @@ fn test_no_implicit_and() {
 #[test]
 fn test_no_implicit_and_with_stopwords() {
     init_logging();
-    let mut executor = make_test_executor();
-
-    {
-        let app_conf = Arc::get_mut(&mut executor.app_conf).unwrap();
+    let executor = make_test_executor(|app_conf| {
         // Disable stemming to make results more predictable.
         app_conf.normalization.stemming_enabled = false;
-    }
+    });
 
     // NOTE: This is NOT legal advice. It is solely for example purposes.
     exec!(executor -> PUSH "movies" "default" "movie:1" "Back to the Future");
@@ -136,13 +128,10 @@ fn test_no_implicit_and_with_stopwords() {
 #[test]
 fn test_query_limit_with_typos() {
     init_logging();
-    let mut executor = make_test_executor();
-
-    {
-        let app_conf = Arc::get_mut(&mut executor.app_conf).unwrap();
+    let executor = make_test_executor(|app_conf| {
         // Disable stemming to make results more predictable.
         app_conf.normalization.stemming_enabled = false;
-    }
+    });
 
     // NOTE: This is NOT legal advice. It is solely for example purposes.
     exec!(
@@ -181,13 +170,10 @@ fn test_query_limit_with_typos() {
 #[test]
 fn test_prefix_matches_precedence() {
     init_logging();
-    let mut executor = make_test_executor();
-
-    {
-        let app_conf = Arc::get_mut(&mut executor.app_conf).unwrap();
+    let executor = make_test_executor(|app_conf| {
         // Disable stemming to make results more predictable.
         app_conf.normalization.stemming_enabled = false;
-    }
+    });
 
     exec!(
         executor -> PUSH "articles" "default" "article:1"
@@ -210,13 +196,10 @@ fn test_prefix_matches_precedence() {
 #[test]
 fn test_ranking_uses_idf() {
     init_logging();
-    let mut executor = make_test_executor();
-
-    {
-        let app_conf = Arc::get_mut(&mut executor.app_conf).unwrap();
+    let executor = make_test_executor(|app_conf| {
         // Disable stemming to make results more predictable.
         app_conf.normalization.stemming_enabled = false;
-    }
+    });
 
     exec!(
         executor -> PUSH "articles" "default" "article:1"
@@ -236,5 +219,31 @@ fn test_ranking_uses_idf() {
     {
         let response = exec!(executor -> QUERY "articles" "default" "GDPR personal assessment");
         assert_eq!(response, ["article:2", "article:3", "article:1"]);
+    }
+}
+
+/// See <https://github.com/valeriansaliou/sonic/issues/383>.
+#[test]
+fn test_minimum_term_idf() {
+    init_logging();
+    let executor = make_test_executor(|app_conf| {
+        app_conf.search.query_minimum_term_idf_default = 0.5;
+        app_conf.search.query_minimum_term_idf_minimum_object_count = 4;
+
+        // Disable stemming to make results more predictable.
+        app_conf.normalization.stemming_enabled = false;
+    });
+
+    // idf("foo") = 0.75, idf("bar") = 0.50, idf("baz") = 0.25
+    exec!(executor -> PUSH "articles" "default" "article:1" "example");
+    exec!(executor -> PUSH "articles" "default" "article:2" "foo");
+    exec!(executor -> PUSH "articles" "default" "article:3" "foo bar");
+    exec!(executor -> PUSH "articles" "default" "article:4" "foo bar baz");
+
+    exec!(executor -> TRIGGER consolidate);
+
+    {
+        let response = exec!(executor -> QUERY "articles" "default" "foo bar baz");
+        assert_eq!(response, ["article:4", "article:3"]);
     }
 }
