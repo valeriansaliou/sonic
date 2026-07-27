@@ -4,10 +4,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-#[path = "common/huggingface/download.rs"]
-mod huggingface_download;
-#[path = "common/spawn_guard.rs"]
-mod spawn_guard;
+mod common;
 
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -25,8 +22,8 @@ use sonic_client::ingest::SonicChannelIngestBlocking;
 use sonic_client::options::{Lang, Limit};
 use sonic_client::search::SonicChannelSearchBlocking;
 
-use crate::huggingface_download::download_files;
-use crate::spawn_guard::SpawnGuard;
+use crate::common::huggingface::download::download_files;
+use crate::common::spawn_guard::SpawnGuard;
 
 const ADDR: (Ipv6Addr, u16) = (Ipv6Addr::LOCALHOST, 1491);
 const COLLECTION: &str = "beir-quora";

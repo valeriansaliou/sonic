@@ -4,12 +4,13 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+#![allow(dead_code)]
+
 use std::path::PathBuf;
 
 use hf_hub::api::sync::Api;
 
 /// Download and cache files from a Hugging Face dataset.
-#[allow(dead_code)]
 pub fn download_files<const N: usize>(dataset: &str, filenames: [&str; N]) -> [PathBuf; N] {
     let api = Api::new().unwrap();
     let repository = api.dataset(dataset.to_owned());
@@ -18,7 +19,6 @@ pub fn download_files<const N: usize>(dataset: &str, filenames: [&str; N]) -> [P
 }
 
 /// Download and list the Parquet shards for a dataset configuration.
-#[allow(dead_code)]
 pub fn download_shards(dataset: &str, config: &str) -> Vec<PathBuf> {
     let api = Api::new().unwrap();
     let repository = api.dataset(dataset.to_owned());

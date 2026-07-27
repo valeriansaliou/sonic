@@ -5,6 +5,8 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 mod common;
+#[path = "common/huggingface/wikipedia.rs"]
+mod huggingface_wikipedia;
 
 use std::collections::HashMap;
 use std::hint::black_box;
@@ -23,8 +25,8 @@ use sonic_client::search::SonicChannelSearchBlocking;
 
 use crate::common::huggingface::download::download_shards;
 use crate::common::huggingface::load::iter_shard;
-use crate::common::huggingface::wikipedia::WikipediaArticle;
 use crate::common::spawn_guard::SpawnGuard;
+use crate::huggingface_wikipedia::WikipediaArticle;
 
 const ADDR: (Ipv6Addr, u16) = (Ipv6Addr::LOCALHOST, 1491);
 

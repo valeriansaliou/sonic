@@ -43,7 +43,7 @@ fn extract_articles<Item: HuggingfaceItem>(batch: &RecordBatch) -> Vec<Item> {
         .collect()
 }
 
-pub(super) fn str_col<'a>(batch: &'a RecordBatch, name: &str) -> Option<&'a StringArray> {
+pub fn str_col<'a>(batch: &'a RecordBatch, name: &str) -> Option<&'a StringArray> {
     batch
         .column_by_name(name)?
         .as_any()
