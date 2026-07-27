@@ -22,7 +22,8 @@ unicode-normalization = { version = "0.1", default-features = false }
 caseless = { version = "0.2", default-features = false }
 tracing = { version = "0.1", default-features = false }
 serde = { version = "1", default-features = false, features = ["derive", "rc", "std"] }
-unicode-segmentation = { version = "1", default-features = false }
+charabia = { default-features = false, git = "https://github.com/RemiBardon/charabia.git", branch = "flexible-allow-list" }
+# charabia = { version = "0.9", default-features = false }
 radix = { version = "0.6", default-features = false }
 rocksdb = { version = "0.24", default-features = false, features = ["bindgen-runtime", "zstd"] }
 fst = { version = "0.3", default-features = false }
@@ -36,10 +37,6 @@ indexmap = { version = "2", default-features = false, features = ["std"] }
 linked_hash_set = { version = "0.1", default-features = false }
 whatlang = { version = "0.18", default-features = false }
 regex = { version = "1", default-features = false, features = ["std", "unicode", "perf"] }
-jieba-rs = { optional = true, version = "0.10", default-features = false, features = ["default-dict"] }
-lindera-core = { optional = true, version = "0.31", default-features = false }
-lindera-dictionary = { optional = true, version = "0.31", default-features = false, features = ["unidic"] }
-lindera-tokenizer = { optional = true, version = "0.31", default-features = false, features = ["unidic"] }
 snowball = { package = "waken_snowball", optional = true, version = "0.1", default-features = false }
 
 [dev-dependencies]
@@ -47,8 +44,19 @@ config = { version = "0.15", default-features = false, features = ["toml"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "fmt"] }
 
 [features]
-default = ["stemming", "tokenizer-chinese"]
+# NOTE: Japanese and Korean are disabled by default because they rely on the
+#   heavy `lindera` crate.
+default = ["stemming", "tokenizer-chinese", "tokenizer-german", "tokenizer-greek", "tokenizer-hebrew", "tokenizer-khmer", "tokenizer-swedish", "tokenizer-thai", "tokenizer-turkish", "tokenizer-vietnamese"]
 stemming = ["dep:snowball"]
-tokenizer-chinese = ["jieba-rs"]
-tokenizer-japanese = ["lindera-core", "lindera-dictionary", "lindera-tokenizer"]
+tokenizer-chinese = ["charabia/chinese"]
+tokenizer-german = ["charabia/german-segmentation"]
+tokenizer-greek = ["charabia/greek"]
+tokenizer-hebrew = ["charabia/hebrew"]
+tokenizer-japanese = ["charabia/japanese"]
+tokenizer-khmer = ["charabia/khmer"]
+tokenizer-korean = ["charabia/korean"]
+tokenizer-swedish = ["charabia/swedish-recomposition"]
+tokenizer-thai = ["charabia/thai"]
+tokenizer-turkish = ["charabia/turkish"]
+tokenizer-vietnamese = ["charabia/vietnamese"]
 benchmark = []

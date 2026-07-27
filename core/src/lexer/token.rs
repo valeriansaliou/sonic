@@ -12,7 +12,6 @@ use std::time::Instant;
 
 use hashbrown::HashSet;
 use regex::Regex;
-use unicode_segmentation::UnicodeSegmentation;
 use whatlang::Lang;
 
 use crate::config::{ConfigNormalization, ConfigTokenization};
@@ -41,7 +40,7 @@ static SPECIAL_PATTERNS: LazyLock<Regex> = LazyLock::new(|| {
 pub struct Tokenizer<'s> {
     config: ConfigTokenization,
     text: &'s str,
-    lang: Option<Lang>,
+    lang: Option<charabia::Language>,
     regex_matches: Peekable<regex::CaptureMatches<'static, 's>>,
     regex_cursor: usize,
     tokens: Option<(TokensIter<'s>, usize)>,
@@ -59,7 +58,11 @@ impl<'s> Tokenizer<'s> {
 
         Self {
             config: *config,
-            lang,
+            // NOTE: We’re not using the exact same version of `whatlang`,
+            //   which can cause some languages to be missing. It’s currently
+            //   the case, where `whatlang@0.18` supports `Cym` but `charabia`’s
+            //   `whatlang@0.16` doesn’t.
+            lang: lang.and_then(|lang| charabia::Language::from_code(lang.code())),
             regex_matches,
             text,
             regex_cursor: 0,
@@ -68,26 +71,23 @@ impl<'s> Tokenizer<'s> {
     }
 }
 
-fn tokenize<'s>(text: &'s str, lang: Option<Lang>) -> Box<dyn Iterator<Item = &'s str> + 's> {
-    match lang {
-        #[cfg(feature = "tokenizer-chinese")]
-        Some(Lang::Cmn) => Box::from(
-            TOKENIZER_JIEBA
-                .cut(text, false)
-                .into_iter()
-                .map(|token| token.word),
-        ),
-        #[cfg(feature = "tokenizer-japanese")]
-        Some(Lang::Jpn) => match TOKENIZER_LINDERA.tokenize(text) {
-            Ok(tokens) => Box::from(tokens.into_iter()),
-            Err(err) => {
-                tracing::warn!("unable to tokenize japanese, falling back: {}", err);
+fn tokenize<'s>(text: &'s str, lang: Option<charabia::Language>) -> impl Iterator<Item = &'s str> {
+    use charabia::Segment as _;
 
-                Box::from(text.unicode_words())
-            }
-        },
-        _ => Box::from(text.unicode_words()),
-    }
+    static NORMALIZER_OPTIONS: LazyLock<charabia::normalizer::NormalizerOption<'static>> =
+        LazyLock::new(|| charabia::normalizer::NormalizerOption {
+            create_char_map: false,
+            classifier: charabia::normalizer::ClassifierOption {
+                stop_words: None,
+                separators: None,
+            },
+            lossy: false,
+        });
+
+    text.segment_with_option(None, lang.map(Some))
+        .normalize(&NORMALIZER_OPTIONS)
+        .filter(|t| t.is_word())
+        .map(|t| &text[t.byte_start..t.byte_end])
 }
 
 impl<'s> Iterator for Tokenizer<'s> {
@@ -115,10 +115,10 @@ impl<'s> Iterator for Tokenizer<'s> {
                 // Up until that special chunk, tokenize normally.
                 if start > self.regex_cursor {
                     let gap = &self.text[self.regex_cursor..start];
-                    let mut tokens = Box::new(tokenize(gap, self.lang).map(Token::Word));
+                    let mut tokens = tokenize(gap, self.lang).map(Token::Word);
 
                     if let Some(token) = tokens.next() {
-                        self.tokens = Some((tokens, end));
+                        self.tokens = Some((Box::new(tokens), end));
                         return Some(token);
                     }
                 }
@@ -127,19 +127,17 @@ impl<'s> Iterator for Tokenizer<'s> {
                 // chunk.
                 let next = if self.config.compat_split_special_patterns {
                     let regex_match = captures.get_match().as_str();
-                    let words = tokenize(regex_match, self.lang);
-
-                    let mut words = Box::new(words.map(|raw| Token::Special {
+                    let mut words = tokenize(regex_match, self.lang).map(|raw| Token::Special {
                         raw,
                         normalized: Cow::Borrowed(raw),
-                    }));
+                    });
 
                     let next = words.next().unwrap_or(Token::Special {
                         raw: regex_match,
                         normalized: Cow::Borrowed(regex_match),
                     });
 
-                    self.tokens = Some((words, end));
+                    self.tokens = Some((Box::new(words), end));
 
                     Some(next)
                 } else {
@@ -157,10 +155,10 @@ impl<'s> Iterator for Tokenizer<'s> {
                 // When there are no more special chunks, finish by tokenizing
                 // normally.
                 let gap = &self.text[self.regex_cursor..];
-                let mut tokens = Box::from(tokenize(gap, self.lang).map(Token::Word));
+                let mut tokens = tokenize(gap, self.lang).map(Token::Word);
 
                 if let Some(token) = tokens.next() {
-                    self.tokens = Some((tokens, self.text.len()));
+                    self.tokens = Some((Box::new(tokens), self.text.len()));
                     return Some(token);
                 }
 
@@ -290,24 +288,6 @@ impl TokenLexerMode {
 const TEXT_LANG_TRUNCATE_OVER_CHARS: usize = 200;
 const TEXT_LANG_DETECT_PROCEED_OVER_CHARS: usize = 20;
 const TEXT_LANG_DETECT_NGRAM_UNDER_CHARS: usize = 60;
-
-#[cfg(feature = "tokenizer-chinese")]
-static TOKENIZER_JIEBA: LazyLock<jieba_rs::Jieba> = LazyLock::new(jieba_rs::Jieba::new);
-
-#[cfg(feature = "tokenizer-japanese")]
-static TOKENIZER_LINDERA: LazyLock<lindera_tokenizer::tokenizer::Tokenizer> = LazyLock::new(|| {
-    lindera_tokenizer::tokenizer::Tokenizer::from_config(
-        lindera_tokenizer::tokenizer::TokenizerConfig {
-            dictionary: lindera_dictionary::DictionaryConfig {
-                kind: Some(lindera_dictionary::DictionaryKind::UniDic),
-                path: None,
-            },
-            user_dictionary: None,
-            mode: lindera_core::mode::Mode::Normal,
-        },
-    )
-    .expect("unable to initialize japanese tokenizer")
-});
 
 impl TokenLexerBuilder {
     pub fn from(
@@ -830,7 +810,8 @@ mod tests {
             "I don’t put punctuation correctly .See?",
             vec![
                 Token::Word("I"),
-                Token::Word("don’t"),
+                Token::Word("don"),
+                Token::Word("t"),
                 Token::Word("put"),
                 Token::Word("punctuation"),
                 Token::Word("correctly"),
@@ -881,7 +862,8 @@ mod tests {
         test(
             "It’s tested in test_tokenizer.",
             vec![
-                Token::Word("It’s"),
+                Token::Word("It"),
+                Token::Word("s"),
                 Token::Word("tested"),
                 Token::Word("in"),
                 Token::Special {
@@ -1061,8 +1043,8 @@ mod tests {
     }
 
     #[test]
-    fn it_cleans_token_emojis() {
-        let mut token_cleaner = TokenLexerBuilder::from(
+    fn it_does_not_clean_token_emojis() {
+        let token_cleaner = TokenLexerBuilder::from(
             TokenLexerMode::NormalizeAndCleanup,
             None,
             "🚀 🙋‍♂️🙋‍♂️🙋‍♂️",
@@ -1073,7 +1055,9 @@ mod tests {
 
         assert_eq!(token_cleaner.locale, None);
 
-        assert_eq!(token_cleaner.next(), None);
+        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
+
+        assert_eq!(tokens.next(), Some("🚀".to_owned()));
     }
 
     #[test]
