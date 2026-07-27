@@ -127,7 +127,7 @@ fn main() {
         metrics.add(&results, relevant);
 
         if (index + 1).is_multiple_of(1000) {
-            eprintln!("Evaluated {}/{} queries", index + 1, queries.len());
+            eprintln!("Evaluated {:>5}/{:>5} queries", index + 1, queries.len());
         }
     }
 
@@ -230,6 +230,12 @@ fn ensure_index(corpus_path: &Path) {
 
     let started_at = Instant::now();
     let mut count = 0usize;
+    let mut total_bytes = 0u64;
+
+    const CHUNK_SIZE: usize = 10_000;
+    let mut chunk_start = Instant::now();
+    let mut chunk_bytes = 0u64;
+
     for item in json_lines::<TextItem>(corpus_path) {
         let text = if item.title.is_empty() {
             item.text
@@ -240,9 +246,18 @@ fn ensure_index(corpus_path: &Path) {
             .push_with_options(COLLECTION, BUCKET, &item.id, &text, &[&benchmark_lang()])
             .unwrap_or_else(|err| panic!("Failed ingesting document {:?}: {err}", item.id));
         count += 1;
+        total_bytes += text.len() as u64;
+        chunk_bytes += text.len() as u64;
 
-        if count.is_multiple_of(10_000) {
-            eprintln!("Indexed {count} documents");
+        if count.is_multiple_of(CHUNK_SIZE) {
+            let chunk_elapsed = chunk_start.elapsed();
+            eprintln!(
+                "Indexed {CHUNK_SIZE} documents ({chunk_bytes}B) in {chunk_elapsed:>9.3?} ({chunk_thrpt:>5}kB/s).\
+                \tTotal: {count:>6} ({total_bytes:>8}B)",
+                chunk_thrpt = (chunk_bytes as u128 / chunk_start.elapsed().as_millis())
+            );
+            chunk_start = Instant::now();
+            chunk_bytes = 0;
         }
     }
     channel.quit().unwrap();
@@ -256,7 +271,11 @@ fn ensure_index(corpus_path: &Path) {
     drop(sonic);
 
     std::fs::write(&ready_path, format!("{index_config}\ncount={count}\n")).unwrap();
-    eprintln!("Indexed {count} documents in {:.3?}", started_at.elapsed());
+    let total_time = started_at.elapsed();
+    eprintln!(
+        "Indexed {count} documents ({total_bytes}B) in {total_time:.3?} ({thrpt}kB/s)",
+        thrpt = (total_bytes / started_at.elapsed().as_secs()) as f32 / 1000.
+    );
 }
 
 fn start_sonic() -> SpawnGuard {
