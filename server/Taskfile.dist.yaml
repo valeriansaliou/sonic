@@ -74,7 +74,7 @@ tasks:
 
   cargo-bench:
     internal: true
-    cmd: cargo bench -p sonic-server --bench wikipedia{{ if .CLI_ARGS }} {{ .CLI_ARGS }}{{ end }}
+    cmd: cargo bench -p sonic-server{{ if .CLI_ARGS }} {{ .CLI_ARGS }}{{ end }}
     preconditions:
       - sh: "! lsof -iTCP:1491 -sTCP:LISTEN"
         msg: >-
