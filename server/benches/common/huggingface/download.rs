@@ -2,6 +2,7 @@
 //
 // Fast, lightweight and schema-less search backend
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
+// Copyright: 2026, Baptiste Jamin <baptiste@crisp.chat>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 #![allow(dead_code)]
