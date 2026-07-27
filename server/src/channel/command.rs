@@ -415,6 +415,7 @@ impl ChannelCommandSearch {
                         query_lang,
                         *ctx.normalization_config,
                         *ctx.tokenization_config,
+                        ctx.stopwords_config,
                     )
                     .map_err(|()| ChannelCommandError::QueryError)?;
 
@@ -490,6 +491,7 @@ impl ChannelCommandSearch {
                         &event_id, collection, bucket, &text, suggest_limit,
                         *ctx.normalization_config,
                         *ctx.tokenization_config,
+                        ctx.stopwords_config,
                     )
                     .map_err(|()| ChannelCommandError::QueryError)?;
 
@@ -736,6 +738,7 @@ impl ChannelCommandIngest {
                         collection, bucket, object, &text, push_lang,
                         *ctx.normalization_config,
                         *ctx.tokenization_config,
+                        ctx.stopwords_config,
                     )
                     .map_err(|()| ChannelCommandError::QueryError)?;
 
@@ -776,6 +779,7 @@ impl ChannelCommandIngest {
                     &text,
                     *ctx.normalization_config,
                     *ctx.tokenization_config,
+                    ctx.stopwords_config,
                 )
                 .map_err(|()| ChannelCommandError::QueryError)?;
 

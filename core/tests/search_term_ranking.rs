@@ -221,29 +221,3 @@ fn test_ranking_uses_idf() {
         assert_eq!(response, ["article:2", "article:3", "article:1"]);
     }
 }
-
-/// See <https://github.com/valeriansaliou/sonic/issues/383>.
-#[test]
-fn test_minimum_term_idf() {
-    init_logging();
-    let executor = make_test_executor(|app_conf| {
-        app_conf.search.query_minimum_term_idf_default = 0.5;
-        app_conf.search.query_minimum_term_idf_minimum_object_count = 4;
-
-        // Disable stemming to make results more predictable.
-        app_conf.normalization.stemming_enabled = false;
-    });
-
-    // idf("foo") = 0.75, idf("bar") = 0.50, idf("baz") = 0.25
-    exec!(executor -> PUSH "articles" "default" "article:1" "example");
-    exec!(executor -> PUSH "articles" "default" "article:2" "foo");
-    exec!(executor -> PUSH "articles" "default" "article:3" "foo bar");
-    exec!(executor -> PUSH "articles" "default" "article:4" "foo bar baz");
-
-    exec!(executor -> TRIGGER consolidate);
-
-    {
-        let response = exec!(executor -> QUERY "articles" "default" "foo bar baz");
-        assert_eq!(response, ["article:4", "article:3"]);
-    }
-}

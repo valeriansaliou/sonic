@@ -10,6 +10,7 @@
 //! It does not include server nor channel configuration, which are specific
 //! to the `sonic-server` binary.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -22,6 +23,8 @@ pub struct Config {
     pub normalization: ConfigNormalization,
 
     pub tokenization: ConfigTokenization,
+
+    pub stopwords: ConfigStopwords,
 
     pub search: ConfigSearch,
 
@@ -75,6 +78,26 @@ pub struct ConfigTokenization {
 
     #[serde(alias = "split_special_patterns")]
     pub compat_split_special_patterns: bool,
+}
+
+#[derive(Deserialize, Clone, Default)]
+pub struct ConfigStopwords {
+    #[serde(deserialize_with = "to_stopwords")]
+    pub allow: HashSet<String>,
+
+    #[serde(deserialize_with = "to_stopwords")]
+    pub deny: HashSet<String>,
+}
+
+fn to_stopwords<'de, D>(deserializer: D) -> Result<HashSet<String>, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    use unicode_normalization::UnicodeNormalization as _;
+
+    let vec: Vec<Box<str>> = Deserialize::deserialize(deserializer)?;
+    let stopwords_iter = vec.into_iter().map(|s| s.nfkd().to_string());
+    Ok(HashSet::from_iter(stopwords_iter))
 }
 
 #[derive(Deserialize)]
@@ -181,6 +204,10 @@ pub(crate) mod tests {
         [tokenization]
         detect_special_patterns = true
         compat_split_special_patterns = false
+
+        [stopwords]
+        allow = []
+        deny = []
 
         [search]
         query_limit_default = 10

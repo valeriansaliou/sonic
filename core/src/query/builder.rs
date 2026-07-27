@@ -7,7 +7,7 @@
 
 use super::Query;
 use super::types::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset};
-use crate::config::{ConfigNormalization, ConfigTokenization};
+use crate::config::{ConfigNormalization, ConfigStopwords, ConfigTokenization};
 use crate::lexer::{TokenLexerBuilder, TokenLexerMode};
 use crate::store::StoreItemBuilder;
 
@@ -23,6 +23,7 @@ impl<'a> Query<'a> {
         lang: Option<QueryGenericLang>,
         normalization_config: ConfigNormalization,
         tokenization_config: ConfigTokenization,
+        stopwords_config: &'a ConfigStopwords,
     ) -> Result<Self, ()> {
         match (
             StoreItemBuilder::from_depth_2(collection, bucket),
@@ -32,6 +33,7 @@ impl<'a> Query<'a> {
                 terms,
                 normalization_config,
                 tokenization_config,
+                stopwords_config,
             ),
         ) {
             (Ok(store), Ok(text_lexed)) => {
@@ -41,6 +43,7 @@ impl<'a> Query<'a> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)] // This will be reworked at some point.
     pub fn suggest(
         query_id: &'a str,
         collection: &'a str,
@@ -49,6 +52,7 @@ impl<'a> Query<'a> {
         limit: QuerySearchLimit,
         normalization_config: ConfigNormalization,
         tokenization_config: ConfigTokenization,
+        stopwords_config: &'a ConfigStopwords,
     ) -> Result<Self, ()> {
         match (
             StoreItemBuilder::from_depth_2(collection, bucket),
@@ -58,6 +62,7 @@ impl<'a> Query<'a> {
                 terms,
                 normalization_config,
                 tokenization_config,
+                stopwords_config,
             ),
         ) {
             (Ok(store), Ok(text_lexed)) => Ok(Query::Suggest(store, query_id, text_lexed, limit)),
@@ -78,6 +83,7 @@ impl<'a> Query<'a> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)] // This will be reworked at some point.
     pub fn push(
         collection: &'a str,
         bucket: &'a str,
@@ -86,6 +92,7 @@ impl<'a> Query<'a> {
         lang: Option<QueryGenericLang>,
         normalization_config: ConfigNormalization,
         tokenization_config: ConfigTokenization,
+        stopwords_config: &'a ConfigStopwords,
     ) -> Result<Self, ()> {
         match (
             StoreItemBuilder::from_depth_3(collection, bucket, object),
@@ -95,6 +102,7 @@ impl<'a> Query<'a> {
                 text,
                 normalization_config,
                 tokenization_config,
+                stopwords_config,
             ),
         ) {
             (Ok(store), Ok(text_lexed)) => Ok(Query::Push(store, text_lexed)),
@@ -109,6 +117,7 @@ impl<'a> Query<'a> {
         text: &'a str,
         normalization_config: ConfigNormalization,
         tokenization_config: ConfigTokenization,
+        stopwords_config: &'a ConfigStopwords,
     ) -> Result<Self, ()> {
         match (
             StoreItemBuilder::from_depth_3(collection, bucket, object),
@@ -118,6 +127,7 @@ impl<'a> Query<'a> {
                 text,
                 normalization_config,
                 tokenization_config,
+                stopwords_config,
             ),
         ) {
             (Ok(store), Ok(text_lexed)) => Ok(Query::Pop(store, text_lexed)),
@@ -168,6 +178,8 @@ impl<'a> Query<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::LazyLock;
+
     use super::*;
 
     const NORMALIZATION_CONFIG: ConfigNormalization = ConfigNormalization {
@@ -179,19 +191,23 @@ mod tests {
         detect_special_patterns: true,
         compat_split_special_patterns: false,
     };
+    static STOPWORDS_CONFIG: LazyLock<ConfigStopwords> = LazyLock::new(|| ConfigStopwords {
+        allow: Default::default(),
+        deny: Default::default(),
+    });
 
     #[test]
     fn it_builds_search_query() {
         #[rustfmt::skip]
         assert!(Query::search(
             "id1", "c:test:1", "b:test:1", "Michael Dake", 10, 20, None,
-            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG,
+            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG, &STOPWORDS_CONFIG,
         ).is_ok());
 
         #[rustfmt::skip]
         assert!(Query::search(
             "id2", "c:test:1", "", "Michael Dake", 1, 0, None,
-            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG,
+            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG, &STOPWORDS_CONFIG,
         ).is_err());
     }
 
@@ -200,13 +216,13 @@ mod tests {
         #[rustfmt::skip]
         assert!(Query::suggest(
             "id1", "c:test:2", "b:test:2", "Micha", 5,
-            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG,
+            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG, &STOPWORDS_CONFIG,
         ).is_ok());
 
         #[rustfmt::skip]
         assert!(Query::suggest(
             "id2", "c:test:2", "", "Micha", 1,
-            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG,
+            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG, &STOPWORDS_CONFIG,
         ).is_err());
     }
 
@@ -221,13 +237,13 @@ mod tests {
         #[rustfmt::skip]
         assert!(Query::push(
             "c:test:3", "b:test:3", "o:test:3", "My name is Michael Dake. I'm ordering in the US.", None,
-            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG,
+            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG, &STOPWORDS_CONFIG,
         ).is_ok());
 
         #[rustfmt::skip]
         assert!(Query::push(
             "c:test:3", "", "o:test:3", "My name is Michael Dake.", None,
-            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG,
+            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG, &STOPWORDS_CONFIG,
         ).is_err());
     }
 
@@ -236,13 +252,13 @@ mod tests {
         #[rustfmt::skip]
         assert!(Query::pop(
             "c:test:4", "b:test:4", "o:test:4", "ordering US",
-            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG,
+            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG, &STOPWORDS_CONFIG,
         ).is_ok());
 
         #[rustfmt::skip]
         assert!(Query::pop(
             "c:test:4", "", "o:test:4", "ordering US",
-            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG,
+            NORMALIZATION_CONFIG, TOKENIZATION_CONFIG, &STOPWORDS_CONFIG,
         ).is_err());
     }
 

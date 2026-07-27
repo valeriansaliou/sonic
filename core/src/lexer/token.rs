@@ -15,7 +15,8 @@ use regex::Regex;
 use unicode_segmentation::UnicodeSegmentation;
 use whatlang::Lang;
 
-use crate::config::{ConfigNormalization, ConfigTokenization};
+use crate::config::{ConfigNormalization, ConfigStopwords, ConfigTokenization};
+use crate::lexer::stopwords::is_stopword;
 use crate::query::QueryGenericLang;
 use crate::store::identifiers::{StoreTermHash, StoreTermHashed};
 
@@ -270,6 +271,7 @@ pub struct TokenLexer<'a> {
     tokenizer: Tokenizer<'a>,
     yields: HashSet<StoreTermHashed>,
     config: ConfigNormalization,
+    stopwords: &'a ConfigStopwords,
 }
 
 #[derive(PartialEq)]
@@ -310,13 +312,14 @@ static TOKENIZER_LINDERA: LazyLock<lindera_tokenizer::tokenizer::Tokenizer> = La
 });
 
 impl TokenLexerBuilder {
-    pub fn from(
+    pub fn from<'a>(
         mode: TokenLexerMode,
         lang: Option<Lang>,
-        text: &str,
+        text: &'a str,
         normalization_config: ConfigNormalization,
         tokenization_config: ConfigTokenization,
-    ) -> Result<TokenLexer<'_>, ()> {
+        stopwords_config: &'a ConfigStopwords,
+    ) -> Result<TokenLexer<'a>, ()> {
         let locale = match lang {
             // If user provided a language, use it.
             Some(hinted_lang) => {
@@ -362,6 +365,7 @@ impl TokenLexerBuilder {
             locale,
             normalization_config,
             tokenization_config,
+            stopwords_config,
         ))
     }
 
@@ -516,6 +520,7 @@ impl<'a> TokenLexer<'a> {
         locale: Option<Lang>,
         normalization_config: ConfigNormalization,
         tokenization_config: ConfigTokenization,
+        stopwords_config: &'a ConfigStopwords,
     ) -> TokenLexer<'a> {
         // Tokenize words (depending on the locale)
         let tokenizer = Tokenizer::new(text, locale, &tokenization_config);
@@ -535,6 +540,7 @@ impl<'a> TokenLexer<'a> {
             tokenizer,
             yields: HashSet::new(),
             config: normalization_config,
+            stopwords: stopwords_config,
         }
     }
 }
@@ -643,7 +649,7 @@ impl<'a> Iterator for TokenLexer<'a> {
             };
 
             // Check if normalized word is a stop-word? (if should normalize and cleanup)
-            if self.mode.should_cleanup() && LexerStopWord::is(&word, self.locale) {
+            if self.mode.should_cleanup() && is_stopword(&word, self.locale, &self.stopwords) {
                 tracing::debug!("lexer did not yield word {word:?}: word is a stop-word");
                 continue 'tokenize;
             }
@@ -696,6 +702,10 @@ mod tests {
         detect_special_patterns: true,
         compat_split_special_patterns: false,
     };
+    static STOPWORDS_CONFIG: LazyLock<ConfigStopwords> = LazyLock::new(|| ConfigStopwords {
+        allow: Default::default(),
+        deny: Default::default(),
+    });
 
     #[test]
     fn test_tokenizer() {
@@ -900,6 +910,7 @@ mod tests {
             "The quick brown fox jumps over the lazy dog!",
             NORMALIZATION_CONFIG,
             TOKENIZATION_CONFIG,
+            &STOPWORDS_CONFIG,
         )
         .unwrap();
 
@@ -924,6 +935,7 @@ mod tests {
             "Le vif renard brun saute par dessus le chien paresseux.",
             NORMALIZATION_CONFIG,
             TOKENIZATION_CONFIG,
+            &STOPWORDS_CONFIG,
         )
         .unwrap();
 
@@ -948,6 +960,7 @@ mod tests {
             "我们中出了一个叛徒",
             NORMALIZATION_CONFIG,
             TOKENIZATION_CONFIG,
+            &STOPWORDS_CONFIG,
         )
         .unwrap();
 
@@ -970,6 +983,7 @@ mod tests {
             "快狐跨懒狗快狐跨懒狗",
             NORMALIZATION_CONFIG,
             TOKENIZATION_CONFIG,
+            &STOPWORDS_CONFIG,
         )
         .unwrap();
 
@@ -994,6 +1008,7 @@ mod tests {
             "関西国際空港限定トートバッグ",
             NORMALIZATION_CONFIG,
             TOKENIZATION_CONFIG,
+            &STOPWORDS_CONFIG,
         )
         .unwrap();
 
@@ -1019,6 +1034,7 @@ mod tests {
             "𠮷野家",
             NORMALIZATION_CONFIG,
             TOKENIZATION_CONFIG,
+            &STOPWORDS_CONFIG,
         )
         .unwrap();
 
@@ -1030,6 +1046,7 @@ mod tests {
             "ヱビスビール",
             NORMALIZATION_CONFIG,
             TOKENIZATION_CONFIG,
+            &STOPWORDS_CONFIG,
         )
         .unwrap();
 
@@ -1045,6 +1062,7 @@ mod tests {
             "𠮷野家でヱビスビールを飲んだ",
             NORMALIZATION_CONFIG,
             TOKENIZATION_CONFIG,
+            &STOPWORDS_CONFIG,
         )
         .unwrap();
 
@@ -1068,6 +1086,7 @@ mod tests {
             "🚀 🙋‍♂️🙋‍♂️🙋‍♂️",
             NORMALIZATION_CONFIG,
             TOKENIZATION_CONFIG,
+            &STOPWORDS_CONFIG,
         )
         .unwrap();
 
@@ -1084,6 +1103,7 @@ mod tests {
             "This will be cleaned properly, as English was hinted rightfully so.",
             NORMALIZATION_CONFIG,
             TOKENIZATION_CONFIG,
+            &STOPWORDS_CONFIG,
         )
         .unwrap();
         let token_cleaner_wrong = TokenLexerBuilder::from(
@@ -1092,6 +1112,7 @@ mod tests {
             "This will not be cleaned properly, as French was hinted but this is English.",
             NORMALIZATION_CONFIG,
             TOKENIZATION_CONFIG,
+            &STOPWORDS_CONFIG,
         )
         .unwrap();
 
@@ -1148,6 +1169,7 @@ mod benches {
                 "Le vif renard brun saute par dessus le chien paresseux.",
                 NORMALIZATION_CONFIG,
                 TOKENIZATION_CONFIG,
+                &STOPWORDS_CONFIG,
             )
         });
     }
@@ -1160,6 +1182,7 @@ mod benches {
                 "Le vif renard brun saute par dessus le chien paresseux.",
                 NORMALIZATION_CONFIG,
                 TOKENIZATION_CONFIG,
+                &STOPWORDS_CONFIG,
             )
             .unwrap();
 
@@ -1176,6 +1199,7 @@ mod benches {
                 "The quick brown fox jumps over the lazy dog!",
                 NORMALIZATION_CONFIG,
                 TOKENIZATION_CONFIG,
+                &STOPWORDS_CONFIG,
             )
         });
     }
@@ -1189,6 +1213,7 @@ mod benches {
                 "The quick brown fox jumps over the lazy dog!",
                 NORMALIZATION_CONFIG,
                 TOKENIZATION_CONFIG,
+                &STOPWORDS_CONFIG,
             )
             .unwrap();
 
@@ -1209,6 +1234,7 @@ mod benches {
                 altogether and convert seawater into usable hydrogen"#,
                 NORMALIZATION_CONFIG,
                 TOKENIZATION_CONFIG,
+                &STOPWORDS_CONFIG,
             )
             .unwrap();
 
@@ -1224,6 +1250,7 @@ mod benches {
                 "The quick brown fox jumps over the lazy dog!",
                 NORMALIZATION_CONFIG,
                 TOKENIZATION_CONFIG,
+                &STOPWORDS_CONFIG,
             )
         });
     }
@@ -1236,6 +1263,7 @@ mod benches {
                 "The quick brown fox jumps over the lazy dog!",
                 NORMALIZATION_CONFIG,
                 TOKENIZATION_CONFIG,
+                &STOPWORDS_CONFIG,
             )
             .unwrap();
 
@@ -1252,6 +1280,7 @@ mod benches {
                 "我们中出了一个叛徒",
                 NORMALIZATION_CONFIG,
                 TOKENIZATION_CONFIG,
+                &STOPWORDS_CONFIG,
             )
         });
     }
@@ -1265,6 +1294,7 @@ mod benches {
                 "我们中出了一个叛徒",
                 NORMALIZATION_CONFIG,
                 TOKENIZATION_CONFIG,
+                &STOPWORDS_CONFIG,
             )
             .unwrap();
 
@@ -1281,6 +1311,7 @@ mod benches {
                 "関西国際空港限定トートバッグ",
                 NORMALIZATION_CONFIG,
                 TOKENIZATION_CONFIG,
+                &STOPWORDS_CONFIG,
             )
         });
     }
@@ -1294,6 +1325,7 @@ mod benches {
                 "関西国際空港限定トートバッグ",
                 NORMALIZATION_CONFIG,
                 TOKENIZATION_CONFIG,
+                &STOPWORDS_CONFIG,
             )
             .unwrap();
 
