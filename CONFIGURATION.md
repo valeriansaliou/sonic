@@ -77,6 +77,14 @@ Under `[tokenization]`:
     email addresses, phone numbers or identifiers, it is recommended that you
     disable this feature.
 
+### Stopwords configuration
+
+Under `[stopwords]`:
+
+* `allow` (type: _array_, allowed: strings, default: `[]`) — Sonic has opinionated localized stopwords, but you might want to index some of them. `stopwords.allow` allows you to define a set of words which will never be considered stopwords.
+  * Note that this configuration key will likely be deleted in Sonic v2 as hardcoded stopwords will likely be removed (see [issue #379 “Remove hardcoded stopwords”](https://github.com/valeriansaliou/sonic/issues/379)).
+* `deny` (type: _array_, allowed: strings, default: `[]`) — If there are words you don’t want to index, here is where you can inform Sonic of it. Words in this list will be ignored when processing text.
+
 ### Search configuration
 
 Under `[search]`:

@@ -59,6 +59,7 @@ macro_rules! exec {
                     $text,
                     $executor.app_conf.normalization,
                     $executor.app_conf.tokenization,
+                    &$executor.app_conf.stopwords,
                 )
                 .unwrap(),
             )
@@ -101,6 +102,7 @@ macro_rules! exec {
                     $term,
                     $executor.app_conf.normalization,
                     $executor.app_conf.tokenization,
+                    &$executor.app_conf.stopwords,
                 )
                 .unwrap(),
                 exec!(internal_ limit $($limit)?),

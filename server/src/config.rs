@@ -28,6 +28,10 @@ pub fn defaults_toml() -> &'static str {
     # TODO(major): Disable by default.
     compat_split_special_patterns = true
 
+    [stopwords]
+    allow = []
+    deny = []
+
     [search]
     query_limit_default = 10
     query_limit_maximum = 100

@@ -296,12 +296,14 @@ impl ChannelHandle {
                 search_config: &self.app_conf.sonic.search,
                 normalization_config: &self.app_conf.sonic.normalization,
                 tokenization_config: &self.app_conf.sonic.tokenization,
+                stopwords_config: &self.app_conf.sonic.stopwords,
             }
             .on(stream, message_slice),
             ChannelMode::Ingest => ChannelMessageModeIngest {
                 executor: &self.executor,
                 normalization_config: &self.app_conf.sonic.normalization,
                 tokenization_config: &self.app_conf.sonic.tokenization,
+                stopwords_config: &self.app_conf.sonic.stopwords,
             }
             .on(stream, message_slice),
             ChannelMode::Control => ChannelMessageModeControl {

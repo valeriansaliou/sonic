@@ -102,6 +102,17 @@ fn main() {
         LevelFilter::from_str(&app_conf.server.log_level).expect("invalid log level"),
     );
 
+    // Validate the app configuration.
+    {
+        let invalid_stopwords = (app_conf.sonic.stopwords.allow)
+            .intersection(&app_conf.sonic.stopwords.deny)
+            .collect::<Vec<_>>();
+        if !invalid_stopwords.is_empty() {
+            tracing::error!(invalid = ?invalid_stopwords, "Some stopwords are both allowed and denied. Fix your `stopwords` configuration.");
+            std::process::exit(1);
+        }
+    }
+
     let shutdown_signal = ShutdownSignal::new();
 
     tracing::info!("starting up");

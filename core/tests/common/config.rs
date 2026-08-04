@@ -45,6 +45,10 @@ pub fn defaults_toml() -> String {
         detect_special_patterns = true
         compat_split_special_patterns = false
 
+        [stopwords]
+        allow = []
+        deny = []
+
         [search]
         query_limit_default = 10
         query_limit_maximum = 100

@@ -10,6 +10,7 @@ use hashbrown::HashSet;
 use unicode_normalization::UnicodeNormalization;
 use whatlang::{Lang, Script};
 
+use crate::config::ConfigStopwords;
 use crate::stopwords::*;
 
 pub struct LexerStopWord;
@@ -89,21 +90,29 @@ fn make(words: &[&str]) -> HashSet<String> {
     words.iter().map(|&str| str.nfkd().to_string()).collect()
 }
 
-impl LexerStopWord {
-    pub fn is(word: &str, locale: Option<Lang>) -> bool {
-        use unicode_normalization::UnicodeNormalization as _;
+pub fn is_stopword(word: &str, locale: Option<Lang>, config: &ConfigStopwords) -> bool {
+    let word = word.nfkd().to_string();
 
-        if let Some(locale) = locale {
-            // Word is a stopword (given locale)
-            if Self::lang_stopwords(locale).contains(&word.nfkd().to_string()) {
-                return true;
-            }
-        }
-
-        // Not a stopword, or may not be (default)
-        false
+    if config.deny.contains(&word) {
+        // Word is a stopword (per configuration).
+        return true;
     }
 
+    let Some(locale) = locale else {
+        // Not a stopword, or may not be (default).
+        return false;
+    };
+
+    if config.allow.contains(&word) {
+        // Word is *not* a stopword (per configuration).
+        return false;
+    }
+
+    // Check locale-specific stopwords.
+    LexerStopWord::lang_stopwords(locale).contains(&word)
+}
+
+impl LexerStopWord {
     pub fn guess_lang(text: &str, script: Script) -> Option<Lang> {
         tracing::debug!(
             "guessing locale from stopwords for script: {} and text: {}",
@@ -318,12 +327,14 @@ mod tests {
 
     #[test]
     fn it_detects_stopwords() {
-        assert!(!LexerStopWord::is("the", None));
-        assert!(LexerStopWord::is("the", Some(Lang::Eng)));
-        assert!(!LexerStopWord::is("fox", Some(Lang::Eng)));
-        assert!(!LexerStopWord::is("bonjour", Some(Lang::Fra)));
-        assert!(LexerStopWord::is("ici", Some(Lang::Fra)));
-        assert!(LexerStopWord::is("adéu", Some(Lang::Cat)));
+        let conf = ConfigStopwords::default();
+
+        assert!(!is_stopword("the", None, &conf));
+        assert!(is_stopword("the", Some(Lang::Eng), &conf));
+        assert!(!is_stopword("fox", Some(Lang::Eng), &conf));
+        assert!(!is_stopword("bonjour", Some(Lang::Fra), &conf));
+        assert!(is_stopword("ici", Some(Lang::Fra), &conf));
+        assert!(is_stopword("adéu", Some(Lang::Cat), &conf));
     }
 
     #[test]
