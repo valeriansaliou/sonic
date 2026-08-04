@@ -22,6 +22,6 @@ WORKDIR /usr/src/sonic
 
 COPY --from=build /app/target/release/sonic /usr/local/bin/sonic
 
-CMD [ "sonic", "-c", "/etc/sonic.cfg" ]
+CMD ["sonic"]
 
 EXPOSE 1491
