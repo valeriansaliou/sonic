@@ -7,6 +7,8 @@
 
 use std::sync::Arc;
 
+use crate::DEFAULT_CONFIG_FILE_PATHS;
+
 pub fn defaults_toml() -> &'static str {
     r#"
     [server]
@@ -117,20 +119,33 @@ impl Config {
     }
 }
 
-pub fn read_config(path: &str) -> Config {
-    // Abort if the user specified a config path that does not exist.
-    if path != crate::DEFAULT_CONFIG_FILE_PATH && !std::path::Path::new(path).exists() {
-        panic!("Cannot find config file at {path:?}");
+pub fn read_config(custom_path: Option<&str>) -> Config {
+    if let Some(custom_path) = custom_path {
+        // Abort if the user specified a config path that does not exist.
+        if !std::path::Path::new(custom_path).exists() {
+            panic!("Cannot find config file at {custom_path:?}");
+        }
+
+        let path = std::path::absolute(custom_path).unwrap();
+        tracing::debug!("reading config file: {path:?}");
+
+        Config::parse(config::File::from(path).format(config::FileFormat::Toml))
+    } else {
+        for path in DEFAULT_CONFIG_FILE_PATHS {
+            let path = std::path::absolute(path).unwrap();
+            tracing::debug!("looking for config file at {path:?}");
+
+            if path.exists() {
+                tracing::debug!("reading config file: {path:?}");
+
+                return Config::parse(config::File::from(path).format(config::FileFormat::Toml));
+            }
+        }
+
+        tracing::debug!("no config file found in known locations, using defaults only");
+
+        Config::parse(config::File::from_str("", config::FileFormat::Toml))
     }
-
-    let path = std::path::absolute(path).unwrap();
-    tracing::debug!("reading config file: {path:?}");
-
-    Config::parse(
-        config::File::from(path)
-            .format(config::FileFormat::Toml)
-            .required(false),
-    )
 }
 
 pub struct Config {

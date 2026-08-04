@@ -28,9 +28,8 @@ mod config;
 mod logger;
 mod tasker;
 
-use std::ops::Deref;
 use std::str::FromStr;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -48,7 +47,7 @@ use crate::config::{Config, read_config};
 use crate::logger::ConfigLogger;
 
 struct AppArgs {
-    config: String,
+    config: Option<String>,
 }
 
 #[cfg(unix)]
@@ -62,9 +61,17 @@ pub static THREAD_NAME_CHANNEL_MASTER: &str = "sonic-channel-master";
 pub static THREAD_NAME_CHANNEL_CLIENT: &str = "sonic-channel-client";
 pub static THREAD_NAME_TASKER: &str = "sonic-tasker";
 
-static APP_ARGS: LazyLock<AppArgs> = LazyLock::new(make_app_args);
-
-const DEFAULT_CONFIG_FILE_PATH: &str = "./config.cfg";
+const DEFAULT_CONFIG_FILE_PATHS: [&str; 5] = [
+    // COMPAT: This has to have a high precedence, for backward compatibility
+    //   with previous default value.
+    "./config.cfg",
+    // COMPAT: This has to have a high precedence, for backward compatibility
+    //   with previous package versions.
+    "/etc/sonic.cfg",
+    "/etc/sonic/config.toml",
+    "/etc/sonic/sonic.cfg.toml",
+    "/etc/sonic/sonic.cfg",
+];
 
 fn make_app_args() -> AppArgs {
     let matches = Command::new(clap::crate_name!())
@@ -75,17 +82,13 @@ fn make_app_args() -> AppArgs {
             Arg::new("config")
                 .short('c')
                 .long("config")
-                .help("Path to configuration file")
-                .default_value(DEFAULT_CONFIG_FILE_PATH),
+                .help("Path to configuration file"),
         )
         .get_matches();
 
     // Generate owned app arguments
     AppArgs {
-        config: matches
-            .get_one::<String>("config")
-            .expect("invalid config value")
-            .to_owned(),
+        config: matches.get_one::<String>("config").cloned(),
     }
 }
 
@@ -96,7 +99,9 @@ fn main() {
             .unwrap_or(LevelFilter::DEBUG),
     );
 
-    let app_conf = read_config(&APP_ARGS.config);
+    let app_args = make_app_args();
+
+    let app_conf = read_config(app_args.config.as_deref());
 
     ConfigLogger::update(
         LevelFilter::from_str(&app_conf.server.log_level).expect("invalid log level"),
@@ -154,9 +159,6 @@ fn main() {
 }
 
 fn ensure_states() {
-    // Ensure all statics are valid (a `deref` is enough to lazily initialize them)
-    let _ = APP_ARGS.deref();
-
     // Ensure per-module states
     ensure_states_channel_statistics();
 }
