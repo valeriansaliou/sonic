@@ -4,7 +4,6 @@
 
 - First of all, fork and clone this repo;
 - Install Rust and Cargo (to build and test Sonic);
-- Install NPM (for end-to-end tests);
 - [Install Task](https://taskfile.dev/docs/installation) (for a better Developer Experience);
 
 ## Build Sonic
@@ -28,7 +27,7 @@ cargo run
 From the repository root, run:
 
 ```sh
-cargo test
+task test
 ```
 
 ## Run end-to-end tests
@@ -65,6 +64,6 @@ When writing your issue title and command, make sure to be as precise as possibl
 
 **If you would like to contribute directly by writing code, you should fork this repository and edit it right away from your GitHub namespace.**
 
-Once you are done with your work, always ensure to format your Rust code according to guidelines, via the [rustfmt](https://github.com/rust-lang/rustfmt) utility: `rustfmt src/*.rs`
+Once you are done with your work, run `cargo clippy --locked --no-deps` to ensure your code follows our formatting guidelines.
 
 When this is done, you may open a Pull Request (PR), then explain your changes and their purpose precisely. We will finally accept or comment on your Pull Request, if we need more changes done on your code.
