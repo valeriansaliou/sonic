@@ -109,6 +109,8 @@ _The Sonic Channel Ingest mode is used for altering the search index (push, pop 
 * `HELP`: show help (syntax: `HELP [<manual>]?`; time complexity: `O(1)`)
 * `QUIT`: stop connection (syntax: `QUIT`; time complexity: `O(1)`)
 
+Note that Sonic doesn’t provide an `UPDATE` command, because of the lossy nature of its index. If you need to update an object, you have to `POP` it then `PUSH` the new data.
+
 **⏩ Syntax terminology:**
 
 * `<collection>`: index collection (ie. what you search in, eg. `messages`, `products`, etc.);
