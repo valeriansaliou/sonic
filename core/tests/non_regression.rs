@@ -104,3 +104,48 @@ fn issue_262() {
         query: test_cases,
     );
 }
+
+/// See <https://github.com/valeriansaliou/sonic/issues/264>.
+#[test]
+#[ignore = "Not supported yet (missing tf)"]
+fn issue_264() {
+    #[rustfmt::skip]
+    let test_cases = [
+        (00, "Schizophrenia relapse"),
+        (01, "Schizophrenia-like symptoms"),
+        (02, "Schizophrenia, Latent"),
+        (03, "Schizophrenia, Pseudoneurotic"),
+        (04, "early onset schizophrenia"),
+        (05, "FH: Schizophrenia"),
+        (06, "Chronic disorganized schizophrenia"),
+        (07, "Schizophrenia, process"),
+        (08, "Schizophrenia, Childhood"),
+        (09, "SCHIZOPHRENIA EPISODIC"),
+        (10, "Chronic schizophrenia"),
+        (11, "Incipient Schizophrenia"),
+        (12, "Simple schizophrenia NOS"),
+        (13, "Chronic paranoid schizophrenia"),
+        (14, "Schizophrenia"),
+        (15, "Late onset schizophrenia"),
+        (16, "Chronic residual schizophrenia"),
+        (17, "mixed schizophrenia"),
+        (18, "Paranoid Schizophrenia"),
+        (19, "Schizophrenia, Disorganized"),
+    ];
+
+    let executor = make_test_executor(|_| {});
+
+    for (idx, text) in test_cases {
+        let id = &format!("doc:{idx}");
+        exec!(executor -> PUSH "docs" "default" id text LANG("eng"));
+    }
+    exec!(executor -> TRIGGER consolidate);
+
+    let query = "schizophrenia";
+    let response = exec!(executor -> QUERY "docs" "default" query);
+    assert_eq!(
+        response.first().map(String::as_str),
+        Some("doc:14"),
+        "response={response:?}"
+    );
+}
