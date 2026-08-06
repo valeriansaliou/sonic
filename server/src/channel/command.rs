@@ -76,7 +76,10 @@ pub static COMMANDS_MODE_INGEST: [&str; 9] = [
     "PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT",
 ];
 pub static COMMANDS_MODE_CONTROL: [&str; 5] = ["TRIGGER", "INFO", "PING", "HELP", "QUIT"];
+#[cfg(not(feature = "experimental-api"))]
 pub static CONTROL_TRIGGER_ACTIONS: [&str; 3] = ["consolidate", "backup", "restore"];
+#[cfg(feature = "experimental-api")]
+pub static CONTROL_TRIGGER_ACTIONS: [&str; 4] = ["consolidate", "backup", "restore", "flush"];
 
 static MANUAL_MODE_SEARCH: LazyLock<HashMap<&str, Vec<&str>>> =
     LazyLock::new(|| HashMap::from_iter([("commands", COMMANDS_MODE_SEARCH.to_vec())]));
@@ -942,6 +945,17 @@ impl ChannelCommandControl {
                             Ok(vec![ChannelCommandResponse::Ok])
                         } else {
                             Err(ChannelCommandError::InvalidFormat("TRIGGER consolidate"))
+                        }
+                    }
+                    #[cfg(feature = "experimental-api")]
+                    "flush" => {
+                        if data_part.is_none() {
+                            // Force a KV flush
+                            kv_pool.flush(true);
+
+                            Ok(vec![ChannelCommandResponse::Ok])
+                        } else {
+                            Err(ChannelCommandError::InvalidFormat("TRIGGER flush"))
                         }
                     }
                     "backup" => {

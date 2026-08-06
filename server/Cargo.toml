@@ -48,6 +48,7 @@ default = ["allocator-jemalloc", "tokenizer-chinese"]
 allocator-jemalloc = ["tikv-jemallocator"]
 tokenizer-chinese = ["sonic-core/tokenizer-chinese"]
 tokenizer-japanese = ["sonic-core/tokenizer-japanese"]
+experimental-api = []
 benchmark = []
 
 [[bench]]
