@@ -6,6 +6,8 @@
 
 use std::sync::{LazyLock, Once};
 
+use tracing_subscriber::EnvFilter;
+
 pub(crate) static LOG_LEVEL: LazyLock<tracing::Level> =
     LazyLock::new(
         move || match std::env::var("LOG_LEVEL").map(|s| s.to_ascii_uppercase()) {
@@ -21,7 +23,7 @@ static INIT_LOGGING: Once = Once::new();
 pub fn init_logging() {
     INIT_LOGGING.call_once(|| {
         tracing_subscriber::fmt()
-            .with_max_level(*LOG_LEVEL)
+            .with_env_filter(EnvFilter::new(format!("{},sonic_client=info", *LOG_LEVEL)))
             .with_target(false)
             .with_file(true)
             .with_line_number(true)
