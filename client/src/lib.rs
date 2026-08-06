@@ -33,6 +33,9 @@ mod channel;
 mod connection;
 mod multiplexer;
 
+#[cfg(feature = "raw-api")]
+pub use crate::channel::Command;
+#[cfg(not(feature = "raw-api"))]
 pub(crate) use crate::channel::Command;
 pub use crate::events::{ChannelInfo, ServerInfo};
 pub use crate::multiplexer::SonicMultiplexer;

@@ -13,6 +13,7 @@ pub(crate) mod errors {
 }
 
 /// Builds a command String efficiently.
+#[cfg_attr(feature = "raw-api", macro_export)]
 macro_rules! make_command {
     ($command:literal) => {{
         $crate::Command::from($command)
@@ -287,14 +288,22 @@ macro_rules! impl_fns {
 
     (
         $(#[$meta:meta])*
-        fn $fn:ident $(<$($lifetime:lifetime),+>)? (&$self:ident $(, $arg_name:ident: $arg_ty:ty)* $(,)?) -> $ret_ty:ty $main:block
+        fn $fn:ident
+            $(<$($generic_param:tt),+>)?
+            (&$self:ident $(, $arg_name:ident: $arg_ty:ty)* $(,)?)
+            -> $ret_ty:ty $main:block
+            // NOTE: We put `where` clause at the end because the macro becomes
+            //   too complicated otherwise.
+             $(where $($where:tt)+)?
     ) => {
         impl self::LowLevelChannel {
             $(#[$meta])*
-            pub fn $fn$(<$($lifetime),+>)?(
+            pub fn $fn$(<$($generic_param),+>)?(
                 &$self,
                 $($arg_name: $arg_ty,)*
-            ) -> std::io::Result<oneshot::Receiver<$ret_ty>> {
+            ) -> std::io::Result<oneshot::Receiver<$ret_ty>>
+            $(where $($where)+)?
+            {
                 $main
             }
         }
@@ -302,10 +311,12 @@ macro_rules! impl_fns {
         #[cfg(feature = "sync")]
         impl self::BlockingChannel {
             $(#[$meta])*
-            pub fn $fn$(<$($lifetime),+>)?(
+            pub fn $fn$(<$($generic_param),+>)?(
                 &$self,
                 $($arg_name: $arg_ty,)*
-            ) -> $ret_ty {
+            ) -> $ret_ty
+            $(where $($where)+)?
+            {
                 $self.inner.$fn($($arg_name),*)?
                     .recv_timeout($crate::RECV_TIMEOUT)
                     .map_err(|error| std::io::Error::new(std::io::ErrorKind::BrokenPipe, error))?
@@ -314,10 +325,12 @@ macro_rules! impl_fns {
 
         #[cfg(feature = "async")]
         impl self::AsyncChannel {
-            pub async fn $fn$(<$($lifetime),+>)?(
+            pub async fn $fn$(<$($generic_param),+>)?(
                 &$self,
                 $($arg_name: $arg_ty,)*
-            ) -> $ret_ty {
+            ) -> $ret_ty
+            $(where $($where)+)?
+            {
                 $self.inner.$fn($($arg_name),*)?
                     .await
                     .map_err(|error| std::io::Error::new(std::io::ErrorKind::BrokenPipe, error.to_string()))?

@@ -335,7 +335,7 @@ impl<Mode: ChannelMode + 'static> SonicChannel<Mode> {
     }
 }
 
-pub(crate) struct Command {
+pub struct Command {
     value: Box<str>,
     prefix_len: usize,
     suffix_len: usize,

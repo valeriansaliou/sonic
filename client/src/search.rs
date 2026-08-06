@@ -12,7 +12,7 @@ use crate::util::{impl_channel_structs, impl_fns, make_command};
 
 // NOTE: Shorter type aliases.
 use self::SearchMode as Mode;
-use self::SearchModeDiscriminant as Discriminant;
+pub use self::SearchModeDiscriminant as Discriminant;
 
 impl_channel_structs!(Search("search"):
     SonicChannelSearch / SonicChannelSearchBlocking / SonicChannelSearchAsync
@@ -23,7 +23,7 @@ enum SearchMode {}
 /// Disciminants for all possible Sonic messages (response lines) when in
 /// Search mode.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum SearchModeDiscriminant {
+pub enum SearchModeDiscriminant {
     Pong,
     Pending,
     EventQuery(Box<str>),
@@ -230,4 +230,19 @@ impl_fns!(
 
         res
     }
+);
+
+// MARK: Raw
+
+impl_fns!(
+    #[doc = "Send a raw command."]
+    fn send<T>(
+        &self,
+        command: crate::Command,
+        discriminant: self::Discriminant,
+        parse: impl Fn(&str) -> std::io::Result<T> + Send + 'static,
+    ) -> std::io::Result<T> {
+        self.inner.send(command, discriminant, parse)
+    }
+    where T: Send + 'static,
 );
