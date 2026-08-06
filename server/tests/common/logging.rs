@@ -30,6 +30,7 @@ pub fn init_logging() {
             .without_time()
             .with_level(true)
             .with_writer(tracing_subscriber::fmt::TestWriter::new)
+            .with_ansi(true)
             .init();
     });
 }
