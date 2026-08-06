@@ -25,7 +25,7 @@ tasks:
       Runs native Rust tests.
       You can use `task test:foo,bar` to run tests foo and bar.
     aliases: [test:*]
-    cmd: cargo test --locked --no-fail-fast{{ if .MATCH }} --test {{ .MATCH | first | splitList "," | join " --test " }}{{ end }}{{ if .ARGS }} {{ .ARGS }}{{ end }}
+    cmd: cargo test --locked --no-fail-fast -F experimental-api{{ if .MATCH }} --test {{ .MATCH | first | splitList "," | join " --test " }}{{ end }}{{ if .ARGS }} {{ .ARGS }}{{ end }}
     vars:
       ARGS: '{{ without .CLI_ARGS_LIST "--trace" "--debug" "--info" "--warn" | join " " }}'
     env:
@@ -43,7 +43,7 @@ tasks:
       - cargo fmt --check
       - cargo clippy --locked
       - cargo check --locked --release
-      - cargo test --locked
+      - cargo test --locked -F experimental-api
 
   changelog:prepare:
     desc: Prepares changelog entries for the next release.

@@ -135,7 +135,7 @@ jobs:
           cargo --version
 
       - name: Build Sonic server
-        run: cargo build --locked --bin sonic --no-default-features -F stemming
+        run: cargo build --locked --bin sonic --no-default-features -F stemming -F experimental-api
 
       - name: Test all
-        run: cargo test --locked --no-default-features -F stemming
+        run: cargo test --locked --no-default-features -F stemming -F experimental-api
