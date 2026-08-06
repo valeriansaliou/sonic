@@ -6,7 +6,7 @@
 
 #![allow(dead_code)]
 
-mod logging;
+pub mod logging;
 mod path_guard;
 mod spawn_guard;
 
@@ -70,7 +70,7 @@ fn start_sonic(
     data_path: &Path,
     update_command: impl FnOnce(&mut Command) -> &mut Command,
 ) -> SpawnGuard {
-    init_logging();
+    init_logging("sonic_client=info", true, true);
 
     eprintln!("Testing using {:?}", SONIC_BIN_PATH.as_path());
     let sonic = update_command(
