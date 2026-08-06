@@ -15,14 +15,9 @@ use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
-use sonic_client::SonicMultiplexer;
-use sonic_client::control::SonicChannelControlBlocking;
-use sonic_client::ingest::SonicChannelIngestBlocking;
-use sonic_client::options::{Lang, Limit};
-use sonic_client::search::SonicChannelSearchBlocking;
 
-use crate::common::globals::*;
 use crate::common::huggingface::download::download_files;
+use crate::common::prelude::*;
 use crate::common::spawn_guard::SpawnGuard;
 
 const COLLECTION: &str = "beir-quora";
@@ -84,11 +79,17 @@ struct Metrics {
 }
 
 fn main() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::WARN)
-        .without_time()
-        .with_writer(tracing_subscriber::fmt::TestWriter::new)
-        .init();
+    init_logging(
+        None,
+        LoggingOptions {
+            default_log_level: tracing::Level::WARN,
+            with_target: true,
+            with_file: false,
+            with_line_number: false,
+            with_level: true,
+            with_thread_ids: false,
+        },
+    );
 
     let dataset = download_dataset();
     let qrels = load_qrels(&dataset.qrels);
@@ -104,7 +105,7 @@ fn main() {
 
     {
         let search =
-            SonicChannelSearchBlocking::connect(ADDR, "SecretPassword", &multiplexer).unwrap();
+            SonicChannelSearchBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
 
         for (index, (query_id, query_text)) in queries.iter().enumerate() {
             let query_started_at = Instant::now();
@@ -223,7 +224,7 @@ fn ensure_index(corpus_path: &Path) {
 
     {
         let ingest =
-            SonicChannelIngestBlocking::connect(ADDR, "SecretPassword", &multiplexer).unwrap();
+            SonicChannelIngestBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
 
         const CHUNK_SIZE: usize = 10_000;
         let mut chunk_start = Instant::now();
@@ -259,7 +260,7 @@ fn ensure_index(corpus_path: &Path) {
 
     {
         let control =
-            SonicChannelControlBlocking::connect(ADDR, "SecretPassword", &multiplexer).unwrap();
+            SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
         control.trigger_consolidate().unwrap();
     }
 

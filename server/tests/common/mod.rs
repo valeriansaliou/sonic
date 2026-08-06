@@ -6,8 +6,10 @@
 
 #![allow(dead_code)]
 
+pub mod client_helpers;
 pub mod logging;
 mod path_guard;
+pub mod random;
 mod spawn_guard;
 
 #[allow(unused_imports)]
@@ -15,8 +17,12 @@ pub mod prelude {
     pub use sonic_client::SonicMultiplexer;
     pub use sonic_client::control::SonicChannelControlBlocking;
     pub use sonic_client::ingest::SonicChannelIngestBlocking;
+    pub use sonic_client::options::*;
     pub use sonic_client::search::SonicChannelSearchBlocking;
 
+    pub(crate) use crate::common::SONIC_PASSWORD;
+    pub use crate::common::TestData;
+    pub use crate::common::random;
     pub use crate::common::spawn_guard::SpawnGuard;
     pub use crate::common::{start_empty, start_prepopulated};
 }
@@ -38,7 +44,9 @@ use sonic_client::{
 };
 use spawn_guard::SpawnGuard;
 
-use crate::common::logging::init_logging;
+use crate::common::{client_helpers::trigger_flush, logging::init_logging, random::random_seed};
+
+pub(crate) const SONIC_PASSWORD: &str = "SecretPassword";
 
 static INSTANCE_COUNTER: AtomicU16 = AtomicU16::new(0);
 static TEST_COUNTER: AtomicU16 = AtomicU16::new(0);
@@ -60,6 +68,7 @@ pub static SONIC_BIN_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
 
 pub struct TestData {
     pub id: u16,
+    pub seed: LazyLock<u64>,
     pub addr: std::net::SocketAddr,
     spawn_guard: SpawnGuard,
     data_guard: PathGuard,
@@ -71,7 +80,7 @@ fn start_sonic(
     data_path: &Path,
     update_command: impl FnOnce(&mut Command) -> &mut Command,
 ) -> SpawnGuard {
-    init_logging("sonic_client=info", true, true);
+    init_logging(Some("sonic_client=info"), Default::default());
 
     eprintln!("Testing using {:?}", SONIC_BIN_PATH.as_path());
     let sonic = update_command(
@@ -141,6 +150,7 @@ pub fn start_empty(update_command: impl FnOnce(&mut Command) -> &mut Command) ->
 
     TestData {
         id: test_id,
+        seed: LazyLock::new(random_seed),
         addr,
         spawn_guard,
         data_guard,
@@ -195,12 +205,28 @@ pub fn start_prepopulated(update_command: impl FnOnce(&mut Command) -> &mut Comm
 
         let sonic =
             SonicChannelControlBlocking::connect(addr, "SecretString", &multiplexer).unwrap();
+
         sonic.trigger_consolidate().unwrap();
+
+        // Run a manual flush to ensure database files are created.
+        trigger_flush(&sonic)
+            // Ignore “not_found” errors, hich come from versions of Sonic
+            // not compiled to support `TRIGGER flush`.
+            .or_else(|err| {
+                if err.to_string().contains("not_found") {
+                    Ok(())
+                } else {
+                    Err(err)
+                }
+            })
+            .unwrap();
+
         drop(sonic);
     }
 
     TestData {
         id: test_id,
+        seed: LazyLock::new(random_seed),
         addr,
         spawn_guard,
         data_guard,
