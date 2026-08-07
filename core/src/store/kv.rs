@@ -37,7 +37,7 @@ use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher, StoreKeyerKey, StoreKeye
 //   force it to be `'static`.
 #[derive(Clone)]
 pub struct StoreKVPool {
-    pool: Arc<RwLock<HashMap<StoreKVKey, StoreKVBox>>>,
+    pool: Arc<RwLock<HashMap<StoreKVKey, Arc<StoreKV>>>>,
     kv_store_config: Arc<crate::config::ConfigStoreKV>,
     store_access_lock: Arc<RwLock<()>>,
     store_acquire_lock: Arc<Mutex<()>>,
@@ -61,7 +61,7 @@ pub struct StoreKVActionBuilder<'build> {
 }
 
 pub struct StoreKVAction<'a> {
-    store: Option<StoreKVBox>,
+    store: Option<Arc<StoreKV>>,
     bucket: StoreItemPart<'a>,
 }
 
@@ -77,7 +77,6 @@ pub enum StoreKVAcquireMode {
 }
 
 type StoreKVAtom = u32;
-type StoreKVBox = Arc<StoreKV>;
 
 const ATOM_HASH_RADIX: usize = 16;
 
@@ -108,7 +107,7 @@ impl StoreKVPool {
         &self,
         mode: StoreKVAcquireMode,
         collection: impl AsRef<str>,
-    ) -> Result<Option<StoreKVBox>, ()> {
+    ) -> Result<Option<Arc<StoreKV>>, ()> {
         let collection = collection.as_ref();
         let pool_key = StoreKVKey::from_str(collection);
 
@@ -593,7 +592,7 @@ impl StoreGeneric for StoreKV {
 }
 
 impl<'build> StoreKVActionBuilder<'build> {
-    pub fn access(bucket: StoreItemPart, store: Option<StoreKVBox>) -> StoreKVAction {
+    pub fn access(bucket: StoreItemPart, store: Option<Arc<StoreKV>>) -> StoreKVAction {
         Self::build(bucket, store)
     }
 
@@ -601,7 +600,7 @@ impl<'build> StoreKVActionBuilder<'build> {
         self.dispatch_erase("kv", collection, bucket)
     }
 
-    fn build(bucket: StoreItemPart, store: Option<StoreKVBox>) -> StoreKVAction {
+    fn build(bucket: StoreItemPart, store: Option<Arc<StoreKV>>) -> StoreKVAction {
         StoreKVAction { store, bucket }
     }
 }
