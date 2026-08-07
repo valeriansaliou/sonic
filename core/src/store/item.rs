@@ -45,6 +45,14 @@ impl<'a> StoreItemPart<'a> {
     }
 }
 
+impl<'a> std::ops::Deref for StoreItemPart<'a> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
 impl<'a> AsRef<str> for StoreItemPart<'a> {
     fn as_ref(&self) -> &str {
         self.0
