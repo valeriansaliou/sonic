@@ -743,6 +743,30 @@ impl<'a> StoreKVAction<'a> {
             .or(Err(()))
     }
 
+    pub fn auto_increment_iid(
+        &self,
+        guard: Option<RwLockWriteGuard<()>>,
+    ) -> Result<StoreObjectIID, &'static str> {
+        // SAFETY: Lock the database in exclusive access, to ensure IID
+        //   increments are atomic. See <https://github.com/valeriansaliou/sonic/issues/389>
+        //   for more information about why this is important.
+        let _guard = guard.unwrap_or_else(|| self.store.lock.write().unwrap());
+
+        let Ok(iid_incr_opt) = self.get_meta_to_value(StoreMetaKey::IIDIncr) else {
+            return Err("failed getting push executor meta-to-value iid increment");
+        };
+
+        let iid_incr = iid_incr_opt.map_or(0, |meta_val| match meta_val {
+            StoreMetaValue::IIDIncr(iid_incr) => iid_incr + 1,
+        });
+
+        // Bump last stored increment
+        match self.set_meta_to_value(StoreMetaKey::IIDIncr, StoreMetaValue::IIDIncr(iid_incr)) {
+            Ok(()) => Ok(iid_incr),
+            Err(()) => Err("failed updating push executor meta-to-value iid increment"),
+        }
+    }
+
     /// Term-to-IIDs mapper
     ///
     /// [IDX=1] ((term)) ~> [((iid))]
