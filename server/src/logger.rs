@@ -24,8 +24,10 @@ impl ConfigLogger {
             .with(filter)
             .with(
                 tracing_subscriber::fmt::layer()
+                    // .map_fmt_fields(tracing_subscriber::field::MakeExt::debug_alt)
                     .with_level(true)
                     .with_target(false)
+                    // .with_thread_ids(true)
                     .with_span_events(FmtSpan::NONE),
             )
             .init();

@@ -24,11 +24,12 @@ pub fn init_logging(filter: &str, with_file: bool, with_line_number: bool) {
     INIT_LOGGING.call_once(|| {
         tracing_subscriber::fmt()
             .with_env_filter(EnvFilter::new(format!("{},{filter}", *LOG_LEVEL)))
-            .with_target(false)
+            .with_target(true)
             .with_file(with_file)
             .with_line_number(with_line_number)
             .without_time()
             .with_level(true)
+            .with_thread_ids(true)
             .with_writer(tracing_subscriber::fmt::TestWriter::new)
             .with_ansi(true)
             .init();
