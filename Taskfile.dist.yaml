@@ -68,6 +68,7 @@ tasks:
     desc: Updates dependencies (non-breaking).
     cmds:
       - cargo update
+      - cargo fetch
       - cargo deny check bans >/dev/null 2>&1 || task deps:validate-build-scripts
       - task: deps:lint
 
