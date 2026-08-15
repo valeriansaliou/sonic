@@ -184,17 +184,21 @@ Sonic distributes official Sonic integration libraries for your programming lang
 
 * **NodeJS**:
   * **[node-sonic-channel](https://www.npmjs.com/package/sonic-channel)** by [@valeriansaliou](https://github.com/valeriansaliou)
+    * Battle tested by [Crisp](https://crisp.chat/)
+* **Rust**:
+  * **[sonic_client](https://crates.io/crates/sonic_client)** by [@RemiBardon](https://github.com/RemiBardon)
+    * Modern and flexible implementation, maintained alongside Sonic
 * **PHP**:
   * **[psonic](https://github.com/ppshobi/psonic)** by [@ppshobi](https://github.com/ppshobi)
-* **Rust**:
-  * **[sonic-channel](https://github.com/pleshevskiy/sonic-channel)** by [@pleshevskiy](https://github.com/pleshevskiy)
 
 #### 2️⃣ Community Libraries
 
 You can find below a list of Sonic integrations provided by the community (many thanks to them!):
 
 * **Rust**:
-  * **[sonic_client](https://github.com/FrontMage/sonic_client)** by [@FrontMage](https://github.com/FrontMage)
+  * **[sonic-channel](https://github.com/pleshevskiy/sonic-channel)** by [@pleshevskiy](https://github.com/pleshevskiy)
+  * ~~**[sonic_client](https://github.com/FrontMage/sonic_client)** by [@FrontMage](https://github.com/FrontMage)~~
+    * Replaced by **[sonic_client](https://crates.io/crates/sonic_client)** by [@RemiBardon](https://github.com/RemiBardon), many thanks again for the ownership transfer!
 * **Python**:
   * **[asonic](https://github.com/moshe/asonic)** by [@moshe](https://github.com/moshe)
   * **[python-sonic-client](https://github.com/xmonader/python-sonic-client)** by [@xmonader](https://github.com/xmonader)
