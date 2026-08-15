@@ -31,7 +31,7 @@ log = { optional = true, version = "0.4", default-features = false }
 tracing = { optional = true, version = "0.1", default-features = false }
 
 [dev-dependencies]
-tokio = { version = "=1.52.3", default-features = false, features = ["rt-multi-thread", "macros"] }
+tokio = { version = "=1.53.1", default-features = false, features = ["rt-multi-thread", "macros"] }
 
 [features]
 default = ["ingest", "control", "search", "sync"]

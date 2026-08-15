@@ -21,19 +21,19 @@ doc = false
 sonic-core = { version = "=0.1.3", path = "../core", default-features = false, features = ["stemming"] }
 tracing = { version = "=0.1.44", default-features = false }
 tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["std", "fmt", "ansi", "env-filter"] }
-clap = { version = "=4.6.1", default-features = false, features = ["std", "cargo", "color", "help", "usage", "error-context", "suggestions"] }
-serde = { version = "=1.0.228", default-features = false, features = ["derive", "rc"] }
+clap = { version = "=4.6.6", default-features = false, features = ["std", "cargo", "color", "help", "usage", "error-context", "suggestions"] }
+serde = { version = "=1.0.229", default-features = false, features = ["derive", "rc"] }
 rand = { version = "=0.10.2", default-features = false, features = ["std", "thread_rng"] }
 hashbrown = { version = "=0.17.1", default-features = false, features = ["default-hasher", "allocator-api2", "inline-more"] }
 config = { version = "=0.15.25", default-features = false, features = ["toml"] }
 
 [dev-dependencies]
 # Benchmarking dependencies.
-arrow-array = { version = "=59.1.0", default-features = false }
+arrow-array = { version = "=59.2.0", default-features = false }
 criterion = { version = "=0.8.2", default-features = false, features = ["html_reports", "plotters"] }
 hf-hub = { version = "=0.5.0", default-features = false, features = ["ureq"] }
-parquet = { version = "=59.1.0", default-features = false, features = ["arrow", "snap"] }
-serde_json = { version = "=1.0.150", default-features = false, features = ["std"] }
+parquet = { version = "=59.2.0", default-features = false, features = ["arrow", "snap"] }
+serde_json = { version = "=1.0.151", default-features = false, features = ["std"] }
 sonic_client = { version = "=0.3.0", path = "../client", features = ["sync", "tracing"] }
 
 [target.'cfg(unix)'.dependencies]
