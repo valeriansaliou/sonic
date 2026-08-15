@@ -67,6 +67,7 @@ allow-build-scripts = [
     "lz4-sys@1.11.1+lz4-1.10.0",
     "nix@0.31.3",
     "num-traits@0.2.19",
+    "parking_lot_core@0.9.12",
     "paste@1.0.15",
     "portable-atomic@1.14.0",
     "proc-macro2@1.0.106",

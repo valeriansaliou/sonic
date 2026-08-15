@@ -11,7 +11,7 @@ use std::iter::FromIterator;
 use crate::lexer::TokenLexer;
 use crate::store::StoreItem;
 use crate::store::fst::StoreFSTActionBuilder;
-use crate::store::identifiers::{StoreMetaKey, StoreMetaValue, StoreTermHashed};
+use crate::store::identifiers::StoreTermHashed;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
 impl super::Executor {
@@ -26,9 +26,6 @@ impl super::Executor {
                 self.kv_pool.acquire(StoreKVAcquireMode::Any, collection),
                 self.fst_pool.acquire(collection, bucket),
             ) {
-                // Important: acquire bucket store write lock
-                executor_kv_lock_write!(kv_store);
-
                 let (kv_action, fst_action) = (
                     StoreKVActionBuilder::access(bucket, kv_store),
                     StoreFSTActionBuilder::access(fst_store),
@@ -40,39 +37,19 @@ impl super::Executor {
                 let iid = kv_action.get_oid_to_iid(oid).unwrap_or(None).or_else(|| {
                     tracing::info!("must initialize push executor oid-to-iid and iid-to-oid");
 
-                    if let Ok(iid_incr) = kv_action.get_meta_to_value(StoreMetaKey::IIDIncr) {
-                        let iid_incr = if let Some(iid_incr) = iid_incr {
-                            match iid_incr {
-                                StoreMetaValue::IIDIncr(iid_incr) => iid_incr + 1,
-                            }
-                        } else {
-                            0
-                        };
-
-                        // Bump last stored increment
-                        if kv_action
-                            .set_meta_to_value(
-                                StoreMetaKey::IIDIncr,
-                                StoreMetaValue::IIDIncr(iid_incr),
-                            )
-                            .is_ok()
-                        {
+                    match kv_action.auto_increment_iid() {
+                        Ok(iid) => {
                             // Associate OID <> IID (bidirectional)
-                            executor_ensure_op!(kv_action.set_oid_to_iid(oid, iid_incr));
-                            executor_ensure_op!(kv_action.set_iid_to_oid(iid_incr, oid));
+                            executor_ensure_op!(kv_action.set_oid_to_iid(oid, iid));
+                            executor_ensure_op!(kv_action.set_iid_to_oid(iid, oid));
 
-                            Some(iid_incr)
-                        } else {
-                            tracing::error!(
-                                "failed updating push executor meta-to-value iid increment"
-                            );
+                            Some(iid)
+                        }
+                        Err(error) => {
+                            tracing::error!("{error}");
 
                             None
                         }
-                    } else {
-                        tracing::error!("failed getting push executor meta-to-value iid increment");
-
-                        None
                     }
                 });
 
