@@ -25,7 +25,9 @@ tasks:
       Runs native Rust tests.
       You can use `task test:foo,bar` to run tests foo and bar.
     aliases: [test:*]
-    cmd: cargo test --locked --no-fail-fast{{ if .MATCH }} --test {{ .MATCH | first | splitList "," | join " --test " }}{{ end }}{{ if .ARGS }} {{ .ARGS }}{{ end }}
+    cmds:
+      - cargo test --locked --no-fail-fast{{ if .MATCH }} --test {{ .MATCH | first | splitList "," | join " --test " }}{{ end }}{{ if .ARGS }} {{ .ARGS }}{{ end }}
+      - task: util:update-tested-at-version
     vars:
       ARGS: '{{ without .CLI_ARGS_LIST "--trace" "--debug" "--info" "--warn" | join " " }}'
     env:
@@ -44,6 +46,7 @@ tasks:
       - cargo clippy --locked
       - cargo check --locked --release
       - cargo test --locked
+      - task: util:update-tested-at-version
 
   changelog:prepare:
     desc: Prepares changelog entries for the next release.
@@ -108,3 +111,17 @@ tasks:
     cmds:
       - task: doc:open
       - cmd: cargo watch -x 'doc --no-deps --lib'
+
+  util:update-tested-at-version:
+    desc: Updates "Tested at Rust version" in the `README`.
+    internal: true
+    vars:
+      RUST_VERSION:
+        sh: rustc --version
+      PATTERN: 's/(Tested at Rust version: `).+(`)/\1{{.RUST_VERSION}}\2/'
+      README: README.md
+    cmds:
+      - cmd: "sed -i -E '{{.PATTERN}}' '{{.README}}'"
+        platforms: [linux]
+      - cmd: "sed -i '' -E '{{.PATTERN}}' '{{.README}}'"
+        platforms: [darwin]
