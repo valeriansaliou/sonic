@@ -100,8 +100,20 @@ EOF
 
     old_build_script=$(cd "${CARGO_REGISTRY_DIR:?}/${name:?}-${old_version:?}"; cargo metadata --no-deps --format-version=1 | jq -r '.packages[] | select(.name == "'"${name:?}"'") | .targets[] | select(.kind | index("custom-build")) | .src_path')
 
+    # Helper function for nice diffs.
+    diff() {
+      git --no-pager \
+        -c core.safecrlf=false \
+        diff \
+        --word-diff=color \
+        --no-index \
+        --src-prefix=/ --dst-prefix=/ \
+        $@ \
+        > >(tail -n +4)
+    }
+
     update=no
-    if diff -u --color=always "${old_build_script:?}" "${new_build_script:?}"
+    if diff "${old_build_script:?}" "${new_build_script:?}"
     then # Build script not changed.
       log_info "Build script not changed, bumping allowed version."
       update=yes
