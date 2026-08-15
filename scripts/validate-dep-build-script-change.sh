@@ -30,7 +30,7 @@ case ${#registries[@]} in
     log_error "No Cargo registry found in '${CARGO_HOME:?}/registry/src'" >&2
     exit 2
     ;;
-  1) CARGO_REGISTRY_DIR="${#registries[0]}" ;;
+  1) CARGO_REGISTRY_DIR="${registries[0]}" ;;
   *)
     log_debug 'Found multiple Cargo registries, using newest…' >&2
     CARGO_REGISTRY_DIR="$(printf '%s\n' "${registries[@]}" | xargs ls -dt | head -n1)" ;;
