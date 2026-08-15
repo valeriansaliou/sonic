@@ -34,13 +34,20 @@ pub struct Config {
 impl Config {
     pub fn validate(&self) {
         // Check 'write_buffer' for KV
-        if self.store.kv.database.write_buffer == 0 {
+        if self.store.kv.database.write_buffer_size == Some(0) {
             panic!("write_buffer for kv must not be zero");
         }
 
         // Check 'flush_after' for KV
         if self.store.kv.database.flush_after >= self.store.kv.pool.inactive_after {
             panic!("flush_after for kv must be strictly lower than inactive_after");
+        }
+
+        // Check 'flush_after' for KV
+        if self.store.kv.database.max_flushes.is_some()
+            && self.store.kv.database.max_background_jobs.is_some()
+        {
+            panic!("max_background_jobs makes max_flushes unneeded, don’t configure both");
         }
 
         // Check 'consolidate_after' for FST
@@ -146,22 +153,184 @@ pub struct ConfigStoreKVPool {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConfigStoreKVDatabase {
     pub flush_after: u64,
 
-    pub compress: bool,
-
-    pub parallelism: u16,
-
-    pub max_files: Option<u32>,
-
-    pub max_compactions: u16,
-
-    pub max_flushes: u16,
-
-    pub write_buffer: usize,
-
     pub write_ahead_log: bool,
+
+    /// Whether or not to compress.
+    ///
+    /// Will get overriden if [`compression_type`](Self::compression_type) is
+    /// also specified.
+    #[serde(default)]
+    pub compress: Option<bool>,
+
+    #[serde(default)]
+    pub parallelism: Option<i32>,
+
+    #[serde(default)]
+    #[serde(alias = "max_files")]
+    pub max_open_files: Option<i32>,
+
+    // TODO(major): Make this MB, as in Kvrocks.
+    /// WARN: In KB!
+    #[serde(default)]
+    #[serde(alias = "write_buffer")]
+    pub write_buffer_size: Option<usize>,
+
+    #[serde(default)]
+    pub max_write_buffer_number: Option<i32>,
+
+    #[serde(default)]
+    pub min_write_buffer_number: Option<i32>,
+
+    #[serde(default)]
+    pub min_write_buffer_number_to_merge: Option<i32>,
+
+    #[serde(default)]
+    pub block_cache_size: Option<u32>,
+
+    #[serde(default)]
+    pub cache_index_and_filter_blocks: Option<bool>,
+
+    #[serde(default)]
+    #[serde(alias = "compression")]
+    #[serde(deserialize_with = "to_rocksdb_compression_type_opt")]
+    pub compression_type: Option<rocksdb::DBCompressionType>,
+
+    #[serde(default)]
+    #[serde(alias = "wal_compression")]
+    #[serde(deserialize_with = "to_rocksdb_compression_type_opt")]
+    pub wal_compression_type: Option<rocksdb::DBCompressionType>,
+
+    #[serde(default)]
+    pub wal_ttl_seconds: Option<u64>,
+
+    #[serde(default)]
+    pub wal_size_limit_mb: Option<u64>,
+
+    #[serde(default)]
+    pub wal_bytes_per_sync: Option<u64>,
+
+    #[serde(default)]
+    #[serde(deserialize_with = "to_rocksdb_recovery_mode_opt")]
+    pub wal_recovery_mode: Option<rocksdb::DBRecoveryMode>,
+
+    #[serde(default)]
+    pub compression_level: Option<i32>,
+
+    #[serde(default)]
+    #[serde(alias = "compression_start_level")]
+    pub min_level_to_compress: Option<std::ffi::c_int>,
+
+    #[serde(default)]
+    #[serde(alias = "level0_file_num_compaction_trigger")]
+    pub level_zero_file_num_compaction_trigger: Option<i32>,
+
+    #[serde(default)]
+    #[serde(alias = "level0_slowdown_writes_trigger")]
+    pub level_zero_slowdown_writes_trigger: Option<i32>,
+
+    #[serde(default)]
+    #[serde(alias = "level0_stop_writes_trigger")]
+    pub level_zero_stop_writes_trigger: Option<i32>,
+
+    #[serde(default)]
+    pub max_bytes_for_level_base: Option<u64>,
+
+    #[serde(default)]
+    pub max_bytes_for_level_multiplier: Option<f64>,
+
+    #[serde(default)]
+    pub target_file_size_base: Option<u64>,
+
+    #[serde(default)]
+    pub max_background_jobs: Option<i32>,
+
+    #[serde(default)]
+    #[serde(alias = "max_compactions")]
+    pub max_subcompactions: Option<u32>,
+
+    #[serde(default)]
+    pub max_flushes: Option<u32>,
+
+    #[serde(default)]
+    pub stats_dump_period_sec: Option<u32>,
+}
+
+fn parse_rocksdb_compression_type<E: serde::de::Error>(
+    str: &str,
+) -> Result<rocksdb::DBCompressionType, E> {
+    // NOTE: Some values are not available because not compiled in rocksdb
+    //   (feature flag is off).
+    match str.to_ascii_lowercase().as_str() {
+        "none" => Ok(rocksdb::DBCompressionType::None),
+        // "snappy" => Ok(rocksdb::DBCompressionType::Snappy),
+        // "zlib" => Ok(rocksdb::DBCompressionType::Zlib),
+        // "bz2" => Ok(rocksdb::DBCompressionType::Bz2),
+        // "lz4" => Ok(rocksdb::DBCompressionType::Lz4),
+        // "lz4hc" => Ok(rocksdb::DBCompressionType::Lz4hc),
+        "zstd" => Ok(rocksdb::DBCompressionType::Zstd),
+        _ => Err(serde::de::Error::unknown_variant(
+            str,
+            &[
+                "none",
+                // "snappy",
+                // "zlib",
+                // "bz2",
+                // "lz4",
+                // "lz4hc",
+                "zstd",
+            ],
+        )),
+    }
+}
+
+fn to_rocksdb_compression_type_opt<'de, D>(
+    deserializer: D,
+) -> Result<Option<rocksdb::DBCompressionType>, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    let str: Option<String> = Deserialize::deserialize(deserializer)?;
+    str.map(|s| parse_rocksdb_compression_type(&s)).transpose()
+}
+
+fn parse_rocksdb_recovery_mode<E: serde::de::Error>(
+    str: &str,
+) -> Result<rocksdb::DBRecoveryMode, E> {
+    match str.to_ascii_lowercase().as_str() {
+        "tolerate_corrupted_tail_records" | "TolerateCorruptedTailRecords" => {
+            Ok(rocksdb::DBRecoveryMode::TolerateCorruptedTailRecords)
+        }
+        "absolute_consistency" | "AbsoluteConsistency" => {
+            Ok(rocksdb::DBRecoveryMode::AbsoluteConsistency)
+        }
+        "point_in_time" | "PointInTime" => Ok(rocksdb::DBRecoveryMode::PointInTime),
+        "skip_any_corrupted_record" | "SkipAnyCorruptedRecord" => {
+            Ok(rocksdb::DBRecoveryMode::SkipAnyCorruptedRecord)
+        }
+        _ => Err(serde::de::Error::unknown_variant(
+            str,
+            &[
+                "tolerate_corrupted_tail_records",
+                "absolute_consistency",
+                "point_in_time",
+                "skip_any_corrupted_record",
+            ],
+        )),
+    }
+}
+
+fn to_rocksdb_recovery_mode_opt<'de, D>(
+    deserializer: D,
+) -> Result<Option<rocksdb::DBRecoveryMode>, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    let str: Option<String> = Deserialize::deserialize(deserializer)?;
+    str.map(|s| parse_rocksdb_recovery_mode(&s)).transpose()
 }
 
 #[derive(Deserialize)]
@@ -225,11 +394,11 @@ pub(crate) mod tests {
         retain_word_objects = 1000
         pool.inactive_after = 1800
         database.flush_after = 900
-        database.compress = true
+        database.compression_type = "zstd"
         database.parallelism = 2
-        database.max_compactions = 1
+        database.max_subcompactions = 1
         database.max_flushes = 1
-        database.write_buffer = 16384
+        database.write_buffer_size = 16384
         database.write_ahead_log = true
 
         [store.fst]

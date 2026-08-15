@@ -65,11 +65,11 @@ pub fn defaults_toml() -> String {
         retain_word_objects = 1000
         pool.inactive_after = 1800
         database.flush_after = 900
-        database.compress = true
+        database.compression_type = "zstd"
         database.parallelism = 2
-        database.max_compactions = 1
+        database.max_subcompactions = 1
         database.max_flushes = 1
-        database.write_buffer = 16384
+        database.write_buffer_size = 16384
         database.write_ahead_log = true
 
         [store.fst]
