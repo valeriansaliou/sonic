@@ -150,7 +150,7 @@ impl std::str::FromStr for ChannelInfo {
                     let old_value = $store.replace(new_value);
 
                     if let Some(old_value) = old_value {
-                        eprintln!("{key:?} was provided multiple times, using new value (old: {old_value}, new: {new_value}).");
+                        log_warn!("{key:?} was provided multiple times, using new value (old: {old_value}, new: {new_value}).");
                     }
                 }};
             }
@@ -158,7 +158,7 @@ impl std::str::FromStr for ChannelInfo {
             match (key, value) {
                 ("protocol", v) => update!(protocol_version with v),
                 ("buffer", v) => update!(buffer_size with v),
-                _ => eprintln!("Unknown info: {arg:?}"),
+                _ => log_warn!("Unknown info: {arg:?}"),
             }
         }
 

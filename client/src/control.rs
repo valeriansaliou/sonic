@@ -7,6 +7,7 @@
 use std::str::FromStr;
 
 use crate::channel::{ChannelMode, SonicChannel};
+use crate::logging::log_warn;
 use crate::util::errors::io_error_invalid_data;
 use crate::util::{impl_channel_structs, impl_fns, make_command};
 
@@ -192,7 +193,7 @@ impl std::str::FromStr for ServerStats {
                 ("kv_open_count", v) => update!(kv_open_count with v),
                 ("fst_open_count", v) => update!(fst_open_count with v),
                 ("fst_consolidate_count", v) => update!(fst_consolidate_count with v),
-                _ => eprintln!("Unknown info: {arg:?}"),
+                _ => log_warn!("Unknown info: {arg:?}"),
             }
         }
 
