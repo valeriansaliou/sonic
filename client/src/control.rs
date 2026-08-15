@@ -30,12 +30,7 @@ pub enum ControlModeDiscriminant {
     Ended,
 }
 
-impl crate::channel::Discriminant for ControlModeDiscriminant {
-    #[inline]
-    fn has_payload(&self) -> bool {
-        false
-    }
-}
+impl crate::channel::Discriminant for ControlModeDiscriminant {}
 
 impl ChannelMode for ControlMode {
     type Discriminant = ControlModeDiscriminant;

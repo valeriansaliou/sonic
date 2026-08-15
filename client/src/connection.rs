@@ -4,7 +4,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 
 use crate::channel::Discriminant;
 use crate::multiplexer::SonicConnectionTrait;
@@ -34,7 +34,7 @@ impl<T, D> SonicConnection<T, D> {
             parse_line: Box::new(parse_line),
             task_rx: rx,
             tasks: Tasks {
-                pending: HashMap::with_capacity(8),
+                pending: VecDeque::with_capacity(COMMAND_QUEUE_SIZE),
             },
         };
 
@@ -42,10 +42,19 @@ impl<T, D> SonicConnection<T, D> {
     }
 }
 
+pub(crate) type TaskCallback<Discriminant> =
+    Box<dyn FnOnce(std::io::Result<(&str, &mut Tasks<Discriminant>)>) + Send>;
+
 pub(crate) struct Task<Discriminant> {
     pub command: Command,
     pub discriminant: Discriminant,
-    pub callback: Box<dyn FnOnce(std::io::Result<(&str, &mut Tasks<Discriminant>)>) + Send>,
+    pub callback: TaskCallback<Discriminant>,
+}
+
+pub(crate) struct PendingTask<Discriminant> {
+    pub discriminant: Discriminant,
+    pub callback: TaskCallback<Discriminant>,
+    pub is_user_initiated: bool,
 }
 
 /// Just a struct that unties the lifetime of `SonicStream` from the rest in
@@ -55,39 +64,56 @@ pub(crate) struct Tasks<Discriminant> {
     //   assumption is correct.
     /// Operations waiting for a response.
     ///
-    /// Because we use a discriminant as key and a queue as value, we assume
+    /// Because of Sonic Channel protocol limitations, we have to assume
     /// Sonic’s responses are ordered (e.g. `PENDING`s arrive in the same order
     /// as `QUERY` commands were sent). Although it’s not explicited in the
     /// protocol definition, the way Sonic is implemented enforces this to be
     /// true.
-    pub(crate) pending:
-        HashMap<Discriminant, VecDeque<Box<dyn FnOnce(&str, &mut Tasks<Discriminant>) + Send>>>,
+    pub(crate) pending: VecDeque<PendingTask<Discriminant>>,
 }
 
 impl<D: Discriminant> Tasks<D> {
-    pub(crate) fn register_pending(
-        &mut self,
-        discriminant: D,
-        callback: Box<dyn FnOnce(&str, &mut Tasks<D>) + Send>,
-    ) {
-        match self.pending.get_mut(&discriminant) {
-            Some(pending) => pending.push_back(callback),
-            None => {
-                // If the discriminant is a unit variant, create the queue with
-                // more capacity from the beginning.
-                let queue_capacity: usize = if discriminant.has_payload() {
-                    1
-                } else {
-                    COMMAND_QUEUE_SIZE
-                };
+    pub(crate) fn register_pending(&mut self, task: PendingTask<D>) {
+        self.pending.push_back(task);
+    }
 
-                let mut pending = VecDeque::with_capacity(queue_capacity);
+    /// Removes and returns the first pending task satisfying the provided
+    /// condition.
+    fn pop_front(&mut self, cond: impl Fn(&PendingTask<D>) -> bool) -> Option<PendingTask<D>> {
+        let first = self.pending.pop_front()?;
 
-                pending.push_back(callback);
-
-                self.pending.insert(discriminant, pending);
-            }
+        // PERF: Check first entry before allocating another `VecDequeue` and
+        //   doing the de-queue/re-queue logic, as the desired task is likely
+        //   the first (answers mostly arrive in request order).
+        if cond(&first) {
+            return Some(first);
         }
+
+        // TODO: Look for a smarter way to do this without allocating
+        //   (e.g. smart swapping?).
+        let mut dequeued: VecDeque<PendingTask<D>> =
+            VecDeque::with_capacity(self.pending.len() + 1);
+        dequeued.push_back(first);
+
+        while let Some(pending) = self.pending.pop_front() {
+            if cond(&pending) {
+                // Re-queue dequeued tasks.
+                while let Some(pending) = dequeued.pop_back() {
+                    dequeued.push_front(pending);
+                }
+
+                return Some(pending);
+            }
+
+            dequeued.push_back(pending);
+        }
+
+        // `self.pending` is now empty, and `dequeued` is ordered so let’s just
+        // replace the instance.
+        assert!(self.pending.is_empty());
+        self.pending = dequeued;
+
+        None
     }
 }
 
@@ -116,47 +142,48 @@ impl<T: Transport, D: Discriminant> SonicConnectionTrait for SonicConnection<T, 
         'process_lines: for line_bytes in self.stream.read_lines()? {
             log_trace!("Read {} bytes line", line_bytes.len());
 
-            let (discriminant, data) = match str::from_utf8(&line_bytes[..]) {
-                Ok(line) => match (self.parse_line)(line) {
-                    Ok(ok) => ok,
-                    Err(error) => {
-                        log_warn!("Invalid message received from the server: {error}");
-                        continue 'process_lines;
-                    }
-                },
-
+            let line = match str::from_utf8(&line_bytes[..]) {
+                Ok(line) => line,
                 Err(error) => {
                     log_warn!("Invalid UTF-8 sequence received from the server: {error}");
                     continue 'process_lines;
                 }
             };
 
-            let Some(pending) = self.tasks.pending.get_mut(&discriminant) else {
+            if let Some(args) = line.strip_prefix("ERR ") {
+                let Some(task) = self.tasks.pop_front(|task| task.is_user_initiated) else {
+                    log_warn!(
+                        ?line,
+                        "Server sent an error but no user initiated task is pending."
+                    );
+                    continue 'process_lines;
+                };
+
+                (task.callback)(Err(std::io::Error::other(args)))
+            }
+
+            let (discriminant, data) = match (self.parse_line)(line) {
+                Ok(ok) => ok,
+                Err(error) => {
+                    log_warn!(?line, "Invalid message received from the server: {error}");
+                    continue 'process_lines;
+                }
+            };
+
+            let Some(task) = (self.tasks).pop_front(|task| task.discriminant == discriminant)
+            else {
                 log_warn!(
                     "Unexpected message received from the server: {discriminant:?} (expected: {:?})",
-                    self.tasks.pending.keys()
+                    (self.tasks.pending.iter())
+                        .map(|task| &task.discriminant)
+                        .collect::<Vec<_>>()
                 );
                 continue 'process_lines;
             };
-
-            let Some(respond) = pending.pop_front() else {
-                log_warn!(
-                    "Unexpected message received from the server: {discriminant:?} (queue empty)"
-                );
-                continue 'process_lines;
-            };
-
-            // NOTE: No need to clean up entries if the discriminant is
-            //   a unit variant (e.g. `Ok`). It will be reused by other
-            //   requests, saving a reallocation and keping the capacity
-            //   around what’s needed.
-            if discriminant.has_payload() && pending.is_empty() {
-                self.tasks.pending.remove(&discriminant);
-            }
 
             // log_trace!("Responding to {discriminant:?}");
 
-            respond(data, &mut self.tasks);
+            (task.callback)(Ok((data, &mut self.tasks)));
         }
 
         Ok(())
@@ -171,10 +198,11 @@ impl<T: Transport, D: Discriminant> SonicConnectionTrait for SonicConnection<T, 
             self.stream.write_line(task.command);
 
             // Register pending task.
-            self.tasks.register_pending(
-                task.discriminant,
-                Box::new(move |str, dispatcher| (task.callback)(Ok((str, dispatcher)))),
-            );
+            self.tasks.register_pending(PendingTask {
+                discriminant: task.discriminant,
+                callback: task.callback,
+                is_user_initiated: true,
+            });
         }
 
         self.stream.flush_writes()

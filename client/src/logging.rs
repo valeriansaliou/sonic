@@ -9,41 +9,44 @@
 
 macro_rules! log_trace {
     ($($t:tt)*) => {
-        crate::logging::log!(trace, $($t)*)
+        crate::logging::log!(trace, { $($t)* })
     }
 }
 pub(crate) use log_trace;
 
 macro_rules! log_debug {
     ($($t:tt)*) => {
-        crate::logging::log!(debug, $($t)*)
+        crate::logging::log!(debug, { $($t)* })
     }
 }
 pub(crate) use log_debug;
 
 macro_rules! log_info {
     ($($t:tt)*) => {
-        crate::logging::log!(info, $($t)*)
+        crate::logging::log!(info, { $($t)* })
     }
 }
 pub(crate) use log_info;
 
 macro_rules! log_warn {
+    ($(?$debug_field:ident,)+ $($t:tt)*) => {
+        crate::logging::log!(warn, { $($t)* } $(?$debug_field,)+)
+    };
     ($($t:tt)*) => {
-        crate::logging::log!(warn, $($t)*)
-    }
+        crate::logging::log!(warn, { $($t)* })
+    };
 }
 pub(crate) use log_warn;
 
 macro_rules! log_error {
     ($($t:tt)*) => {
-        crate::logging::log!(error, $($t)*)
+        crate::logging::log!(error, { $($t)* })
     }
 }
 pub(crate) use log_error;
 
 macro_rules! log {
-    ($level:ident, $($t:tt)*) => {{
+    ($level:ident, { $($t:tt)* } $(?$debug_field:ident,)*) => {{
         #[cfg(feature = "logging-std")]
         eprintln!("[{}] {}", stringify!($level), format!($($t)*));
 
@@ -51,7 +54,7 @@ macro_rules! log {
         log::$level!($($t)*);
 
         #[cfg(feature = "tracing")]
-        tracing::$level!($($t)*);
+        tracing::$level!($($debug_field,)* $($t)*);
 
         #[cfg(not(any(feature = "logging-std", feature = "log", feature = "tracing")))]
         if false { let _ = ( format!($($t)*) ); }

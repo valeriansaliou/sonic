@@ -9,16 +9,14 @@ use std::sync::Arc;
 
 use crate::SEND_TIMEOUT;
 use crate::SonicMultiplexer;
+use crate::connection::PendingTask;
 use crate::connection::Task;
 use crate::connection::{self, SonicConnection};
 use crate::events::{self, ChannelInfo, ServerInfo};
 use crate::transport::Transport;
 use crate::util::errors::io_error_invalid_data;
 
-pub trait Discriminant: std::fmt::Debug + Clone + Eq + std::hash::Hash + Send + 'static {
-    /// Whether or not the discriminant has a payload (e.g. `Pending(_)`).
-    fn has_payload(&self) -> bool;
-}
+pub trait Discriminant: std::fmt::Debug + Clone + Eq + std::hash::Hash + Send + 'static {}
 
 pub trait ChannelMode {
     type Discriminant: Discriminant;
@@ -194,20 +192,26 @@ impl<Mode: ChannelMode + 'static> SonicChannel<Mode> {
                                 // NOTE: This will create for example `EventQuery("Bt2m2gYa")`.
                                 let discriminant2 = make_discriminant2(data);
 
-                                debug_assert!(!dispatcher.pending.contains_key(&discriminant2));
+                                debug_assert!(
+                                    !(dispatcher.pending.iter())
+                                        .any(|task| task.discriminant == discriminant2)
+                                );
 
                                 // Register pending operation (receiving the final result).
-                                dispatcher.register_pending(
-                                    discriminant2,
-                                    Box::new(move |data, _| {
-                                        let send_res = tx.send(parse(data));
+                                dispatcher.register_pending(PendingTask {
+                                    discriminant: discriminant2,
+                                    callback: Box::new(move |res| {
+                                        let query_res = res.and_then(|(data, _)| parse(data));
+
+                                        let send_res = tx.send(query_res);
 
                                         if let Err(error) = send_res {
                                             // Only log an error, as this would happen if the receiver is dropped.
                                             log_error!("Could not send response: {error}");
                                         }
                                     }),
-                                );
+                                    is_user_initiated: false,
+                                });
                             }
 
                             Err(error) => {

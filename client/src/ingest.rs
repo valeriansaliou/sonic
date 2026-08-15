@@ -29,12 +29,7 @@ pub enum IngestModeDiscriminant {
     Ended,
 }
 
-impl crate::channel::Discriminant for IngestModeDiscriminant {
-    #[inline]
-    fn has_payload(&self) -> bool {
-        false
-    }
-}
+impl crate::channel::Discriminant for IngestModeDiscriminant {}
 
 impl ChannelMode for IngestMode {
     type Discriminant = IngestModeDiscriminant;

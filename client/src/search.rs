@@ -32,14 +32,7 @@ pub enum SearchModeDiscriminant {
     Ended,
 }
 
-impl crate::channel::Discriminant for SearchModeDiscriminant {
-    fn has_payload(&self) -> bool {
-        matches!(
-            self,
-            Self::EventQuery(_) | Self::EventSuggest(_) | Self::EventList(_)
-        )
-    }
-}
+impl crate::channel::Discriminant for SearchModeDiscriminant {}
 
 impl ChannelMode for SearchMode {
     type Discriminant = SearchModeDiscriminant;
