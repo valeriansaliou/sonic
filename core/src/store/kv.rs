@@ -14,7 +14,7 @@ use rocksdb::backup::{
 };
 use rocksdb::{
     DB, DBCompactionStyle, DBCompressionType, Env as DBEnv, Error as DBError, FlushOptions,
-    Options as DBOptions, WriteBatch, WriteOptions,
+    WriteBatch, WriteOptions,
 };
 use std::fmt;
 use std::fs;
@@ -25,6 +25,8 @@ use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::thread;
 use std::time::{Duration, SystemTime};
 use std::vec::Drain;
+
+use crate::config::ConfigStoreKVDatabase;
 
 use super::generic::{
     StoreGeneric, StoreGenericActionBuilder, StoreGenericBuilder, StoreGenericPool,
@@ -471,38 +473,125 @@ impl StoreKVBuilder {
         DB::open(&db_options, self.kv_store_config.path(collection_hash))
     }
 
-    fn configure(&self) -> DBOptions {
+    #[rustfmt::skip]
+    fn configure(&self) -> rocksdb::Options {
         tracing::debug!("configuring key-value database");
 
-        let db_conf = &self.kv_store_config.database;
+        // NOTE: Deconstruct to avoid forgetting configuration keys.
+        let ConfigStoreKVDatabase {
+            flush_after: _,
+            compress,
+            parallelism,
+            max_open_files,
+            max_flushes,
+            write_ahead_log: _,
+            write_buffer_size,
+            max_write_buffer_number,
+            min_write_buffer_number,
+            min_write_buffer_number_to_merge,
+            block_cache_size,
+            cache_index_and_filter_blocks,
+            compression_type,
+            wal_compression_type,
+            wal_ttl_seconds,
+            wal_size_limit_mb,
+            wal_bytes_per_sync,
+            wal_recovery_mode,
+            compression_level,
+            min_level_to_compress,
+            level_zero_file_num_compaction_trigger,
+            level_zero_slowdown_writes_trigger,
+            level_zero_stop_writes_trigger,
+            max_bytes_for_level_base,
+            max_bytes_for_level_multiplier,
+            target_file_size_base,
+            max_background_jobs,
+            max_subcompactions,
+            stats_dump_period_sec,
+        } = &self.kv_store_config.database;
 
         // Make database options
-        let mut db_options = DBOptions::default();
+        let mut db_options = rocksdb::Options::default();
+
+        macro_rules! if_some {
+            ($opts:ident.$set_fn:ident($value:expr)) => {
+                if let Some(value) = $value {
+                    $opts.$set_fn(*value);
+                }
+            };
+        }
 
         // Set static options
         db_options.create_if_missing(true);
         db_options.set_use_fsync(false);
         db_options.set_compaction_style(DBCompactionStyle::Level);
-        db_options.set_min_write_buffer_number(1);
-        db_options.set_max_write_buffer_number(2);
 
         // Set dynamic options
-        db_options.set_compression_type(if db_conf.compress {
-            DBCompressionType::Zstd
-        } else {
-            DBCompressionType::None
-        });
+        if_some!(db_options.set_write_buffer_size(write_buffer_size.map(|n| n * 1024).as_ref()));
+        if_some!(db_options.set_min_write_buffer_number(min_write_buffer_number));
+        if_some!(db_options.set_min_write_buffer_number_to_merge(min_write_buffer_number_to_merge));
+        if_some!(db_options.set_max_write_buffer_number(max_write_buffer_number));
 
-        db_options.set_max_open_files(if let Some(value) = db_conf.max_files {
-            value as i32
-        } else {
-            -1
-        });
+        if_some!(db_options.set_max_open_files(max_open_files));
 
-        db_options.increase_parallelism(db_conf.parallelism as i32);
-        db_options.set_max_subcompactions(db_conf.max_compactions as u32);
-        db_options.set_max_background_jobs((db_conf.max_compactions + db_conf.max_flushes) as i32);
-        db_options.set_write_buffer_size(db_conf.write_buffer * 1024);
+        // db_options.set_block_cache_size();
+        // db_options.set_cache_index_and_filter_blocks();
+
+        if let Some(block_cache_size) = block_cache_size {
+            let cache = rocksdb::Cache::new_lru_cache((*block_cache_size as usize) * 1024 * 1024);
+            let mut block_opts = rocksdb::BlockBasedOptions::default();
+            block_opts.set_block_cache(&cache);
+            if_some!(block_opts.set_cache_index_and_filter_blocks(cache_index_and_filter_blocks));
+            db_options.set_block_based_table_factory(&block_opts);
+        }
+
+        // NOTE: `compress` is a legacy shorthand for `compression_type`, it
+        //   will get overriden if `compression_type` is also specified.
+        if let Some(compress) = compress {
+            db_options.set_compression_type(if *compress {
+                DBCompressionType::Zstd
+            } else {
+                DBCompressionType::None
+            });
+        }
+        if_some!(db_options.set_compression_type(compression_type));
+        if let Some(compression_level) = compression_level {
+            db_options.set_compression_options(
+                -14,
+                *compression_level,
+                0,
+                0,
+            );
+        }
+
+        if_some!(db_options.set_wal_compression_type(wal_compression_type));
+        if_some!(db_options.set_wal_ttl_seconds(wal_ttl_seconds));
+        if_some!(db_options.set_wal_size_limit_mb(wal_size_limit_mb));
+        if_some!(db_options.set_wal_bytes_per_sync(wal_bytes_per_sync));
+        if_some!(db_options.set_wal_recovery_mode(wal_recovery_mode));
+
+        if_some!(db_options.set_min_level_to_compress(min_level_to_compress));
+
+        if_some!(db_options.set_level_zero_file_num_compaction_trigger(level_zero_file_num_compaction_trigger));
+        if_some!(db_options.set_level_zero_slowdown_writes_trigger(level_zero_slowdown_writes_trigger));
+        if_some!(db_options.set_level_zero_stop_writes_trigger(level_zero_stop_writes_trigger));
+
+        if_some!(db_options.set_max_bytes_for_level_base(max_bytes_for_level_base));
+        if_some!(db_options.set_max_bytes_for_level_multiplier(max_bytes_for_level_multiplier));
+        if_some!(db_options.set_target_file_size_base(target_file_size_base));
+
+        let mut max_background_jobs = *max_background_jobs;
+        if max_background_jobs.is_none() {
+            if let Some(max_flushes) = max_flushes {
+                max_background_jobs = Some((max_subcompactions.unwrap_or(1) + max_flushes) as i32);
+            }
+        }
+        if_some!(db_options.set_max_background_jobs(max_background_jobs.as_ref()));
+        if_some!(db_options.set_max_subcompactions(max_subcompactions));
+
+        if_some!(db_options.set_stats_dump_period_sec(stats_dump_period_sec));
+
+        if_some!(db_options.increase_parallelism(parallelism));
 
         db_options
     }
