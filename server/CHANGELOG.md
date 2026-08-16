@@ -8,6 +8,41 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/v1.7.4...HEAD
 
+### Changes
+
+* packaging(docker): Move config file to `/etc/sonic/sonic.cfg` (in `04a5fe6`)
+
+Improvements to search results:
+
+* core: Implement BM25 lite (idf only) (in `0ac3e7b`)
+* core: Minimum term idf, to avoid low-quality results at the end of the results list (in `58cd0e4`)
+
+Bump dependencies:
+
+- `sonic-server`’s dependencies:
+  - Bump `clap` from `=4.6.1` to `=4.6.6`
+  - Bump `serde` from `=1.0.228` to `=1.0.229`
+- `sonic_client`’s dependencies:
+  - Bump `tokio` from `=1.52.3` to `=1.53.1`
+- Fixes `RUSTSEC-2024-0436`, `RUSTSEC-2026-0173` (unmaintained deps, not critical)
+
+### New Features
+
+* server: Search for configuration in more locations (in `57ef691`)
+* server: Add experimental `TRIGGER flush` (in `fff8bea`)
+* core: Add support for Unicode normalization (in `678d5e1`)
+* core: Add support for custom stopwords (in `764536e`)
+* core: Add more RocksDB configuration keys (in `8eb3045`)
+* bench: Add BEIR benchmark (in `9d102eb`)
+
+### Bug Fixes
+
+* server: Fix regression in sonic CLI (in `457e68d`)
+  * Colors, help, usage, error context and suggestions had disappeared after we set `default-features = false` on `clap`
+* core: Make `QUERY` insensitive to Unicode normal form (in `0fd1050`)
+* core: Make stopwords insensitive to Unicode Normal Form (in `3f9782b`)
+* core: Remove numbers from stopwords (in `4e11f75`)
+
 ## [1.7.4] (2026-07-09)
 
 [1.7.4]: https://github.com/valeriansaliou/sonic/compare/v1.7.3...v1.7.4
@@ -27,9 +62,9 @@ Dependency updates:
 
 ### New Features
 
-* feat(core): Improve the tokenizer to avoid splitting special tokens (in `f290006`)
-* feat(core): Make tokenizer pattern matching opt-in (in `ddd6848`)
-* feat(core): Make tokenizer pattern matching non-breaking (in `e744fd0`)
+* core: Improve the tokenizer to avoid splitting special tokens (in `f290006`)
+* core: Make tokenizer pattern matching opt-in (in `ddd6848`)
+* core: Make tokenizer pattern matching non-breaking (in `e744fd0`)
 
 ### Bug Fixes
 
@@ -42,7 +77,7 @@ Dependency updates:
 ### Changes
 
 * packaging(debian): Do not run `chown -R` on every Sonic update (in `b244423`)
-* feat(core): Consider more strings to be IDs (in `58bfe3c`)
+* core: Consider more strings to be IDs (in `58bfe3c`)
 
 ## [1.7.2] (2026-07-06)
 
@@ -50,7 +85,7 @@ Dependency updates:
 
 ### Bug Fixes
 
-* fix(core): Perform implicit `AND` when `QUERY`ing an ID (in `fe3d2cc`)
+* core: Perform implicit `AND` when `QUERY`ing an ID (in `fe3d2cc`)
 
 ## [1.7.1] (2026-07-02)
 
