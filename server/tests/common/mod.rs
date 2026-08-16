@@ -17,6 +17,7 @@ pub mod prelude {
     pub use sonic_client::ingest::SonicChannelIngestBlocking;
     pub use sonic_client::search::SonicChannelSearchBlocking;
 
+    pub use crate::common::spawn_guard::SpawnGuard;
     pub use crate::common::{start_empty, start_prepopulated};
 }
 
@@ -44,7 +45,7 @@ static TEST_COUNTER: AtomicU16 = AtomicU16::new(0);
 
 // NOTE: We initialize `SONIC_BIN_PATH` lazily to avoid logging the
 //   “Environment variable "SONIC_BIN" not found” warning on start.
-static SONIC_BIN_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
+pub static SONIC_BIN_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
     std::env::var("SONIC_BIN")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
@@ -90,6 +91,14 @@ fn start_sonic(
     // Auto-kill Sonic.
     let sonic = SpawnGuard(sonic);
 
+    wait_until_ready(addr).unwrap();
+
+    // println!("Started Sonic");
+
+    sonic
+}
+
+pub fn wait_until_ready(addr: &std::net::SocketAddr) -> Result<(), std::io::Error> {
     let start = std::time::Instant::now();
     let multiplexer = SonicMultiplexer::new().unwrap();
     let mut error: Option<std::io::Error> = None;
@@ -116,13 +125,7 @@ fn start_sonic(
         }
     }
 
-    if let Some(error) = error {
-        panic!("{error}");
-    }
-
-    // println!("Started Sonic");
-
-    sonic
+    error.map_or(Ok(()), Err)
 }
 
 #[must_use]

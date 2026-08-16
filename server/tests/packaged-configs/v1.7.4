@@ -1,0 +1,79 @@
+# Sonic
+# Fast, lightweight and schema-less search backend
+# Configuration file
+# Example: https://github.com/valeriansaliou/sonic/blob/master/config.cfg
+
+[server]
+log_level = "debug"
+
+
+[channel]
+inet = "[::1]:1491"
+tcp_timeout = 300
+
+# NOTE: You can pass this via `SONIC_CHANNEL__AUTH_PASSWORD`.
+auth_password = "SecretPassword"
+
+
+# WARN: After making changes to normalization steps, you must rebuild Sonic’s
+#   index by re-ingesting all data. To avoid such breaking change, new features
+#   are disabled by default (opt-in). On major releases, some steps might
+#   become enabled by default (opt-out). Sonic won’t enable unreasonable
+#   defaults, but override if you need consistency.
+[normalization]
+# TODO(major): Remove explicit override.
+diacritic_folding_enabled = false
+# WARN: Enabling stemming greatly affects the quality of Sonic results.
+#   Enable only if you have a good reason to.
+stemming_enabled = false
+
+
+# WARN: After making changes to tokenization steps, you must rebuild Sonic’s
+#   index by re-ingesting all data. To avoid such breaking change, new features
+#   are disabled by default (opt-in). On major releases, some steps might
+#   become enabled by default (opt-out). Sonic won’t enable unreasonable
+#   defaults, but override if you need consistency.
+[tokenization]
+# TODO(major): Remove explicit override.
+detect_special_patterns = true
+# TODO(major): Remove explicit override.
+compat_split_special_patterns = true
+
+
+[search]
+query_limit_default = 10
+query_limit_maximum = 100
+query_alternates_try = 4
+
+suggest_limit_default = 5
+suggest_limit_maximum = 20
+
+list_limit_default = 100
+list_limit_maximum = 500
+
+
+[store.kv]
+path = "./data/store/kv/"
+
+retain_word_objects = 1000
+
+pool.inactive_after = 1800
+
+database.flush_after = 900
+database.compress = true
+database.parallelism = 2
+database.max_files = 100
+database.max_compactions = 1
+database.max_flushes = 1
+database.write_buffer = 16384
+database.write_ahead_log = true
+
+
+[store.fst]
+path = "./data/store/fst/"
+
+pool.inactive_after = 300
+
+graph.consolidate_after = 180
+graph.max_size = 2048
+graph.max_words = 250000

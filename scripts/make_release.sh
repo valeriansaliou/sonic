@@ -287,6 +287,9 @@ update_all_versions() {
 
     log_info "Changing version number in '$(basename "${DEBIAN_RULES_FILE:?}")'…"
     replace_version '^(VERSION = ).+$' "${DEBIAN_RULES_FILE:?}"
+
+    log_info "Copying packaged config for compatibility tests…"
+    cp "${REPOSITORY_ROOT:?}"/config.cfg "${SERVER_DIR:?}"/tests/packaged-configs/"${NEW_VERSION:?}"
   fi
 
   log_info "Updating '$(basename "${CARGO_LOCK_FILE:?}")'…"
