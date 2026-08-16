@@ -175,7 +175,7 @@ pub struct ConfigStoreKVDatabase {
 
     // TODO(major): Make this MB, as in Kvrocks.
     /// WARN: In KB!
-    #[serde(default)]
+    #[serde(default = "default_write_buffer_size")]
     #[serde(alias = "write_buffer")]
     pub write_buffer_size: Option<usize>,
 
@@ -257,6 +257,10 @@ pub struct ConfigStoreKVDatabase {
 
     #[serde(default)]
     pub stats_dump_period_sec: Option<u32>,
+}
+
+fn default_write_buffer_size() -> Option<usize> {
+    Some(16384)
 }
 
 fn parse_rocksdb_compression_type<E: serde::de::Error>(
@@ -396,9 +400,6 @@ pub(crate) mod tests {
         database.flush_after = 900
         database.compression_type = "zstd"
         database.parallelism = 2
-        database.max_subcompactions = 1
-        database.max_flushes = 1
-        database.write_buffer_size = 16384
         database.write_ahead_log = true
 
         [store.fst]

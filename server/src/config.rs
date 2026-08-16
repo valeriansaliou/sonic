@@ -52,9 +52,7 @@ pub fn defaults_toml() -> &'static str {
     database.flush_after = 900
     database.compression_type = "zstd"
     database.parallelism = 2
-    database.max_subcompactions = 1
-    database.max_flushes = 1
-    database.write_buffer_size = 16384
+    # database.write_buffer_size = 16384 # Default handled via serde
     database.write_ahead_log = true
 
     [store.fst]
