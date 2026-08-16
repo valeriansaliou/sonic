@@ -8,9 +8,20 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/v1.8.0...HEAD
 
+### New Features
+
+* test: Add compatibility tests to ensure non-breaking config changes (in `47dcc38`)
+
+### Bug Fixes
+
+* Fix configuration deserialization (in `2f678ae`)
+  * Some RocksDB configuration keys got renamed and it turned out to be a breaking change (see [#396](https://github.com/valeriansaliou/sonic/issues/396))
+
 ## [1.8.0] (2026-08-16)
 
 [1.8.0]: https://github.com/valeriansaliou/sonic/compare/v1.7.4...v1.8.0
+
+**⚠️ Some RocksDB configuration keys got renamed and it turned out to be a breaking change (see [#396](https://github.com/valeriansaliou/sonic/issues/396)). Use `v1.8.1` instead.** 
 
 ### Changes
 
