@@ -18,7 +18,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-sonic-core = { version = "=0.1.3", path = "../core", default-features = false, features = ["stemming"] }
+sonic-core = { version = "=0.2.0", path = "../core", default-features = false, features = ["stemming"] }
 tracing = { version = "=0.1.44", default-features = false }
 tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["std", "fmt", "ansi", "env-filter"] }
 clap = { version = "=4.6.6", default-features = false, features = ["std", "cargo", "color", "help", "usage", "error-context", "suggestions"] }
