@@ -34,7 +34,7 @@ criterion = { version = "=0.8.2", default-features = false, features = ["html_re
 hf-hub = { version = "=0.5.0", default-features = false, features = ["ureq"] }
 parquet = { version = "=59.2.0", default-features = false, features = ["arrow", "snap"] }
 serde_json = { version = "=1.0.151", default-features = false, features = ["std"] }
-sonic_client = { version = "=0.3.0", path = "../client", features = ["sync", "tracing"] }
+sonic_client = { version = "=0.4.0", path = "../client", features = ["sync", "tracing"] }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "=0.31.3", default-features = false, features = ["signal"] }
