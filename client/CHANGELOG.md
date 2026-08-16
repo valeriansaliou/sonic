@@ -8,6 +8,15 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/client-v0.3.0...HEAD
 
+### New Features
+
+* Expose raw API (in `4ffb5fb`)
+
+### Bug Fixes
+
+* Respond early if command not found (in `fcbdcba`)
+* Use proper logging instead of `eprintln` in some places (in `acd99b9`)
+
 ## [0.3.0] (2026-07-06)
 
 [0.3.0]: https://github.com/valeriansaliou/sonic/compare/client-v0.2.0...client-v0.3.0
