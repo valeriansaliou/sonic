@@ -8,6 +8,11 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/core-v0.2.0...HEAD
 
+### Bug Fixes
+
+* Fix configuration deserialization (in `2f678ae`)
+  * The bug shouldn’t affect any `sonic-core` user, but this release is necessary for `sonic-server`.
+
 ## [0.2.0] (2026-08-16)
 
 [0.2.0]: https://github.com/valeriansaliou/sonic/compare/core-v0.1.3...core-v0.2.0
