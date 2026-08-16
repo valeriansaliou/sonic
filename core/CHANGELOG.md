@@ -8,6 +8,25 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/core-v0.1.3...HEAD
 
+### Changes
+
+Improvements to search results:
+
+* Implement BM25 lite (idf only) (in `0ac3e7b`)
+* Minimum term idf, to avoid low-quality results at the end of the results list (in `58cd0e4`)
+
+### New Features
+
+* Add support for Unicode normalization (in `678d5e1`)
+* Add support for custom stopwords (in `764536e`)
+* Add more RocksDB configuration keys (in `8eb3045`)
+
+### Bug Fixes
+
+* Make `QUERY` insensitive to Unicode normal form (in `0fd1050`)
+* Make stopwords insensitive to Unicode Normal Form (in `3f9782b`)
+* Remove numbers from stopwords (in `4e11f75`)
+
 ## [0.1.3] (2026-07-09)
 
 [0.1.3]: https://github.com/valeriansaliou/sonic/compare/core-v0.1.2...core-v0.1.3
