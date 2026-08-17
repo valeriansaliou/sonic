@@ -4,8 +4,23 @@ version: "3"
 
 env:
   SELF: task {{ .ALIAS | default .TASK }} --
-  MAIN_WORKTREE_PATH:
-    sh: git worktree list --porcelain | awk '/^worktree/{print $2; exit}'
+  MAIN_WORKTREE_PATH: { sh: "git worktree list --porcelain | awk '/^worktree/{print $2; exit}'" }
+  # This matches the last log level flag specified (expected behavior).
+  LOG_LEVEL: { ref: regexFindAll "(^| )--(trace|debug|info|warn)( |$)" (.CLI_ARGS_LIST | join "  ") -1 | last | default "--" | trim | substr 2 -1 }
+vars:
+  CLEAN_ARGS_LIST: { ref: without .CLI_ARGS_LIST "--trace" "--debug" "--info" "--warn" }
+  CLEAN_ARGS: { ref: .CLEAN_ARGS_LIST | join " " }
+  CARGO_PROFILE: { ref: env "CARGO_PROFILE" | default "release" }
+  UTIL_GET_OPTIONAL_FEATURES:
+    value: >-
+      cargo metadata --format-version 1 --no-deps | jq -r '
+        .packages[]
+        | select(.name == "sonic-server")
+        | .features
+        | keys
+        | map(select(IN("experimental-api")))
+        | join(",")'
+    secret: true # Just so it doesn’t show up in `--summary`.
 
 tasks:
   help:
@@ -16,70 +31,97 @@ tasks:
 
   bench:
     desc: Benchmark Sonic by running a server and interacting with it using TCP.
+    summary: |-
+      syntax: {{ .SELF }} [--bench BENCH [-- [FILTER] [--baseline BASELINE]]]
     cmds:
-      - cargo build --bin sonic --profile release
       - task: cargo-bench
         vars:
-          CLI_ARGS: " --profile release {{ .CLI_ARGS }}"
+          CLI_ARGS: { ref: .CLEAN_ARGS }
 
   bench:check:
-    desc: Check a build against a benchmark baseline.
+    desc: Benchmark another git ref.
     preconditions:
-      - sh: test {{ len .CLI_ARGS_LIST }} -ge 1
-        msg: "syntax: {{ .SELF }} GIT_REF"
+      - sh: test {{ len .CLEAN_ARGS_LIST }} -ge 1
+        msg: "syntax: {{ .SELF }} GIT_REF [--bench BENCH [-- FILTER]]"
     cmds:
-      - cmd: git worktree add '{{ .WORKTREE_PATH }}' '{{ .GIT_REF }}'
-        if: test ! -d '{{ .WORKTREE_PATH }}'
-      - >-
-        {{ if .GIT_REF | ne "HEAD" }}cd '{{ .WORKTREE_PATH }}' &&{{ end }}
-        cargo install --path server --bin sonic --root '{{ .MAIN_WORKTREE_PATH }}/target/bench-builds/{{ .BASELINE_NAME }}'
       - task: cargo-bench
         vars:
-          CLI_ARGS: ' --profile release -- {{ .CLI_ARGS_LIST | rest | join " " }}'
-          SONIC_BIN: "{{ .MAIN_WORKTREE_PATH }}/target/bench-builds/{{ .BASELINE_NAME }}/bin/sonic"
+          CLI_ARGS: '{{ .ARGS_1 }} -- --baseline {{ .BASELINE_NAME }} {{ .ARGS_2 }}'
     vars:
-      GIT_REF: "{{ .CLI_ARGS_LIST | first }}"
-      BASELINE_NAME: transient
-      WORKTREE_PATH: "{{ .MAIN_WORKTREE_PATH }}/../sonic-{{ .GIT_REF }}"
+      BASELINE_NAME: { ref: .CLEAN_ARGS_LIST | first }
+      ARGS_REST: '{{ .CLEAN_ARGS_LIST | rest | join " " }}'
+      ARGS_1: '{{ if regexMatch " -- " .ARGS_REST }}{{ .ARGS_REST | splitList " -- " | first }}{{ else }}{{ .ARGS_REST }}{{ end }}'
+      ARGS_2: '{{ if regexMatch "-- " .ARGS_REST }}{{ .ARGS_REST | splitList "-- " | rest | join "-- " }}{{ end }}'
 
   bench:record:
     desc: Record a new benchmark baseline.
     preconditions:
-      - sh: test {{ len .CLI_ARGS_LIST }} -ge 2
-        msg: "syntax: {{ .SELF }} GIT_REF BASELINE_NAME"
+      - sh: test {{ len .CLEAN_ARGS_LIST }} -ge 2
+        msg: 'syntax: {{ .SELF }} GIT_REF BASELINE_NAME'
+    deps:
+      - task: util:git-add-worktree
+        vars:
+          GIT_REF: { ref: .GIT_REF }
+          WORKTREE_PATH: { ref: .WORKTREE_PATH }
     cmds:
-      - cmd: git worktree add '{{ .WORKTREE_PATH }}' '{{ .GIT_REF }}'
-        if: test ! -d '{{ .WORKTREE_PATH }}'
-      - >-
-        {{ if .GIT_REF | ne "HEAD" }}cd '{{ .WORKTREE_PATH }}' &&{{ end }}
-        cargo install --path server --bin sonic --root '{{ .MAIN_WORKTREE_PATH }}/target/bench-builds/{{ .BASELINE_NAME }}'
+      - task: cargo-install
+        vars:
+          WORKING_DIR: { ref: .WORKTREE_PATH }
+          INSTALL_DIR: { ref: .INSTALL_DIR }
+          OPTIONAL_FEATURES: { sh: "cd {{ shellQuote .WORKTREE_PATH }} && {{ .UTIL_GET_OPTIONAL_FEATURES }}" }
       - task: cargo-bench
         vars:
-          CLI_ARGS: ' --profile release -- --save-baseline {{ .BASELINE_NAME }} {{ .CLI_ARGS_LIST | rest | rest | join " " }}'
-          SONIC_BIN: "{{ .MAIN_WORKTREE_PATH }}/target/bench-builds/{{ .BASELINE_NAME }}/bin/sonic"
+          CLI_ARGS: '{{ .ARGS_1 }} -- --save-baseline {{ .BASELINE_NAME }} {{ .ARGS_2 }}'
+          SONIC_BIN: '{{ .INSTALL_DIR }}/bin/sonic'
     vars:
-      GIT_REF: "{{ .CLI_ARGS_LIST | first }}"
-      BASELINE_NAME: "{{ .CLI_ARGS_LIST | rest | first }}"
-      WORKTREE_PATH: "{{ .MAIN_WORKTREE_PATH }}/../sonic-{{ .GIT_REF }}"
+      GIT_REF: { ref: .CLEAN_ARGS_LIST | first }
+      BASELINE_NAME: { ref: .CLEAN_ARGS_LIST | rest | first }
+      ARGS_REST: { ref: .CLEAN_ARGS_LIST | rest | rest | join " " }
+      ARGS_1: '{{ if regexMatch " -- " .ARGS_REST }}{{ .ARGS_REST | splitList " -- " | first }}{{ else }}{{ .ARGS_REST }}{{ end }}'
+      ARGS_2: '{{ if regexMatch "-- " .ARGS_REST }}{{ .ARGS_REST | splitList "-- " | rest | join "-- " }}{{ end }}'
+      WORKTREE_PATH: '{{ if .GIT_REF | eq "HEAD" }}.{{ else }}{{ .MAIN_WORKTREE_PATH }}/../sonic-{{ .GIT_REF }}{{ end }}'
+      INSTALL_DIR: '{{ .MAIN_WORKTREE_PATH }}/target/bench-builds/{{ .BASELINE_NAME }}'
 
   bench:compare:
     desc: Compare two baselines.
     cmds:
       - task: cargo-bench
         vars:
-          CLI_ARGS: '-- --baseline {{ .CLI_ARGS_LIST | first }} --load-baseline {{ .CLI_ARGS_LIST | rest | first }} {{ .CLI_ARGS_LIST | rest | rest | join " " }}'
+          CLI_ARGS: '{{ .ARGS_1 }} -- --baseline {{ .BASELINE_NAME_1 }} --load-baseline {{ .BASELINE_NAME_2 }} {{ .ARGS_2 }}'
+    vars:
+      BASELINE_NAME_1: { ref: .CLEAN_ARGS_LIST | first }
+      BASELINE_NAME_2: { ref: .CLEAN_ARGS_LIST | rest | first }
+      ARGS_REST: '{{ .CLEAN_ARGS_LIST | rest | rest | join " " }}'
+      ARGS_1: '{{ if regexMatch " -- " .ARGS_REST }}{{ .ARGS_REST | splitList " -- " | first }}{{ else }}{{ .ARGS_REST }}{{ end }}'
+      ARGS_2: '{{ if regexMatch "-- " .ARGS_REST }}{{ .ARGS_REST | splitList "-- " | rest | join "-- " }}{{ end }}'
     preconditions:
-      - sh: test {{ len .CLI_ARGS_LIST }} -ge 2
-        msg: "syntax: {{ .SELF }} REF_A REF_B"
+      - sh: test {{ len .CLEAN_ARGS_LIST }} -ge 2
+        msg: 'syntax: {{ .SELF }} REF_A REF_B'
 
   cargo-bench:
     internal: true
-    cmd: cargo bench -p sonic-server{{ if .CLI_ARGS }} {{ .CLI_ARGS }}{{ end }}
+    cmd: cargo bench -p sonic-server --locked --profile {{ .CARGO_PROFILE }}{{ if .OPTIONAL_FEATURES }} -F {{ shellQuote .OPTIONAL_FEATURES }}{{ end }} {{ .CLI_ARGS }}
     preconditions:
-      - sh: "! lsof -iTCP:1491 -sTCP:LISTEN"
+      - sh: '! lsof -iTCP:1491 -sTCP:LISTEN'
         msg: >-
           Address '[::1]:1491' already in use.
           Check `lsof -iTCP:1491 -sTCP:LISTEN` anc kill the process.
     env:
-      CRITERION_HOME: "{{ .MAIN_WORKTREE_PATH }}/target/criterion"
+      CRITERION_HOME: '{{ .MAIN_WORKTREE_PATH }}/target/criterion'
       SONIC_BIN: { ref: .SONIC_BIN }
+    vars:
+      OPTIONAL_FEATURES: { sh: '{{ .UTIL_GET_OPTIONAL_FEATURES }}' }
+
+  cargo-install:
+    internal: true
+    requires:
+      vars: [INSTALL_DIR]
+    cmd: cargo +stable install --path {{ shellQuote .PATH }} --bin sonic --locked --profile {{ shellQuote .CARGO_PROFILE }} --root {{ shellQuote .INSTALL_DIR }}{{ if .OPTIONAL_FEATURES }} -F {{ shellQuote .OPTIONAL_FEATURES }}{{ end }}
+    vars:
+      # COMPAT: Compat with <v1.6.0.
+      PATH: { sh: 'test -d {{ shellQuote .WORKING_DIR }}/server && echo {{ shellQuote .WORKING_DIR }}/server || echo {{ shellQuote .WORKING_DIR }}' }
+
+  util:git-add-worktree:
+    internal: true
+    cmd: git worktree add {{ shellQuote .WORKTREE_PATH }} {{ shellQuote .GIT_REF }}
+    if: test ! -d {{ shellQuote .WORKTREE_PATH }}
