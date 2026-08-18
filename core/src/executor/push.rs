@@ -13,6 +13,7 @@ use crate::store::StoreItem;
 use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::identifiers::{StoreMetaKey, StoreMetaValue, StoreTermHashed};
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
+use crate::util::itertools::ExactSizeIteratorExt as _;
 
 impl super::Executor {
     pub fn push(&self, item: StoreItem, lexer: TokenLexer) -> Result<(), ()> {
@@ -114,26 +115,26 @@ impl super::Executor {
 
                     tracing::info!("has push executor term-to-iids: {}", iid);
 
-                    term_iids.insert(0, iid);
-
                     // Truncate IIDs linked to term? (ie. storage is too long)
                     let truncate_limit = self.app_conf.store.kv.retain_word_objects;
 
-                    if term_iids.len() > truncate_limit {
+                    if term_iids.len() + 1 > truncate_limit {
                         tracing::info!(
                             "push executor term-to-iids object too long (limit: {})",
                             truncate_limit
                         );
 
                         // Drain overflowing IIDs (ie. oldest ones that overflow)
-                        let term_iids_drain = term_iids.drain(truncate_limit..);
+                        let term_iids_drain = term_iids.drain((truncate_limit - 1)..);
 
                         executor_ensure_op!(
                             kv_action.batch_truncate_object(term_hashed, term_iids_drain)
                         );
                     }
 
-                    executor_ensure_op!(kv_action.set_term_to_iids(term_hashed, &term_iids));
+                    executor_ensure_op!(
+                        kv_action.set_term_to_iids(term_hashed, term_iids.into_iter().prepend(iid))
+                    );
 
                     // Insert term into IID to terms map
                     iid_terms_hashed.insert(term_hashed);
@@ -157,7 +158,7 @@ impl super::Executor {
                 collected_iids
             );
 
-            executor_ensure_op!(kv_action.set_iid_to_terms(iid, &collected_iids));
+            executor_ensure_op!(kv_action.set_iid_to_terms(iid, collected_iids.into_iter()));
         }
 
         Ok(())

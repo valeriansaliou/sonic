@@ -116,7 +116,7 @@ impl super::Executor {
                                                     executor_ensure_op!(
                                                         kv_action.set_term_to_iids(
                                                             *pop_term_hashed,
-                                                            &pop_term_iids,
+                                                            pop_term_iids.into_iter(),
                                                         )
                                                     );
                                                 }
@@ -133,7 +133,8 @@ impl super::Executor {
                                         Vec::from_iter(remaining_terms);
 
                                     executor_ensure_op!(
-                                        kv_action.set_iid_to_terms(iid, &remaining_terms_vec)
+                                        kv_action
+                                            .set_iid_to_terms(iid, remaining_terms_vec.into_iter())
                                     );
                                 }
                             }

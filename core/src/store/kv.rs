@@ -794,7 +794,7 @@ impl<'a> StoreKVAction<'a> {
     pub fn set_term_to_iids(
         &self,
         term_hashed: StoreTermHashed,
-        iids: &[StoreObjectIID],
+        iids: impl ExactSizeIterator<Item = StoreObjectIID>,
     ) -> Result<(), ()> {
         let Some(ref store) = self.store else {
             return Err(());
@@ -995,7 +995,7 @@ impl<'a> StoreKVAction<'a> {
     pub fn set_iid_to_terms(
         &self,
         iid: StoreObjectIID,
-        terms_hashed: &[StoreTermHashed],
+        terms_hashed: impl ExactSizeIterator<Item = u32>,
     ) -> Result<(), ()> {
         let Some(ref store) = self.store else {
             return Err(());
@@ -1067,7 +1067,8 @@ impl<'a> StoreKVAction<'a> {
             let error = if iid_term_iids.is_empty() {
                 self.delete_term_to_iids(*iid_term).err()
             } else {
-                self.set_term_to_iids(*iid_term, &iid_term_iids).err()
+                self.set_term_to_iids(*iid_term, iid_term_iids.into_iter())
+                    .err()
             };
 
             if error.is_some() {
@@ -1115,7 +1116,7 @@ impl<'a> StoreKVAction<'a> {
             } else {
                 // Update IID to Terms list
                 if self
-                    .set_iid_to_terms(term_iid_drain, &term_iid_drain_terms)
+                    .set_iid_to_terms(term_iid_drain, term_iid_drain_terms.into_iter())
                     .is_err()
                 {
                     tracing::error!("failed setting store batch truncate object iid-to-terms");
@@ -1215,13 +1216,13 @@ impl<'a> StoreKVAction<'a> {
         Cursor::new(encoded).read_u32::<LittleEndian>().or(Err(()))
     }
 
-    fn encode_u32_list(decoded: &[u32]) -> Vec<u8> {
+    fn encode_u32_list(decoded: impl ExactSizeIterator<Item = u32>) -> Vec<u8> {
         // Pre-reserve required capacity as to avoid heap resizes (50%
         // performance gain relative to initializing this with a zero-capacity)
         let mut encoded = Vec::with_capacity(decoded.len() * 4);
 
         for decoded_item in decoded {
-            encoded.extend(&Self::encode_u32(*decoded_item))
+            encoded.extend(&Self::encode_u32(decoded_item))
         }
 
         encoded
@@ -1318,7 +1319,7 @@ mod tests {
         );
 
         assert!(action.get_term_to_iids(1).is_ok());
-        assert!(action.set_term_to_iids(1, &[0, 1, 2]).is_ok());
+        assert!(action.set_term_to_iids(1, [0, 1, 2].into_iter()).is_ok());
         assert!(action.delete_term_to_iids(1).is_ok());
 
         assert!(action.get_oid_to_iid(&"s".to_string()).is_ok());
@@ -1330,7 +1331,7 @@ mod tests {
         assert!(action.delete_iid_to_oid(4).is_ok());
 
         assert!(action.get_iid_to_terms(4).is_ok());
-        assert!(action.set_iid_to_terms(4, &[45402]).is_ok());
+        assert!(action.set_iid_to_terms(4, [45402].into_iter()).is_ok());
         assert!(action.delete_iid_to_terms(4).is_ok());
     }
 
@@ -1351,10 +1352,13 @@ mod tests {
     #[test]
     fn it_encodes_atom_list() {
         assert_eq!(
-            StoreKVAction::encode_u32_list(&[0, 2, 3]),
+            StoreKVAction::encode_u32_list([0, 2, 3].into_iter()),
             [0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]
         );
-        assert_eq!(StoreKVAction::encode_u32_list(&[45402]), [90, 177, 0, 0]);
+        assert_eq!(
+            StoreKVAction::encode_u32_list([45402].into_iter()),
+            [90, 177, 0, 0]
+        );
     }
 
     #[test]
