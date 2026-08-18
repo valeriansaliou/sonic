@@ -109,6 +109,7 @@ tasks:
     env:
       CRITERION_HOME: '{{ .MAIN_WORKTREE_PATH }}/target/criterion'
       SONIC_BIN: { ref: .SONIC_BIN }
+      RUSTFLAGS: '{{ if eq .CARGO_PROFILE "relwithdebinfo" }}-C force-frame-pointers=yes{{ end }}'
     vars:
       OPTIONAL_FEATURES: { sh: '{{ .UTIL_GET_OPTIONAL_FEATURES }}' }
 

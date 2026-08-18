@@ -26,6 +26,12 @@ debug = false
 debug-assertions = false
 strip = true
 
+[profile.relwithdebinfo]
+inherits = "release"
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+strip = false
+
 [profile.bench]
 inherits = "release"
 lto = "thin"
