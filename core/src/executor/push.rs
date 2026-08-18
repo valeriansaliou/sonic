@@ -109,9 +109,7 @@ impl super::Executor {
 
                     // Remove IID from list of IIDs to be popped before inserting in \
                     //   first position?
-                    if term_iids.contains(&iid) {
-                        term_iids.retain(|cur_iid| cur_iid != &iid);
-                    }
+                    term_iids.retain(|&cur_iid| cur_iid != iid);
 
                     tracing::info!("has push executor term-to-iids: {}", iid);
 
