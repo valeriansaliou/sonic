@@ -62,9 +62,14 @@ pub struct StoreKVActionBuilder<'build> {
     pub kv_pool: &'build StoreKVPool,
 }
 
-pub struct StoreKVAction<'a> {
-    store: Arc<StoreKV>,
+pub struct StoreKVActionReadOnly<'a> {
     bucket: StoreItemPart<'a>,
+    store: Arc<StoreKV>,
+}
+
+pub struct StoreKVActionReadWrite<'a> {
+    bucket: StoreItemPart<'a>,
+    store: Arc<StoreKV>,
 }
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
@@ -588,26 +593,6 @@ impl StoreGenericBuilder<StoreKVKey, StoreKV> for StoreKVBuilder {
 }
 
 impl StoreKV {
-    pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, DBError> {
-        self.database.get(key)
-    }
-
-    pub fn put(&self, key: &[u8], data: &[u8]) -> Result<(), DBError> {
-        let mut batch = WriteBatch::default();
-
-        batch.put(key, data);
-
-        self.do_write(batch)
-    }
-
-    pub fn delete(&self, key: &[u8]) -> Result<(), DBError> {
-        let mut batch = WriteBatch::default();
-
-        batch.delete(key);
-
-        self.do_write(batch)
-    }
-
     fn flush(&self) -> Result<(), DBError> {
         // Generate flush options
         let mut flush_options = FlushOptions::default();
@@ -638,6 +623,12 @@ impl StoreKV {
     }
 }
 
+impl<'a> StoreKVActionReadWrite<'a> {
+    pub fn write(&self, batch: WriteBatch) -> Result<(), DBError> {
+        self.store.do_write(batch)
+    }
+}
+
 impl StoreGeneric for StoreKV {
     fn ref_last_used(&self) -> &RwLock<SystemTime> {
         &self.last_used
@@ -645,16 +636,22 @@ impl StoreGeneric for StoreKV {
 }
 
 impl<'build> StoreKVActionBuilder<'build> {
-    pub fn access(bucket: StoreItemPart, store: Arc<StoreKV>) -> StoreKVAction {
-        Self::build(bucket, store)
+    pub fn access_read_only<'a>(
+        bucket: StoreItemPart<'a>,
+        store: Arc<StoreKV>,
+    ) -> StoreKVActionReadOnly<'a> {
+        StoreKVActionReadOnly { bucket, store }
+    }
+
+    pub fn access_read_write<'a>(
+        bucket: StoreItemPart<'a>,
+        store: Arc<StoreKV>,
+    ) -> StoreKVActionReadWrite<'a> {
+        StoreKVActionReadWrite { bucket, store }
     }
 
     pub fn erase<T: AsRef<str>>(&self, collection: T, bucket: Option<T>) -> Result<u32, ()> {
         self.dispatch_erase("kv", collection, bucket)
-    }
-
-    fn build(bucket: StoreItemPart, store: Arc<StoreKV>) -> StoreKVAction {
-        StoreKVAction { store, bucket }
     }
 }
 
@@ -696,7 +693,7 @@ impl<'build> StoreGenericActionBuilder for StoreKVActionBuilder<'build> {
     }
 }
 
-impl<'a> StoreKVAction<'a> {
+impl<'a> StoreKVActionReadOnly<'a> {
     /// Meta-to-Value mapper
     ///
     /// [IDX=0] ((meta)) ~> ((value))
@@ -705,7 +702,7 @@ impl<'a> StoreKVAction<'a> {
 
         tracing::debug!("store get meta-to-value: {store_key}");
 
-        match self.store.get(&store_key.as_bytes()) {
+        match self.store.database.get(&store_key.as_bytes()) {
             Ok(Some(value)) => {
                 tracing::debug!("got meta-to-value: {store_key}");
 
@@ -729,44 +726,6 @@ impl<'a> StoreKVAction<'a> {
         }
     }
 
-    pub fn set_meta_to_value(&self, meta: StoreMetaKey, value: StoreMetaValue) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::meta_to_value(&self.bucket, &meta);
-
-        tracing::debug!("store set meta-to-value: {store_key}");
-
-        let value_string = match value {
-            StoreMetaValue::IIDIncr(iid_incr) => iid_incr.to_string(),
-        };
-
-        self.store
-            .put(&store_key.as_bytes(), value_string.as_bytes())
-            .or(Err(()))
-    }
-
-    pub fn auto_increment_iid(
-        &self,
-        guard: Option<RwLockWriteGuard<()>>,
-    ) -> Result<StoreObjectIID, &'static str> {
-        // SAFETY: Lock the database in exclusive access, to ensure IID
-        //   increments are atomic. See <https://github.com/valeriansaliou/sonic/issues/389>
-        //   for more information about why this is important.
-        let _guard = guard.unwrap_or_else(|| self.store.lock.write().unwrap());
-
-        let Ok(iid_incr_opt) = self.get_meta_to_value(StoreMetaKey::IIDIncr) else {
-            return Err("failed getting push executor meta-to-value iid increment");
-        };
-
-        let iid_incr = iid_incr_opt.map_or(0, |meta_val| match meta_val {
-            StoreMetaValue::IIDIncr(iid_incr) => iid_incr + 1,
-        });
-
-        // Bump last stored increment
-        match self.set_meta_to_value(StoreMetaKey::IIDIncr, StoreMetaValue::IIDIncr(iid_incr)) {
-            Ok(()) => Ok(iid_incr),
-            Err(()) => Err("failed updating push executor meta-to-value iid increment"),
-        }
-    }
-
     /// Term-to-IIDs mapper
     ///
     /// [IDX=1] ((term)) ~> [((iid))]
@@ -778,11 +737,11 @@ impl<'a> StoreKVAction<'a> {
 
         tracing::debug!("store get term-to-iids: {store_key}");
 
-        match self.store.get(&store_key.as_bytes()) {
+        match self.store.database.get(&store_key.as_bytes()) {
             Ok(Some(value)) => {
                 tracing::debug!("got term-to-iids: {store_key} with encoded value: {value:?}");
 
-                Self::decode_u32_list(&value).map(|value_decoded| {
+                decode_u32_list(&value).map(|value_decoded| {
                     tracing::debug!(
                         "got term-to-iids: {store_key} with decoded value: {value_decoded:?}"
                     );
@@ -803,46 +762,19 @@ impl<'a> StoreKVAction<'a> {
         }
     }
 
-    pub fn set_term_to_iids(
-        &self,
-        term_hashed: StoreTermHashed,
-        iids: impl ExactSizeIterator<Item = StoreObjectIID>,
-    ) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hashed);
-
-        tracing::debug!("store set term-to-iids: {store_key}");
-
-        // Encode IID list into storage serialized format
-        let iids_encoded = Self::encode_u32_list(iids);
-
-        tracing::debug!("store set term-to-iids: {store_key} with encoded value: {iids_encoded:?}");
-
-        self.store
-            .put(&store_key.as_bytes(), &iids_encoded)
-            .or(Err(()))
-    }
-
-    pub fn delete_term_to_iids(&self, term_hashed: StoreTermHashed) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hashed);
-
-        tracing::debug!("store delete term-to-iids: {store_key}");
-
-        self.store.delete(&store_key.as_bytes()).or(Err(()))
-    }
-
     /// OID-to-IID mapper
     ///
     /// [IDX=2] ((oid)) ~> ((iid))
-    pub fn get_oid_to_iid(&self, oid: StoreObjectOID<'a>) -> Result<Option<StoreObjectIID>, ()> {
+    pub fn get_oid_to_iid(&self, oid: StoreObjectOID) -> Result<Option<StoreObjectIID>, ()> {
         let store_key = StoreKeyerBuilder::oid_to_iid(&self.bucket, oid);
 
         tracing::debug!("store get oid-to-iid: {store_key}");
 
-        match self.store.get(&store_key.as_bytes()) {
+        match self.store.database.get(&store_key.as_bytes()) {
             Ok(Some(value)) => {
                 tracing::debug!("got oid-to-iid: {store_key} with encoded value: {value:?}");
 
-                Self::decode_u32(&value).map(|value_decoded| {
+                decode_u32(&value).map(|value_decoded| {
                     tracing::debug!(
                         "got oid-to-iid: {store_key} with decoded value: {value_decoded:?}"
                     );
@@ -863,29 +795,6 @@ impl<'a> StoreKVAction<'a> {
         }
     }
 
-    pub fn set_oid_to_iid(&self, oid: StoreObjectOID<'a>, iid: StoreObjectIID) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::oid_to_iid(&self.bucket, oid);
-
-        tracing::debug!("store set oid-to-iid: {store_key}");
-
-        // Encode IID
-        let iid_encoded = Self::encode_u32(iid);
-
-        tracing::debug!("store set oid-to-iid: {store_key} with encoded value: {iid_encoded:?}");
-
-        self.store
-            .put(&store_key.as_bytes(), &iid_encoded)
-            .or(Err(()))
-    }
-
-    pub fn delete_oid_to_iid(&self, oid: StoreObjectOID<'a>) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::oid_to_iid(&self.bucket, oid);
-
-        tracing::debug!("store delete oid-to-iid: {store_key}");
-
-        self.store.delete(&store_key.as_bytes()).or(Err(()))
-    }
-
     /// IID-to-OID mapper
     ///
     /// [IDX=3] ((iid)) ~> ((oid))
@@ -894,7 +803,7 @@ impl<'a> StoreKVAction<'a> {
 
         tracing::debug!("store get iid-to-oid: {store_key}");
 
-        match self.store.get(&store_key.as_bytes()) {
+        match self.store.database.get(&store_key.as_bytes()) {
             Ok(Some(value)) => {
                 tracing::debug!("got iid-to-oid: {store_key}");
 
@@ -913,24 +822,6 @@ impl<'a> StoreKVAction<'a> {
         }
     }
 
-    pub fn set_iid_to_oid(&self, iid: StoreObjectIID, oid: StoreObjectOID<'a>) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::iid_to_oid(&self.bucket, iid);
-
-        tracing::debug!("store set iid-to-oid: {store_key}");
-
-        self.store
-            .put(&store_key.as_bytes(), oid.as_bytes())
-            .or(Err(()))
-    }
-
-    pub fn delete_iid_to_oid(&self, iid: StoreObjectIID) -> Result<(), ()> {
-        let store_key = StoreKeyerBuilder::iid_to_oid(&self.bucket, iid);
-
-        tracing::debug!("store delete iid-to-oid: {store_key}");
-
-        self.store.delete(&store_key.as_bytes()).or(Err(()))
-    }
-
     /// IID-to-Terms mapper
     ///
     /// [IDX=4] ((iid)) ~> [((term))]
@@ -942,11 +833,11 @@ impl<'a> StoreKVAction<'a> {
 
         tracing::debug!("store get iid-to-terms: {store_key}");
 
-        match self.store.get(&store_key.as_bytes()) {
+        match self.store.database.get(&store_key.as_bytes()) {
             Ok(Some(value)) => {
                 tracing::debug!("got iid-to-terms: {store_key} with encoded value: {value:?}");
 
-                Self::decode_u32_list(&value).map(|value_decoded| {
+                decode_u32_list(&value).map(|value_decoded| {
                     tracing::debug!(
                         "got iid-to-terms: {store_key} with decoded value: {value_decoded:?}"
                     );
@@ -973,57 +864,219 @@ impl<'a> StoreKVAction<'a> {
             }
         }
     }
+}
+
+impl<'a> StoreKVActionReadWrite<'a> {
+    /// This is `O(1)`, nothing meaningful happens.
+    fn to_read_only<'b>(&'b self) -> StoreKVActionReadOnly<'b> {
+        StoreKVActionReadOnly {
+            bucket: self.bucket,
+            store: Arc::clone(&self.store),
+        }
+    }
+
+    /// Meta-to-Value mapper
+    ///
+    /// [IDX=0] ((meta)) ~> ((value))
+    pub fn get_meta_to_value(&self, meta: StoreMetaKey) -> Result<Option<StoreMetaValue>, ()> {
+        self.to_read_only().get_meta_to_value(meta)
+    }
+
+    pub fn set_meta_to_value(
+        &self,
+        batch: &mut WriteBatch,
+        meta: StoreMetaKey,
+        value: StoreMetaValue,
+    ) {
+        let store_key = StoreKeyerBuilder::meta_to_value(&self.bucket, &meta);
+
+        tracing::debug!("store set meta-to-value: {store_key}");
+
+        let value_string = match value {
+            StoreMetaValue::IIDIncr(iid_incr) => iid_incr.to_string(),
+        };
+
+        batch.put(&store_key.as_bytes(), value_string.as_bytes())
+    }
+
+    // TODO: Make this really atomic by using a `merge` command.
+    /// Atomically(ish) increments the `IIDIncr` counter and returns the new
+    /// value.
+    pub fn auto_increment_iid(
+        &self,
+        guard: Option<RwLockWriteGuard<()>>,
+    ) -> Result<StoreObjectIID, Box<dyn std::error::Error>> {
+        // SAFETY: Lock the database in exclusive access, to ensure IID
+        //   increments are atomic. See <https://github.com/valeriansaliou/sonic/issues/389>
+        //   for more information about why this is important.
+        let _guard = guard.unwrap_or_else(|| self.store.lock.write().unwrap());
+
+        let Ok(iid_incr_opt) = self.get_meta_to_value(StoreMetaKey::IIDIncr) else {
+            return Err("failed getting push executor meta-to-value iid increment".into());
+        };
+
+        let iid_incr = iid_incr_opt.map_or(0, |meta_val| match meta_val {
+            StoreMetaValue::IIDIncr(iid_incr) => iid_incr + 1,
+        });
+
+        let mut batch = WriteBatch::default();
+
+        // Bump last stored increment
+        self.set_meta_to_value(
+            &mut batch,
+            StoreMetaKey::IIDIncr,
+            StoreMetaValue::IIDIncr(iid_incr),
+        );
+
+        match self.write(batch) {
+            Ok(()) => Ok(iid_incr),
+            Err(err) => Err(Box::from(format!(
+                "failed updating push executor meta-to-value iid increment: {err}"
+            ))),
+        }
+    }
+
+    /// Term-to-IIDs mapper
+    ///
+    /// [IDX=1] ((term)) ~> [((iid))]
+    #[inline]
+    pub fn get_term_to_iids(
+        &self,
+        term_hashed: StoreTermHashed,
+    ) -> Result<Option<Vec<StoreObjectIID>>, ()> {
+        self.to_read_only().get_term_to_iids(term_hashed)
+    }
+
+    pub fn set_term_to_iids(
+        &self,
+        batch: &mut WriteBatch,
+        term_hashed: StoreTermHashed,
+        iids: impl ExactSizeIterator<Item = StoreObjectIID>,
+    ) {
+        let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hashed);
+
+        tracing::debug!("store set term-to-iids: {store_key}");
+
+        // Encode IID list into storage serialized format
+        let iids_encoded = encode_u32_list(iids);
+
+        tracing::debug!("store set term-to-iids: {store_key} with encoded value: {iids_encoded:?}");
+
+        batch.put(&store_key.as_bytes(), &iids_encoded)
+    }
+
+    pub fn delete_term_to_iids(&self, batch: &mut WriteBatch, term_hashed: StoreTermHashed) {
+        let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hashed);
+
+        tracing::debug!("store delete term-to-iids: {store_key}");
+
+        batch.delete(&store_key.as_bytes())
+    }
+
+    /// OID-to-IID mapper
+    ///
+    /// [IDX=2] ((oid)) ~> ((iid))
+    pub fn get_oid_to_iid(&self, oid: StoreObjectOID) -> Result<Option<StoreObjectIID>, ()> {
+        self.to_read_only().get_oid_to_iid(oid)
+    }
+
+    pub fn set_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOID, iid: StoreObjectIID) {
+        let store_key = StoreKeyerBuilder::oid_to_iid(&self.bucket, oid);
+
+        tracing::debug!("store set oid-to-iid: {store_key}");
+
+        // Encode IID
+        let iid_encoded = encode_u32(iid);
+
+        tracing::debug!("store set oid-to-iid: {store_key} with encoded value: {iid_encoded:?}");
+
+        batch.put(&store_key.as_bytes(), &iid_encoded)
+    }
+
+    pub fn delete_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOID) {
+        let store_key = StoreKeyerBuilder::oid_to_iid(&self.bucket, oid);
+
+        tracing::debug!("store delete oid-to-iid: {store_key}");
+
+        batch.delete(&store_key.as_bytes())
+    }
+
+    /// IID-to-OID mapper
+    ///
+    /// [IDX=3] ((iid)) ~> ((oid))
+    pub fn get_iid_to_oid(&self, iid: StoreObjectIID) -> Result<Option<String>, ()> {
+        self.to_read_only().get_iid_to_oid(iid)
+    }
+
+    pub fn set_iid_to_oid(&self, batch: &mut WriteBatch, iid: StoreObjectIID, oid: StoreObjectOID) {
+        let store_key = StoreKeyerBuilder::iid_to_oid(&self.bucket, iid);
+
+        tracing::debug!("store set iid-to-oid: {store_key}");
+
+        batch.put(&store_key.as_bytes(), oid.as_bytes())
+    }
+
+    pub fn delete_iid_to_oid(&self, batch: &mut WriteBatch, iid: StoreObjectIID) {
+        let store_key = StoreKeyerBuilder::iid_to_oid(&self.bucket, iid);
+
+        tracing::debug!("store delete iid-to-oid: {store_key}");
+
+        batch.delete(&store_key.as_bytes())
+    }
+
+    /// IID-to-Terms mapper
+    ///
+    /// [IDX=4] ((iid)) ~> [((term))]
+    pub fn get_iid_to_terms(
+        &self,
+        iid: StoreObjectIID,
+    ) -> Result<Option<Vec<StoreTermHashed>>, ()> {
+        self.to_read_only().get_iid_to_terms(iid)
+    }
 
     pub fn set_iid_to_terms(
         &self,
+        batch: &mut WriteBatch,
         iid: StoreObjectIID,
         terms_hashed: impl ExactSizeIterator<Item = u32>,
-    ) -> Result<(), ()> {
+    ) {
         let store_key = StoreKeyerBuilder::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store set iid-to-terms: {store_key}");
 
         // Encode term list into storage serialized format
-        let terms_hashed_encoded = Self::encode_u32_list(terms_hashed);
+        let terms_hashed_encoded = encode_u32_list(terms_hashed);
 
         tracing::debug!(
             "store set iid-to-terms: {store_key} with encoded value: {terms_hashed_encoded:?}"
         );
 
-        self.store
-            .put(&store_key.as_bytes(), &terms_hashed_encoded)
-            .or(Err(()))
+        batch.put(&store_key.as_bytes(), &terms_hashed_encoded)
     }
 
-    pub fn delete_iid_to_terms(&self, iid: StoreObjectIID) -> Result<(), ()> {
+    pub fn delete_iid_to_terms(&self, batch: &mut WriteBatch, iid: StoreObjectIID) {
         let store_key = StoreKeyerBuilder::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store delete iid-to-terms: {store_key}");
 
-        self.store.delete(&store_key.as_bytes()).or(Err(()))
+        batch.delete(&store_key.as_bytes())
     }
 
     pub fn batch_flush_bucket(
         &self,
+        batch: &mut WriteBatch,
         iid: StoreObjectIID,
-        oid: StoreObjectOID<'a>,
+        oid: StoreObjectOID,
         iid_terms_hashed: &[StoreTermHashed],
-    ) -> Result<u32, ()> {
+    ) -> u32 {
         let mut count = 0;
 
         tracing::debug!("store batch flush bucket: {iid} with hashed terms: {iid_terms_hashed:?}");
 
         // Delete OID <> IID association
-        if !matches!(
-            (
-                self.delete_oid_to_iid(oid),
-                self.delete_iid_to_oid(iid),
-                self.delete_iid_to_terms(iid),
-            ),
-            (Ok(_), Ok(_), Ok(_))
-        ) {
-            return Err(());
-        }
+        self.delete_oid_to_iid(batch, oid);
+        self.delete_iid_to_oid(batch, iid);
+        self.delete_iid_to_terms(batch, iid);
 
         // Delete IID from each associated term
         for iid_term in iid_terms_hashed {
@@ -1038,26 +1091,22 @@ impl<'a> StoreKVAction<'a> {
                 iid_term_iids.retain(|&cur_iid| cur_iid != iid);
             }
 
-            let error = if iid_term_iids.is_empty() {
-                self.delete_term_to_iids(*iid_term).err()
+            if iid_term_iids.is_empty() {
+                self.delete_term_to_iids(batch, *iid_term)
             } else {
-                self.set_term_to_iids(*iid_term, iid_term_iids.into_iter())
-                    .err()
+                self.set_term_to_iids(batch, *iid_term, iid_term_iids.into_iter())
             };
-
-            if error.is_some() {
-                return Err(());
-            }
         }
 
-        Ok(count)
+        count
     }
 
     pub fn batch_truncate_object(
         &self,
+        batch: &mut WriteBatch,
         term_hashed: StoreTermHashed,
         term_iids_drain: Drain<StoreObjectIID>,
-    ) -> Result<u32, ()> {
+    ) -> u32 {
         let mut count = 0;
 
         for term_iid_drain in term_iids_drain {
@@ -1076,29 +1125,22 @@ impl<'a> StoreKVAction<'a> {
             if term_iid_drain_terms.is_empty() {
                 // Acquire OID for this drained IID
                 if let Ok(Some(term_iid_drain_oid)) = self.get_iid_to_oid(term_iid_drain) {
-                    if self
-                        .batch_flush_bucket(term_iid_drain, &term_iid_drain_oid, &Vec::new())
-                        .is_err()
-                    {
-                        tracing::error!(
-                            "failed executing store batch truncate object batch-flush-bucket"
-                        );
-                    }
+                    self.batch_flush_bucket(
+                        batch,
+                        term_iid_drain,
+                        &term_iid_drain_oid,
+                        &Vec::new(),
+                    );
                 } else {
                     tracing::error!("failed getting store batch truncate object iid-to-oid");
                 }
             } else {
                 // Update IID to Terms list
-                if self
-                    .set_iid_to_terms(term_iid_drain, term_iid_drain_terms.into_iter())
-                    .is_err()
-                {
-                    tracing::error!("failed setting store batch truncate object iid-to-terms");
-                }
+                self.set_iid_to_terms(batch, term_iid_drain, term_iid_drain_terms.into_iter());
             }
         }
 
-        Ok(count)
+        count
     }
 
     pub fn batch_erase_bucket(&self) -> Result<u32, ()> {
@@ -1150,21 +1192,22 @@ impl<'a> StoreKVAction<'a> {
                 255,
             ];
 
-            // Batch-delete keys matching range
+            // TODO: Move the batch outside the for loop?
             let mut batch = WriteBatch::default();
 
+            // Batch-delete keys matching range
             batch.delete_range(&key_prefix_start, &key_prefix_end);
-
-            // Commit operation to database
-            if let Err(err) = self.store.do_write(batch) {
-                tracing::error!("failed in store batch erase bucket: {bucket} with error: {err}");
-                continue;
-            }
 
             // Ensure last key is deleted (as RocksDB end key is exclusive;
             // while start key is inclusive, we need to ensure the end-of-range
             // key is deleted)
-            _ = self.store.delete(&key_prefix_end);
+            batch.delete(&key_prefix_end);
+
+            // Commit operation to database
+            if let Err(err) = self.write(batch) {
+                tracing::error!("failed in store batch erase bucket: {bucket} with error: {err}");
+                continue;
+            }
 
             tracing::debug!("succeeded in store batch erase bucket: {bucket}");
         }
@@ -1173,47 +1216,47 @@ impl<'a> StoreKVAction<'a> {
 
         Ok(1)
     }
+}
 
-    fn encode_u32(decoded: u32) -> [u8; 4] {
-        let mut encoded = [0; 4];
+fn encode_u32(decoded: u32) -> [u8; 4] {
+    let mut encoded = [0; 4];
 
-        LittleEndian::write_u32(&mut encoded, decoded);
+    LittleEndian::write_u32(&mut encoded, decoded);
 
-        encoded
+    encoded
+}
+
+fn decode_u32(encoded: &[u8]) -> Result<u32, ()> {
+    Cursor::new(encoded).read_u32::<LittleEndian>().or(Err(()))
+}
+
+fn encode_u32_list(decoded: impl ExactSizeIterator<Item = u32>) -> Vec<u8> {
+    // Pre-reserve required capacity as to avoid heap resizes (50%
+    // performance gain relative to initializing this with a zero-capacity)
+    let mut encoded = Vec::with_capacity(decoded.len() * 4);
+
+    for decoded_item in decoded {
+        encoded.extend(&encode_u32(decoded_item))
     }
 
-    fn decode_u32(encoded: &[u8]) -> Result<u32, ()> {
-        Cursor::new(encoded).read_u32::<LittleEndian>().or(Err(()))
-    }
+    encoded
+}
 
-    fn encode_u32_list(decoded: impl ExactSizeIterator<Item = u32>) -> Vec<u8> {
-        // Pre-reserve required capacity as to avoid heap resizes (50%
-        // performance gain relative to initializing this with a zero-capacity)
-        let mut encoded = Vec::with_capacity(decoded.len() * 4);
+fn decode_u32_list(encoded: &[u8]) -> Result<Vec<u32>, ()> {
+    // Pre-reserve required capacity as to avoid heap resizes (50%
+    // performance gain relative to initializing this with a zero-capacity)
+    let mut decoded = Vec::with_capacity(encoded.len() / 4);
 
-        for decoded_item in decoded {
-            encoded.extend(&Self::encode_u32(decoded_item))
-        }
-
-        encoded
-    }
-
-    fn decode_u32_list(encoded: &[u8]) -> Result<Vec<u32>, ()> {
-        // Pre-reserve required capacity as to avoid heap resizes (50%
-        // performance gain relative to initializing this with a zero-capacity)
-        let mut decoded = Vec::with_capacity(encoded.len() / 4);
-
-        for encoded_chunk in encoded.chunks(4) {
-            match Self::decode_u32(encoded_chunk) {
-                Ok(decoded_chunk) => {
-                    decoded.push(decoded_chunk);
-                }
-                Err(_err) => return Err(()),
+    for encoded_chunk in encoded.chunks(4) {
+        match decode_u32(encoded_chunk) {
+            Ok(decoded_chunk) => {
+                decoded.push(decoded_chunk);
             }
+            Err(_err) => return Err(()),
         }
-
-        Ok(decoded)
     }
+
+    Ok(decoded)
 }
 
 impl StoreKVKey {
@@ -1256,21 +1299,6 @@ mod tests {
     }
 
     #[test]
-    fn it_proceeds_primitives() {
-        let kv_store_config = test_kv_store_config();
-        let kv_pool = StoreKVPool::new(kv_store_config);
-
-        let store = kv_pool
-            .acquire(StoreKVAcquireMode::Any, "c:test:2")
-            .unwrap()
-            .unwrap();
-
-        assert!(store.get(&[0]).is_ok());
-        assert!(store.put(&[0], &[1, 0, 0, 0]).is_ok());
-        assert!(store.delete(&[0]).is_ok());
-    }
-
-    #[test]
     fn it_proceeds_actions() {
         let kv_store_config = test_kv_store_config();
         let kv_pool = StoreKVPool::new(kv_store_config);
@@ -1279,69 +1307,101 @@ mod tests {
             .acquire(StoreKVAcquireMode::Any, "c:test:3")
             .unwrap()
             .unwrap();
-        let action =
-            StoreKVActionBuilder::access(StoreItemPart::from_str("b:test:3").unwrap(), store);
-
-        assert!(action.get_meta_to_value(StoreMetaKey::IIDIncr).is_ok());
-        assert!(
-            action
-                .set_meta_to_value(StoreMetaKey::IIDIncr, StoreMetaValue::IIDIncr(1))
-                .is_ok()
+        let action = StoreKVActionBuilder::access_read_write(
+            StoreItemPart::from_str("b:test:3").unwrap(),
+            store,
         );
 
+        assert!(action.get_meta_to_value(StoreMetaKey::IIDIncr).is_ok());
+        assert!({
+            let mut batch = WriteBatch::default();
+            action.set_meta_to_value(
+                &mut batch,
+                StoreMetaKey::IIDIncr,
+                StoreMetaValue::IIDIncr(1),
+            );
+            action.write(batch).is_ok()
+        });
+
         assert!(action.get_term_to_iids(1).is_ok());
-        assert!(action.set_term_to_iids(1, [0, 1, 2].into_iter()).is_ok());
-        assert!(action.delete_term_to_iids(1).is_ok());
+        assert!({
+            let mut batch = WriteBatch::default();
+            action.set_term_to_iids(&mut batch, 1, [0, 1, 2].into_iter());
+            action.write(batch).is_ok()
+        });
+        assert!({
+            let mut batch = WriteBatch::default();
+            action.delete_term_to_iids(&mut batch, 1);
+            action.write(batch).is_ok()
+        });
 
         assert!(action.get_oid_to_iid(&"s".to_string()).is_ok());
-        assert!(action.set_oid_to_iid(&"s".to_string(), 4).is_ok());
-        assert!(action.delete_oid_to_iid(&"s".to_string()).is_ok());
+        assert!({
+            let mut batch = WriteBatch::default();
+            action.set_oid_to_iid(&mut batch, &"s".to_string(), 4);
+            action.write(batch).is_ok()
+        });
+        assert!({
+            let mut batch = WriteBatch::default();
+            action.delete_oid_to_iid(&mut batch, &"s".to_string());
+            action.write(batch).is_ok()
+        });
 
         assert!(action.get_iid_to_oid(4).is_ok());
-        assert!(action.set_iid_to_oid(4, &"s".to_string()).is_ok());
-        assert!(action.delete_iid_to_oid(4).is_ok());
+        assert!({
+            let mut batch = WriteBatch::default();
+            action.set_iid_to_oid(&mut batch, 4, &"s".to_string());
+            action.write(batch).is_ok()
+        });
+        assert!({
+            let mut batch = WriteBatch::default();
+            action.delete_iid_to_oid(&mut batch, 4);
+            action.write(batch).is_ok()
+        });
 
         assert!(action.get_iid_to_terms(4).is_ok());
-        assert!(action.set_iid_to_terms(4, [45402].into_iter()).is_ok());
-        assert!(action.delete_iid_to_terms(4).is_ok());
+        assert!({
+            let mut batch = WriteBatch::default();
+            action.set_iid_to_terms(&mut batch, 4, [45402].into_iter());
+            action.write(batch).is_ok()
+        });
+        assert!({
+            let mut batch = WriteBatch::default();
+            action.delete_iid_to_terms(&mut batch, 4);
+            action.write(batch).is_ok()
+        });
     }
 
     #[test]
     fn it_encodes_atom() {
-        assert_eq!(StoreKVAction::encode_u32(0), [0, 0, 0, 0]);
-        assert_eq!(StoreKVAction::encode_u32(1), [1, 0, 0, 0]);
-        assert_eq!(StoreKVAction::encode_u32(45402), [90, 177, 0, 0]);
+        assert_eq!(encode_u32(0), [0, 0, 0, 0]);
+        assert_eq!(encode_u32(1), [1, 0, 0, 0]);
+        assert_eq!(encode_u32(45402), [90, 177, 0, 0]);
     }
 
     #[test]
     fn it_decodes_atom() {
-        assert_eq!(StoreKVAction::decode_u32(&[0, 0, 0, 0]), Ok(0));
-        assert_eq!(StoreKVAction::decode_u32(&[1, 0, 0, 0]), Ok(1));
-        assert_eq!(StoreKVAction::decode_u32(&[90, 177, 0, 0]), Ok(45402));
+        assert_eq!(decode_u32(&[0, 0, 0, 0]), Ok(0));
+        assert_eq!(decode_u32(&[1, 0, 0, 0]), Ok(1));
+        assert_eq!(decode_u32(&[90, 177, 0, 0]), Ok(45402));
     }
 
     #[test]
     fn it_encodes_atom_list() {
         assert_eq!(
-            StoreKVAction::encode_u32_list([0, 2, 3].into_iter()),
+            encode_u32_list([0, 2, 3].into_iter()),
             [0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]
         );
-        assert_eq!(
-            StoreKVAction::encode_u32_list([45402].into_iter()),
-            [90, 177, 0, 0]
-        );
+        assert_eq!(encode_u32_list([45402].into_iter()), [90, 177, 0, 0]);
     }
 
     #[test]
     fn it_decodes_atom_list() {
         assert_eq!(
-            StoreKVAction::decode_u32_list(&[0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]),
+            decode_u32_list(&[0, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]),
             Ok(vec![0, 2, 3])
         );
-        assert_eq!(
-            StoreKVAction::decode_u32_list(&[90, 177, 0, 0]),
-            Ok(vec![45402])
-        );
+        assert_eq!(decode_u32_list(&[90, 177, 0, 0]), Ok(vec![45402]));
     }
 
     fn test_kv_store_config() -> Arc<crate::config::ConfigStoreKV> {

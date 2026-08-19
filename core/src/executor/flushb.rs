@@ -38,7 +38,7 @@ impl super::Executor {
                     collection.as_str()
                 );
 
-                let kv_action = StoreKVActionBuilder::access(bucket, kv_store);
+                let kv_action = StoreKVActionBuilder::access_read_write(bucket, kv_store);
 
                 // Notice: we cannot use the provided KV bucket erasure helper there, as \
                 //   erasing a bucket requires a database lock, which would incur a dead-lock, \

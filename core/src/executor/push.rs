@@ -6,6 +6,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use linked_hash_set::LinkedHashSet;
+use rocksdb::WriteBatch;
 use std::iter::FromIterator;
 use std::sync::Arc;
 
@@ -43,7 +44,7 @@ impl super::Executor {
         };
 
         let (kv_action, fst_action) = (
-            StoreKVActionBuilder::access(bucket, Arc::clone(&kv_store)),
+            StoreKVActionBuilder::access_read_write(bucket, Arc::clone(&kv_store)),
             StoreFSTActionBuilder::access(fst_store),
         );
 
@@ -57,9 +58,13 @@ impl super::Executor {
             // Bump last stored increment
             match kv_action.auto_increment_iid(Some(write_guard)) {
                 Ok(iid) => {
+                    let mut batch = WriteBatch::default();
+
                     // Associate OID <> IID (bidirectional)
-                    executor_ensure_op!(kv_action.set_oid_to_iid(oid, iid));
-                    executor_ensure_op!(kv_action.set_iid_to_oid(iid, oid));
+                    kv_action.set_oid_to_iid(&mut batch, oid, iid);
+                    kv_action.set_iid_to_oid(&mut batch, iid, oid);
+
+                    executor_ensure_op!(kv_action.write(batch));
 
                     Some(iid)
                 }
@@ -95,6 +100,11 @@ impl super::Executor {
 
             // Check that term is not already linked to IID
             if !iid_terms_hashed.contains(&term_hashed) {
+                // Prevent concurrent writes as we’re about to do a
+                // read-update-write.
+                // TODO: Use a merge operator.
+                executor_kv_lock_write!(kv_store);
+
                 if let Ok(term_iids) = kv_action.get_term_to_iids(term_hashed) {
                     has_commits = true;
 
@@ -106,6 +116,11 @@ impl super::Executor {
                     term_iids.retain(|&cur_iid| cur_iid != iid);
 
                     tracing::info!("has push executor term-to-iids: {}", iid);
+
+                    // Make a new WriteBatch per term as it seems to yield
+                    // faster `PUSH` in benchmarks.
+                    // TODO: Investigate, and try to move outside for loop.
+                    let mut batch = WriteBatch::default();
 
                     // Truncate IIDs linked to term? (ie. storage is too long)
                     let truncate_limit = self.app_conf.store.kv.retain_word_objects;
@@ -119,14 +134,16 @@ impl super::Executor {
                         // Drain overflowing IIDs (ie. oldest ones that overflow)
                         let term_iids_drain = term_iids.drain((truncate_limit - 1)..);
 
-                        executor_ensure_op!(
-                            kv_action.batch_truncate_object(term_hashed, term_iids_drain)
-                        );
+                        kv_action.batch_truncate_object(&mut batch, term_hashed, term_iids_drain);
                     }
 
-                    executor_ensure_op!(
-                        kv_action.set_term_to_iids(term_hashed, term_iids.into_iter().prepend(iid))
+                    kv_action.set_term_to_iids(
+                        &mut batch,
+                        term_hashed,
+                        term_iids.into_iter().prepend(iid),
                     );
+
+                    executor_ensure_op!(kv_action.write(batch));
 
                     // Insert term into IID to terms map
                     iid_terms_hashed.insert(term_hashed);
@@ -150,7 +167,11 @@ impl super::Executor {
                 collected_iids
             );
 
-            executor_ensure_op!(kv_action.set_iid_to_terms(iid, collected_iids.into_iter()));
+            let mut batch = WriteBatch::default();
+
+            kv_action.set_iid_to_terms(&mut batch, iid, collected_iids.into_iter());
+
+            executor_ensure_op!(kv_action.write(batch));
         }
 
         Ok(())

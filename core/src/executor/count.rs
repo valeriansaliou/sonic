@@ -33,7 +33,7 @@ impl super::Executor {
                     // Important: acquire bucket store read lock
                     executor_kv_lock_read!(kv_store);
 
-                    let kv_action = StoreKVActionBuilder::access(bucket, kv_store);
+                    let kv_action = StoreKVActionBuilder::access_read_only(bucket, kv_store);
 
                     // Try to resolve existing OID to IID
                     let oid = object.as_str();
