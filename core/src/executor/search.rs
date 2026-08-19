@@ -41,6 +41,13 @@ impl super::Executor {
                 return Err(());
             };
 
+            let Some(kv_store) = kv_store else {
+                tracing::debug!(
+                    "collection store does not exist, consider {bucket:?} from {collection:?} empty"
+                );
+                return Ok(vec![]);
+            };
+
             let (higher_limit, mut alternates_try) = (
                 self.app_conf.store.kv.retain_word_objects,
                 self.app_conf.search.query_alternates_try,

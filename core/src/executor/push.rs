@@ -33,8 +33,13 @@ impl super::Executor {
             return Err(());
         };
 
-        // Important: acquire bucket store write lock
-        executor_kv_lock_write!(kv_store);
+        debug_assert!(kv_store.is_some());
+        let Some(kv_store) = kv_store else {
+            tracing::error!(
+                "collection store {collection:?} does not exist, but it should have been created"
+            );
+            return Err(());
+        };
 
         let (kv_action, fst_action) = (
             StoreKVActionBuilder::access(bucket, kv_store),

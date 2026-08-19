@@ -27,6 +27,13 @@ impl super::Executor {
                     .acquire(StoreKVAcquireMode::OpenOnly, collection),
                 self.fst_pool.acquire(collection, bucket),
             ) {
+                let Some(kv_store) = kv_store else {
+                    tracing::debug!(
+                        "collection store does not exist, consider {bucket:?} from {collection:?} empty"
+                    );
+                    return Ok(0);
+                };
+
                 // Important: acquire bucket store write lock
                 executor_kv_lock_write!(kv_store);
 

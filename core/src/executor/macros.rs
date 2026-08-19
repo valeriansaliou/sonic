@@ -17,9 +17,7 @@ macro_rules! executor_kv_lock_read {
     ($store:ident) => {
         let kv_store_reference = $store.clone();
 
-        let _kv_store_lock = kv_store_reference
-            .as_ref()
-            .map(|inner| inner.lock.read().unwrap());
+        let _kv_store_lock = kv_store_reference.lock.read().unwrap();
     };
 }
 
@@ -27,8 +25,6 @@ macro_rules! executor_kv_lock_write {
     ($store:ident) => {
         let kv_store_reference = $store.clone();
 
-        let _kv_store_lock = kv_store_reference
-            .as_ref()
-            .map(|inner| inner.lock.write().unwrap());
+        let _kv_store_lock = kv_store_reference.lock.write().unwrap();
     };
 }

@@ -21,38 +21,34 @@ impl super::Executor {
                 .kv_pool
                 .acquire(StoreKVAcquireMode::OpenOnly, collection)
             {
+                let Some(kv_store) = kv_store else {
+                    tracing::debug!(
+                        "collection store does not exist, consider {bucket:?} from {collection:?} already erased"
+                    );
+                    return Ok(0);
+                };
+
                 // Important: acquire bucket store write lock
                 executor_kv_lock_write!(kv_store);
 
-                if kv_store.is_some() {
-                    // Store exists, proceed erasure.
-                    tracing::debug!(
-                        "collection store exists, erasing: {} from {}",
-                        bucket.as_str(),
-                        collection.as_str()
-                    );
+                // Store exists, proceed erasure.
+                tracing::debug!(
+                    "collection store exists, erasing: {} from {}",
+                    bucket.as_str(),
+                    collection.as_str()
+                );
 
-                    let kv_action = StoreKVActionBuilder::access(bucket, kv_store);
+                let kv_action = StoreKVActionBuilder::access(bucket, kv_store);
 
-                    // Notice: we cannot use the provided KV bucket erasure helper there, as \
-                    //   erasing a bucket requires a database lock, which would incur a dead-lock, \
-                    //   thus we need to perform the erasure from there.
-                    if let Ok(erase_count) = kv_action.batch_erase_bucket() {
-                        if self.fst_pool.erase(collection, Some(bucket)).is_ok() {
-                            tracing::debug!("done with bucket erasure");
+                // Notice: we cannot use the provided KV bucket erasure helper there, as \
+                //   erasing a bucket requires a database lock, which would incur a dead-lock, \
+                //   thus we need to perform the erasure from there.
+                if let Ok(erase_count) = kv_action.batch_erase_bucket() {
+                    if self.fst_pool.erase(collection, Some(bucket)).is_ok() {
+                        tracing::debug!("done with bucket erasure");
 
-                            return Ok(erase_count);
-                        }
+                        return Ok(erase_count);
                     }
-                } else {
-                    // Store does not exist, consider as already erased.
-                    tracing::debug!(
-                        "collection store does not exist, consider {} from {} already erased",
-                        bucket.as_str(),
-                        collection.as_str()
-                    );
-
-                    return Ok(0);
                 }
             }
         }

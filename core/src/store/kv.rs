@@ -63,7 +63,7 @@ pub struct StoreKVActionBuilder<'build> {
 }
 
 pub struct StoreKVAction<'a> {
-    store: Option<Arc<StoreKV>>,
+    store: Arc<StoreKV>,
     bucket: StoreItemPart<'a>,
 }
 
@@ -645,7 +645,7 @@ impl StoreGeneric for StoreKV {
 }
 
 impl<'build> StoreKVActionBuilder<'build> {
-    pub fn access(bucket: StoreItemPart, store: Option<Arc<StoreKV>>) -> StoreKVAction {
+    pub fn access(bucket: StoreItemPart, store: Arc<StoreKV>) -> StoreKVAction {
         Self::build(bucket, store)
     }
 
@@ -653,7 +653,7 @@ impl<'build> StoreKVActionBuilder<'build> {
         self.dispatch_erase("kv", collection, bucket)
     }
 
-    fn build(bucket: StoreItemPart, store: Option<Arc<StoreKV>>) -> StoreKVAction {
+    fn build(bucket: StoreItemPart, store: Arc<StoreKV>) -> StoreKVAction {
         StoreKVAction { store, bucket }
     }
 }
@@ -701,15 +701,11 @@ impl<'a> StoreKVAction<'a> {
     ///
     /// [IDX=0] ((meta)) ~> ((value))
     pub fn get_meta_to_value(&self, meta: StoreMetaKey) -> Result<Option<StoreMetaValue>, ()> {
-        let Some(ref store) = self.store else {
-            return Ok(None);
-        };
-
         let store_key = StoreKeyerBuilder::meta_to_value(&self.bucket, &meta);
 
         tracing::debug!("store get meta-to-value: {store_key}");
 
-        match store.get(&store_key.as_bytes()) {
+        match self.store.get(&store_key.as_bytes()) {
             Ok(Some(value)) => {
                 tracing::debug!("got meta-to-value: {store_key}");
 
@@ -734,10 +730,6 @@ impl<'a> StoreKVAction<'a> {
     }
 
     pub fn set_meta_to_value(&self, meta: StoreMetaKey, value: StoreMetaValue) -> Result<(), ()> {
-        let Some(ref store) = self.store else {
-            return Err(());
-        };
-
         let store_key = StoreKeyerBuilder::meta_to_value(&self.bucket, &meta);
 
         tracing::debug!("store set meta-to-value: {store_key}");
@@ -746,7 +738,7 @@ impl<'a> StoreKVAction<'a> {
             StoreMetaValue::IIDIncr(iid_incr) => iid_incr.to_string(),
         };
 
-        store
+        self.store
             .put(&store_key.as_bytes(), value_string.as_bytes())
             .or(Err(()))
     }
@@ -758,15 +750,11 @@ impl<'a> StoreKVAction<'a> {
         &self,
         term_hashed: StoreTermHashed,
     ) -> Result<Option<Vec<StoreObjectIID>>, ()> {
-        let Some(ref store) = self.store else {
-            return Ok(None);
-        };
-
         let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hashed);
 
         tracing::debug!("store get term-to-iids: {store_key}");
 
-        match store.get(&store_key.as_bytes()) {
+        match self.store.get(&store_key.as_bytes()) {
             Ok(Some(value)) => {
                 tracing::debug!("got term-to-iids: {store_key} with encoded value: {value:?}");
 
@@ -796,10 +784,6 @@ impl<'a> StoreKVAction<'a> {
         term_hashed: StoreTermHashed,
         iids: impl ExactSizeIterator<Item = StoreObjectIID>,
     ) -> Result<(), ()> {
-        let Some(ref store) = self.store else {
-            return Err(());
-        };
-
         let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hashed);
 
         tracing::debug!("store set term-to-iids: {store_key}");
@@ -809,34 +793,28 @@ impl<'a> StoreKVAction<'a> {
 
         tracing::debug!("store set term-to-iids: {store_key} with encoded value: {iids_encoded:?}");
 
-        store.put(&store_key.as_bytes(), &iids_encoded).or(Err(()))
+        self.store
+            .put(&store_key.as_bytes(), &iids_encoded)
+            .or(Err(()))
     }
 
     pub fn delete_term_to_iids(&self, term_hashed: StoreTermHashed) -> Result<(), ()> {
-        let Some(ref store) = self.store else {
-            return Err(());
-        };
-
         let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hashed);
 
         tracing::debug!("store delete term-to-iids: {store_key}");
 
-        store.delete(&store_key.as_bytes()).or(Err(()))
+        self.store.delete(&store_key.as_bytes()).or(Err(()))
     }
 
     /// OID-to-IID mapper
     ///
     /// [IDX=2] ((oid)) ~> ((iid))
     pub fn get_oid_to_iid(&self, oid: StoreObjectOID<'a>) -> Result<Option<StoreObjectIID>, ()> {
-        let Some(ref store) = self.store else {
-            return Ok(None);
-        };
-
         let store_key = StoreKeyerBuilder::oid_to_iid(&self.bucket, oid);
 
         tracing::debug!("store get oid-to-iid: {store_key}");
 
-        match store.get(&store_key.as_bytes()) {
+        match self.store.get(&store_key.as_bytes()) {
             Ok(Some(value)) => {
                 tracing::debug!("got oid-to-iid: {store_key} with encoded value: {value:?}");
 
@@ -862,10 +840,6 @@ impl<'a> StoreKVAction<'a> {
     }
 
     pub fn set_oid_to_iid(&self, oid: StoreObjectOID<'a>, iid: StoreObjectIID) -> Result<(), ()> {
-        let Some(ref store) = self.store else {
-            return Err(());
-        };
-
         let store_key = StoreKeyerBuilder::oid_to_iid(&self.bucket, oid);
 
         tracing::debug!("store set oid-to-iid: {store_key}");
@@ -875,34 +849,28 @@ impl<'a> StoreKVAction<'a> {
 
         tracing::debug!("store set oid-to-iid: {store_key} with encoded value: {iid_encoded:?}");
 
-        store.put(&store_key.as_bytes(), &iid_encoded).or(Err(()))
+        self.store
+            .put(&store_key.as_bytes(), &iid_encoded)
+            .or(Err(()))
     }
 
     pub fn delete_oid_to_iid(&self, oid: StoreObjectOID<'a>) -> Result<(), ()> {
-        let Some(ref store) = self.store else {
-            return Err(());
-        };
-
         let store_key = StoreKeyerBuilder::oid_to_iid(&self.bucket, oid);
 
         tracing::debug!("store delete oid-to-iid: {store_key}");
 
-        store.delete(&store_key.as_bytes()).or(Err(()))
+        self.store.delete(&store_key.as_bytes()).or(Err(()))
     }
 
     /// IID-to-OID mapper
     ///
     /// [IDX=3] ((iid)) ~> ((oid))
     pub fn get_iid_to_oid(&self, iid: StoreObjectIID) -> Result<Option<String>, ()> {
-        let Some(ref store) = self.store else {
-            return Ok(None);
-        };
-
         let store_key = StoreKeyerBuilder::iid_to_oid(&self.bucket, iid);
 
         tracing::debug!("store get iid-to-oid: {store_key}");
 
-        match store.get(&store_key.as_bytes()) {
+        match self.store.get(&store_key.as_bytes()) {
             Ok(Some(value)) => {
                 tracing::debug!("got iid-to-oid: {store_key}");
 
@@ -922,27 +890,21 @@ impl<'a> StoreKVAction<'a> {
     }
 
     pub fn set_iid_to_oid(&self, iid: StoreObjectIID, oid: StoreObjectOID<'a>) -> Result<(), ()> {
-        let Some(ref store) = self.store else {
-            return Err(());
-        };
-
         let store_key = StoreKeyerBuilder::iid_to_oid(&self.bucket, iid);
 
         tracing::debug!("store set iid-to-oid: {store_key}");
 
-        store.put(&store_key.as_bytes(), oid.as_bytes()).or(Err(()))
+        self.store
+            .put(&store_key.as_bytes(), oid.as_bytes())
+            .or(Err(()))
     }
 
     pub fn delete_iid_to_oid(&self, iid: StoreObjectIID) -> Result<(), ()> {
-        let Some(ref store) = self.store else {
-            return Err(());
-        };
-
         let store_key = StoreKeyerBuilder::iid_to_oid(&self.bucket, iid);
 
         tracing::debug!("store delete iid-to-oid: {store_key}");
 
-        store.delete(&store_key.as_bytes()).or(Err(()))
+        self.store.delete(&store_key.as_bytes()).or(Err(()))
     }
 
     /// IID-to-Terms mapper
@@ -952,15 +914,11 @@ impl<'a> StoreKVAction<'a> {
         &self,
         iid: StoreObjectIID,
     ) -> Result<Option<Vec<StoreTermHashed>>, ()> {
-        let Some(ref store) = self.store else {
-            return Ok(None);
-        };
-
         let store_key = StoreKeyerBuilder::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store get iid-to-terms: {store_key}");
 
-        match store.get(&store_key.as_bytes()) {
+        match self.store.get(&store_key.as_bytes()) {
             Ok(Some(value)) => {
                 tracing::debug!("got iid-to-terms: {store_key} with encoded value: {value:?}");
 
@@ -997,10 +955,6 @@ impl<'a> StoreKVAction<'a> {
         iid: StoreObjectIID,
         terms_hashed: impl ExactSizeIterator<Item = u32>,
     ) -> Result<(), ()> {
-        let Some(ref store) = self.store else {
-            return Err(());
-        };
-
         let store_key = StoreKeyerBuilder::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store set iid-to-terms: {store_key}");
@@ -1012,21 +966,17 @@ impl<'a> StoreKVAction<'a> {
             "store set iid-to-terms: {store_key} with encoded value: {terms_hashed_encoded:?}"
         );
 
-        store
+        self.store
             .put(&store_key.as_bytes(), &terms_hashed_encoded)
             .or(Err(()))
     }
 
     pub fn delete_iid_to_terms(&self, iid: StoreObjectIID) -> Result<(), ()> {
-        let Some(ref store) = self.store else {
-            return Err(());
-        };
-
         let store_key = StoreKeyerBuilder::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store delete iid-to-terms: {store_key}");
 
-        store.delete(&store_key.as_bytes()).or(Err(()))
+        self.store.delete(&store_key.as_bytes()).or(Err(()))
     }
 
     pub fn batch_flush_bucket(
@@ -1128,10 +1078,6 @@ impl<'a> StoreKVAction<'a> {
     }
 
     pub fn batch_erase_bucket(&self) -> Result<u32, ()> {
-        let Some(ref store) = self.store else {
-            return Err(());
-        };
-
         let bucket = self.bucket.as_str();
 
         // Generate all key prefix values (with dummy post-prefix values; we dont care)
@@ -1186,7 +1132,7 @@ impl<'a> StoreKVAction<'a> {
             batch.delete_range(&key_prefix_start, &key_prefix_end);
 
             // Commit operation to database
-            if let Err(err) = store.do_write(batch) {
+            if let Err(err) = self.store.do_write(batch) {
                 tracing::error!("failed in store batch erase bucket: {bucket} with error: {err}");
                 continue;
             }
@@ -1194,7 +1140,7 @@ impl<'a> StoreKVAction<'a> {
             // Ensure last key is deleted (as RocksDB end key is exclusive;
             // while start key is inclusive, we need to ensure the end-of-range
             // key is deleted)
-            _ = store.delete(&key_prefix_end);
+            _ = self.store.delete(&key_prefix_end);
 
             tracing::debug!("succeeded in store batch erase bucket: {bucket}");
         }
@@ -1307,6 +1253,7 @@ mod tests {
 
         let store = kv_pool
             .acquire(StoreKVAcquireMode::Any, "c:test:3")
+            .unwrap()
             .unwrap();
         let action =
             StoreKVActionBuilder::access(StoreItemPart::from_str("b:test:3").unwrap(), store);
