@@ -54,7 +54,7 @@ pub struct StoreKV {
     database: DB,
     last_used: RwLock<SystemTime>,
     last_flushed: RwLock<SystemTime>,
-    pub lock: RwLock<bool>,
+    pub lock: RwLock<()>,
     kv_store_config: Arc<crate::config::ConfigStoreKV>,
 }
 
@@ -574,7 +574,7 @@ impl StoreGenericBuilder<StoreKVKey, StoreKV> for StoreKVBuilder {
                     database: db,
                     last_used: RwLock::new(now),
                     last_flushed: RwLock::new(now),
-                    lock: RwLock::new(false),
+                    lock: RwLock::new(()),
                     kv_store_config: Arc::clone(&self.kv_store_config),
                 })
             }
