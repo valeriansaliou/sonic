@@ -106,7 +106,8 @@ impl super::Executor {
                 executor_kv_lock_write!(kv_store);
 
                 if let Ok(term_iids) = kv_action.get_term_to_iids(term_hashed) {
-                    has_commits = true;
+                    // Insert term into IID to terms map
+                    iid_terms_hashed.insert(term_hashed);
 
                     // Add IID in first position in list for terms
                     let mut term_iids = term_iids.unwrap_or_default();
@@ -145,8 +146,7 @@ impl super::Executor {
 
                     executor_ensure_op!(kv_action.write(batch));
 
-                    // Insert term into IID to terms map
-                    iid_terms_hashed.insert(term_hashed);
+                    has_commits = true;
                 } else {
                     tracing::error!("failed getting push executor term-to-iids");
                 }
