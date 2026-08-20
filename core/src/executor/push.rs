@@ -5,17 +5,13 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use linked_hash_set::LinkedHashSet;
 use rocksdb::WriteBatch;
-use std::iter::FromIterator;
 use std::sync::Arc;
 
 use crate::lexer::TokenLexer;
 use crate::store::StoreItem;
 use crate::store::fst::StoreFSTActionBuilder;
-use crate::store::identifiers::StoreTermHashed;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
-use crate::util::itertools::ExactSizeIteratorExt as _;
 
 impl super::Executor {
     pub fn push(&self, item: StoreItem, lexer: TokenLexer) -> Result<(), ()> {
@@ -80,77 +76,18 @@ impl super::Executor {
             return Err(());
         };
 
-        let mut has_commits = false;
-
-        // Acquire list of terms for IID
-        let mut iid_terms_hashed: LinkedHashSet<StoreTermHashed> = LinkedHashSet::from_iter(
-            kv_action
-                .get_iid_to_terms(iid)
-                .unwrap_or(None)
-                .unwrap_or_default(),
-        );
-
-        tracing::debug!(
-            "got push executor stored iid-to-terms: {:?}",
-            iid_terms_hashed
-        );
+        let mut batch = WriteBatch::default();
 
         for (token, term_hashed, _) in lexer {
             let term = token.as_str();
 
-            // Check that term is not already linked to IID
-            if !iid_terms_hashed.contains(&term_hashed) {
-                // Prevent concurrent writes as we’re about to do a
-                // read-update-write.
-                // TODO: Use a merge operator.
-                executor_kv_lock_write!(kv_store);
+            tracing::info!("has push executor term-to-iids: {iid}");
 
-                if let Ok(term_iids) = kv_action.get_term_to_iids(term_hashed) {
-                    // Insert term into IID to terms map
-                    iid_terms_hashed.insert(term_hashed);
+            // Link IID to term
+            kv_action.add_term_to_iids(&mut batch, term_hashed, std::iter::once(iid));
 
-                    // Add IID in first position in list for terms
-                    let mut term_iids = term_iids.unwrap_or_default();
-
-                    // Remove IID from list of IIDs to be popped before inserting in \
-                    //   first position?
-                    term_iids.retain(|&cur_iid| cur_iid != iid);
-
-                    tracing::info!("has push executor term-to-iids: {}", iid);
-
-                    // Make a new WriteBatch per term as it seems to yield
-                    // faster `PUSH` in benchmarks.
-                    // TODO: Investigate, and try to move outside for loop.
-                    let mut batch = WriteBatch::default();
-
-                    // Truncate IIDs linked to term? (ie. storage is too long)
-                    let truncate_limit = self.app_conf.store.kv.retain_word_objects;
-
-                    if term_iids.len() + 1 > truncate_limit {
-                        tracing::info!(
-                            "push executor term-to-iids object too long (limit: {})",
-                            truncate_limit
-                        );
-
-                        // Drain overflowing IIDs (ie. oldest ones that overflow)
-                        let term_iids_drain = term_iids.drain((truncate_limit - 1)..);
-
-                        kv_action.batch_truncate_object(&mut batch, term_hashed, term_iids_drain);
-                    }
-
-                    kv_action.set_term_to_iids(
-                        &mut batch,
-                        term_hashed,
-                        term_iids.into_iter().prepend(iid),
-                    );
-
-                    executor_ensure_op!(kv_action.write(batch));
-
-                    has_commits = true;
-                } else {
-                    tracing::error!("failed getting push executor term-to-iids");
-                }
-            }
+            // Link term to IID
+            kv_action.add_iid_to_terms(&mut batch, iid, std::iter::once(term_hashed));
 
             // Push to FST graph? (this consumes the term; to avoid sub-clones)
             if fst_action.push_word(&term, &self.app_conf.store.fst) {
@@ -158,21 +95,7 @@ impl super::Executor {
             }
         }
 
-        // Commit updated list of terms for IID? (if any commit made)
-        if has_commits {
-            let collected_iids: Vec<StoreTermHashed> = iid_terms_hashed.into_iter().collect();
-
-            tracing::info!(
-                "has push executor iid-to-terms commits: {:?}",
-                collected_iids
-            );
-
-            let mut batch = WriteBatch::default();
-
-            kv_action.set_iid_to_terms(&mut batch, iid, collected_iids.into_iter());
-
-            executor_ensure_op!(kv_action.write(batch));
-        }
+        executor_ensure_op!(kv_action.write(batch));
 
         Ok(())
     }

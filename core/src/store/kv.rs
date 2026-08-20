@@ -14,8 +14,9 @@ use rocksdb::backup::{
 };
 use rocksdb::{
     DB, DBCompactionStyle, DBCompressionType, Env as DBEnv, Error as DBError, FlushOptions,
-    WriteBatch, WriteOptions,
+    MergeOperands, WriteBatch, WriteOptions,
 };
+use std::collections::HashSet;
 use std::fmt;
 use std::fs;
 use std::io::{self, Cursor};
@@ -24,7 +25,6 @@ use std::str;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::thread;
 use std::time::{Duration, SystemTime};
-use std::vec::Drain;
 
 use crate::config::ConfigStoreKVDatabase;
 
@@ -491,6 +491,7 @@ impl StoreKVBuilder {
         db_options.create_if_missing(true);
         db_options.set_use_fsync(false);
         db_options.set_compaction_style(DBCompactionStyle::Level);
+        db_options.set_merge_operator_associative("default_merge", default_merge_operator);
 
         // Set dynamic options
         if_some!(db_options.set_write_buffer_size(write_buffer_size.map(|n| n * 1024).as_ref()));
@@ -947,6 +948,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
         self.to_read_only().get_term_to_iids(term_hashed)
     }
 
+    // TODO(pref): Update merge operator to support deletion and get rid of this.
     pub fn set_term_to_iids(
         &self,
         batch: &mut WriteBatch,
@@ -963,6 +965,21 @@ impl<'a> StoreKVActionReadWrite<'a> {
         tracing::debug!("store set term-to-iids: {store_key} with encoded value: {iids_encoded:?}");
 
         batch.put(&store_key.as_bytes(), &iids_encoded)
+    }
+
+    pub fn add_term_to_iids(
+        &self,
+        batch: &mut WriteBatch,
+        term_hashed: StoreTermHashed,
+        iids: impl Iterator<Item = StoreObjectIID>,
+    ) {
+        let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hashed);
+
+        tracing::debug!("store add term-to-iids: {store_key}");
+
+        for iid in iids {
+            batch.merge(&store_key.as_bytes(), encode_u32(iid));
+        }
     }
 
     pub fn delete_term_to_iids(&self, batch: &mut WriteBatch, term_hashed: StoreTermHashed) {
@@ -1054,6 +1071,21 @@ impl<'a> StoreKVActionReadWrite<'a> {
         batch.put(&store_key.as_bytes(), &terms_hashed_encoded)
     }
 
+    pub fn add_iid_to_terms(
+        &self,
+        batch: &mut WriteBatch,
+        iid: StoreObjectIID,
+        terms_hashed: impl Iterator<Item = u32>,
+    ) {
+        let store_key = StoreKeyerBuilder::iid_to_terms(&self.bucket, iid);
+
+        tracing::debug!("store add iid-to-terms: {store_key}");
+
+        for term_hash in terms_hashed {
+            batch.merge(&store_key.as_bytes(), encode_u32(term_hash));
+        }
+    }
+
     pub fn delete_iid_to_terms(&self, batch: &mut WriteBatch, iid: StoreObjectIID) {
         let store_key = StoreKeyerBuilder::iid_to_terms(&self.bucket, iid);
 
@@ -1096,48 +1128,6 @@ impl<'a> StoreKVActionReadWrite<'a> {
             } else {
                 self.set_term_to_iids(batch, *iid_term, iid_term_iids.into_iter())
             };
-        }
-
-        count
-    }
-
-    pub fn batch_truncate_object(
-        &self,
-        batch: &mut WriteBatch,
-        term_hashed: StoreTermHashed,
-        term_iids_drain: Drain<StoreObjectIID>,
-    ) -> u32 {
-        let mut count = 0;
-
-        for term_iid_drain in term_iids_drain {
-            tracing::debug!("store batch truncate object iid: {term_iid_drain}");
-
-            let Ok(Some(mut term_iid_drain_terms)) = self.get_iid_to_terms(term_iid_drain) else {
-                continue;
-            };
-
-            count += 1;
-
-            // Nuke term in IID to Terms list
-            term_iid_drain_terms.retain(|cur_term| cur_term != &term_hashed);
-
-            // IID to Terms list is empty? Flush whole object.
-            if term_iid_drain_terms.is_empty() {
-                // Acquire OID for this drained IID
-                if let Ok(Some(term_iid_drain_oid)) = self.get_iid_to_oid(term_iid_drain) {
-                    self.batch_flush_bucket(
-                        batch,
-                        term_iid_drain,
-                        &term_iid_drain_oid,
-                        &Vec::new(),
-                    );
-                } else {
-                    tracing::error!("failed getting store batch truncate object iid-to-oid");
-                }
-            } else {
-                // Update IID to Terms list
-                self.set_iid_to_terms(batch, term_iid_drain, term_iid_drain_terms.into_iter());
-            }
         }
 
         count
@@ -1257,6 +1247,74 @@ fn decode_u32_list(encoded: &[u8]) -> Result<Vec<u32>, ()> {
     }
 
     Ok(decoded)
+}
+
+fn default_merge_operator(
+    key: &[u8],
+    existing_val: Option<&[u8]>,
+    operands: &MergeOperands,
+) -> Option<Vec<u8>> {
+    match key[0] {
+        // StoreKeyerIdx::TermToIIDs | StoreKeyerIdx::IIDToTerms
+        1 | 4 => {
+            // eprintln!(
+            //     "prepend_u32_list({}): {}/{}",
+            //     &key[0],
+            //     existing_val.map_or(0, <[u8]>::len),
+            //     operands.len()
+            // );
+            prepend_u32_list(existing_val, operands)
+        }
+        _ => unreachable!(),
+    }
+}
+
+/// This efficiently prepends new u32 values to an existing slice, removing
+/// duplicates along the way.
+fn prepend_u32_list(existing_val: Option<&[u8]>, operands: &MergeOperands) -> Option<Vec<u8>> {
+    const WORD_LEN: usize = 4;
+
+    let current: &[u8] = existing_val.unwrap_or_default();
+
+    let operands_total_len = operands.iter().fold(0, |acc, op| acc + op.len());
+
+    let mut res: Vec<u8> = Vec::with_capacity(current.len() + operands_total_len);
+
+    // PERF: This is just a fancy way to preprend without extra allocation nor
+    //   reverse iteration.
+    let mut cursor = operands_total_len;
+    res.extend_from_slice(vec![0; cursor].as_slice());
+
+    // TODO(perf): We might be able to make this a tiny bit faster by using a
+    //   custom hasher that only maps `&[u8]` to a `u32`. When there is a high
+    //   chance that values are close to each other (e.g. for IIDs), we could
+    //   use `% capacity` to spread the values better. BENCHMARK THIS ANYWAY!
+    let mut seen: HashSet<&[u8]> = HashSet::with_capacity(operands_total_len / WORD_LEN);
+
+    for op in operands {
+        for chunk in op.chunks(WORD_LEN) {
+            // Filter duplicate operands.
+            // NOTE: In benchmarks, `operands` showed a length of `13761` for
+            //   example, so we _have_ to keep this at most `O(n*log(n))`!
+            if seen.insert(chunk) {
+                let start = cursor.checked_sub(WORD_LEN).unwrap();
+                res[start..cursor].copy_from_slice(chunk);
+                cursor = start;
+            }
+        }
+    }
+
+    for existing in current.chunks(WORD_LEN) {
+        // Skip already inserted operands.
+        // See reason in <https://github.com/valeriansaliou/sonic/issues/389#issuecomment-5374968203>.
+        if !seen.contains(existing) {
+            res.extend_from_slice(existing);
+        }
+    }
+
+    assert!(!res.is_empty());
+
+    Some(res)
 }
 
 impl StoreKVKey {
