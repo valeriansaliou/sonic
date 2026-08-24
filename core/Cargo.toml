@@ -48,6 +48,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["s
 
 [features]
 default = ["stemming", "tokenizer-chinese"]
+allocator-jemalloc = ["rocksdb/jemalloc"]
 stemming = ["dep:snowball"]
 tokenizer-chinese = ["jieba-rs"]
 tokenizer-japanese = ["lindera-core", "lindera-dictionary", "lindera-tokenizer"]

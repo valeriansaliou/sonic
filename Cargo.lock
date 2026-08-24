@@ -1433,6 +1433,7 @@ dependencies = [
  "libc",
  "libz-sys",
  "rustflags",
+ "tikv-jemalloc-sys",
  "zstd-sys",
 ]
 

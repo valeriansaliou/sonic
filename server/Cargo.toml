@@ -46,7 +46,7 @@ windows-sys = { version = "=0.61.2", default-features = false, features = ["Win3
 
 [features]
 default = ["allocator-jemalloc", "tokenizer-chinese"]
-allocator-jemalloc = ["tikv-jemallocator"]
+allocator-jemalloc = ["tikv-jemallocator", "sonic-core/allocator-jemalloc"]
 tokenizer-chinese = ["sonic-core/tokenizer-chinese"]
 tokenizer-japanese = ["sonic-core/tokenizer-japanese"]
 experimental-api = []
