@@ -16,7 +16,7 @@ use crate::store::fst::{StoreFSTActionBuilder, typo_factor};
 use crate::store::identifiers::{
     StoreMetaKey, StoreMetaValue, StoreObjectIID, StoreTermHash, StoreTermHashed,
 };
-use crate::store::kv::{StoreKVAcquireMode, StoreKVAction, StoreKVActionBuilder};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVActionReadOnly};
 
 impl super::Executor {
     pub fn search(
@@ -41,6 +41,13 @@ impl super::Executor {
                 return Err(());
             };
 
+            let Some(kv_store) = kv_store else {
+                tracing::debug!(
+                    "collection store does not exist, consider {bucket:?} from {collection:?} empty"
+                );
+                return Ok(vec![]);
+            };
+
             let (higher_limit, mut alternates_try) = (
                 self.app_conf.store.kv.retain_word_objects,
                 self.app_conf.search.query_alternates_try,
@@ -60,7 +67,7 @@ impl super::Executor {
             executor_kv_lock_read!(kv_store);
 
             let (kv_action, fst_action) = (
-                StoreKVActionBuilder::access(bucket, kv_store),
+                StoreKVActionBuilder::access_read_only(bucket, kv_store),
                 StoreFSTActionBuilder::access(fst_store),
             );
 
@@ -484,7 +491,7 @@ fn test_overall_score() {
     ); // 2/3
 }
 
-fn document_frequency(term_hash: StoreTermHashed, kv_action: &StoreKVAction<'_>) -> u64 {
+fn document_frequency(term_hash: StoreTermHashed, kv_action: &StoreKVActionReadOnly<'_>) -> u64 {
     kv_action
         .get_term_to_iids(term_hash)
         .inspect_err(|err| tracing::error!("{err:?}"))
@@ -511,7 +518,7 @@ fn merge_suggestions(
     term: &String,
     term_idx: usize,
     term_count: usize,
-    kv_action: &StoreKVAction<'_>,
+    kv_action: &StoreKVActionReadOnly<'_>,
     alternates_try: &mut usize,
     higher_limit: usize,
     document_count: u64,

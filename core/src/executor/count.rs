@@ -23,10 +23,17 @@ impl super::Executor {
                     .kv_pool
                     .acquire(StoreKVAcquireMode::OpenOnly, collection)
                 {
+                    let Some(kv_store) = kv_store else {
+                        tracing::debug!(
+                            "collection store does not exist, consider {bucket:?} from {collection:?} empty"
+                        );
+                        return Ok(0);
+                    };
+
                     // Important: acquire bucket store read lock
                     executor_kv_lock_read!(kv_store);
 
-                    let kv_action = StoreKVActionBuilder::access(bucket, kv_store);
+                    let kv_action = StoreKVActionBuilder::access_read_only(bucket, kv_store);
 
                     // Try to resolve existing OID to IID
                     let oid = object.as_str();

@@ -6,6 +6,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use linked_hash_set::LinkedHashSet;
+use rocksdb::WriteBatch;
 use std::iter::FromIterator;
 
 use crate::lexer::TokenLexer;
@@ -27,11 +28,18 @@ impl super::Executor {
                     .acquire(StoreKVAcquireMode::OpenOnly, collection),
                 self.fst_pool.acquire(collection, bucket),
             ) {
+                let Some(kv_store) = kv_store else {
+                    tracing::debug!(
+                        "collection store does not exist, consider {bucket:?} from {collection:?} empty"
+                    );
+                    return Ok(0);
+                };
+
                 // Important: acquire bucket store write lock
                 executor_kv_lock_write!(kv_store);
 
                 let (kv_action, fst_action) = (
-                    StoreKVActionBuilder::access(bucket, kv_store),
+                    StoreKVActionBuilder::access_read_write(bucket, kv_store),
                     StoreFSTActionBuilder::access(fst_store),
                 );
 
@@ -74,16 +82,19 @@ impl super::Executor {
                             count_popped = (iid_terms_hashed.len() - remaining_terms.len()) as u32;
 
                             if count_popped > 0 {
+                                let mut batch = WriteBatch::default();
+
                                 if remaining_terms.is_empty() {
                                     tracing::info!("nuke whole bucket for pop executor");
 
                                     // Flush bucket (batch operation, as it is shared w/ other \
                                     //   executors)
-                                    executor_ensure_op!(kv_action.batch_flush_bucket(
+                                    kv_action.batch_flush_bucket(
+                                        &mut batch,
                                         iid,
                                         oid,
-                                        &iid_terms_hashed_vec
-                                    ));
+                                        &iid_terms_hashed_vec,
+                                    );
                                 } else {
                                     tracing::info!("nuke only certain terms for pop executor");
 
@@ -99,9 +110,9 @@ impl super::Executor {
 
                                                 if pop_term_iids.is_empty() {
                                                     // IIDs list was empty, delete whole key
-                                                    executor_ensure_op!(
-                                                        kv_action
-                                                            .delete_term_to_iids(*pop_term_hashed)
+                                                    kv_action.delete_term_to_iids(
+                                                        &mut batch,
+                                                        *pop_term_hashed,
                                                     );
 
                                                     // Pop from FST graph (does not exist anymore)
@@ -113,11 +124,10 @@ impl super::Executor {
                                                     }
                                                 } else {
                                                     // Re-build IIDs list w/o current IID
-                                                    executor_ensure_op!(
-                                                        kv_action.set_term_to_iids(
-                                                            *pop_term_hashed,
-                                                            &pop_term_iids,
-                                                        )
+                                                    kv_action.set_term_to_iids(
+                                                        &mut batch,
+                                                        *pop_term_hashed,
+                                                        pop_term_iids.into_iter(),
                                                     );
                                                 }
                                             } else {
@@ -132,10 +142,14 @@ impl super::Executor {
                                     let remaining_terms_vec: Vec<StoreTermHashed> =
                                         Vec::from_iter(remaining_terms);
 
-                                    executor_ensure_op!(
-                                        kv_action.set_iid_to_terms(iid, &remaining_terms_vec)
+                                    kv_action.set_iid_to_terms(
+                                        &mut batch,
+                                        iid,
+                                        remaining_terms_vec.into_iter(),
                                     );
                                 }
+
+                                executor_ensure_op!(kv_action.write(batch));
                             }
                         } else {
                             tracing::error!("failed getting iid-to-terms in pop executor");

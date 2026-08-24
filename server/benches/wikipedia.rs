@@ -16,15 +16,10 @@ use std::sync::{LazyLock, RwLock};
 use std::time::{Duration, Instant};
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use sonic_client::SonicMultiplexer;
-use sonic_client::control::SonicChannelControlBlocking;
-use sonic_client::ingest::SonicChannelIngestBlocking;
-use sonic_client::options::*;
-use sonic_client::search::SonicChannelSearchBlocking;
 
-use crate::common::globals::*;
 use crate::common::huggingface::download::download_shards;
 use crate::common::huggingface::load::iter_shard;
+use crate::common::prelude::*;
 use crate::common::spawn_guard::SpawnGuard;
 use crate::huggingface_wikipedia::WikipediaArticle;
 
@@ -42,15 +37,17 @@ fn articles_iter(limit: usize) -> impl Iterator<Item = WikipediaArticle> {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::WARN)
-        .with_target(true)
-        .with_file(false)
-        .with_line_number(false)
-        .without_time()
-        .with_level(true)
-        .with_writer(tracing_subscriber::fmt::TestWriter::new)
-        .init();
+    init_logging(
+        None,
+        LoggingOptions {
+            default_log_level: tracing::Level::WARN,
+            with_target: true,
+            with_file: false,
+            with_line_number: false,
+            with_level: true,
+            with_thread_ids: false,
+        },
+    );
 
     let mut group = c.benchmark_group("wikipedia");
 
@@ -87,7 +84,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     {
                         let mut channel = SonicChannelIngestBlocking::connect(
                             ADDR,
-                            "SecretPassword",
+                            SONIC_PASSWORD,
                             &multiplexer,
                         ).unwrap();
                         // println!("Opened Sonic channel");
@@ -127,7 +124,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     }
 
                     {
-                        let mut channel = SonicChannelControlBlocking::connect(ADDR, "SecretPassword", &multiplexer).unwrap();
+                        let mut channel = SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
 
                         let start = Instant::now();
 
@@ -174,7 +171,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     {
                         let mut channel = SonicChannelIngestBlocking::connect(
                             ADDR,
-                            "SecretPassword",
+                            SONIC_PASSWORD,
                             &multiplexer,
                         ).unwrap();
                         // println!("Opened Sonic channel");
@@ -213,7 +210,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     }
 
                     {
-                        let mut channel = SonicChannelControlBlocking::connect(ADDR, "SecretPassword", &multiplexer).unwrap();
+                        let mut channel = SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
 
                         let start = Instant::now();
 
@@ -269,7 +266,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     let mut elapsed_total = Duration::ZERO;
                     for _i in 0..iters {
                         let mut channel =
-                            SonicChannelSearchBlocking::connect(ADDR, "SecretPassword", &multiplexer)
+                            SonicChannelSearchBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer)
                                 .unwrap();
                         // println!("Opened Sonic channel");
 
@@ -363,22 +360,6 @@ impl std::fmt::Display for PushBenchmarkConfig {
     }
 }
 
-fn new_sonic_data_path() -> PathBuf {
-    let path = Path::new(SONIC_DATA_PATH).join("empty");
-
-    if path.exists() {
-        std::fs::remove_dir_all(&path).unwrap();
-    }
-
-    path
-}
-
-fn start_sonic_empty(update_command: impl FnOnce(&mut Command) -> &mut Command) -> SpawnGuard {
-    let data_path = new_sonic_data_path();
-
-    start_sonic(&data_path, update_command)
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ConfigNormalization {
     pub diacritic_folding_enabled: Option<bool>,
@@ -429,7 +410,7 @@ fn start_sonic_prepopulated(
                 {
                     let mut channel = SonicChannelIngestBlocking::connect(
                         ADDR,
-                        "SecretPassword",
+                        SONIC_PASSWORD,
                         &multiplexer,
                     ).unwrap();
                     // println!("Opened Sonic channel");
@@ -475,7 +456,7 @@ fn start_sonic_prepopulated(
 
                 // TRIGGER consolidate
                 {
-                    let mut channel = SonicChannelControlBlocking::connect(ADDR, "SecretPassword", &multiplexer).unwrap();
+                    let mut channel = SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
 
                     let start = Instant::now();
 
@@ -499,32 +480,6 @@ fn start_sonic_prepopulated(
     start_sonic(path, |command| {
         update_command(apply_normalization(normalization_config, command))
     })
-}
-
-#[must_use]
-fn start_sonic(
-    data_path: &Path,
-    update_command: impl FnOnce(&mut Command) -> &mut Command,
-) -> SpawnGuard {
-    // let sonic_config_path = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/config.cfg");
-
-    eprintln!("Benchmarking using {:?}", SONIC_BIN_PATH.as_path());
-    let sonic = update_command(
-        Command::new(SONIC_BIN_PATH.as_path())
-            // .args(["-c", sonic_config_path])
-            .env("SONIC_SERVER__LOG_LEVEL", "WARN"),
-    )
-    .env("SONIC_STORE__KV__PATH", data_path.join("kv"))
-    .env("SONIC_STORE__FST__PATH", data_path.join("fst"))
-    .spawn()
-    .unwrap();
-
-    // Auto-kill Sonic.
-    let mut sonic = SpawnGuard(sonic);
-    sonic.wait_until_ready(ADDR);
-    // println!("Started Sonic");
-
-    sonic
 }
 
 fn size_char(len: usize) -> char {

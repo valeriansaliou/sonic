@@ -33,6 +33,8 @@ pub type StoreKeyerPrefix = [u8; 5];
 
 impl<'a> StoreKeyerIdx<'a> {
     pub fn to_index(&self) -> u8 {
+        // WARN: Don’t update values here, it would break stuff
+        //   (e.g. `default_merge_operator`)! Only add new cases.
         match self {
             StoreKeyerIdx::MetaToValue(_) => 0,
             StoreKeyerIdx::TermToIIDs(_) => 1,

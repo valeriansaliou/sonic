@@ -5,6 +5,8 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use rocksdb::WriteBatch;
+
 use crate::store::StoreItem;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
@@ -19,10 +21,17 @@ impl super::Executor {
                 .kv_pool
                 .acquire(StoreKVAcquireMode::OpenOnly, collection)
             {
+                let Some(kv_store) = kv_store else {
+                    tracing::debug!(
+                        "collection store does not exist, consider {bucket:?} from {collection:?} empty"
+                    );
+                    return Ok(0);
+                };
+
                 // Important: acquire bucket store write lock
                 executor_kv_lock_write!(kv_store);
 
-                let kv_action = StoreKVActionBuilder::access(bucket, kv_store);
+                let kv_action = StoreKVActionBuilder::access_read_write(bucket, kv_store);
 
                 // Try to resolve existing OID to IID (if it does not exist, there is nothing to \
                 //   be flushed)
@@ -43,9 +52,13 @@ impl super::Executor {
                             }
                         };
 
+                        let mut batch = WriteBatch::default();
+
                         // Flush bucket (batch operation, as it is shared w/ other executors)
-                        if let Ok(batch_count) = kv_action.batch_flush_bucket(iid, oid, &iid_terms)
-                        {
+                        let batch_count =
+                            kv_action.batch_flush_bucket(&mut batch, iid, oid, &iid_terms);
+
+                        if kv_action.write(batch).is_ok() {
                             count_flushed += batch_count;
                         } else {
                             tracing::error!(

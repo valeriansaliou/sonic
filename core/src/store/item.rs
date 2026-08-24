@@ -13,7 +13,7 @@ pub struct StoreItem<'a>(
     pub Option<StoreItemPart<'a>>,
 );
 
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct StoreItemPart<'a>(&'a str);
 
 // TODO: Change variant names
@@ -42,6 +42,21 @@ impl<'a> StoreItemPart<'a> {
 
     pub fn as_str(&self) -> &'a str {
         self.0
+    }
+}
+
+impl<'a> std::ops::Deref for StoreItemPart<'a> {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<'a> std::fmt::Debug for StoreItemPart<'a> {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.0, f)
     }
 }
 
