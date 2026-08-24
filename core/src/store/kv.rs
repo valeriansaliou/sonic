@@ -1304,6 +1304,9 @@ fn prepend_u32_list(existing_val: Option<&[u8]>, operands: &MergeOperands) -> Op
         }
     }
 
+    // Trim unused bytes at the start (because of duplicate operands).
+    res = res.split_off(cursor);
+
     for existing in current.chunks(WORD_LEN) {
         // Skip already inserted operands.
         // See reason in <https://github.com/valeriansaliou/sonic/issues/389#issuecomment-5374968203>.
