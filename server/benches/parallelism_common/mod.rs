@@ -17,7 +17,6 @@ use criterion::BenchmarkId;
 use sonic_client::SonicMultiplexer;
 use sonic_client::control::SonicChannelControlBlocking;
 use sonic_client::ingest::SonicChannelIngestBlocking;
-use sonic_client::options::*;
 use sonic_client::search::SonicChannelSearchBlocking;
 
 use crate::common::client_helpers::trigger_flush;
