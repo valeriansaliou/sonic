@@ -60,7 +60,7 @@ allow-build-scripts = [
     "iana-time-zone-haiku@0.1.2",
     "libc@0.2.189",
     "libm@0.2.16",
-    "librocksdb-sys@0.17.3+10.4.2",
+    "librocksdb-sys@0.19.0+11.8.1",
     "libz-sys@1.1.29",
     "lz4-sys@1.11.1+lz4-1.10.0",
     "nix@0.31.3",
