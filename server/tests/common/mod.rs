@@ -22,6 +22,7 @@ pub mod prelude {
 
     pub(crate) use crate::common::SONIC_PASSWORD;
     pub use crate::common::TestData;
+    pub use crate::common::logging::init_logging;
     pub use crate::common::random;
     pub use crate::common::spawn_guard::SpawnGuard;
     pub use crate::common::{start_empty, start_prepopulated};
