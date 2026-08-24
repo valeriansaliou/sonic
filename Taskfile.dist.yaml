@@ -84,6 +84,7 @@ tasks:
       - core/Cargo.toml
       - client/Cargo.toml
       - Cargo.lock
+      - deny.toml
     preconditions:
       - sh: command -v cargo-deny >/dev/null
         msg: "`cargo deny` is required. Install using `cargo install cargo-deny --locked`."
