@@ -579,48 +579,37 @@ impl<'a> Iterator for TokenLexer<'a> {
                 Token::Word(original_word) => {
                     let original_len = original_word.len();
 
-                    #[cfg(debug_assertions)]
-                    let mut current_word: String = original_word.to_owned();
+                    // NOTE: We use a single `String` to avoid unnecessary
+                    //   intermediate `String` allocations.
+                    let mut new_word = String::with_capacity(original_len);
 
-                    // NOTE: We use an iterator to avoid unnecessary `String`
-                    //   allocations.
-                    let mut chars: Box<dyn Iterator<Item = char>> = Box::new(original_word.chars());
+                    #[cfg(debug_assertions)]
+                    let mut current_word = new_word.clone();
 
                     // Case folding
+                    let chars = caseless::Caseless::default_case_fold(original_word.chars());
+
+                    for char in chars {
+                        // Diacritic folding
+                        if self.config.diacritic_folding_enabled {
+                            use unicode_normalization::UnicodeNormalization as _;
+                            use unicode_normalization::char::is_combining_mark;
+
+                            for char in char.nfd().filter(|c| !is_combining_mark(*c)) {
+                                new_word.push(char);
+                            }
+                        } else {
+                            new_word.push(char);
+                        }
+                    }
+
+                    #[cfg(debug_assertions)]
                     {
-                        use caseless::Caseless as _;
-
-                        chars = Box::new(chars.default_case_fold());
-
-                        #[cfg(debug_assertions)]
-                        {
-                            let new_word = chars.collect();
-                            tracing::trace!("Case folding: {current_word:?} -> {new_word:?}");
-                            current_word = new_word;
-                            chars = Box::new(current_word.chars());
-                        }
+                        tracing::trace!(
+                            "Case (+ diacritic?) folding: {current_word:?} -> {new_word:?}"
+                        );
+                        current_word = new_word.clone();
                     }
-
-                    // Diacritic folding
-                    if self.config.diacritic_folding_enabled {
-                        use unicode_normalization::UnicodeNormalization as _;
-                        use unicode_normalization::char::is_combining_mark;
-
-                        chars = Box::new(chars.nfd().filter(|c| !is_combining_mark(*c)));
-
-                        #[cfg(debug_assertions)]
-                        {
-                            let new_word = chars.collect();
-                            tracing::trace!("Diacritic folding: {current_word:?} -> {new_word:?}");
-                            current_word = new_word;
-                            chars = Box::new(current_word.chars());
-                        }
-                    }
-
-                    // NOTE: We need to collect here as stemming algorithms need to
-                    //   lookup whole words.
-                    #[allow(unused_mut)]
-                    let mut new_word: String = chars.collect();
 
                     // Stemming
                     #[cfg(feature = "stemming")]
