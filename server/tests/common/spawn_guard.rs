@@ -8,9 +8,19 @@ use std::net::{SocketAddr, TcpStream};
 use std::time::{Duration, Instant};
 
 /// Automatically kills the child process on [Drop].
-pub struct SpawnGuard(pub std::process::Child);
+pub struct SpawnGuard {
+    pub(super) sonic: std::process::Child,
+    pub(super) xctrace: Option<std::process::Child>,
+}
 
 impl SpawnGuard {
+    pub fn new(sonic: std::process::Child) -> Self {
+        Self {
+            sonic,
+            xctrace: None,
+        }
+    }
+
     /// Wait until the child listens on the expected address.
     pub fn wait_until_ready(&mut self, addr: impl Into<SocketAddr>) {
         let addr = addr.into();
@@ -36,19 +46,27 @@ impl std::ops::Deref for SpawnGuard {
     type Target = std::process::Child;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.sonic
     }
 }
 
 impl std::ops::DerefMut for SpawnGuard {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        &mut self.sonic
     }
 }
 
 impl Drop for SpawnGuard {
     fn drop(&mut self) {
-        self.0.kill().unwrap();
-        self.0.wait().unwrap();
+        if let Some(xctrace) = self.xctrace.as_mut() {
+            std::process::Command::new("kill")
+                .args(["-INT", &xctrace.id().to_string()])
+                .status()
+                .unwrap();
+            xctrace.wait().unwrap();
+        }
+
+        self.sonic.kill().unwrap();
+        self.sonic.wait().unwrap();
     }
 }
