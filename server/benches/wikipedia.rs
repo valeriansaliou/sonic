@@ -30,7 +30,7 @@ fn articles_iter(limit: usize) -> impl Iterator<Item = WikipediaArticle> {
     SHARD_PATHS
         .iter()
         .flat_map(iter_shard::<WikipediaArticle>)
-        .filter(|a| a.text.as_bytes().len() > 2000)
+        // .filter(|a| a.text.as_bytes().len() > 2000)
         // .filter(|a| a.text.as_bytes().len() < 8000)
         // .filter(|a| a.text.as_bytes().len() > 20000)
         .take(limit)
@@ -63,7 +63,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             diacritic_folding_enabled: Some(true),
         },
     ] {
-        let articles = || articles_iter(1000);
+        let articles = || articles_iter(usize::MAX);
 
         // Lower sample size as what we’re measuring is quite long to execute.
         group.sample_size(10);
