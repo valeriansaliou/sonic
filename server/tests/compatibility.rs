@@ -37,7 +37,7 @@ fn test_config_compatibility() {
             .unwrap();
 
         // Auto-kill Sonic.
-        let mut sonic = SpawnGuard(sonic);
+        let mut sonic = SpawnGuard::new(sonic);
 
         match wait_until_ready(&(std::net::Ipv6Addr::LOCALHOST, 1491).into()) {
             Ok(()) => drop(sonic),
