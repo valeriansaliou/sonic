@@ -16,7 +16,12 @@ pub fn unescape(text: &str) -> String {
             match characters.next() {
                 Some('n') => unescaped.push('\n'),
                 Some('\"') => unescaped.push('\"'),
-                _ => unescaped.push(character),
+                Some(c) => {
+                    // Preserve unknown escape sequences verbatim.
+                    unescaped.push(character);
+                    unescaped.push(c);
+                }
+                None => unescaped.push(character),
             };
         } else {
             unescaped.push(character);
@@ -39,8 +44,12 @@ mod tests {
         );
         assert_eq!(
             unescape(r#"look at \\\\"\\\" me i'm \\"\"trying to hack you\""#),
-            r#"look at \\"\" me i'm \""trying to hack you""#.to_string()
+            r#"look at \\\\"\\" me i'm \\"""trying to hack you""#.to_string()
         );
+
+        // Regression: unknown escape sequences must pass through unchanged.
+        assert_eq!(unescape(r"C:\Windows\System32"), r"C:\Windows\System32".to_string());
+        assert_eq!(unescape("trailing \\"), "trailing \\".to_string());
     }
 }
 
