@@ -17,8 +17,7 @@ pub fn unescape(text: &str) -> String {
                 Some('n') => unescaped.push('\n'),
                 Some('\"') => unescaped.push('\"'),
                 Some(c) => {
-                    // Preserve unknown escape sequences verbatim instead of
-                    // silently dropping the escaped character.
+                    // Preserve unknown escape sequences verbatim.
                     unescaped.push(character);
                     unescaped.push(c);
                 }
