@@ -12,6 +12,7 @@ use std::sync::atomic::AtomicU16;
 use std::sync::{LazyLock, atomic};
 
 use crate::common::globals::{ADDR, SONIC_BIN_PATH, SONIC_DATA_PATH};
+use crate::common::logging::LOG_LEVEL;
 use crate::common::path_guard::PathGuard;
 use crate::common::spawn_guard::SpawnGuard;
 
@@ -153,7 +154,10 @@ pub fn start_sonic(
     let sonic = update_command(
         Command::new(SONIC_BIN_PATH.as_path())
             // .args(["-c", sonic_config_path])
-            .env("SONIC_SERVER__LOG_LEVEL", "WARN"),
+            .env(
+                "SONIC_SERVER__LOG_LEVEL",
+                LOG_LEVEL.map_or("WARN".to_owned(), |level| level.to_string()),
+            ),
     )
     .env("SONIC_STORE__KV__PATH", data_path.join("kv"))
     .env("SONIC_STORE__FST__PATH", data_path.join("fst"))
