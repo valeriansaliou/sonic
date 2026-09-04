@@ -21,6 +21,14 @@ pub fn download_files<const N: usize>(dataset: &str, filenames: [&str; N]) -> [P
 
 /// Download and list the Parquet shards for a dataset configuration.
 pub fn download_shards(dataset: &str, config: &str) -> Vec<PathBuf> {
+    let cache = hf_hub::Cache::from_env();
+    if let Some(cache_path) = cache.dataset(dataset.to_owned()).get(config) {
+        return std::fs::read_dir(cache_path)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+    }
+
     let api = Api::new().unwrap();
     let repository = api.dataset(dataset.to_owned());
     let prefix = format!("{config}/");
