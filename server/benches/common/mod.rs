@@ -134,10 +134,7 @@ pub fn start_sonic(
     // let sonic_config_path = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/config.cfg");
 
     let profiling_mode = match std::env::var("PROFILING_MODE") {
-        Ok(val) if val == "time" => Some(val),
-        Ok(val) => panic!(
-            "Unknown profiling mode: {val:?}. Check your `PROFILING_MODE` environment variable."
-        ),
+        Ok(val) => Some(val),
         Err(std::env::VarError::NotPresent) => None,
         Err(err @ std::env::VarError::NotUnicode(_)) => {
             panic!("Invalid `PROFILING_MODE` value: {err:?}")
@@ -151,6 +148,8 @@ pub fn start_sonic(
         tracing::info!("Benchmarking using {:?}", SONIC_BIN_PATH.as_path());
     }
 
+    // NOTE: Sonic is started for nothing if `profiling_mode` contains an
+    //   incorrect value but it’s not a big deal.
     let sonic = update_command(
         Command::new(SONIC_BIN_PATH.as_path())
             // .args(["-c", sonic_config_path])
@@ -177,7 +176,9 @@ pub fn start_sonic(
 
             xctrace
         }
-        _ => unreachable!(),
+        val => panic!(
+            "Unknown profiling mode: {val:?}. Check your `PROFILING_MODE` environment variable."
+        ),
     });
 
     // Auto-kill Sonic.
