@@ -48,7 +48,10 @@ mod tests {
         );
 
         // Regression: unknown escape sequences must pass through unchanged.
-        assert_eq!(unescape(r"C:\Windows\System32"), r"C:\Windows\System32".to_string());
+        assert_eq!(
+            unescape(r"C:\Windows\System32"),
+            r"C:\Windows\System32".to_string()
+        );
         assert_eq!(unescape("trailing \\"), "trailing \\".to_string());
     }
 }
