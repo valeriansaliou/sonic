@@ -14,6 +14,8 @@ use crate::common::prelude::*;
 use crate::common::spawn_guard::SpawnGuard;
 use crate::huggingface_wikipedia::WikipediaArticle;
 
+pub static NO_PROGRESS: LazyLock<bool> = LazyLock::new(|| std::env::var("NO_PROGRESS").is_ok());
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PushBenchmarkConfig {
     pub diacritic_folding_enabled: Option<bool>,
@@ -83,6 +85,7 @@ pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
 
     static PATHS: LazyLock<RwLock<HashMap<ConfigNormalization, PathBuf>>> =
         LazyLock::new(|| RwLock::new(HashMap::with_capacity(1)));
+    let no_progress = *NO_PROGRESS;
 
     let mut paths = PATHS.write().unwrap();
     let path = paths
@@ -123,7 +126,9 @@ pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
 
                         match channel.push_with_options("wikipedia", "default", article.id, article.text, &[&Lang("eng")]) {
                             Ok(()) => {
-                                eprint!("{}", size_char(len));
+                                if !no_progress {
+                                    eprint!("{}", size_char(len));
+                                }
 
                                 ingested_count += 1;
                                 ingested_bytes += len as u32;
