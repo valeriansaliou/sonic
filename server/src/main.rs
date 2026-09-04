@@ -61,7 +61,7 @@ pub static THREAD_NAME_CHANNEL_MASTER: &str = "sonic-channel-master";
 pub static THREAD_NAME_CHANNEL_CLIENT: &str = "sonic-channel-client";
 pub static THREAD_NAME_TASKER: &str = "sonic-tasker";
 
-const DEFAULT_CONFIG_FILE_PATHS: [&str; 5] = [
+const DEFAULT_CONFIG_FILE_PATHS: &[&str] = &[
     // COMPAT: This has to have a high precedence, for backward compatibility
     //   with previous default value.
     "./config.cfg",

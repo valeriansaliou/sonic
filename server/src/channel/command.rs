@@ -71,11 +71,11 @@ const META_PART_GROUP_CLOSE: char = ')';
 static BACKUP_KV_PATH: &str = "kv";
 static BACKUP_FST_PATH: &str = "fst";
 
-pub static COMMANDS_MODE_SEARCH: [&str; 6] = ["QUERY", "SUGGEST", "LIST", "PING", "HELP", "QUIT"];
-pub static COMMANDS_MODE_INGEST: [&str; 9] = [
+pub static COMMANDS_MODE_SEARCH: &[&str] = &["QUERY", "SUGGEST", "LIST", "PING", "HELP", "QUIT"];
+pub static COMMANDS_MODE_INGEST: &[&str] = &[
     "PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT",
 ];
-pub static COMMANDS_MODE_CONTROL: [&str; 5] = ["TRIGGER", "INFO", "PING", "HELP", "QUIT"];
+pub static COMMANDS_MODE_CONTROL: &[&str] = &["TRIGGER", "INFO", "PING", "HELP", "QUIT"];
 #[rustfmt::skip]
 pub static CONTROL_TRIGGER_ACTIONS: &[&str] = &[
     "consolidate", "backup", "restore",
