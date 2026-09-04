@@ -4,6 +4,8 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -49,6 +51,29 @@ impl std::fmt::Display for PushBenchmarkConfig {
                 write!(f, "[-diacritic_folding]")?;
             }
         }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParallelBenchmarkConfig {
+    pub nthreads: usize,
+}
+
+impl ParallelBenchmarkConfig {
+    pub fn update_command<'c>(&self, command: &'c mut Command) -> &'c mut Command {
+        command
+    }
+}
+
+impl std::fmt::Display for ParallelBenchmarkConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "default")?;
+
+        let Self { nthreads } = self;
+
+        write!(f, "[threads:{nthreads}]")?;
 
         Ok(())
     }
