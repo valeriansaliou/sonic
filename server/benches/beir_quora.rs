@@ -294,7 +294,7 @@ fn start_sonic() -> SpawnGuard {
         .spawn()
         .unwrap();
 
-    let mut sonic = SpawnGuard(child);
+    let mut sonic = SpawnGuard::new(child);
     sonic.wait_until_ready(ADDR);
     sonic
 }

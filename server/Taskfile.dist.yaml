@@ -117,7 +117,17 @@ tasks:
     internal: true
     requires:
       vars: [INSTALL_DIR]
-    cmd: cargo +stable install --path {{ shellQuote .PATH }} --bin sonic --locked --profile {{ shellQuote .CARGO_PROFILE }} --root {{ shellQuote .INSTALL_DIR }}{{ if .OPTIONAL_FEATURES }} -F {{ shellQuote .OPTIONAL_FEATURES }}{{ end }}
+    cmds:
+      - cmd: |-
+          cat <<'EOF' >> {{ shellQuote .WORKING_DIR }}/Cargo.toml
+          [profile.relwithdebinfo]
+          inherits = "release"
+          debug = "line-tables-only"
+          split-debuginfo = "unpacked"
+          strip = false
+          EOF
+        if: "[ {{ shellQuote .CARGO_PROFILE }} = 'relwithdebinfo' ] && ! grep 'relwithdebinfo' {{ shellQuote .WORKING_DIR }}/Cargo.toml"
+      - cargo +stable install --path {{ shellQuote .PATH }} --bin sonic --locked --profile {{ shellQuote .CARGO_PROFILE }} --root {{ shellQuote .INSTALL_DIR }}{{ if .OPTIONAL_FEATURES }} -F {{ shellQuote .OPTIONAL_FEATURES }}{{ end }}
     vars:
       # COMPAT: Compat with <v1.6.0.
       PATH: { sh: 'test -d {{ shellQuote .WORKING_DIR }}/server && echo {{ shellQuote .WORKING_DIR }}/server || echo {{ shellQuote .WORKING_DIR }}' }

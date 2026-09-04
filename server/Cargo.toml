@@ -57,6 +57,10 @@ name = "wikipedia"
 harness = false
 
 [[bench]]
+name = "wikipedia_parallel"
+harness = false
+
+[[bench]]
 name = "beir_quora"
 harness = false
 

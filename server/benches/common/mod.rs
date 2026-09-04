@@ -133,8 +133,23 @@ pub fn start_sonic(
 ) -> SpawnGuard {
     // let sonic_config_path = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/config.cfg");
 
+    let profiling_mode = match std::env::var("PROFILING_MODE") {
+        Ok(val) => Some(val),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(err @ std::env::VarError::NotUnicode(_)) => {
+            panic!("Invalid `PROFILING_MODE` value: {err:?}")
+        }
+    };
+
     eprint!("\n");
-    tracing::info!("Benchmarking using {:?}", SONIC_BIN_PATH.as_path());
+    if profiling_mode.is_some() {
+        tracing::info!("Profiling using {:?}", SONIC_BIN_PATH.as_path());
+    } else {
+        tracing::info!("Benchmarking using {:?}", SONIC_BIN_PATH.as_path());
+    }
+
+    // NOTE: Sonic is started for nothing if `profiling_mode` contains an
+    //   incorrect value but it’s not a big deal.
     let sonic = update_command(
         Command::new(SONIC_BIN_PATH.as_path())
             // .args(["-c", sonic_config_path])
@@ -145,8 +160,44 @@ pub fn start_sonic(
     .spawn()
     .unwrap();
 
+    let xctrace = profiling_mode.map(|val| match val.as_str() {
+        "time" => {
+            let xctrace = Command::new("xctrace")
+                .arg("record")
+                .args(&["--instrument", "Time Profiler"])
+                // .args(&["--instrument", "CPU Counters"])
+                .args(&["--instrument", "CPU Profiler"])
+                .args(&["--attach", &sonic.id().to_string()])
+                .spawn()
+                .unwrap();
+
+            // Give a bit of time for `xctrace` to startup.
+            std::thread::sleep(std::time::Duration::from_millis(2000));
+
+            xctrace
+        }
+        "thread_state" => {
+            let xctrace = Command::new("xctrace")
+                .arg("record")
+                .args(&["--instrument", "Time Profiler"])
+                .args(&["--instrument", "CPU Profiler"])
+                .args(&["--instrument", "Thread State Trace"])
+                .args(&["--attach", &sonic.id().to_string()])
+                .spawn()
+                .unwrap();
+
+            // Give a bit of time for `xctrace` to startup.
+            std::thread::sleep(std::time::Duration::from_millis(2000));
+
+            xctrace
+        }
+        val => panic!(
+            "Unknown profiling mode: {val:?}. Check your `PROFILING_MODE` environment variable."
+        ),
+    });
+
     // Auto-kill Sonic.
-    let mut sonic = SpawnGuard(sonic);
+    let mut sonic = SpawnGuard { sonic, xctrace };
     sonic.wait_until_ready(ADDR);
     // println!("Started Sonic");
 
