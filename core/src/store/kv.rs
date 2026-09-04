@@ -313,6 +313,51 @@ impl StoreKVPool {
         );
     }
 
+    pub fn compact(&self, collections_opt: Option<&[&str]>) {
+        match collections_opt {
+            Some(collections) => tracing::debug!("compacting {collections:?}…"),
+            None => tracing::debug!("compacting all collections…"),
+        }
+
+        let collections: Vec<StoreKVKey> = match collections_opt {
+            Some(collections) => collections
+                .iter()
+                .map(|&s| StoreKVKey::from_str(s))
+                .collect(),
+            None => {
+                let pool_guard = self.pool.read().unwrap();
+
+                let collections = pool_guard.keys().map(StoreKVKey::to_owned).collect();
+
+                drop(pool_guard);
+
+                collections
+            }
+        };
+
+        for collection_hash in collections.iter() {
+            let pool_guard = self.pool.write().unwrap();
+
+            let Some(store) = pool_guard.get(collection_hash).map(Arc::clone) else {
+                tracing::warn!("Cannot compact {collection_hash:?}: no open connection");
+                continue;
+            };
+
+            // Early release the lock.
+            drop(pool_guard);
+
+            // Compact whole range of keys (we can hardly predict the range here).
+            store.database.compact_range::<&[u8], &[u8]>(None, None);
+
+            // Give a bit of time to other threads before continuing
+            // PERF: Compactions can take a very long time, and collections are
+            //   likely to be very few, so it’s better to yield between runs.
+            thread::yield_now();
+        }
+
+        tracing::info!("done compacting {collections:?}");
+    }
+
     #[allow(clippy::type_complexity)]
     fn dump_action(
         &self,

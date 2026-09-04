@@ -14,3 +14,20 @@ pub fn trigger_flush(channel: &SonicChannelControlBlocking) -> std::io::Result<(
         |_data| Ok(()),
     )
 }
+
+pub fn trigger_compact(
+    channel: &SonicChannelControlBlocking,
+    collections: &[&str],
+) -> std::io::Result<()> {
+    let mut args = String::with_capacity(collections.len() * 16);
+    for &collection in collections.into_iter() {
+        args.push(' ');
+        args.push_str(collection);
+    }
+
+    channel.send(
+        make_command!("TRIGGER compact{}", args),
+        control::Discriminant::Ok,
+        |_data| Ok(()),
+    )
+}

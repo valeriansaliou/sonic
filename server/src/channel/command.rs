@@ -79,8 +79,8 @@ pub static COMMANDS_MODE_CONTROL: &[&str] = &["TRIGGER", "INFO", "PING", "HELP",
 #[rustfmt::skip]
 pub static CONTROL_TRIGGER_ACTIONS: &[&str] = &[
     "consolidate", "backup", "restore",
-    #[cfg(feature = "experimental-api")]
-    "flush",
+    #[cfg(feature = "experimental-api")] "flush",
+    #[cfg(feature = "experimental-api")] "compact",
 ];
 
 static MANUAL_MODE_SEARCH: LazyLock<HashMap<&str, Vec<&str>>> =
@@ -959,6 +959,16 @@ impl ChannelCommandControl {
                         } else {
                             Err(ChannelCommandError::InvalidFormat("TRIGGER flush"))
                         }
+                    }
+                    #[cfg(feature = "experimental-api")]
+                    "compact" => {
+                        let collections =
+                            data_part.map(|s| s.split_ascii_whitespace().collect::<Vec<_>>());
+
+                        // Force a KV compaction
+                        kv_pool.compact(collections.as_deref());
+
+                        Ok(vec![ChannelCommandResponse::Ok])
                     }
                     "backup" => {
                         match (data_part, last_part) {
