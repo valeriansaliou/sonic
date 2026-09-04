@@ -203,6 +203,7 @@ impl StoreFSTPool {
                 &self.graph_pool,
                 &builder,
                 None,
+                |_| {},
             )
         }
     }
@@ -918,7 +919,13 @@ impl crate::config::ConfigStoreFST {
 }
 
 impl<'build> StoreGenericBuilder<StoreFSTKey, StoreFST> for StoreFSTBuilder<'build> {
-    fn build(&self, pool_key: StoreFSTKey) -> Result<StoreFST, ()> {
+    type Options = ();
+
+    fn build(
+        &self,
+        pool_key: StoreFSTKey,
+        _override_options: impl FnOnce(&mut Self::Options),
+    ) -> Result<StoreFST, ()> {
         Self::open(
             pool_key.collection_hash,
             pool_key.bucket_hash,

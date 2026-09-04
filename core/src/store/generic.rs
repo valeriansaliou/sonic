@@ -53,8 +53,9 @@ pub trait StoreGenericPool<
         pool: &'a Arc<RwLock<HashMap<K, Arc<S>>>>,
         builder: &B,
         write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<K, Arc<S>>>>,
+        override_options: impl FnOnce(&mut B::Options),
     ) -> Result<Arc<S>, ()> {
-        match builder.build(pool_key) {
+        match builder.build(pool_key, override_options) {
             Ok(store) => {
                 // Acquire a thread-safe store pool reference in write mode
                 let store_pool_write = match write_guard {
@@ -162,7 +163,13 @@ pub trait StoreGenericPool<
 }
 
 pub trait StoreGenericBuilder<K, S> {
-    fn build(&self, pool_key: K) -> Result<S, ()>;
+    type Options;
+
+    fn build(
+        &self,
+        pool_key: K,
+        override_options: impl FnOnce(&mut Self::Options),
+    ) -> Result<S, ()>;
 }
 
 pub trait StoreGenericActionBuilder {

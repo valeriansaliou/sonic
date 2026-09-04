@@ -26,7 +26,7 @@ impl super::Executor {
 
         let (Ok(kv_store), Ok(fst_store)) = (
             self.kv_pool
-                .acquire(StoreKVAcquireMode::Any, collection, None),
+                .acquire(StoreKVAcquireMode::Any, collection, None, |_| {}),
             self.fst_pool.acquire(collection, bucket),
         ) else {
             return Err(());

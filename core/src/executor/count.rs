@@ -21,7 +21,7 @@ impl super::Executor {
 
                 if let Ok(kv_store) =
                     self.kv_pool
-                        .acquire(StoreKVAcquireMode::OpenOnly, collection, None)
+                        .acquire(StoreKVAcquireMode::OpenOnly, collection, None, |_| {})
                 {
                     let Some(kv_store) = kv_store else {
                         tracing::debug!(

@@ -110,11 +110,14 @@ impl StoreKVPool {
         self.store_access_lock.write().unwrap()
     }
 
+    // TODO(refactor): Replace `mode` and `config_overrides` by a struct with
+    //   `create_if_missing: bool` instead of `mode` and `bypass_cache: bool`.
     pub fn acquire<'a>(
         &'a self,
         mode: StoreKVAcquireMode,
         collection: impl AsRef<str>,
         write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVKey, Arc<StoreKV>>>>,
+        override_options: impl FnOnce(&mut rocksdb::Options),
     ) -> Result<Option<Arc<StoreKV>>, ()> {
         let collection = collection.as_ref();
         let pool_key = StoreKVKey::from_str(collection);
@@ -123,7 +126,7 @@ impl StoreKVPool {
         // Notice: this prevents two databases on the same collection to be opened at the same time.
         let _acquire = self.store_acquire_lock.lock().unwrap();
 
-        // Return cached value if store already open.
+        // Return cached value if store is already open.
         match write_guard {
             Some(ref store_pool_write) => {
                 if let Some(store_kv) = store_pool_write.get(&pool_key) {
@@ -168,6 +171,7 @@ impl StoreKVPool {
             &self.pool,
             &builder,
             write_guard,
+            override_options,
         )
         .map(Some)
     }
@@ -372,7 +376,7 @@ impl StoreKVPool {
         let origin_kv = StoreKVBuilder {
             kv_store_config: Arc::clone(&self.kv_store_config),
         }
-        .open(collection_hash as StoreKVAtom)
+        .open(collection_hash as StoreKVAtom, |_| {})
         .map_err(|_| io::Error::other("database open failure"))?;
 
         // Initialize KV database backup engine
@@ -452,11 +456,17 @@ impl StoreKVPool {
 impl StoreGenericPool<StoreKVKey, StoreKV, StoreKVBuilder> for StoreKVPool {}
 
 impl StoreKVBuilder {
-    fn open(&self, collection_hash: StoreKVAtom) -> Result<DB, DBError> {
+    fn open(
+        &self,
+        collection_hash: StoreKVAtom,
+        override_options: impl FnOnce(&mut rocksdb::Options),
+    ) -> Result<DB, DBError> {
         tracing::debug!("opening key-value database for collection: <{collection_hash:x}>");
 
         // Configure database options
-        let db_options = self.configure();
+        let mut db_options = self.configure();
+
+        override_options(&mut db_options);
 
         // Open database at path for collection
         DB::open(&db_options, self.kv_store_config.path(collection_hash))
@@ -607,8 +617,14 @@ impl crate::config::ConfigStoreKV {
 }
 
 impl StoreGenericBuilder<StoreKVKey, StoreKV> for StoreKVBuilder {
-    fn build(&self, pool_key: StoreKVKey) -> Result<StoreKV, ()> {
-        match self.open(pool_key.collection_hash) {
+    type Options = rocksdb::Options;
+
+    fn build(
+        &self,
+        pool_key: StoreKVKey,
+        override_options: impl FnOnce(&mut rocksdb::Options),
+    ) -> Result<StoreKV, ()> {
+        match self.open(pool_key.collection_hash, override_options) {
             Ok(db) => {
                 let now = SystemTime::now();
 
@@ -1386,7 +1402,7 @@ mod tests {
 
         assert!(
             kv_pool
-                .acquire(StoreKVAcquireMode::Any, "c:test:1", None)
+                .acquire(StoreKVAcquireMode::Any, "c:test:1", None, |_| {})
                 .is_ok()
         );
     }
@@ -1405,7 +1421,7 @@ mod tests {
         let kv_pool = StoreKVPool::new(kv_store_config);
 
         let store = kv_pool
-            .acquire(StoreKVAcquireMode::Any, "c:test:3", None)
+            .acquire(StoreKVAcquireMode::Any, "c:test:3", None, |_| {})
             .unwrap()
             .unwrap();
         let action = StoreKVActionBuilder::access_read_write(

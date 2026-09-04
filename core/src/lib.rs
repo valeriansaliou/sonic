@@ -32,6 +32,9 @@ mod stopwords;
 pub mod store;
 pub mod util;
 
+// Re-export `rocksdb` as it’s part of the public API.
+pub use rocksdb;
+
 pub use self::config::Config;
 pub use self::executor::Executor;
 pub use self::query::Query;
