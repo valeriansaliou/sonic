@@ -101,9 +101,11 @@ impl ChannelHandle {
 
                 self.handle_stream(mode, stream);
             }
-            Err(err) => {
-                write!(stream, "ENDED {}{}", err.to_str(), LINE_FEED).expect("write failed");
-            }
+            Err(err) => match write!(stream, "ENDED {}{}", err.to_str(), LINE_FEED) {
+                Ok(()) => {}
+                Err(err) if err.kind() == ErrorKind::BrokenPipe => {}
+                Err(err) => panic!("write failed: {err:?}"),
+            },
         }
 
         // Decrement connected clients count
