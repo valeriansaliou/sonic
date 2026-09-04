@@ -110,10 +110,11 @@ impl StoreKVPool {
         self.store_access_lock.write().unwrap()
     }
 
-    pub fn acquire(
-        &self,
+    pub fn acquire<'a>(
+        &'a self,
         mode: StoreKVAcquireMode,
         collection: impl AsRef<str>,
+        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVKey, Arc<StoreKV>>>>,
     ) -> Result<Option<Arc<StoreKV>>, ()> {
         let collection = collection.as_ref();
         let pool_key = StoreKVKey::from_str(collection);
@@ -122,18 +123,25 @@ impl StoreKVPool {
         // Notice: this prevents two databases on the same collection to be opened at the same time.
         let _acquire = self.store_acquire_lock.lock().unwrap();
 
-        // Acquire a thread-safe store pool reference in read mode
-        let store_pool_read = self.pool.read().unwrap();
+        // Return cached value if store already open.
+        match write_guard {
+            Some(ref store_pool_write) => {
+                if let Some(store_kv) = store_pool_write.get(&pool_key) {
+                    return Self::proceed_acquire_cache("kv", collection, pool_key, store_kv)
+                        .map(Some);
+                }
+            }
+            None => {
+                let store_pool_read = self.pool.read().unwrap();
 
-        if let Some(store_kv) = store_pool_read.get(&pool_key) {
-            return Self::proceed_acquire_cache("kv", collection, pool_key, store_kv).map(Some);
-        }
+                if let Some(store_kv) = store_pool_read.get(&pool_key) {
+                    return Self::proceed_acquire_cache("kv", collection, pool_key, store_kv)
+                        .map(Some);
+                }
+            }
+        };
 
         tracing::info!("kv store not in pool for collection: {collection} {pool_key}, opening it");
-
-        // Important: we need to drop the read reference first, to avoid \
-        //   dead-locking when acquiring the RWLock in write mode in this block.
-        drop(store_pool_read);
 
         // Check if can open database?
         let can_open_db = if mode == StoreKVAcquireMode::OpenOnly {
@@ -153,13 +161,28 @@ impl StoreKVPool {
         };
 
         // Open KV database.
-        Self::proceed_acquire_open("kv", collection, pool_key, &self.pool, &builder).map(Some)
+        Self::proceed_acquire_open(
+            "kv",
+            collection,
+            pool_key,
+            &self.pool,
+            &builder,
+            write_guard,
+        )
+        .map(Some)
     }
 
-    fn close(&self, collection_hash: StoreKVAtom) {
+    fn close<'a>(
+        &'a self,
+        collection_hash: StoreKVAtom,
+        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVKey, Arc<StoreKV>>>>,
+    ) {
         tracing::debug!("closing key-value database for collection: <{collection_hash:x}>");
 
-        let mut store_pool_write = self.pool.write().unwrap();
+        let store_pool_write = match write_guard {
+            Some(x) => x,
+            None => &mut self.pool.write().unwrap(),
+        };
 
         let collection_target = StoreKVKey::from_atom(collection_hash);
 
@@ -392,7 +415,7 @@ impl StoreKVPool {
         };
 
         // Force a KV store close
-        self.close(collection_hash as StoreKVAtom);
+        self.close(collection_hash as StoreKVAtom, None);
 
         // Generate path to KV
         let kv_path = self.kv_store_config.path(collection_hash as StoreKVAtom);
@@ -675,7 +698,7 @@ impl<'build> StoreGenericActionBuilder for StoreKVActionBuilder<'build> {
         let collection_path = self.kv_pool.kv_store_config.path(collection_atom);
 
         // Force a KV store close
-        self.kv_pool.close(collection_atom);
+        self.kv_pool.close(collection_atom, None);
 
         if !collection_path.exists() {
             tracing::debug!(
@@ -1361,7 +1384,11 @@ mod tests {
         let kv_store_config = test_kv_store_config();
         let kv_pool = StoreKVPool::new(kv_store_config);
 
-        assert!(kv_pool.acquire(StoreKVAcquireMode::Any, "c:test:1").is_ok());
+        assert!(
+            kv_pool
+                .acquire(StoreKVAcquireMode::Any, "c:test:1", None)
+                .is_ok()
+        );
     }
 
     #[test]
@@ -1378,7 +1405,7 @@ mod tests {
         let kv_pool = StoreKVPool::new(kv_store_config);
 
         let store = kv_pool
-            .acquire(StoreKVAcquireMode::Any, "c:test:3")
+            .acquire(StoreKVAcquireMode::Any, "c:test:3", None)
             .unwrap()
             .unwrap();
         let action = StoreKVActionBuilder::access_read_write(

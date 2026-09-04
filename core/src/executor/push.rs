@@ -25,7 +25,8 @@ impl super::Executor {
         let _fst_read_guard = self.fst_pool.lock_read_access();
 
         let (Ok(kv_store), Ok(fst_store)) = (
-            self.kv_pool.acquire(StoreKVAcquireMode::Any, collection),
+            self.kv_pool
+                .acquire(StoreKVAcquireMode::Any, collection, None),
             self.fst_pool.acquire(collection, bucket),
         ) else {
             return Err(());

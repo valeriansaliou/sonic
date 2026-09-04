@@ -19,9 +19,9 @@ impl super::Executor {
                 //   prevents the database from being erased while using it in this block.
                 let _kv_read_guard = self.kv_pool.lock_read_access();
 
-                if let Ok(kv_store) = self
-                    .kv_pool
-                    .acquire(StoreKVAcquireMode::OpenOnly, collection)
+                if let Ok(kv_store) =
+                    self.kv_pool
+                        .acquire(StoreKVAcquireMode::OpenOnly, collection, None)
                 {
                     let Some(kv_store) = kv_store else {
                         tracing::debug!(

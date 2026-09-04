@@ -9,7 +9,7 @@ use core::cmp::Eq;
 use core::hash::Hash;
 use hashbrown::HashMap;
 use std::fmt::Display;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, RwLockWriteGuard};
 use std::time::{Duration, SystemTime};
 
 pub trait StoreGeneric {
@@ -46,17 +46,21 @@ pub trait StoreGenericPool<
         Ok(store.clone())
     }
 
-    fn proceed_acquire_open(
+    fn proceed_acquire_open<'a>(
         kind: &str,
         collection_str: &str,
         pool_key: K,
-        pool: &Arc<RwLock<HashMap<K, Arc<S>>>>,
+        pool: &'a Arc<RwLock<HashMap<K, Arc<S>>>>,
         builder: &B,
+        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<K, Arc<S>>>>,
     ) -> Result<Arc<S>, ()> {
         match builder.build(pool_key) {
             Ok(store) => {
                 // Acquire a thread-safe store pool reference in write mode
-                let mut store_pool_write = pool.write().unwrap();
+                let store_pool_write = match write_guard {
+                    Some(x) => x,
+                    None => &mut pool.write().unwrap(),
+                };
                 let store_box = Arc::new(store);
 
                 store_pool_write.insert(pool_key, store_box.clone());

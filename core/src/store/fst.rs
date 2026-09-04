@@ -196,7 +196,14 @@ impl StoreFSTPool {
                 fst_action_config: self.fst_action_config,
             };
 
-            Self::proceed_acquire_open("fst", collection_str, pool_key, &self.graph_pool, &builder)
+            Self::proceed_acquire_open(
+                "fst",
+                collection_str,
+                pool_key,
+                &self.graph_pool,
+                &builder,
+                None,
+            )
         }
     }
 

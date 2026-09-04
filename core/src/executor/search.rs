@@ -35,7 +35,7 @@ impl super::Executor {
 
             let (Ok(kv_store), Ok(fst_store)) = (
                 self.kv_pool
-                    .acquire(StoreKVAcquireMode::OpenOnly, collection),
+                    .acquire(StoreKVAcquireMode::OpenOnly, collection, None),
                 self.fst_pool.acquire(collection, bucket),
             ) else {
                 return Err(());
