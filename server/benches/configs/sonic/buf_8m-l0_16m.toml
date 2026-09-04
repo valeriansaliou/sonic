@@ -1,0 +1,5 @@
+[store.kv.database]
+# Merge small-sized memtables into medium L0 SSTs.
+write_buffer_size = 8_192 # 8MiB
+min_write_buffer_number_to_merge = 2 # L0 SST ≤ 16MiB
+max_write_buffer_number = 128 # Do not stop writes while a flush is in progress (max 1GiB RAM usage).

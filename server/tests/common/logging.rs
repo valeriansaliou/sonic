@@ -70,3 +70,28 @@ impl Default for LoggingOptions {
         }
     }
 }
+
+pub struct HumanBytes(pub u64);
+
+impl std::fmt::Display for HumanBytes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB"];
+
+        let mut size = self.0 as f64;
+        let mut unit = 0;
+
+        while size >= 1024.0 && unit < UNITS.len() - 1 {
+            size /= 1024.0;
+            unit += 1;
+        }
+
+        std::fmt::Display::fmt(&size, f)?;
+        write!(f, "{}", UNITS[unit])
+    }
+}
+
+impl<T: Into<u64>> From<T> for HumanBytes {
+    fn from(value: T) -> Self {
+        Self(value.into())
+    }
+}

@@ -1,0 +1,3 @@
+defer_compaction = true
+rocksdb_unordered_write = false # NOTE: Incompatible with vector memtable
+rocksdb_memtable = "vector"
