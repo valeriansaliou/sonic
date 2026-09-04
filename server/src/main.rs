@@ -37,6 +37,7 @@ use clap::{Arg, Command};
 
 use channel::listen::{ChannelListen, ChannelListenBuilder};
 use channel::statistics::ensure_states as ensure_states_channel_statistics;
+use sonic::executor::DynamicConfigStore;
 use sonic::store::fst::StoreFSTPool;
 use sonic::store::kv::StoreKVPool;
 use tasker::runtime::TaskerBuilder;
@@ -129,6 +130,8 @@ fn main() {
     let kv_pool = StoreKVPool::new(Arc::clone(&app_conf.sonic.store.kv));
     let fst_pool = StoreFSTPool::new(Arc::clone(&app_conf.sonic.store.fst), Default::default());
 
+    let dynamic_config = Arc::default();
+
     // Spawn tasker (background thread)
     thread::spawn(spawn_tasker(kv_pool.clone(), fst_pool.clone()));
 
@@ -137,6 +140,7 @@ fn main() {
         kv_pool.clone(),
         fst_pool.clone(),
         Arc::new(app_conf),
+        dynamic_config,
     ));
 
     tracing::info!("started");
@@ -196,11 +200,13 @@ fn spawn_channel(
     kv_pool: StoreKVPool,
     fst_pool: StoreFSTPool,
     app_conf: Arc<Config>,
+    dynamic_conf_store: Arc<DynamicConfigStore>,
 ) -> impl FnOnce() {
     let builder = ChannelListenBuilder {
         app_conf,
         kv_pool,
         fst_pool,
+        dynamic_conf_store,
     };
 
     move || {

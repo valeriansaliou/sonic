@@ -4,6 +4,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+#[derive(Default)]
 pub(crate) struct NoopU32HasherBuilder;
 
 impl std::hash::BuildHasher for NoopU32HasherBuilder {

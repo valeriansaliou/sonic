@@ -110,6 +110,12 @@ impl StoreKVPool {
         self.store_access_lock.write().unwrap()
     }
 
+    pub fn pool_write_guard<'a>(
+        &'a self,
+    ) -> RwLockWriteGuard<'a, HashMap<StoreKVKey, Arc<StoreKV>>> {
+        self.pool.write().unwrap()
+    }
+
     // TODO(refactor): Replace `mode` and `config_overrides` by a struct with
     //   `create_if_missing: bool` instead of `mode` and `bypass_cache: bool`.
     pub fn acquire<'a>(
@@ -176,7 +182,7 @@ impl StoreKVPool {
         .map(Some)
     }
 
-    fn close<'a>(
+    fn close_<'a>(
         &'a self,
         collection_hash: StoreKVAtom,
         write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVKey, Arc<StoreKV>>>>,
@@ -191,6 +197,18 @@ impl StoreKVPool {
         let collection_target = StoreKVKey::from_atom(collection_hash);
 
         store_pool_write.remove(&collection_target);
+    }
+
+    pub fn close<'a>(
+        &'a self,
+        collection_name: &str,
+        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVKey, Arc<StoreKV>>>>,
+    ) -> Result<(), ()> {
+        let collection_hash = StoreKeyerHasher::to_compact(collection_name);
+
+        self.close_(collection_hash as StoreKVAtom, write_guard);
+
+        Ok(())
     }
 
     pub fn janitor(&self) {
@@ -464,7 +482,7 @@ impl StoreKVPool {
         };
 
         // Force a KV store close
-        self.close(collection_hash as StoreKVAtom, None);
+        self.close_(collection_hash as StoreKVAtom, None);
 
         // Generate path to KV
         let kv_path = self.kv_store_config.path(collection_hash as StoreKVAtom);
@@ -759,7 +777,7 @@ impl<'build> StoreGenericActionBuilder for StoreKVActionBuilder<'build> {
         let collection_path = self.kv_pool.kv_store_config.path(collection_atom);
 
         // Force a KV store close
-        self.kv_pool.close(collection_atom, None);
+        self.kv_pool.close_(collection_atom, None);
 
         if !collection_path.exists() {
             tracing::debug!(

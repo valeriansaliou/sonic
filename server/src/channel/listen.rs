@@ -10,6 +10,7 @@ use std::process;
 use std::sync::{Arc, RwLock};
 use std::thread;
 
+use sonic::executor::DynamicConfigStore;
 use sonic::store::fst::StoreFSTPool;
 use sonic::store::kv::StoreKVPool;
 
@@ -21,12 +22,14 @@ pub struct ChannelListenBuilder {
     pub app_conf: Arc<crate::Config>,
     pub kv_pool: StoreKVPool,
     pub fst_pool: StoreFSTPool,
+    pub dynamic_conf_store: Arc<DynamicConfigStore>,
 }
 
 pub struct ChannelListen {
     app_conf: Arc<crate::Config>,
     kv_pool: StoreKVPool,
     fst_pool: StoreFSTPool,
+    dynamic_conf_store: Arc<DynamicConfigStore>,
 }
 
 pub static CHANNEL_AVAILABLE: RwLock<bool> = RwLock::new(true);
@@ -37,6 +40,7 @@ impl ChannelListenBuilder {
             app_conf: Arc::clone(&self.app_conf),
             kv_pool: self.kv_pool.clone(),
             fst_pool: self.fst_pool.clone(),
+            dynamic_conf_store: Arc::clone(&self.dynamic_conf_store),
         }
     }
 }
@@ -56,6 +60,7 @@ impl ChannelListen {
                                     app_conf: Arc::clone(&self.app_conf.sonic),
                                     kv_pool: self.kv_pool.clone(),
                                     fst_pool: self.fst_pool.clone(),
+                                    dynamic_conf_store: Arc::clone(&self.dynamic_conf_store),
                                 },
                             };
 

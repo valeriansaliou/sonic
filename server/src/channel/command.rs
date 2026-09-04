@@ -75,7 +75,12 @@ pub static COMMANDS_MODE_SEARCH: &[&str] = &["QUERY", "SUGGEST", "LIST", "PING",
 pub static COMMANDS_MODE_INGEST: &[&str] = &[
     "PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT",
 ];
-pub static COMMANDS_MODE_CONTROL: &[&str] = &["TRIGGER", "INFO", "PING", "HELP", "QUIT"];
+#[rustfmt::skip]
+pub static COMMANDS_MODE_CONTROL: &[&str] = &[
+    "TRIGGER", "INFO",
+    #[cfg(feature = "experimental-api")] "CONFIG",
+    "PING", "HELP", "QUIT"
+];
 #[rustfmt::skip]
 pub static CONTROL_TRIGGER_ACTIONS: &[&str] = &[
     "consolidate", "backup", "restore",
@@ -1037,11 +1042,155 @@ impl ChannelCommandControl {
         }
     }
 
+    #[cfg(feature = "experimental-api")]
+    pub fn dispatch_config(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeControl,
+    ) -> ChannelResult {
+        const FORMAT: &str = "CONFIG <collection> (SET <key=value>...|RESET [key]...)";
+
+        let Some(collection) = parts.next() else {
+            return Err(ChannelCommandError::InvalidFormat(FORMAT));
+        };
+
+        tracing::debug!(collection, "dispatching config command");
+
+        match parts.next() {
+            Some("SET") => config_set(parts, ctx, collection),
+            Some("RESET") => config_reset(parts, ctx, collection),
+            Some(action) => {
+                tracing::warn!("Unknown CONFIG action: {action}");
+                Err(ChannelCommandError::NotFound)
+            }
+            None => Err(ChannelCommandError::InvalidFormat(FORMAT)),
+        }
+    }
+
     pub fn dispatch_help(
         parts: SplitWhitespace,
         _ctx: &ChannelMessageModeControl,
     ) -> ChannelResult {
         ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_CONTROL)
+    }
+}
+
+#[cfg(feature = "experimental-api")]
+// TODO: Use proper parsing to add support for quoted values (with spaces).
+fn config_set(
+    parts: SplitWhitespace,
+    ctx: &ChannelMessageModeControl,
+    collection: &str,
+) -> ChannelResult {
+    use sonic::executor::{DynamicConfig, RocksDbMemtable};
+
+    fn parse_bool(str: &str) -> Option<bool> {
+        match str {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        }
+    }
+
+    // TODO: Maybe replace this by a proper deserializer? (If so, make sure to suport duplicate keys)
+    fn merge(
+        config: &mut DynamicConfig,
+        key: &str,
+        value: &str,
+    ) -> Result<(), ChannelCommandError> {
+        let invalid_meta_value =
+            || ChannelCommandError::InvalidMetaValue((key.to_owned(), value.to_owned()));
+
+        // WARN: Think about updating `CONFIG RESET` when adding new keys here!
+        match key {
+            "rocksdb.disable_auto_compactions" => {
+                config.rocksdb.disable_auto_compactions =
+                    Some(parse_bool(value).ok_or_else(invalid_meta_value)?);
+            }
+            "rocksdb.unordered_write" => {
+                config.rocksdb.unordered_write =
+                    Some(parse_bool(value).ok_or_else(invalid_meta_value)?);
+            }
+            "rocksdb.memtable" => match value {
+                "default" => config.rocksdb.memtable = Some(RocksDbMemtable::Default),
+                "vector" => config.rocksdb.memtable = Some(RocksDbMemtable::Vector),
+                _ => return Err(invalid_meta_value()),
+            },
+            key => {
+                tracing::warn!("Unknown dynamic configuration key: {key:?}");
+                return Err(ChannelCommandError::NotFound);
+            }
+        }
+
+        Ok(())
+    }
+
+    let mut config = (ctx.executor.dynamic_conf_store)
+        .get(collection)
+        .unwrap_or_default();
+
+    for part in parts {
+        match part.split_once("=") {
+            Some((key, value)) => merge(&mut config, key, value)?,
+
+            // If key is passed alone, consider it a boolean.
+            None => merge(&mut config, part, "true")?,
+        }
+    }
+
+    // NOTE: `set_dynamic_conf` updates `dynamic_conf_store` on success.
+    match ctx.executor.set_dynamic_conf(collection, config) {
+        Ok(()) => Ok(vec![ChannelCommandResponse::Ok]),
+        Err(error) => {
+            tracing::error!("{error:?}");
+            Err(ChannelCommandError::InternalError)
+        }
+    }
+}
+
+#[cfg(feature = "experimental-api")]
+fn config_reset(
+    parts: SplitWhitespace,
+    ctx: &ChannelMessageModeControl,
+    collection: &str,
+) -> ChannelResult {
+    let mut parts = parts.peekable();
+    let new_conf = if parts.peek().is_some() {
+        let mut new_conf = (ctx.executor.dynamic_conf_store)
+            .get(collection)
+            .unwrap_or_default();
+
+        macro_rules! match_reset {
+            ($key:ident => $($($path:ident).+),+) => {
+                match $key {
+                    $(stringify!($($path).+) => new_conf.$($path).+ = None,)+
+                    key => {
+                        tracing::warn!("Unknown dynamic configuration key: {key:?}");
+                        return Err(ChannelCommandError::NotFound);
+                    }
+                }
+            };
+        }
+
+        for key in parts {
+            match_reset!(key =>
+                rocksdb.disable_auto_compactions,
+                rocksdb.unordered_write,
+                rocksdb.memtable
+            );
+        }
+
+        new_conf
+    } else {
+        // If no argument was provided, reset the whole configuration.
+        sonic::DynamicConfig::default()
+    };
+
+    match ctx.executor.set_dynamic_conf(collection, new_conf) {
+        Ok(()) => Ok(vec![ChannelCommandResponse::Ok]),
+        Err(error) => {
+            tracing::error!("{error:?}");
+            Err(ChannelCommandError::InternalError)
+        }
     }
 }
 

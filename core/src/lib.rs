@@ -36,5 +36,6 @@ pub mod util;
 pub use rocksdb;
 
 pub use self::config::Config;
+pub use self::executor::DynamicConfig;
 pub use self::executor::Executor;
 pub use self::query::Query;

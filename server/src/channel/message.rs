@@ -207,20 +207,21 @@ impl<'this> ChannelMessageMode for ChannelMessageModeControl<'this> {
         gen_channel_message_mode_handle!(message, COMMANDS_MODE_CONTROL, self, {
             "TRIGGER" => ChannelCommandControl::dispatch_trigger,
             "INFO" => ChannelCommandControl::dispatch_info,
+            #[cfg(feature = "experimental-api")] "CONFIG" => ChannelCommandControl::dispatch_config,
             "HELP" => ChannelCommandControl::dispatch_help,
         })
     }
 }
 
 macro_rules! gen_channel_message_mode_handle {
-    ($message:ident, $commands:ident, $ctx:ident, { $($external:expr => $internal:expr),+, }) => {{
+    ($message:ident, $commands:ident, $ctx:ident, { $($(#[$meta:meta])? $external:literal => $internal:expr),+, }) => {{
         let (command, parts) = ChannelMessage::extract($message);
 
         if command.is_empty() == true || $commands.contains(&command.as_str()) == true {
             match command.as_str() {
                 "" => Ok(vec![ChannelCommandResponse::Void]),
                 $(
-                    $external => $internal(parts, $ctx),
+                    $(#[$meta])? $external => $internal(parts, $ctx),
                 )+
                 "PING" => ChannelCommandBase::dispatch_ping(parts),
                 "QUIT" => ChannelCommandBase::dispatch_quit(parts),
