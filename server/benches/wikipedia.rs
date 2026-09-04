@@ -48,6 +48,8 @@ fn criterion_benchmark(c: &mut Criterion) {
         },
     );
 
+    let no_progress = *NO_PROGRESS;
+
     let mut group = c.benchmark_group("wikipedia");
 
     // No need to warm up for 3 seconds (default).
@@ -100,7 +102,9 @@ fn criterion_benchmark(c: &mut Criterion) {
 
                             match black_box(channel.push_with_options("wikipedia", "default", article.id, article.text, &[&Lang("eng")])) {
                                 Ok(()) => {
-                                    eprint!("{}", size_char(len));
+                                    if !no_progress {
+                                        eprint!("{}", size_char(len));
+                                    }
 
                                     ingested_count += 1;
                                     ingested_bytes += len as u32;
@@ -187,7 +191,9 @@ fn criterion_benchmark(c: &mut Criterion) {
 
                             match black_box(channel.push_with_options("wikipedia", "default", article.id, article.text, &[&Lang("eng")])) {
                                 Ok(()) => {
-                                    eprint!("{}", size_char(len));
+                                    if !no_progress {
+                                        eprint!("{}", size_char(len));
+                                    }
 
                                     ingested_count += 1;
                                     ingested_bytes += len as u32;
