@@ -176,6 +176,21 @@ pub fn start_sonic(
 
             xctrace
         }
+        "thread_state" => {
+            let xctrace = Command::new("xctrace")
+                .arg("record")
+                .args(&["--instrument", "Time Profiler"])
+                .args(&["--instrument", "CPU Profiler"])
+                .args(&["--instrument", "Thread State Trace"])
+                .args(&["--attach", &sonic.id().to_string()])
+                .spawn()
+                .unwrap();
+
+            // Give a bit of time for `xctrace` to startup.
+            std::thread::sleep(std::time::Duration::from_millis(2000));
+
+            xctrace
+        }
         val => panic!(
             "Unknown profiling mode: {val:?}. Check your `PROFILING_MODE` environment variable."
         ),
