@@ -23,7 +23,7 @@ use crate::huggingface_wikipedia::WikipediaArticle;
 use crate::wikipedia_common::*;
 
 static SHARD_PATHS: LazyLock<Vec<PathBuf>> =
-    LazyLock::new(|| download_shards("wikimedia/wikipedia", "20231101.simple"));
+    LazyLock::new(|| download_shards("wikimedia/wikipedia", "20231101.en", Some(2)));
 
 fn articles_iter(limit: usize) -> impl Iterator<Item = WikipediaArticle> {
     SHARD_PATHS

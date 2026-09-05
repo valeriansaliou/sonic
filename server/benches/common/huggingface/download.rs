@@ -20,13 +20,22 @@ pub fn download_files<const N: usize>(dataset: &str, filenames: [&str; N]) -> [P
 }
 
 /// Download and list the Parquet shards for a dataset configuration.
-pub fn download_shards(dataset: &str, config: &str) -> Vec<PathBuf> {
+pub fn download_shards(dataset: &str, config: &str, limit: Option<usize>) -> Vec<PathBuf> {
     let cache = hf_hub::Cache::from_env();
     if let Some(cache_path) = cache.dataset(dataset.to_owned()).get(config) {
-        return std::fs::read_dir(cache_path)
+        let shards: Vec<PathBuf> = std::fs::read_dir(cache_path)
             .unwrap()
             .map(|entry| entry.unwrap().path())
+            .take(limit.unwrap_or(usize::MAX))
             .collect();
+
+        // NOTE: There would be a bug if only n shards have been downloaded
+        //   then we ask for unlimited. But we don’t care about this edge case,
+        //   offline support is better. To fix it we could check the name of
+        //   the parquet file (e.g. `train-00001-of-00041.parquet`).
+        if limit.is_none_or(|limit| shards.len() == limit) {
+            return shards;
+        }
     }
 
     let api = Api::new().unwrap();
@@ -39,6 +48,7 @@ pub fn download_shards(dataset: &str, config: &str) -> Vec<PathBuf> {
         .into_iter()
         .map(|file| file.rfilename)
         .filter(|filename| filename.starts_with(&prefix) && filename.ends_with(".parquet"))
+        .take(limit.unwrap_or(usize::MAX))
         .collect();
     filenames.sort_unstable();
 
