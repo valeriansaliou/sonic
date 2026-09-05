@@ -5,6 +5,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use hashbrown::HashSet;
 use rocksdb::WriteBatch;
 use std::sync::Arc;
 
@@ -12,6 +13,7 @@ use crate::lexer::TokenLexer;
 use crate::store::StoreItem;
 use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
+use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
     pub fn push(&self, item: StoreItem, lexer: TokenLexer, assume_new: bool) -> Result<(), ()> {
@@ -89,20 +91,26 @@ impl super::Executor {
 
         let mut batch = WriteBatch::default();
 
+        let mut tokens = HashSet::with_capacity_and_hasher(128, NoopU32HasherBuilder);
+
         for (token, term_hashed, _) in lexer {
             let term = token.as_str();
 
-            // Link IID to term
-            kv_action.add_term_to_iids(&mut batch, term_hashed, std::iter::once(iid));
-
-            // Link term to IID
-            kv_action.add_iid_to_terms(&mut batch, iid, std::iter::once(term_hashed));
+            tokens.insert(term_hashed);
 
             // Push to FST graph? (this consumes the term; to avoid sub-clones)
             if fst_action.push_word(&term, &self.app_conf.store.fst) {
                 tracing::trace!("push term committed to graph: {}", term);
             }
         }
+
+        for &term_hashed in tokens.iter() {
+            // Link IID to term
+            kv_action.add_term_to_iids(&mut batch, term_hashed, std::iter::once(iid));
+        }
+
+        // Link terms to IID
+        kv_action.add_iid_to_terms(&mut batch, iid, tokens.into_iter());
 
         executor_ensure_op!(kv_action.write(batch));
 
