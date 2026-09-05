@@ -69,7 +69,10 @@ fn criterion_benchmark(c: &mut Criterion) {
         group.measurement_time(Duration::from_secs(30));
 
         let total_bytes = articles().map(|article| article.text.len() as u64).sum();
-        group.throughput(Throughput::Bytes(total_bytes));
+        group.throughput(Throughput::ElementsAndBytes {
+            elements: articles().count() as u64,
+            bytes: total_bytes,
+        });
 
         group.bench_function(BenchmarkId::new("push", config), |b| {
             b.iter_custom(|iters| {
