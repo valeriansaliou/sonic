@@ -481,8 +481,9 @@ impl StoreKVBuilder {
         let mut env = rocksdb::Env::new().unwrap();
 
         macro_rules! if_some {
-            ($opts:ident.$set_fn:ident($value:expr)) => {
+            ($(#[$($meta:meta),+])? $opts:ident.$set_fn:ident($value:expr)) => {
                 if let Some(value) = $value {
+                    $(#[$($meta),+])?
                     $opts.$set_fn(*value);
                 }
             };
