@@ -48,7 +48,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         },
     );
 
-    let no_progress = *NO_PROGRESS;
+    let show_progress = *SHOW_PROGRESS;
 
     let mut group = c.benchmark_group("wikipedia_parallel");
 
@@ -118,7 +118,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
                                         match black_box(channel.push_with_options("wikipedia", "default", article.id, article.text, &[&Lang("eng")])) {
                                             Ok(()) => {
-                                                if !no_progress {
+                                                if show_progress {
                                                     eprint!("{}", size_char(len));
                                                 }
 

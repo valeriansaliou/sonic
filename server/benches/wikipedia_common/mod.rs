@@ -16,7 +16,7 @@ use crate::common::prelude::*;
 use crate::common::spawn_guard::SpawnGuard;
 use crate::huggingface_wikipedia::WikipediaArticle;
 
-pub static NO_PROGRESS: LazyLock<bool> = LazyLock::new(|| std::env::var("NO_PROGRESS").is_ok());
+pub static SHOW_PROGRESS: LazyLock<bool> = LazyLock::new(|| std::env::var("SHOW_PROGRESS").is_ok());
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PushBenchmarkConfig {
@@ -110,7 +110,7 @@ pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
 
     static PATHS: LazyLock<RwLock<HashMap<ConfigNormalization, PathBuf>>> =
         LazyLock::new(|| RwLock::new(HashMap::with_capacity(1)));
-    let no_progress = *NO_PROGRESS;
+    let show_progress = *SHOW_PROGRESS;
 
     let mut paths = PATHS.write().unwrap();
     let path = paths
@@ -151,7 +151,7 @@ pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
 
                         match channel.push_with_options("wikipedia", "default", article.id, article.text, &[&Lang("eng")]) {
                             Ok(()) => {
-                                if !no_progress {
+                                if show_progress {
                                     eprint!("{}", size_char(len));
                                 }
 
