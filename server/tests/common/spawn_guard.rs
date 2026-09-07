@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 /// Automatically kills the child process on [Drop].
 pub struct SpawnGuard {
     pub(super) sonic: std::process::Child,
-    pub(super) xctrace: Option<std::process::Child>,
+    pub(super) xctrace: Option<(std::process::Child, std::path::PathBuf)>,
 }
 
 impl SpawnGuard {
@@ -58,12 +58,18 @@ impl std::ops::DerefMut for SpawnGuard {
 
 impl Drop for SpawnGuard {
     fn drop(&mut self) {
-        if let Some(xctrace) = self.xctrace.as_mut() {
+        if let Some((xctrace, xctrace_output)) = self.xctrace.as_mut() {
             std::process::Command::new("kill")
                 .args(["-INT", &xctrace.id().to_string()])
                 .status()
                 .unwrap();
             xctrace.wait().unwrap();
+
+            if xctrace_output.ends_with(".trace") {
+                tracing::info!("Saved profiling trace as {xctrace_output:?}");
+            } else {
+                tracing::info!("Saved profiling trace in {xctrace_output:?}");
+            }
         }
 
         self.sonic.kill().unwrap();

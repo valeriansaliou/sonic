@@ -109,7 +109,7 @@ pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
         .or_insert_with(|| {
             let data_path = Path::new(SONIC_DATA_PATH).join("prepopulated");
 
-            let sonic = start_sonic(&data_path, |command| {
+            let sonic = start_sonic(None, &data_path, |command| {
                 apply_normalization(normalization_config, command)
             });
 
@@ -188,7 +188,7 @@ pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
         })
         .as_path();
 
-    start_sonic(path, |command| {
+    start_sonic(None, path, |command| {
         update_command(apply_normalization(normalization_config, command))
     })
 }

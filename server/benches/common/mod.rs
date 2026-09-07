@@ -11,7 +11,7 @@ use std::process::Command;
 use std::sync::atomic::AtomicU16;
 use std::sync::{LazyLock, atomic};
 
-use crate::common::globals::{ADDR, SONIC_BIN_PATH, SONIC_DATA_PATH};
+use crate::common::globals::{ADDR, SONIC_BENCH_TRACES_PATH, SONIC_BIN_PATH, SONIC_DATA_PATH};
 use crate::common::logging::LOG_LEVEL;
 use crate::common::path_guard::PathGuard;
 use crate::common::spawn_guard::SpawnGuard;
@@ -87,6 +87,16 @@ pub mod globals {
         "/bench-data/",
         env!("CARGO_CRATE_NAME")
     );
+
+    pub static SONIC_BENCH_TRACES_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
+        let path = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("bench-traces");
+
+        if !path.exists() {
+            std::fs::create_dir_all(&path).unwrap();
+        }
+
+        path
+    });
 }
 
 static TEST_COUNTER: AtomicU16 = AtomicU16::new(0);
@@ -126,12 +136,15 @@ fn new_data_path(test_id: u16) -> PathBuf {
     path
 }
 
-pub fn start_sonic_empty(update_command: impl FnOnce(&mut Command) -> &mut Command) -> RunContext {
+pub fn start_sonic_empty(
+    run_name: Option<&str>,
+    update_command: impl FnOnce(&mut Command) -> &mut Command,
+) -> RunContext {
     let run_id = TEST_COUNTER.fetch_add(1, atomic::Ordering::SeqCst);
 
     let data_path = new_data_path(run_id);
 
-    let spawn_guard = start_sonic(&data_path, update_command);
+    let spawn_guard = start_sonic(run_name, &data_path, update_command);
 
     let data_guard = PathGuard(data_path);
 
@@ -146,6 +159,7 @@ pub fn start_sonic_empty(update_command: impl FnOnce(&mut Command) -> &mut Comma
 
 #[must_use]
 pub fn start_sonic(
+    run_name: Option<&str>,
     data_path: &Path,
     update_command: impl FnOnce(&mut Command) -> &mut Command,
 ) -> SpawnGuard {
@@ -181,40 +195,55 @@ pub fn start_sonic(
     .spawn()
     .unwrap();
 
-    let xctrace = profiling_mode.map(|val| match val.as_str() {
-        "time" => {
-            let xctrace = Command::new("xctrace")
-                .arg("record")
-                .args(&["--instrument", "Time Profiler"])
-                // .args(&["--instrument", "CPU Counters"])
-                .args(&["--instrument", "CPU Profiler"])
-                .args(&["--attach", &sonic.id().to_string()])
-                .spawn()
-                .unwrap();
+    let xctrace = profiling_mode.map(|val| {
+        let (mut xctrace_record, xctrace_output) = {
+            let mut command = Command::new("xctrace");
 
-            // Give a bit of time for `xctrace` to startup.
-            std::thread::sleep(std::time::Duration::from_millis(2000));
+            let mut output = SONIC_BENCH_TRACES_PATH.clone();
 
-            xctrace
+            if let Some(run_name) = run_name {
+                let id = std::time::SystemTime::now()
+                    .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+
+                output = output
+                    .join(run_name)
+                    .with_extension(id.to_string())
+                    .with_added_extension("trace");
+            }
+
+            command.arg("record").arg("--output").arg(&output);
+
+            (command, output)
+        };
+
+        match val.as_str() {
+            "time" => {
+                xctrace_record
+                    .args(&["--instrument", "Time Profiler"])
+                    // .args(&["--instrument", "CPU Counters"])
+                    .args(&["--instrument", "CPU Profiler"])
+                    .args(&["--attach", &sonic.id().to_string()]);
+            }
+            "thread_state" => {
+                xctrace_record
+                    .args(&["--instrument", "Time Profiler"])
+                    .args(&["--instrument", "CPU Profiler"])
+                    .args(&["--instrument", "Thread State Trace"])
+                    .args(&["--attach", &sonic.id().to_string()]);
+            }
+            val => panic!(
+                "Unknown profiling mode: {val:?}. Check your `PROFILING_MODE` environment variable."
+            ),
         }
-        "thread_state" => {
-            let xctrace = Command::new("xctrace")
-                .arg("record")
-                .args(&["--instrument", "Time Profiler"])
-                .args(&["--instrument", "CPU Profiler"])
-                .args(&["--instrument", "Thread State Trace"])
-                .args(&["--attach", &sonic.id().to_string()])
-                .spawn()
-                .unwrap();
 
-            // Give a bit of time for `xctrace` to startup.
-            std::thread::sleep(std::time::Duration::from_millis(2000));
+        let xctrace = xctrace_record.spawn().unwrap();
 
-            xctrace
-        }
-        val => panic!(
-            "Unknown profiling mode: {val:?}. Check your `PROFILING_MODE` environment variable."
-        ),
+        // Give a bit of time for `xctrace` to startup.
+        std::thread::sleep(std::time::Duration::from_millis(2000));
+
+        (xctrace, xctrace_output)
     });
 
     // Auto-kill Sonic.

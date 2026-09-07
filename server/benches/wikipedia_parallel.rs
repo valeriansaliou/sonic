@@ -133,7 +133,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     let mut elapsed_total = Duration::ZERO;
 
                     for _i in 0..iters {
-                        let sonic = start_sonic_empty(|command| command.arg("-c").arg(sonic_conf_path));
+                        let sonic = start_sonic_empty(Some(bench_name.as_str()), |command| command.arg("-c").arg(sonic_conf_path));
 
                         let multiplexer = Arc::new(SonicMultiplexer::new().unwrap());
 
