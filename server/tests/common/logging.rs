@@ -95,3 +95,28 @@ impl<T: Into<u64>> From<T> for HumanBytes {
         Self(value.into())
     }
 }
+
+pub struct CompactThousands(pub u64);
+
+impl std::fmt::Display for CompactThousands {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        const UNITS: &[&str] = &["", "K", "M", "B", "T"];
+
+        let mut number = self.0 as f64;
+        let mut unit = 0;
+
+        while number >= 1000.0 && unit < UNITS.len() - 1 {
+            number /= 1000.0;
+            unit += 1;
+        }
+
+        std::fmt::Display::fmt(&number, f)?;
+        write!(f, "{}", UNITS[unit])
+    }
+}
+
+impl<T: Into<u64>> From<T> for CompactThousands {
+    fn from(value: T) -> Self {
+        Self(value.into())
+    }
+}

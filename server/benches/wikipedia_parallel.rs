@@ -10,6 +10,7 @@ mod huggingface_wikipedia;
 mod wikipedia_common;
 
 use std::hint::black_box;
+use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -19,7 +20,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use crate::common::client_helpers::trigger_compact;
 use crate::common::huggingface::download::download_shards;
 use crate::common::huggingface::load::iter_shard;
-use crate::common::logging::HumanBytes;
+use crate::common::logging::{CompactThousands, HumanBytes};
 use crate::common::prelude::*;
 use crate::huggingface_wikipedia::WikipediaArticle;
 use crate::wikipedia_common::*;
@@ -97,6 +98,22 @@ fn criterion_benchmark(c: &mut Criterion) {
         })
         .collect::<Vec<_>>();
 
+    let log_file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("benches/results.md");
+    let exists = log_file_path.exists();
+    let mut log_file = std::fs::File::options()
+        .create(true)
+        .append(true)
+        .open(&log_file_path)
+        .unwrap();
+    if !exists {
+        writeln!(
+            log_file,
+            "| data size | bench conf | sonic conf | channels | ingest | compact | consolidate | thrpt | thrpt |\n\
+             | ---------:| ---------- | ---------- | --------:| ------:| -------:| -----------:| -----:| -----:|",
+        )
+        .unwrap();
+    }
+
     for (bench_conf_name, bench_conf_path) in bench_confs {
         for (sonic_conf_name, sonic_conf_path) in sonic_confs.iter() {
             let config = config::Config::builder()
@@ -109,7 +126,9 @@ fn criterion_benchmark(c: &mut Criterion) {
                 .try_deserialize::<ParallelBenchmarkConfig>()
                 .unwrap();
 
-            group.bench_function(BenchmarkId::new("push", format!("[bench={bench_conf_name}][sonic={sonic_conf_name}][channels={nchannels}]")), |b| {
+            let bench_name =
+                format!("[bench={bench_conf_name}][sonic={sonic_conf_name}][channels={nchannels}]");
+            group.bench_function(BenchmarkId::new("push", &bench_name), |b| {
                 b.iter_custom(|iters| {
                     let mut elapsed_total = Duration::ZERO;
 
@@ -144,7 +163,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
                         let articles = Arc::new(Mutex::new(articles()));
 
-                        let (mut elapsed, ingested_count, ingested_bytes) = (0..nchannels)
+                        let (mut ingest_duration, ingested_count, ingested_bytes) = (0..nchannels)
                             .map(|i| {
                                 std::thread::Builder::new().name(format!("thread-{i}")).spawn({
                                     let articles = Arc::clone(&articles);
@@ -214,44 +233,50 @@ fn criterion_benchmark(c: &mut Criterion) {
                                 (a + x, b + y, c + z)
                             });
 
-                        elapsed = elapsed / (nchannels as u32);
+                        ingest_duration = ingest_duration / (nchannels as u32);
 
-                        elapsed_total += elapsed;
+                        elapsed_total += ingest_duration;
 
-                        tracing::info!("Ingested {ingested_count} articles ({size:.2}) in {elapsed:.3?}.", size = HumanBytes::from(ingested_bytes));
+                        tracing::info!("Ingested {ingested_count} articles ({size:.2}) in {ingest_duration:.3?}.", size = HumanBytes::from(ingested_bytes));
 
-                        {
+                        let (compact_duration, consolidate_duration) = {
                             let mut channel = SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
 
-                            {
+                            let compact_duration = {
                                 tracing::info!("Compacting KV…");
 
                                 let start = Instant::now();
 
                                 black_box(trigger_compact(&channel, &[COLLECTION])).unwrap();
 
-                                let elapsed = start.elapsed();
-                                elapsed_total += elapsed;
+                                let compact_duration = start.elapsed();
+                                elapsed_total += compact_duration;
 
-                                tracing::info!("Compacted KV in {elapsed:.3?}.");
-                            }
+                                tracing::info!("Compacted KV in {compact_duration:.3?}.");
 
-                            {
+                                compact_duration
+                            };
+
+                            let consolidate_duration = {
                                 tracing::info!("Consolidating FST…");
 
                                 let start = Instant::now();
 
                                 black_box(channel.trigger_consolidate()).unwrap();
 
-                                let elapsed = start.elapsed();
-                                elapsed_total += elapsed;
+                                let consolidate_duration = start.elapsed();
+                                elapsed_total += consolidate_duration;
 
-                                tracing::info!("Consolidated FST in {elapsed:.3?}.");
-                            }
+                                tracing::info!("Consolidated FST in {consolidate_duration:.3?}.");
+
+                                consolidate_duration
+                            };
 
                             channel.quit().unwrap();
                             drop(channel);
-                        }
+
+                            (compact_duration, consolidate_duration)
+                        };
 
                         if config != ParallelBenchmarkConfig::default() {
                             tracing::info!("Resetting dynamic configuration…");
@@ -264,6 +289,16 @@ fn criterion_benchmark(c: &mut Criterion) {
                         }
 
                         drop(sonic);
+
+                        writeln!(
+                            log_file,
+                            "| {size:.2} | `{bench_conf_name}` | `{sonic_conf_name}` | {nchannels} | {ingest_duration:>9.3?} | {compact_duration:>9.3?} | {consolidate_duration:>9.3?} | {thrpt_bytes:>7.3}/s | {thrpt_elem:>7.3}elem/s |",
+                            size = HumanBytes::from(ingested_bytes),
+                            bench_conf_name = bench_conf_name.replace("-", "` `"),
+                            sonic_conf_name = sonic_conf_name.replace("-", "` `"),
+                            thrpt_bytes = HumanBytes::from((ingested_bytes as f32 / elapsed_total.as_secs_f32()) as u64),
+                            thrpt_elem = CompactThousands::from((ingested_count as f32 / elapsed_total.as_secs_f32()) as u64)
+                        ).unwrap();
                     }
 
                     elapsed_total
@@ -273,6 +308,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     group.finish();
+
+    tracing::info!("Logged results in {log_file_path:?}");
 }
 
 criterion_group!(benches, criterion_benchmark);
