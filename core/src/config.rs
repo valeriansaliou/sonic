@@ -43,13 +43,6 @@ impl Config {
             panic!("flush_after for kv must be strictly lower than inactive_after");
         }
 
-        // Check 'flush_after' for KV
-        if self.store.kv.database.max_flushes.is_some()
-            && self.store.kv.database.max_background_jobs.is_some()
-        {
-            panic!("max_background_jobs makes max_flushes unneeded, don’t configure both");
-        }
-
         // Check 'consolidate_after' for FST
         if self.store.fst.graph.consolidate_after >= self.store.fst.pool.inactive_after {
             panic!("consolidate_after for fst must be strictly lower than inactive_after");
@@ -253,7 +246,7 @@ pub struct ConfigStoreKVDatabase {
     pub max_subcompactions: Option<u32>,
 
     #[serde(default)]
-    pub max_flushes: Option<u32>,
+    pub max_flushes: Option<i32>,
 
     #[serde(default)]
     pub stats_dump_period_sec: Option<u32>,

@@ -478,6 +478,7 @@ impl StoreKVBuilder {
 
         // Make database options
         let mut db_options = rocksdb::Options::default();
+        let mut env = rocksdb::Env::new().unwrap();
 
         macro_rules! if_some {
             ($opts:ident.$set_fn:ident($value:expr)) => {
@@ -548,17 +549,28 @@ impl StoreKVBuilder {
         if_some!(db_options.set_target_file_size_base(target_file_size_base));
 
         let mut max_background_jobs = *max_background_jobs;
-        if max_background_jobs.is_none() {
-            if let Some(max_flushes) = max_flushes {
-                max_background_jobs = Some((max_subcompactions.unwrap_or(1) + max_flushes) as i32);
+
+        if let Some(max_flushes) = max_flushes {
+            if max_background_jobs.is_none() {
+                max_background_jobs = Some(max_subcompactions.unwrap_or(1) as i32 + max_flushes);
             }
+
+            #[allow(deprecated)]
+            db_options.set_max_background_flushes(*max_flushes);
+
+            // Update threads configuration otherwise RocksDB only uses 1/4 for flushes by default.
+            env.set_high_priority_background_threads(*max_flushes); // HIGH pool = flushes (default)
+            env.set_low_priority_background_threads(max_subcompactions.unwrap_or(1) as i32 - max_flushes); // LOW pool = compactions (default)
         }
+
         if_some!(db_options.set_max_background_jobs(max_background_jobs.as_ref()));
         if_some!(db_options.set_max_subcompactions(max_subcompactions));
 
         if_some!(db_options.set_stats_dump_period_sec(stats_dump_period_sec));
 
         if_some!(db_options.increase_parallelism(parallelism));
+
+        db_options.set_env(&env);
 
         db_options
     }
