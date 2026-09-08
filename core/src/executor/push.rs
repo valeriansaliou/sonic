@@ -47,6 +47,8 @@ impl super::Executor {
             StoreFSTActionBuilder::access(fst_store),
         );
 
+        let mut batch = WriteBatch::default();
+
         // Try to resolve existing OID to IID, otherwise initialize IID (store the \
         //   bi-directional relationship)
         let oid = object.as_str();
@@ -57,13 +59,9 @@ impl super::Executor {
             // Bump last stored increment
             match kv_action.auto_increment_iid(Some(write_guard)) {
                 Ok(iid) => {
-                    let mut batch = WriteBatch::default();
-
                     // Associate OID <> IID (bidirectional)
                     kv_action.set_oid_to_iid(&mut batch, oid, iid);
                     kv_action.set_iid_to_oid(&mut batch, iid, oid);
-
-                    executor_ensure_op!(kv_action.write(batch));
 
                     Some(iid)
                 }
@@ -88,8 +86,6 @@ impl super::Executor {
         let Some(iid) = iid else {
             return Err(());
         };
-
-        let mut batch = WriteBatch::default();
 
         let mut tokens = HashSet::with_capacity_and_hasher(128, NoopU32HasherBuilder);
 
