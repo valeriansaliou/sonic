@@ -23,6 +23,8 @@ pub enum StoreMetaValue {
 
 impl StoreMetaKey {
     pub fn as_u32(&self) -> u32 {
+        // WARN: Don’t update values here, it would break stuff
+        //   (e.g. `default_merge_operator`)! Only add new cases.
         match self {
             StoreMetaKey::IIDIncr => 0,
         }

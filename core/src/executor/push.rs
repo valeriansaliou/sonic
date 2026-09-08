@@ -52,25 +52,17 @@ impl super::Executor {
         // Try to resolve existing OID to IID, otherwise initialize IID (store the \
         //   bi-directional relationship)
         let oid = object.as_str();
-        let write_guard = kv_store.lock.write().unwrap();
-        let assign_new_iid = || {
+        let mut assign_new_iid = || {
             tracing::trace!("must initialize push executor oid-to-iid and iid-to-oid");
 
             // Bump last stored increment
-            match kv_action.auto_increment_iid(Some(write_guard)) {
-                Ok(iid) => {
-                    // Associate OID <> IID (bidirectional)
-                    kv_action.set_oid_to_iid(&mut batch, oid, iid);
-                    kv_action.set_iid_to_oid(&mut batch, iid, oid);
+            let iid = kv_action.get_new_iid(&mut batch);
 
-                    Some(iid)
-                }
-                Err(error) => {
-                    tracing::error!("{error}");
+            // Associate OID <> IID (bidirectional)
+            kv_action.set_oid_to_iid(&mut batch, oid, iid);
+            kv_action.set_iid_to_oid(&mut batch, iid, oid);
 
-                    None
-                }
-            }
+            iid
         };
         let iid = if assume_new {
             assign_new_iid()
@@ -80,11 +72,7 @@ impl super::Executor {
                     tracing::error!("Error getting OID-To-IID");
                     None
                 })
-                .or_else(assign_new_iid)
-        };
-
-        let Some(iid) = iid else {
-            return Err(());
+                .unwrap_or_else(assign_new_iid)
         };
 
         let mut tokens = HashSet::with_capacity_and_hasher(128, NoopU32HasherBuilder);

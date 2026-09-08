@@ -13,9 +13,7 @@ use crate::query::{
 };
 use crate::store::StoreItem;
 use crate::store::fst::{StoreFSTActionBuilder, typo_factor};
-use crate::store::identifiers::{
-    StoreMetaKey, StoreMetaValue, StoreObjectIID, StoreTermHash, StoreTermHashed,
-};
+use crate::store::identifiers::{StoreObjectIID, StoreTermHash, StoreTermHashed};
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVActionReadOnly};
 
 impl super::Executor {
@@ -71,8 +69,15 @@ impl super::Executor {
                 StoreFSTActionBuilder::access(fst_store),
             );
 
-            let document_count = match kv_action.get_meta_to_value(StoreMetaKey::IIDIncr)? {
-                Some(StoreMetaValue::IIDIncr(last_iid)) => u64::from(last_iid) + 1,
+            // FIXME: `IIDIncr` will get out-of-sync after a `FLUSHO`
+            //   (see https://github.com/valeriansaliou/sonic/issues/392).
+            //   It’s not a big deal though, no one should notice and we’ll fix
+            //   it someday after reworking the index.
+            let document_count = match kv_action
+                .get_iid_incr()
+                .map_err(|err| tracing::warn!("{err:?}"))?
+            {
+                Some(last_iid) => u64::from(last_iid) + 1,
                 None => 0,
             };
 
