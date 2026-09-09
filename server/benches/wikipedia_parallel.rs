@@ -9,6 +9,7 @@ mod common;
 mod huggingface_wikipedia;
 mod wikipedia_common;
 
+use std::cell::LazyCell;
 use std::hint::black_box;
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -140,10 +141,10 @@ fn criterion_benchmark(c: &mut Criterion) {
                         const COLLECTION: &str = "wikipedia";
                         const BUCKET: &str = "default";
 
+                        let control = LazyCell::new(|| SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap());
+
                         if config != ParallelBenchmarkConfig::default() {
                             tracing::info!("Setting dynamic configuration…");
-
-                            let control = SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
 
                             let mut args = Vec::with_capacity(3);
                             args.push(format!("rocksdb.disable_auto_compactions={}", config.defer_compaction));
@@ -155,8 +156,6 @@ fn criterion_benchmark(c: &mut Criterion) {
                             }
 
                             control.config_set(COLLECTION, &args).unwrap();
-
-                            drop(control);
                         }
 
                         tracing::info!("Ingesting…");
@@ -240,14 +239,12 @@ fn criterion_benchmark(c: &mut Criterion) {
                         tracing::info!("Ingested {ingested_count} articles ({size:.2}) in {ingest_duration:.3?}.", size = HumanBytes::from(ingested_bytes));
 
                         let (compact_duration, consolidate_duration) = {
-                            let mut channel = SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
-
                             let compact_duration = {
                                 tracing::info!("Compacting KV…");
 
                                 let start = Instant::now();
 
-                                black_box(trigger_compact(&channel, &[COLLECTION])).unwrap();
+                                black_box(trigger_compact(&control, &[COLLECTION])).unwrap();
 
                                 let compact_duration = start.elapsed();
                                 elapsed_total += compact_duration;
@@ -262,7 +259,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
                                 let start = Instant::now();
 
-                                black_box(channel.trigger_consolidate()).unwrap();
+                                black_box(control.trigger_consolidate()).unwrap();
 
                                 let consolidate_duration = start.elapsed();
                                 elapsed_total += consolidate_duration;
@@ -272,22 +269,16 @@ fn criterion_benchmark(c: &mut Criterion) {
                                 consolidate_duration
                             };
 
-                            channel.quit().unwrap();
-                            drop(channel);
-
                             (compact_duration, consolidate_duration)
                         };
 
                         if config != ParallelBenchmarkConfig::default() {
                             tracing::info!("Resetting dynamic configuration…");
 
-                            let control = SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
-
                             control.config_reset_all(COLLECTION).unwrap();
-
-                            drop(control);
                         }
 
+                        drop(control);
                         drop(sonic);
 
                         writeln!(
