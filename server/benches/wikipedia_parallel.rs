@@ -28,6 +28,16 @@ use crate::wikipedia_common::*;
 
 static SHARD_PATHS: LazyLock<Vec<PathBuf>> =
     LazyLock::new(|| download_shards("wikimedia/wikipedia", "20231101.en", Some(4)));
+static PUSH_USE_NEW: LazyLock<bool> = LazyLock::new(|| {
+    std::env::var("PUSH_USE_NEW").map_or_else(
+        |_err| {
+            let default = true;
+            tracing::info!("`PUSH_USE_NEW` not configured, using {default:?} as default.");
+            default
+        },
+        |s| matches!(s.as_str(), "1" | "true"),
+    )
+});
 
 fn articles_iter(limit: usize) -> impl Iterator<Item = WikipediaArticle> {
     SHARD_PATHS
@@ -139,6 +149,8 @@ fn criterion_benchmark(c: &mut Criterion) {
         .unwrap();
     }
 
+    let push_use_new = *PUSH_USE_NEW;
+
     for (bench_conf_name, bench_conf_path) in bench_confs {
         for (sonic_conf_name, sonic_conf_path) in sonic_confs.iter() {
             let config = config::Config::builder()
@@ -222,11 +234,17 @@ fn criterion_benchmark(c: &mut Criterion) {
                                             next
                                         }
 
+                                        let mut push_options: Vec<&dyn sonic_client::ingest::PushOption> = Vec::with_capacity(2);
+                                        push_options.push(&Lang("eng"));
+                                        if push_use_new {
+                                            push_options.push(&New);
+                                        }
+
                                         let start = Instant::now();
                                         while let Some(article) = next(&articles) {
                                             let len = article.text.as_bytes().len();
 
-                                            match black_box(channel.push_with_options(COLLECTION, BUCKET, article.id, article.text, &[&Lang("eng")])) {
+                                            match black_box(channel.push_with_options(COLLECTION, BUCKET, article.id, article.text, push_options.as_slice())) {
                                                 Ok(()) => {
                                                     if show_progress {
                                                         eprint!("{}", size_char(len));
