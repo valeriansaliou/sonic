@@ -26,8 +26,18 @@ use crate::common::prelude::*;
 use crate::huggingface_wikipedia::WikipediaArticle;
 use crate::wikipedia_common::*;
 
+static NSHARDS: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("NSHARDS").map_or_else(
+        |_err| {
+            let default = 4;
+            tracing::info!("`NSHARDS` not configured, using {default:?} as default.");
+            default
+        },
+        |s| s.parse::<usize>().unwrap(),
+    )
+});
 static SHARD_PATHS: LazyLock<Vec<PathBuf>> =
-    LazyLock::new(|| download_shards("wikimedia/wikipedia", "20231101.en", Some(4)));
+    LazyLock::new(|| download_shards("wikimedia/wikipedia", "20231101.en", Some(*NSHARDS)));
 static PUSH_USE_NEW: LazyLock<bool> = LazyLock::new(|| {
     std::env::var("PUSH_USE_NEW").map_or_else(
         |_err| {
