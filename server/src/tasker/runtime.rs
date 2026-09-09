@@ -5,9 +5,11 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use sonic::executor::DynamicConfigStore;
 use sonic::store::fst::StoreFSTPool;
 use sonic::store::kv::StoreKVPool;
 
@@ -15,11 +17,13 @@ use sonic::store::kv::StoreKVPool;
 pub struct TaskerBuilder {
     pub kv_pool: StoreKVPool,
     pub fst_pool: StoreFSTPool,
+    pub dynamic_conf_store: Arc<DynamicConfigStore>,
 }
 
 pub struct Tasker {
     kv_pool: StoreKVPool,
     fst_pool: StoreFSTPool,
+    dynamic_conf_store: Arc<DynamicConfigStore>,
 }
 
 const TASKER_TICK_INTERVAL: Duration = Duration::from_secs(10);
@@ -29,6 +33,7 @@ impl TaskerBuilder {
         Tasker {
             kv_pool: self.kv_pool.clone(),
             fst_pool: self.fst_pool.clone(),
+            dynamic_conf_store: Arc::clone(&self.dynamic_conf_store),
         }
     }
 }
@@ -57,15 +62,61 @@ impl Tasker {
         }
     }
 
+    /// Proceed all tick actions
     fn tick(&self) {
-        // Proceed all tick actions
+        const TASK_DISABLED: &str = "Disabled per dynamic configuration";
+
+        let dynamic_conf_store_read_guard = self.dynamic_conf_store.read();
 
         // #1: Janitors
-        self.kv_pool.janitor();
-        self.fst_pool.janitor();
+        {
+            let disabled = dynamic_conf_store_read_guard
+                .iter()
+                .filter_map(|(&collection, dynamic_conf)| {
+                    if dynamic_conf.sonic.disable_janitor_tasks.unwrap_or(false) {
+                        Some(collection)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            self.kv_pool.janitor(|kv_key| {
+                let skip = disabled.contains(kv_key.as_collection_hash());
+                if skip {
+                    tracing::info!("Not running KV janitor task for {kv_key:?}: {TASK_DISABLED}");
+                }
+                !skip
+            });
+            self.fst_pool.janitor(|fst_key| {
+                let skip = disabled.contains(fst_key.as_collection_hash());
+                if skip {
+                    tracing::info!("Not running FST janitor task for {fst_key:?}: {TASK_DISABLED}");
+                }
+                !skip
+            });
+        }
 
         // #2: Others
-        self.kv_pool.flush(false);
-        self.fst_pool.consolidate(false);
+        self.kv_pool.flush(false, |kv_key| {
+            let skip = dynamic_conf_store_read_guard
+                .get(kv_key.as_collection_hash())
+                .and_then(|conf| conf.sonic.disable_kv_flush_task)
+                .unwrap_or(false);
+            if skip {
+                tracing::info!("Not running KV flush task for {kv_key:?}: {TASK_DISABLED}");
+            }
+            !skip
+        });
+        self.fst_pool.consolidate(false, |fst_key| {
+            let skip = dynamic_conf_store_read_guard
+                .get(fst_key.as_collection_hash())
+                .and_then(|conf| conf.sonic.disable_fst_consolidate_task)
+                .unwrap_or(false);
+            if skip {
+                tracing::info!("Not running FST consolidate task for {fst_key:?}: {TASK_DISABLED}");
+            }
+            !skip
+        });
     }
 }

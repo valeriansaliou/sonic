@@ -93,6 +93,7 @@ pub trait StoreGenericPool<
         pool: &Arc<RwLock<HashMap<K, Arc<S>>>>,
         inactive_after: u64,
         access_lock: &Arc<RwLock<()>>,
+        filter: impl Fn(&K) -> bool,
     ) {
         tracing::debug!("scanning for {} store pool items to janitor", kind);
 
@@ -102,7 +103,8 @@ pub trait StoreGenericPool<
 
         let mut removal_register: Vec<K> = Vec::new();
 
-        for (collection_bucket, store) in pool.read().unwrap().iter() {
+        for (collection_bucket, store) in pool.read().unwrap().iter().filter(|(key, _)| filter(key))
+        {
             // Important: be lenient with system clock going back to a past duration, since \
             //   we may be running in a virtualized environment where clock is not guaranteed \
             //   to be monotonic. This is done to avoid poisoning associated mutexes by \

@@ -208,12 +208,13 @@ impl StoreFSTPool {
         }
     }
 
-    pub fn janitor(&self) {
+    pub fn janitor(&self, filter: impl Fn(&StoreFSTKey) -> bool) {
         Self::proceed_janitor(
             "fst",
             &self.graph_pool,
             self.fst_store_config.pool.inactive_after,
             &self.graph_access_lock,
+            filter,
         )
     }
 
@@ -246,7 +247,7 @@ impl StoreFSTPool {
         )
     }
 
-    pub fn consolidate(&self, force: bool) {
+    pub fn consolidate(&self, force: bool, filter: impl Fn(&StoreFSTKey) -> bool) {
         tracing::debug!("scanning for fst store pool items to consolidate");
 
         // Notice: we do not consolidate all items at each tick, we try to even out multiple \
@@ -278,7 +279,7 @@ impl StoreFSTPool {
                 self.graph_consolidate.read().unwrap(),
             );
 
-            for key in &*graph_consolidate_read {
+            for key in graph_consolidate_read.iter().filter(|k| filter(k)) {
                 if let Some(store) = graph_pool_read.get(key) {
                     // Important: be lenient with system clock going back to a past duration, \
                     //   since we may be running in a virtualized environment where clock is not \
@@ -1540,6 +1541,10 @@ impl StoreFSTKey {
             bucket_hash: StoreKeyerHasher::to_compact(bucket_str),
         }
     }
+
+    pub fn as_collection_hash(&self) -> &StoreFSTAtom {
+        &self.collection_hash
+    }
 }
 
 impl fmt::Display for StoreFSTKey {
@@ -1584,7 +1589,7 @@ mod tests {
     fn it_janitors_graph() {
         let fst_pool = test_fst_pool();
 
-        fst_pool.janitor();
+        fst_pool.janitor(|_| true);
     }
 
     #[test]

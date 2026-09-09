@@ -211,12 +211,13 @@ impl StoreKVPool {
         Ok(())
     }
 
-    pub fn janitor(&self) {
+    pub fn janitor(&self, filter: impl Fn(&StoreKVKey) -> bool) {
         Self::proceed_janitor(
             "kv",
             &self.pool,
             self.kv_store_config.pool.inactive_after,
             &self.store_access_lock,
+            filter,
         )
     }
 
@@ -247,7 +248,7 @@ impl StoreKVPool {
         )
     }
 
-    pub fn flush(&self, force: bool) {
+    pub fn flush(&self, force: bool, filter: impl Fn(&StoreKVKey) -> bool) {
         tracing::debug!("scanning for kv store pool items to flush to disk");
 
         // Acquire flush lock, and reference it in context
@@ -259,7 +260,7 @@ impl StoreKVPool {
 
         let store_pool_read = self.pool.read().unwrap();
 
-        for (key, store) in store_pool_read.iter() {
+        for (key, store) in store_pool_read.iter().filter(|(k, _)| filter(k)) {
             let last_flushed_guard = store.last_flushed.read().unwrap();
 
             let not_flushed_for = (last_flushed_guard.elapsed())
@@ -1446,6 +1447,10 @@ impl StoreKVKey {
             collection_hash: StoreKeyerHasher::to_compact(collection_str),
         }
     }
+
+    pub fn as_collection_hash(&self) -> &StoreKVAtom {
+        &self.collection_hash
+    }
 }
 
 impl fmt::Display for StoreKVKey {
@@ -1475,7 +1480,7 @@ mod tests {
         let kv_store_config = test_kv_store_config();
         let kv_pool = StoreKVPool::new(kv_store_config);
 
-        kv_pool.janitor();
+        kv_pool.janitor(|_| true);
     }
 
     #[test]

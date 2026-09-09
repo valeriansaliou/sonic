@@ -133,7 +133,11 @@ fn main() {
     let dynamic_config = Arc::default();
 
     // Spawn tasker (background thread)
-    thread::spawn(spawn_tasker(kv_pool.clone(), fst_pool.clone()));
+    thread::spawn(spawn_tasker(
+        kv_pool.clone(),
+        fst_pool.clone(),
+        Arc::clone(&dynamic_config),
+    ));
 
     // Spawn channel (foreground thread)
     thread::spawn(spawn_channel(
@@ -152,11 +156,11 @@ fn main() {
         ChannelListen::teardown();
 
         // Perform a KV flush (ensures all in-memory changes are synced on-disk before shutdown)
-        kv_pool.flush(true);
+        kv_pool.flush(true, |_| true);
 
         // Perform a FST consolidation (ensures all in-memory items are synced on-disk before \
         //   shutdown; otherwise we would lose all non-consolidated FST changes)
-        fst_pool.consolidate(true);
+        fst_pool.consolidate(true, |_| true);
 
         tracing::info!("stopped");
     });
@@ -216,8 +220,16 @@ fn spawn_channel(
     }
 }
 
-fn spawn_tasker(kv_pool: StoreKVPool, fst_pool: StoreFSTPool) -> impl FnOnce() {
-    let builder = TaskerBuilder { kv_pool, fst_pool };
+fn spawn_tasker(
+    kv_pool: StoreKVPool,
+    fst_pool: StoreFSTPool,
+    dynamic_conf_store: Arc<DynamicConfigStore>,
+) -> impl FnOnce() {
+    let builder = TaskerBuilder {
+        kv_pool,
+        fst_pool,
+        dynamic_conf_store,
+    };
 
     move || {
         spawn_managed_thread("tasker", THREAD_NAME_TASKER, move || {

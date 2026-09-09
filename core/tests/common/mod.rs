@@ -68,7 +68,7 @@ macro_rules! exec {
 
     ($executor:ident -> TRIGGER consolidate) => {{
         $executor.log(format!("TRIGGER consolidate"));
-        $executor.fst_pool.consolidate(true)
+        $executor.fst_pool.consolidate(true, |_| true)
     }};
 
     ($executor:ident -> COUNT $collection:tt) => {{

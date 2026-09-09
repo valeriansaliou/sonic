@@ -947,7 +947,7 @@ impl ChannelCommandControl {
                     "consolidate" => {
                         if data_part.is_none() {
                             // Force a FST consolidate
-                            fst_pool.consolidate(true);
+                            fst_pool.consolidate(true, |_| true);
 
                             Ok(vec![ChannelCommandResponse::Ok])
                         } else {
@@ -958,7 +958,7 @@ impl ChannelCommandControl {
                     "flush" => {
                         if data_part.is_none() {
                             // Force a KV flush
-                            kv_pool.flush(true);
+                            kv_pool.flush(true, |_| true);
 
                             Ok(vec![ChannelCommandResponse::Ok])
                         } else {
@@ -1102,6 +1102,18 @@ fn config_set(
 
         // WARN: Think about updating `CONFIG RESET` when adding new keys here!
         match key {
+            "sonic.disable_janitor_tasks" => {
+                config.sonic.disable_janitor_tasks =
+                    Some(parse_bool(value).ok_or_else(invalid_meta_value)?);
+            }
+            "sonic.disable_fst_consolidate_task" => {
+                config.sonic.disable_fst_consolidate_task =
+                    Some(parse_bool(value).ok_or_else(invalid_meta_value)?);
+            }
+            "sonic.disable_kv_flush_task" => {
+                config.sonic.disable_kv_flush_task =
+                    Some(parse_bool(value).ok_or_else(invalid_meta_value)?);
+            }
             "rocksdb.disable_auto_compactions" => {
                 config.rocksdb.disable_auto_compactions =
                     Some(parse_bool(value).ok_or_else(invalid_meta_value)?);
@@ -1173,6 +1185,9 @@ fn config_reset(
 
         for key in parts {
             match_reset!(key =>
+                sonic.disable_janitor_tasks,
+                sonic.disable_fst_consolidate_task,
+                sonic.disable_kv_flush_task,
                 rocksdb.disable_auto_compactions,
                 rocksdb.unordered_write,
                 rocksdb.memtable

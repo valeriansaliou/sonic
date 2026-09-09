@@ -6,7 +6,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use crate::store::keyer::StoreKeyerHasher;
 use crate::util::hash::NoopU32HasherBuilder;
@@ -65,6 +65,10 @@ impl DynamicConfigStore {
             .get(&StoreKeyerHasher::to_compact(collection))
             .copied()
     }
+
+    pub fn read<'a>(&'a self) -> DynamicConfigStoreReadGuard<'a> {
+        DynamicConfigStoreReadGuard(self.0.read().unwrap())
+    }
 }
 
 impl std::fmt::Debug for DynamicConfigStore {
@@ -77,9 +81,31 @@ impl std::fmt::Debug for DynamicConfigStore {
     }
 }
 
+pub struct DynamicConfigStoreReadGuard<'a>(
+    RwLockReadGuard<'a, HashMap<u32, DynamicConfig, NoopU32HasherBuilder>>,
+);
+
+impl<'a> DynamicConfigStoreReadGuard<'a> {
+    pub fn iter(&self) -> impl Iterator<Item = (&u32, &DynamicConfig)> {
+        self.0.iter()
+    }
+
+    pub fn get(&self, key: &u32) -> Option<&DynamicConfig> {
+        self.0.get(key)
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DynamicConfig {
+    pub sonic: DynamicConfigSonic,
     pub rocksdb: DynamicConfigRocksDb,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct DynamicConfigSonic {
+    pub disable_janitor_tasks: Option<bool>,
+    pub disable_fst_consolidate_task: Option<bool>,
+    pub disable_kv_flush_task: Option<bool>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
