@@ -37,3 +37,14 @@ impl std::fmt::Display for Offset {
         write!(f, "OFFSET({})", self.0)
     }
 }
+
+#[cfg(feature = "experimental-api")]
+#[derive(Debug, Clone, Copy)]
+pub struct New;
+
+#[cfg(feature = "experimental-api")]
+impl std::fmt::Display for New {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NEW")
+    }
+}
