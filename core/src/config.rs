@@ -18,7 +18,7 @@ use serde::Deserialize;
 
 use crate::util::serde::env_var;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Config {
     pub normalization: ConfigNormalization,
 
@@ -52,7 +52,7 @@ impl Config {
 
 /// Configuration group for normalization options (Unicode normalization,
 /// stemming, lemmatization…).
-#[derive(Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Clone, Copy)]
 pub struct ConfigNormalization {
     #[serde(with = "crate::util::serde::none_string_as_none")]
     pub unicode_normalization: Option<UnicodeNormalization>,
@@ -72,7 +72,7 @@ pub enum UnicodeNormalization {
 }
 
 /// Configuration group for tokenization options.
-#[derive(Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Clone, Copy)]
 pub struct ConfigTokenization {
     pub detect_special_patterns: bool,
 
@@ -80,7 +80,7 @@ pub struct ConfigTokenization {
     pub compat_split_special_patterns: bool,
 }
 
-#[derive(Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct ConfigStopwords {
     #[serde(deserialize_with = "to_stopwords")]
     pub allow: HashSet<String>,
@@ -100,7 +100,7 @@ where
     Ok(HashSet::from_iter(stopwords_iter))
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ConfigSearch {
     pub query_limit_default: u16,
 
@@ -121,14 +121,14 @@ pub struct ConfigSearch {
     pub list_limit_maximum: u16,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ConfigStore {
     pub kv: Arc<ConfigStoreKV>,
 
     pub fst: Arc<ConfigStoreFST>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ConfigStoreKV {
     #[serde(deserialize_with = "env_var::path_buf")]
     pub path: PathBuf,
@@ -140,12 +140,12 @@ pub struct ConfigStoreKV {
     pub database: ConfigStoreKVDatabase,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ConfigStoreKVPool {
     pub inactive_after: u64,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigStoreKVDatabase {
     pub flush_after: u64,
@@ -330,7 +330,7 @@ where
     str.map(|s| parse_rocksdb_recovery_mode(&s)).transpose()
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ConfigStoreFST {
     #[serde(deserialize_with = "env_var::path_buf")]
     pub path: PathBuf,
@@ -340,12 +340,12 @@ pub struct ConfigStoreFST {
     pub graph: ConfigStoreFSTGraph,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ConfigStoreFSTPool {
     pub inactive_after: u64,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ConfigStoreFSTGraph {
     pub consolidate_after: u64,
 
