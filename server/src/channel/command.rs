@@ -270,19 +270,21 @@ impl ChannelCommandBase {
                             && !value.contains(META_PART_GROUP_OPEN)
                             && !value.contains(META_PART_GROUP_CLOSE)
                         {
-                            tracing::debug!("parsed meta part as: {} = {}", key, value);
+                            tracing::debug!("parsed meta part as: {key:?} = {value:?}");
 
                             Some(Ok((key, value)))
                         } else {
                             tracing::info!(
-                                "parsed meta part, but it contains reserved characters: {} = {}",
-                                key,
-                                value
+                                "parsed meta part, but it contains reserved characters: {key:?} = {value:?}"
                             );
 
                             Some(Err((key, value)))
                         };
                     }
+                } else {
+                    let (key, value) = (part, "");
+                    tracing::debug!("parsed meta part as: {key:?} = {value:?}");
+                    return Some(Ok((key, value)));
                 }
             }
 
@@ -721,6 +723,7 @@ impl ChannelCommandIngest {
 
                 // Define push parameters
                 let mut push_lang = None;
+                let mut push_assume_new = false;
 
                 // Parse meta parts (meta comes after text; extract meta parts second)
                 let mut last_meta_err = None;
@@ -728,7 +731,8 @@ impl ChannelCommandIngest {
                 while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
                 {
                     match Self::handle_push_meta(meta_result) {
-                        Ok(Some(push_lang_parsed)) => push_lang = Some(push_lang_parsed),
+                        Ok((Some(push_lang_parsed), None)) => push_lang = Some(push_lang_parsed),
+                        Ok((None, Some(PushMetaNew))) => push_assume_new = true,
                         Err(parse_err) => last_meta_err = Some(parse_err),
                         _ => {}
                     }
@@ -745,7 +749,7 @@ impl ChannelCommandIngest {
 
                     #[rustfmt::skip]
                     let query = Query::push(
-                        collection, bucket, object, &text, push_lang,
+                        collection, bucket, object, &text, push_lang, push_assume_new,
                         *ctx.normalization_config,
                         *ctx.tokenization_config,
                         ctx.stopwords_config,
@@ -756,6 +760,11 @@ impl ChannelCommandIngest {
                     ChannelCommandBase::commit_ok_operation(query, ctx.executor)
                 }
             }
+            #[cfg(feature = "experimental-api")]
+            _ => Err(ChannelCommandError::InvalidFormat(
+                "PUSH <collection> <bucket> <object> \"<text>\" [LANG(<locale>)]? [NEW]?",
+            )),
+            #[cfg(not(feature = "experimental-api"))]
             _ => Err(ChannelCommandError::InvalidFormat(
                 "PUSH <collection> <bucket> <object> \"<text>\" [LANG(<locale>)]?",
             )),
@@ -898,7 +907,7 @@ impl ChannelCommandIngest {
 
     fn handle_push_meta(
         meta_result: MetaPartsResult,
-    ) -> Result<Option<QueryGenericLang>, ChannelCommandError> {
+    ) -> Result<(Option<QueryGenericLang>, Option<PushMetaNew>), ChannelCommandError> {
         match meta_result {
             Ok((meta_key, meta_value)) => {
                 tracing::debug!("handle push meta: {} = {}", meta_key, meta_value);
@@ -907,7 +916,17 @@ impl ChannelCommandIngest {
                     "LANG" => {
                         // 'LANG(<locale>)' where <locale> ∈ ISO 639-3
                         if let Some(query_lang_parsed) = QueryGenericLang::from_value(meta_value) {
-                            Ok(Some(query_lang_parsed))
+                            Ok((Some(query_lang_parsed), None))
+                        } else {
+                            Err(ChannelCommandBase::make_error_invalid_meta_value(
+                                meta_key, meta_value,
+                            ))
+                        }
+                    }
+                    #[cfg(feature = "experimental-api")]
+                    "NEW" => {
+                        if meta_value.is_empty() {
+                            Ok((None, Some(PushMetaNew)))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
                                 meta_key, meta_value,
@@ -925,6 +944,10 @@ impl ChannelCommandIngest {
         }
     }
 }
+
+/// This should be somewhere else, but the query routing code is so convoluted
+/// I(@RemiBardon) have no idea where to put it. I should rewrite it someday.
+struct PushMetaNew;
 
 impl ChannelCommandControl {
     pub fn dispatch_trigger(

@@ -62,6 +62,7 @@ macro_rules! exec {
                     &$executor.app_conf.stopwords,
                 )
                 .unwrap(),
+                false,
             )
             .unwrap()
     }};

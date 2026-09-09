@@ -14,7 +14,7 @@ use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 
 impl super::Executor {
-    pub fn push(&self, item: StoreItem, lexer: TokenLexer) -> Result<(), ()> {
+    pub fn push(&self, item: StoreItem, lexer: TokenLexer, assume_new: bool) -> Result<(), ()> {
         let StoreItem(collection, Some(bucket), Some(object)) = item else {
             return Err(());
         };
@@ -49,7 +49,7 @@ impl super::Executor {
         //   bi-directional relationship)
         let oid = object.as_str();
         let write_guard = kv_store.lock.write().unwrap();
-        let iid = kv_action.get_oid_to_iid(oid).unwrap_or(None).or_else(|| {
+        let assign_new_iid = || {
             tracing::trace!("must initialize push executor oid-to-iid and iid-to-oid");
 
             // Bump last stored increment
@@ -71,7 +71,17 @@ impl super::Executor {
                     None
                 }
             }
-        });
+        };
+        let iid = if assume_new {
+            assign_new_iid()
+        } else {
+            (kv_action.get_oid_to_iid(oid))
+                .unwrap_or_else(|()| {
+                    tracing::error!("Error getting OID-To-IID");
+                    None
+                })
+                .or_else(assign_new_iid)
+        };
 
         let Some(iid) = iid else {
             return Err(());
