@@ -71,7 +71,31 @@ fn criterion_benchmark(c: &mut Criterion) {
         bytes: total_bytes,
     });
 
-    let nchannels: usize = std::env::var("NCHANNELS").map_or(1, |s| s.parse().unwrap());
+    let nchannels: usize = std::env::var("NCHANNELS").map_or_else(|_err| {
+        let bytes = if cfg!(target_os = "macos") {
+            Some(
+                std::process::Command::new("sysctl")
+                    .args(["-n", "hw.perflevel0.logicalcpu"])
+                    .output()
+                    .unwrap()
+                    .stdout,
+            )
+        } else {
+            None
+        };
+
+        if let Some(bytes) = bytes {
+            let res = String::from_utf8(bytes).unwrap().trim_ascii_end().parse::<usize>().unwrap();
+            tracing::info!("`NCHANNELS` not configured, using all available performance cores ({res}) as default.");
+            res
+        } else {
+            // NOTE: Add support for your target OS if you run into this :)
+            tracing::error!(
+                "Could not find how many performance cores your CPU has; defaulting to 4 channels."
+            );
+            4
+        }
+    }, |s| s.parse().unwrap());
     let bench_conf: String = std::env::var("BENCH_CONF").unwrap();
     let sonic_conf: String = std::env::var("SONIC_CONF").unwrap();
 
