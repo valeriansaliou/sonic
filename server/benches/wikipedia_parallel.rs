@@ -167,10 +167,16 @@ fn criterion_benchmark(c: &mut Criterion) {
 
                         let control = LazyCell::new(|| SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap());
 
-                        if config != ParallelBenchmarkConfig::default() {
+                        {
                             tracing::info!("Setting dynamic configuration…");
 
-                            let mut args = Vec::with_capacity(3);
+                            let mut args: Vec<String> = Vec::with_capacity(6);
+
+                            // Temporarily disable background tasks so they don’t interfere with the batch ingestion.
+                            args.push("sonic.disable_janitor_tasks".to_owned());
+                            args.push("sonic.disable_fst_consolidate_task".to_owned());
+                            args.push("sonic.disable_kv_flush_task".to_owned());
+
                             args.push(format!("rocksdb.disable_auto_compactions={}", config.defer_compaction));
                             if let Some(unordered_write) = config.rocksdb_unordered_write {
                                 args.push(format!("rocksdb.unordered_write={unordered_write}"));
