@@ -49,7 +49,7 @@ impl super::Executor {
         let oid = object.as_str();
         let write_guard = kv_store.lock.write().unwrap();
         let iid = kv_action.get_oid_to_iid(oid).unwrap_or(None).or_else(|| {
-            tracing::info!("must initialize push executor oid-to-iid and iid-to-oid");
+            tracing::trace!("must initialize push executor oid-to-iid and iid-to-oid");
 
             // Bump last stored increment
             match kv_action.auto_increment_iid(Some(write_guard)) {
@@ -81,8 +81,6 @@ impl super::Executor {
         for (token, term_hashed, _) in lexer {
             let term = token.as_str();
 
-            tracing::info!("has push executor term-to-iids: {iid}");
-
             // Link IID to term
             kv_action.add_term_to_iids(&mut batch, term_hashed, std::iter::once(iid));
 
@@ -91,7 +89,7 @@ impl super::Executor {
 
             // Push to FST graph? (this consumes the term; to avoid sub-clones)
             if fst_action.push_word(&term, &self.app_conf.store.fst) {
-                tracing::debug!("push term committed to graph: {}", term);
+                tracing::trace!("push term committed to graph: {}", term);
             }
         }
 
