@@ -29,11 +29,11 @@ config = { version = "=0.15.25", default-features = false, features = ["toml"] }
 
 [dev-dependencies]
 # Benchmarking dependencies.
-arrow-array = { version = "=59.2.0", default-features = false }
+arrow-array = { version = "=59.3.0", default-features = false }
 bus = { version = "=2.4.1", default-features = false }
 criterion = { version = "=0.8.2", default-features = false, features = ["html_reports", "plotters"] }
 hf-hub = { version = "=0.5.0", default-features = false, features = ["ureq"] }
-parquet = { version = "=59.2.0", default-features = false, features = ["arrow", "snap"] }
+parquet = { version = "=59.3.0", default-features = false, features = ["arrow", "snap"] }
 serde_json = { version = "=1.0.151", default-features = false, features = ["std"] }
 sonic_client = { version = "=0.4.0", path = "../client", features = ["sync", "tracing", "raw-api", "experimental-api"] }
 
