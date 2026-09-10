@@ -12,6 +12,7 @@ use std::sync::atomic::AtomicU16;
 use std::sync::{LazyLock, atomic};
 
 use crate::common::globals::{ADDR, SONIC_BIN_PATH, SONIC_DATA_PATH};
+use crate::common::logging::LOG_LEVEL;
 use crate::common::path_guard::PathGuard;
 use crate::common::spawn_guard::SpawnGuard;
 
@@ -98,6 +99,23 @@ pub struct RunContext {
     data_guard: PathGuard,
 }
 
+impl Drop for RunContext {
+    fn drop(&mut self) {
+        static SHOW_STORE_SIZE: LazyLock<bool> =
+            LazyLock::new(|| std::env::var("SHOW_STORE_SIZE").is_ok());
+
+        if *SHOW_STORE_SIZE {
+            // Print size of all store files at the end of each benchmark.
+            Command::new("du")
+                // Show files, make it human-readable and show grand total.
+                .arg("-ahc")
+                .arg(&self.data_guard.0)
+                .status()
+                .unwrap();
+        }
+    }
+}
+
 fn new_data_path(test_id: u16) -> PathBuf {
     let path = Path::new(SONIC_DATA_PATH).join(test_id.to_string());
 
@@ -133,20 +151,74 @@ pub fn start_sonic(
 ) -> SpawnGuard {
     // let sonic_config_path = concat!(env!("CARGO_MANIFEST_DIR"), "/benches/config.cfg");
 
+    let profiling_mode = match std::env::var("PROFILING_MODE") {
+        Ok(val) => Some(val),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(err @ std::env::VarError::NotUnicode(_)) => {
+            panic!("Invalid `PROFILING_MODE` value: {err:?}")
+        }
+    };
+
     eprint!("\n");
-    tracing::info!("Benchmarking using {:?}", SONIC_BIN_PATH.as_path());
+    if profiling_mode.is_some() {
+        tracing::info!("Profiling using {:?}", SONIC_BIN_PATH.as_path());
+    } else {
+        tracing::info!("Benchmarking using {:?}", SONIC_BIN_PATH.as_path());
+    }
+
+    // NOTE: Sonic is started for nothing if `profiling_mode` contains an
+    //   incorrect value but it’s not a big deal.
     let sonic = update_command(
         Command::new(SONIC_BIN_PATH.as_path())
             // .args(["-c", sonic_config_path])
-            .env("SONIC_SERVER__LOG_LEVEL", "WARN"),
+            .env(
+                "SONIC_SERVER__LOG_LEVEL",
+                LOG_LEVEL.map_or("WARN".to_owned(), |level| level.to_string()),
+            ),
     )
     .env("SONIC_STORE__KV__PATH", data_path.join("kv"))
     .env("SONIC_STORE__FST__PATH", data_path.join("fst"))
     .spawn()
     .unwrap();
 
+    let xctrace = profiling_mode.map(|val| match val.as_str() {
+        "time" => {
+            let xctrace = Command::new("xctrace")
+                .arg("record")
+                .args(&["--instrument", "Time Profiler"])
+                // .args(&["--instrument", "CPU Counters"])
+                .args(&["--instrument", "CPU Profiler"])
+                .args(&["--attach", &sonic.id().to_string()])
+                .spawn()
+                .unwrap();
+
+            // Give a bit of time for `xctrace` to startup.
+            std::thread::sleep(std::time::Duration::from_millis(2000));
+
+            xctrace
+        }
+        "thread_state" => {
+            let xctrace = Command::new("xctrace")
+                .arg("record")
+                .args(&["--instrument", "Time Profiler"])
+                .args(&["--instrument", "CPU Profiler"])
+                .args(&["--instrument", "Thread State Trace"])
+                .args(&["--attach", &sonic.id().to_string()])
+                .spawn()
+                .unwrap();
+
+            // Give a bit of time for `xctrace` to startup.
+            std::thread::sleep(std::time::Duration::from_millis(2000));
+
+            xctrace
+        }
+        val => panic!(
+            "Unknown profiling mode: {val:?}. Check your `PROFILING_MODE` environment variable."
+        ),
+    });
+
     // Auto-kill Sonic.
-    let mut sonic = SpawnGuard(sonic);
+    let mut sonic = SpawnGuard { sonic, xctrace };
     sonic.wait_until_ready(ADDR);
     // println!("Started Sonic");
 

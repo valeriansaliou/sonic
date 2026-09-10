@@ -4,5 +4,6 @@ target/
 *#
 .cargo
 .task
+*.trace
 
 data/

@@ -10,7 +10,7 @@ env:
 vars:
   CLEAN_ARGS_LIST: { ref: without .CLI_ARGS_LIST "--trace" "--debug" "--info" "--warn" }
   CLEAN_ARGS: { ref: .CLEAN_ARGS_LIST | join " " }
-  CARGO_PROFILE: { ref: env "CARGO_PROFILE" | default "release" }
+  CARGO_PROFILE: { ref: env "CARGO_PROFILE" | default "relwithdebinfo" }
   UTIL_GET_OPTIONAL_FEATURES:
     value: >-
       cargo metadata --format-version 1 --no-deps | jq -r '
@@ -108,6 +108,7 @@ tasks:
           Check `lsof -iTCP:1491 -sTCP:LISTEN` anc kill the process.
     env:
       CRITERION_HOME: '{{ .MAIN_WORKTREE_PATH }}/target/criterion'
+      CARGO_PROFILE: { ref: .CARGO_PROFILE }
       SONIC_BIN: { ref: .SONIC_BIN }
       RUSTFLAGS: '{{ if eq .CARGO_PROFILE "relwithdebinfo" }}-C force-frame-pointers=yes{{ end }}'
     vars:
@@ -117,7 +118,17 @@ tasks:
     internal: true
     requires:
       vars: [INSTALL_DIR]
-    cmd: cargo +stable install --path {{ shellQuote .PATH }} --bin sonic --locked --profile {{ shellQuote .CARGO_PROFILE }} --root {{ shellQuote .INSTALL_DIR }}{{ if .OPTIONAL_FEATURES }} -F {{ shellQuote .OPTIONAL_FEATURES }}{{ end }}
+    cmds:
+      - cmd: |-
+          cat <<'EOF' >> {{ shellQuote .WORKING_DIR }}/Cargo.toml
+          [profile.relwithdebinfo]
+          inherits = "release"
+          debug = "line-tables-only"
+          split-debuginfo = "unpacked"
+          strip = false
+          EOF
+        if: "[ {{ shellQuote .CARGO_PROFILE }} = 'relwithdebinfo' ] && ! grep 'relwithdebinfo' {{ shellQuote .WORKING_DIR }}/Cargo.toml"
+      - cargo +stable install --path {{ shellQuote .PATH }} --bin sonic --locked --profile {{ shellQuote .CARGO_PROFILE }} --root {{ shellQuote .INSTALL_DIR }}{{ if .OPTIONAL_FEATURES }} -F {{ shellQuote .OPTIONAL_FEATURES }}{{ end }}
     vars:
       # COMPAT: Compat with <v1.6.0.
       PATH: { sh: 'test -d {{ shellQuote .WORKING_DIR }}/server && echo {{ shellQuote .WORKING_DIR }}/server || echo {{ shellQuote .WORKING_DIR }}' }

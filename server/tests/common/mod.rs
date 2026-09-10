@@ -99,7 +99,7 @@ fn start_sonic(
     .unwrap();
 
     // Auto-kill Sonic.
-    let sonic = SpawnGuard(sonic);
+    let sonic = SpawnGuard::new(sonic);
 
     wait_until_ready(addr).unwrap();
 
