@@ -18,7 +18,7 @@ use serde::Deserialize;
 
 use crate::util::serde::env_var;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Config {
     pub normalization: ConfigNormalization,
 
@@ -43,13 +43,6 @@ impl Config {
             panic!("flush_after for kv must be strictly lower than inactive_after");
         }
 
-        // Check 'flush_after' for KV
-        if self.store.kv.database.max_flushes.is_some()
-            && self.store.kv.database.max_background_jobs.is_some()
-        {
-            panic!("max_background_jobs makes max_flushes unneeded, don’t configure both");
-        }
-
         // Check 'consolidate_after' for FST
         if self.store.fst.graph.consolidate_after >= self.store.fst.pool.inactive_after {
             panic!("consolidate_after for fst must be strictly lower than inactive_after");
@@ -59,7 +52,7 @@ impl Config {
 
 /// Configuration group for normalization options (Unicode normalization,
 /// stemming, lemmatization…).
-#[derive(Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Clone, Copy)]
 pub struct ConfigNormalization {
     #[serde(with = "crate::util::serde::none_string_as_none")]
     pub unicode_normalization: Option<UnicodeNormalization>,
@@ -79,7 +72,7 @@ pub enum UnicodeNormalization {
 }
 
 /// Configuration group for tokenization options.
-#[derive(Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Clone, Copy)]
 pub struct ConfigTokenization {
     pub detect_special_patterns: bool,
 
@@ -87,7 +80,7 @@ pub struct ConfigTokenization {
     pub compat_split_special_patterns: bool,
 }
 
-#[derive(Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Clone, Default)]
 pub struct ConfigStopwords {
     #[serde(deserialize_with = "to_stopwords")]
     pub allow: HashSet<String>,
@@ -107,7 +100,7 @@ where
     Ok(HashSet::from_iter(stopwords_iter))
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ConfigSearch {
     pub query_limit_default: u16,
 
@@ -128,14 +121,14 @@ pub struct ConfigSearch {
     pub list_limit_maximum: u16,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ConfigStore {
     pub kv: Arc<ConfigStoreKV>,
 
     pub fst: Arc<ConfigStoreFST>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ConfigStoreKV {
     #[serde(deserialize_with = "env_var::path_buf")]
     pub path: PathBuf,
@@ -147,12 +140,12 @@ pub struct ConfigStoreKV {
     pub database: ConfigStoreKVDatabase,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ConfigStoreKVPool {
     pub inactive_after: u64,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigStoreKVDatabase {
     pub flush_after: u64,
@@ -253,7 +246,7 @@ pub struct ConfigStoreKVDatabase {
     pub max_subcompactions: Option<u32>,
 
     #[serde(default)]
-    pub max_flushes: Option<u32>,
+    pub max_flushes: Option<i32>,
 
     #[serde(default)]
     pub stats_dump_period_sec: Option<u32>,
@@ -337,7 +330,7 @@ where
     str.map(|s| parse_rocksdb_recovery_mode(&s)).transpose()
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ConfigStoreFST {
     #[serde(deserialize_with = "env_var::path_buf")]
     pub path: PathBuf,
@@ -347,12 +340,12 @@ pub struct ConfigStoreFST {
     pub graph: ConfigStoreFSTGraph,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ConfigStoreFSTPool {
     pub inactive_after: u64,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ConfigStoreFSTGraph {
     pub consolidate_after: u64,
 

@@ -90,6 +90,7 @@ impl<'a> Query<'a> {
         object: &'a str,
         text: &'a str,
         lang: Option<QueryGenericLang>,
+        assume_new: bool,
         normalization_config: ConfigNormalization,
         tokenization_config: ConfigTokenization,
         stopwords_config: &'a ConfigStopwords,
@@ -105,7 +106,7 @@ impl<'a> Query<'a> {
                 stopwords_config,
             ),
         ) {
-            (Ok(store), Ok(text_lexed)) => Ok(Query::Push(store, text_lexed)),
+            (Ok(store), Ok(text_lexed)) => Ok(Query::Push(store, text_lexed, assume_new)),
             _ => Err(()),
         }
     }
@@ -236,13 +237,13 @@ mod tests {
     fn it_builds_push_query() {
         #[rustfmt::skip]
         assert!(Query::push(
-            "c:test:3", "b:test:3", "o:test:3", "My name is Michael Dake. I'm ordering in the US.", None,
+            "c:test:3", "b:test:3", "o:test:3", "My name is Michael Dake. I'm ordering in the US.", None, false,
             NORMALIZATION_CONFIG, TOKENIZATION_CONFIG, &STOPWORDS_CONFIG,
         ).is_ok());
 
         #[rustfmt::skip]
         assert!(Query::push(
-            "c:test:3", "", "o:test:3", "My name is Michael Dake.", None,
+            "c:test:3", "", "o:test:3", "My name is Michael Dake.", None, false,
             NORMALIZATION_CONFIG, TOKENIZATION_CONFIG, &STOPWORDS_CONFIG,
         ).is_err());
     }

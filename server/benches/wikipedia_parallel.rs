@@ -9,21 +9,45 @@ mod common;
 mod huggingface_wikipedia;
 mod wikipedia_common;
 
+use std::cell::LazyCell;
 use std::hint::black_box;
+use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
+use crate::common::client_helpers::trigger_compact;
 use crate::common::huggingface::download::download_shards;
 use crate::common::huggingface::load::iter_shard;
+use crate::common::logging::{CompactThousands, HumanBytes};
 use crate::common::prelude::*;
 use crate::huggingface_wikipedia::WikipediaArticle;
 use crate::wikipedia_common::*;
 
+static NSHARDS: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("NSHARDS").map_or_else(
+        |_err| {
+            let default = 4;
+            tracing::info!("`NSHARDS` not configured, using {default:?} as default.");
+            default
+        },
+        |s| s.parse::<usize>().unwrap(),
+    )
+});
 static SHARD_PATHS: LazyLock<Vec<PathBuf>> =
-    LazyLock::new(|| download_shards("wikimedia/wikipedia", "20231101.en", Some(2)));
+    LazyLock::new(|| download_shards("wikimedia/wikipedia", "20231101.en", Some(*NSHARDS)));
+static PUSH_USE_NEW: LazyLock<bool> = LazyLock::new(|| {
+    std::env::var("PUSH_USE_NEW").map_or_else(
+        |_err| {
+            let default = true;
+            tracing::info!("`PUSH_USE_NEW` not configured, using {default:?} as default.");
+            default
+        },
+        |s| matches!(s.as_str(), "1" | "true"),
+    )
+});
 
 fn articles_iter(limit: usize) -> impl Iterator<Item = WikipediaArticle> {
     SHARD_PATHS
@@ -55,135 +79,286 @@ fn criterion_benchmark(c: &mut Criterion) {
     // No need to warm up for 3 seconds (default).
     group.warm_up_time(Duration::from_secs(1));
 
-    for config in [
-        ParallelBenchmarkConfig { nthreads: 1 },
-        ParallelBenchmarkConfig { nthreads: 2 },
-        ParallelBenchmarkConfig { nthreads: 3 },
-        ParallelBenchmarkConfig { nthreads: 4 },
-        ParallelBenchmarkConfig { nthreads: 6 },
-    ] {
-        let articles = || articles_iter(usize::MAX);
+    let articles = || articles_iter(usize::MAX);
 
-        // Lower sample size as what we’re measuring is quite long to execute.
-        group.sample_size(10);
-        group.measurement_time(Duration::from_secs(30));
+    // Lower sample size as what we’re measuring is quite long to execute.
+    group.sample_size(10);
+    group.measurement_time(Duration::from_secs(30));
 
-        let total_bytes = articles().map(|article| article.text.len() as u64).sum();
-        group.throughput(Throughput::ElementsAndBytes {
-            elements: articles().count() as u64,
-            bytes: total_bytes,
-        });
+    let total_bytes = articles().map(|article| article.text.len() as u64).sum();
+    group.throughput(Throughput::ElementsAndBytes {
+        elements: articles().count() as u64,
+        bytes: total_bytes,
+    });
 
-        group.bench_function(BenchmarkId::new("push", config), |b| {
-            b.iter_custom(|iters| {
-                let mut elapsed_total = Duration::ZERO;
+    let nchannels: usize = std::env::var("NCHANNELS").map_or_else(|_err| {
+        let bytes = if cfg!(target_os = "macos") {
+            Some(
+                std::process::Command::new("sysctl")
+                    .args(["-n", "hw.perflevel0.logicalcpu"])
+                    .output()
+                    .unwrap()
+                    .stdout,
+            )
+        } else {
+            None
+        };
 
-                for _i in 0..iters {
-                    let sonic = start_sonic_empty(|command| config.update_command(command));
+        if let Some(bytes) = bytes {
+            let res = String::from_utf8(bytes).unwrap().trim_ascii_end().parse::<usize>().unwrap();
+            tracing::info!("`NCHANNELS` not configured, using all available performance cores ({res}) as default.");
+            res
+        } else {
+            // NOTE: Add support for your target OS if you run into this :)
+            tracing::error!(
+                "Could not find how many performance cores your CPU has; defaulting to 4 channels."
+            );
+            4
+        }
+    }, |s| s.parse().unwrap());
+    let bench_conf: String = std::env::var("BENCH_CONF").unwrap();
+    let sonic_conf: String = std::env::var("SONIC_CONF").unwrap();
 
-                    let multiplexer = Arc::new(SonicMultiplexer::new().unwrap());
+    let bench_confs = bench_conf.split(",").map(|name| {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("benches/configs/bench")
+            .join(name)
+            .with_extension("toml");
+        if !path.exists() {
+            panic!("{path:?} doesn’t exist.")
+        };
+        (name, path)
+    });
+    let sonic_confs = sonic_conf
+        .split(",")
+        .map(|name| {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("benches/configs/sonic")
+                .join(name)
+                .with_extension("toml");
+            if !path.exists() {
+                panic!("{path:?} doesn’t exist.")
+            };
+            (name, path)
+        })
+        .collect::<Vec<_>>();
 
-                    let articles = Arc::new(Mutex::new(articles()));
+    let log_file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("benches/results.md");
+    let exists = log_file_path.exists();
+    let mut log_file = std::fs::File::options()
+        .create(true)
+        .append(true)
+        .open(&log_file_path)
+        .unwrap();
+    if !exists {
+        writeln!(
+            log_file,
+            "| data size | bench conf | sonic conf | channels | ingest | compact | consolidate | thrpt | thrpt |\n\
+             | ---------:| ---------- | ---------- | --------:| ------:| -------:| -----------:| -----:| -----:|",
+        )
+        .unwrap();
+    }
 
-                    let (mut elapsed, ingested_count, ingested_bytes) = (0..config.nthreads)
-                        .map(|i| {
-                            std::thread::Builder::new().name(format!("thread-{i}")).spawn({
-                                let articles = Arc::clone(&articles);
-                                let multiplexer = Arc::clone(&multiplexer);
+    let push_use_new = *PUSH_USE_NEW;
 
-                                move || {
-                                    let mut channel = SonicChannelIngestBlocking::connect(
-                                        ADDR,
-                                        SONIC_PASSWORD,
-                                        &multiplexer,
-                                    ).unwrap();
-                                    // println!("Opened Sonic channel");
+    for (bench_conf_name, bench_conf_path) in bench_confs {
+        for (sonic_conf_name, sonic_conf_path) in sonic_confs.iter() {
+            let config = config::Config::builder()
+                .add_source(config::File::new(
+                    bench_conf_path.to_str().unwrap(),
+                    config::FileFormat::Toml,
+                ))
+                .build()
+                .unwrap()
+                .try_deserialize::<ParallelBenchmarkConfig>()
+                .unwrap();
 
-                                    // Ensure Sonic is running fine.
-                                    channel.ping().unwrap();
+            let bench_name =
+                format!("[bench={bench_conf_name}][sonic={sonic_conf_name}][channels={nchannels}]");
+            group.bench_function(BenchmarkId::new("push", &bench_name), |b| {
+                b.iter_custom(|iters| {
+                    let mut elapsed_total = Duration::ZERO;
 
-                                    let mut ingested_count = 0usize;
-                                    let mut ingested_bytes = 0u32;
+                    for _i in 0..iters {
+                        let sonic = start_sonic_empty(Some(bench_name.as_str()), |command| command.arg("-c").arg(sonic_conf_path));
 
-                                    /// Helper function which returns the next iterator element without keeping the lock guard alive.
-                                    /// When put on a single line (e.g. in a `while` loop), the lock guard stays alive all the time,
-                                    /// preventing parallelism.
-                                    fn next(mutex: &Mutex<impl Iterator<Item = WikipediaArticle>>) -> Option<WikipediaArticle> {
-                                        let mut lock = mutex.lock().unwrap();
-                                        let next = lock.next();
-                                        drop(lock);
-                                        next
-                                    }
+                        let multiplexer = Arc::new(SonicMultiplexer::new().unwrap());
 
-                                    let start = Instant::now();
-                                    while let Some(article) = next(&articles) {
-                                        let len = article.text.as_bytes().len();
+                        const COLLECTION: &str = "wikipedia";
+                        const BUCKET: &str = "default";
 
-                                        match black_box(channel.push_with_options("wikipedia", "default", article.id, article.text, &[&Lang("eng")])) {
-                                            Ok(()) => {
-                                                if show_progress {
-                                                    eprint!("{}", size_char(len));
+                        let control = LazyCell::new(|| SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap());
+
+                        {
+                            tracing::info!("Setting dynamic configuration…");
+
+                            let mut args: Vec<String> = Vec::with_capacity(6);
+
+                            // Temporarily disable background tasks so they don’t interfere with the batch ingestion.
+                            args.push("sonic.disable_janitor_tasks".to_owned());
+                            args.push("sonic.disable_fst_consolidate_task".to_owned());
+                            args.push("sonic.disable_kv_flush_task".to_owned());
+
+                            args.push(format!("rocksdb.disable_auto_compactions={}", config.defer_compaction));
+                            if let Some(unordered_write) = config.rocksdb_unordered_write {
+                                args.push(format!("rocksdb.unordered_write={unordered_write}"));
+                            }
+                            if let Some(ref memtable) = config.rocksdb_memtable {
+                                args.push(format!("rocksdb.memtable={memtable}"));
+                            }
+
+                            control.config_set(COLLECTION, &args).unwrap();
+                        }
+
+                        tracing::info!("Ingesting…");
+
+                        let articles = Arc::new(Mutex::new(articles()));
+
+                        let (mut ingest_duration, ingested_count, ingested_bytes) = (0..nchannels)
+                            .map(|i| {
+                                std::thread::Builder::new().name(format!("thread-{i}")).spawn({
+                                    let articles = Arc::clone(&articles);
+                                    let multiplexer = Arc::clone(&multiplexer);
+
+                                    move || {
+                                        let mut channel = SonicChannelIngestBlocking::connect(
+                                            ADDR,
+                                            SONIC_PASSWORD,
+                                            &multiplexer,
+                                        ).unwrap();
+                                        // println!("Opened Sonic channel");
+
+                                        // Ensure Sonic is running fine.
+                                        channel.ping().unwrap();
+
+                                        let mut ingested_count = 0usize;
+                                        let mut ingested_bytes = 0u32;
+
+                                        /// Helper function which returns the next iterator element without keeping the lock guard alive.
+                                        /// When put on a single line (e.g. in a `while` loop), the lock guard stays alive all the time,
+                                        /// preventing parallelism.
+                                        fn next(mutex: &Mutex<impl Iterator<Item = WikipediaArticle>>) -> Option<WikipediaArticle> {
+                                            let mut lock = mutex.lock().unwrap();
+                                            let next = lock.next();
+                                            drop(lock);
+                                            next
+                                        }
+
+                                        let mut push_options: Vec<&dyn sonic_client::ingest::PushOption> = Vec::with_capacity(2);
+                                        push_options.push(&Lang("eng"));
+                                        if push_use_new {
+                                            push_options.push(&New);
+                                        }
+
+                                        let start = Instant::now();
+                                        while let Some(article) = next(&articles) {
+                                            let len = article.text.as_bytes().len();
+
+                                            match black_box(channel.push_with_options(COLLECTION, BUCKET, article.id, article.text, push_options.as_slice())) {
+                                                Ok(()) => {
+                                                    if show_progress {
+                                                        eprint!("{}", size_char(len));
+                                                    }
+
+                                                    ingested_count += 1;
+                                                    ingested_bytes += len as u32;
                                                 }
+                                                Err(err) => {
+                                                    panic!(
+                                                        "Failed ingesting {title:?} ({len:.2}) after {ingested_count} success(es) ({ingested_bytes:.2}): {err}",
+                                                        title = article.title,
+                                                        len = HumanBytes::from(len as u64),
+                                                        ingested_bytes = HumanBytes::from(ingested_bytes),
+                                                    );
+                                                }
+                                            };
+                                        }
+                                        let elapsed = start.elapsed();
 
-                                                ingested_count += 1;
-                                                ingested_bytes += len as u32;
-                                            }
-                                            Err(err) => {
-                                                panic!(
-                                                    "Failed ingesting {:?} ({len}B) after {ingested_count} success(es) ({ingested_bytes}B): {err}",
-                                                    article.title,
-                                                );
-                                            }
-                                        };
+                                        channel.quit().unwrap();
+                                        drop(channel);
+
+                                        (elapsed, ingested_count, ingested_bytes)
                                     }
-                                    let elapsed = start.elapsed();
+                                }).unwrap()
+                            })
+                            // WARN: This `collect` is important, as it is what spawns the threads!
+                            .collect::<Vec<_>>()
+                            .into_iter()
+                            .map(|h| h.join().expect("thread panicked"))
+                            .fold((Duration::ZERO, 0, 0), |(a, b, c), (x, y, z)| {
+                                (a + x, b + y, c + z)
+                            });
 
-                                    channel.quit().unwrap();
-                                    drop(channel);
+                        ingest_duration = ingest_duration / (nchannels as u32);
 
-                                    (elapsed, ingested_count, ingested_bytes)
-                                }
-                            }).unwrap()
-                        })
-                        // WARN: This `collect` is important, as it is what spawns the threads!
-                        .collect::<Vec<_>>()
-                        .into_iter()
-                        .map(|h| h.join().expect("thread panicked"))
-                        .fold((Duration::ZERO, 0, 0), |(a, b, c), (x, y, z)| {
-                            (a + x, b + y, c + z)
-                        });
+                        elapsed_total += ingest_duration;
 
-                    elapsed = elapsed / (config.nthreads as u32);
+                        tracing::info!("Ingested {ingested_count} articles ({size:.2}) in {ingest_duration:.3?}.", size = HumanBytes::from(ingested_bytes));
 
-                    elapsed_total += elapsed;
+                        let (compact_duration, consolidate_duration) = {
+                            let compact_duration = {
+                                tracing::info!("Compacting KV…");
 
-                    println!("Ingested {ingested_count} articles ({ingested_bytes}B) in {elapsed:.3?}.");
+                                let start = Instant::now();
 
-                    {
-                        let mut channel = SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
+                                black_box(trigger_compact(&control, &[COLLECTION])).unwrap();
 
-                        let start = Instant::now();
+                                let compact_duration = start.elapsed();
+                                elapsed_total += compact_duration;
 
-                        black_box(channel.trigger_consolidate()).unwrap();
+                                tracing::info!("Compacted KV in {compact_duration:.3?}.");
 
-                        let elapsed = start.elapsed();
-                        elapsed_total += elapsed;
+                                compact_duration
+                            };
 
-                        channel.quit().unwrap();
-                        drop(channel);
+                            let consolidate_duration = {
+                                tracing::info!("Consolidating FST…");
 
-                        println!("Consolidated in {elapsed:.3?}.");
+                                let start = Instant::now();
+
+                                black_box(control.trigger_consolidate()).unwrap();
+
+                                let consolidate_duration = start.elapsed();
+                                elapsed_total += consolidate_duration;
+
+                                tracing::info!("Consolidated FST in {consolidate_duration:.3?}.");
+
+                                consolidate_duration
+                            };
+
+                            (compact_duration, consolidate_duration)
+                        };
+
+                        if config != ParallelBenchmarkConfig::default() {
+                            tracing::info!("Resetting dynamic configuration…");
+
+                            control.config_reset_all(COLLECTION).unwrap();
+                        }
+
+                        drop(control);
+                        drop(sonic);
+
+                        writeln!(
+                            log_file,
+                            "| {size:.2} | `{bench_conf_name}` | `{sonic_conf_name}` | {nchannels} | {ingest_duration:>9.3?} | {compact_duration:>9.3?} | {consolidate_duration:>9.3?} | {thrpt_bytes:>7.3}/s | {thrpt_elem:>7.3}elem/s |",
+                            size = HumanBytes::from(ingested_bytes),
+                            bench_conf_name = bench_conf_name.replace("-", "` `"),
+                            sonic_conf_name = sonic_conf_name.replace("-", "` `"),
+                            thrpt_bytes = HumanBytes::from((ingested_bytes as f32 / elapsed_total.as_secs_f32()) as u64),
+                            thrpt_elem = CompactThousands::from((ingested_count as f32 / elapsed_total.as_secs_f32()) as u64)
+                        ).unwrap();
                     }
 
-                    drop(sonic);
-                }
-
-                elapsed_total
+                    elapsed_total
+                });
             });
-        });
+        }
     }
 
     group.finish();
+
+    tracing::info!("Logged results in {log_file_path:?}");
 }
 
 criterion_group!(benches, criterion_benchmark);

@@ -37,6 +37,7 @@ use clap::{Arg, Command};
 
 use channel::listen::{ChannelListen, ChannelListenBuilder};
 use channel::statistics::ensure_states as ensure_states_channel_statistics;
+use sonic::executor::DynamicConfigStore;
 use sonic::store::fst::StoreFSTPool;
 use sonic::store::kv::StoreKVPool;
 use tasker::runtime::TaskerBuilder;
@@ -61,7 +62,7 @@ pub static THREAD_NAME_CHANNEL_MASTER: &str = "sonic-channel-master";
 pub static THREAD_NAME_CHANNEL_CLIENT: &str = "sonic-channel-client";
 pub static THREAD_NAME_TASKER: &str = "sonic-tasker";
 
-const DEFAULT_CONFIG_FILE_PATHS: [&str; 5] = [
+const DEFAULT_CONFIG_FILE_PATHS: &[&str] = &[
     // COMPAT: This has to have a high precedence, for backward compatibility
     //   with previous default value.
     "./config.cfg",
@@ -129,14 +130,21 @@ fn main() {
     let kv_pool = StoreKVPool::new(Arc::clone(&app_conf.sonic.store.kv));
     let fst_pool = StoreFSTPool::new(Arc::clone(&app_conf.sonic.store.fst), Default::default());
 
+    let dynamic_config = Arc::default();
+
     // Spawn tasker (background thread)
-    thread::spawn(spawn_tasker(kv_pool.clone(), fst_pool.clone()));
+    thread::spawn(spawn_tasker(
+        kv_pool.clone(),
+        fst_pool.clone(),
+        Arc::clone(&dynamic_config),
+    ));
 
     // Spawn channel (foreground thread)
     thread::spawn(spawn_channel(
         kv_pool.clone(),
         fst_pool.clone(),
         Arc::new(app_conf),
+        dynamic_config,
     ));
 
     tracing::info!("started");
@@ -148,11 +156,11 @@ fn main() {
         ChannelListen::teardown();
 
         // Perform a KV flush (ensures all in-memory changes are synced on-disk before shutdown)
-        kv_pool.flush(true);
+        kv_pool.flush(true, |_| true);
 
         // Perform a FST consolidation (ensures all in-memory items are synced on-disk before \
         //   shutdown; otherwise we would lose all non-consolidated FST changes)
-        fst_pool.consolidate(true);
+        fst_pool.consolidate(true, |_| true);
 
         tracing::info!("stopped");
     });
@@ -196,11 +204,13 @@ fn spawn_channel(
     kv_pool: StoreKVPool,
     fst_pool: StoreFSTPool,
     app_conf: Arc<Config>,
+    dynamic_conf_store: Arc<DynamicConfigStore>,
 ) -> impl FnOnce() {
     let builder = ChannelListenBuilder {
         app_conf,
         kv_pool,
         fst_pool,
+        dynamic_conf_store,
     };
 
     move || {
@@ -210,8 +220,16 @@ fn spawn_channel(
     }
 }
 
-fn spawn_tasker(kv_pool: StoreKVPool, fst_pool: StoreFSTPool) -> impl FnOnce() {
-    let builder = TaskerBuilder { kv_pool, fst_pool };
+fn spawn_tasker(
+    kv_pool: StoreKVPool,
+    fst_pool: StoreFSTPool,
+    dynamic_conf_store: Arc<DynamicConfigStore>,
+) -> impl FnOnce() {
+    let builder = TaskerBuilder {
+        kv_pool,
+        fst_pool,
+        dynamic_conf_store,
+    };
 
     move || {
         spawn_managed_thread("tasker", THREAD_NAME_TASKER, move || {

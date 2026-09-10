@@ -78,7 +78,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 let mut elapsed_total = Duration::ZERO;
 
                 for _i in 0..iters {
-                    let sonic = start_sonic_empty(|command| config.update_command(command));
+                    let sonic = start_sonic_empty(None, |command| config.update_command(command));
 
                     let multiplexer = SonicMultiplexer::new().unwrap();
 
@@ -163,7 +163,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 let mut elapsed_total = Duration::ZERO;
 
                 for _i in 0..iters {
-                    let sonic = start_sonic_empty(|command| command
+                    let sonic = start_sonic_empty(None, |command| command
                         .env("SONIC_STORE__FST__GRAPH__CONSOLIDATE_AFTER", "3600")
                         .env("SONIC_STORE__FST__POOL__INACTIVE_AFTER", "3700")
                         .env("SONIC_STORE__KV__DATABASE__FLUSH_AFTER", "3600")

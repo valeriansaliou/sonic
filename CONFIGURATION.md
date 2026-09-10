@@ -134,6 +134,7 @@ Under `[store.kv]`:
 * `database.target_file_size_base` (type: _u64_, allowed: `0`, default: RocksDB default (`0x4000000` (64MiB)) — Target size in bytes of an individual SST file at level-1 (file sizes at later levels scale up using the same growth factor as `max_bytes_for_level_multiplier`)
 * `database.max_background_jobs` (type: _integer_, allowed: `≥2`, default: RocksDB default (`2`)) — Maximum number of background threads available for flush and compaction jobs combined
 * `database.max_subcompactions` (type: _integer_, allowed: `≥1`, default: RocksDB default (`1`)) — Limit on the number of concurrent database compaction jobs
+* `database.max_flushes` (type: _integer_, allowed: numbers, default: `1`) — Limit on the number of concurrent database flush jobs
 * `database.stats_dump_period_sec` (type: _integer_, allowed: `≥0`, default: RocksDB default (`600` (10 mins))) — Interval in seconds at which RocksDB writes internal statistics (throughput, compaction stats, cache hit rates, etc.) to its log file (`0` disables periodic dumping)
 
 ### FST store configuration

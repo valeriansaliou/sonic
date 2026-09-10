@@ -30,7 +30,9 @@ impl StoreOperationDispatch {
                 .list(store, query_id, limit, offset)
                 .map(|results| results.join(" "))
                 .map(Some),
-            Query::Push(store, lexer) => executor.push(store, lexer).map(|_| None),
+            Query::Push(store, lexer, assume_new) => {
+                executor.push(store, lexer, assume_new).map(|_| None)
+            }
             Query::Pop(store, lexer) => executor
                 .pop(store, lexer)
                 .map(|count| Some(count.to_string())),

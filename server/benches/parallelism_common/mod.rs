@@ -41,7 +41,7 @@ pub fn run_bench<const N: usize>(
     actors: impl Fn(&RunContext, &mut bus::Bus<Message>) -> [Box<dyn Actor>; N],
 ) {
     let bench_state = Mutex::new(LazyLock::new(|| {
-        let mut ctx = start_sonic_empty(|command| {
+        let mut ctx = start_sonic_empty(None, |command| {
             update_command(command)
                 .env(
                     "SONIC_SERVER__LOG_LEVEL",

@@ -1,0 +1,5 @@
+[store.kv.database]
+# Compact less often (when there are 256 L0 SSTs).
+level_zero_file_num_compaction_trigger = 256
+level_zero_slowdown_writes_trigger = 384
+level_zero_stop_writes_trigger = 512

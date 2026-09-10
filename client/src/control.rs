@@ -244,6 +244,76 @@ impl_fns!(
     }
 );
 
+// MARK: CONFIG
+
+#[cfg(feature = "experimental-api")]
+impl_fns!(
+    #[doc = "Time complexity: O(1)."]
+    fn config_set(
+        &self,
+        collection: impl AsRef<str>,
+        configs: &[impl AsRef<str>],
+    ) -> std::io::Result<()> {
+        // Construct args list.
+        let mut args = String::with_capacity(
+            configs.iter().map(|s| s.as_ref().len()).sum::<usize>() + configs.len(),
+        );
+        for config in configs {
+            args.push(' ');
+            args.push_str(config.as_ref());
+        }
+
+        // Drop the leading space (purely aesthetic for `make_command`).
+        let args = &args[1..];
+
+        self.inner.send(
+            make_command!("CONFIG {} SET {}", collection, args),
+            Discriminant::Ok,
+            |_data| Ok(()),
+        )
+    }
+);
+
+#[cfg(feature = "experimental-api")]
+impl_fns!(
+    #[doc = "Time complexity: O(1)."]
+    fn config_reset(
+        &self,
+        collection: impl AsRef<str>,
+        configs: &[impl AsRef<str>],
+    ) -> std::io::Result<()> {
+        // Construct args list.
+        let mut args = String::with_capacity(
+            configs.iter().map(|s| s.as_ref().len()).sum::<usize>() + configs.len(),
+        );
+        for config in configs {
+            args.push(' ');
+            args.push_str(config.as_ref());
+        }
+
+        // Drop the leading space (purely aesthetic for `make_command`).
+        let args = &args[1..];
+
+        self.inner.send(
+            make_command!("CONFIG {} RESET {}", collection, args),
+            Discriminant::Ok,
+            |_data| Ok(()),
+        )
+    }
+);
+
+#[cfg(feature = "experimental-api")]
+impl_fns!(
+    #[doc = "Time complexity: O(1)."]
+    fn config_reset_all(&self, collection: impl AsRef<str>) -> std::io::Result<()> {
+        self.inner.send(
+            make_command!("CONFIG {} RESET", collection),
+            Discriminant::Ok,
+            |_data| Ok(()),
+        )
+    }
+);
+
 // MARK: PING
 
 impl_fns!(

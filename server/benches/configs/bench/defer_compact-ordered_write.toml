@@ -1,0 +1,2 @@
+defer_compaction = true
+rocksdb_unordered_write = false

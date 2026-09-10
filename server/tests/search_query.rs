@@ -30,7 +30,7 @@ fn query() {
     );
 }
 
-const SPECIAL_PATTERNS_TEST_CASES: [(&str, &str); 6] = [
+const SPECIAL_PATTERNS_TEST_CASES: &[(&str, &str)] = &[
     ("msg:1", "olivia@example.org"),
     ("msg:2", "olivio@example.org"),
     ("msg:3", "alicia@example.org"),

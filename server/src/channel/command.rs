@@ -71,16 +71,21 @@ const META_PART_GROUP_CLOSE: char = ')';
 static BACKUP_KV_PATH: &str = "kv";
 static BACKUP_FST_PATH: &str = "fst";
 
-pub static COMMANDS_MODE_SEARCH: [&str; 6] = ["QUERY", "SUGGEST", "LIST", "PING", "HELP", "QUIT"];
-pub static COMMANDS_MODE_INGEST: [&str; 9] = [
+pub static COMMANDS_MODE_SEARCH: &[&str] = &["QUERY", "SUGGEST", "LIST", "PING", "HELP", "QUIT"];
+pub static COMMANDS_MODE_INGEST: &[&str] = &[
     "PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT",
 ];
-pub static COMMANDS_MODE_CONTROL: [&str; 5] = ["TRIGGER", "INFO", "PING", "HELP", "QUIT"];
+#[rustfmt::skip]
+pub static COMMANDS_MODE_CONTROL: &[&str] = &[
+    "TRIGGER", "INFO",
+    #[cfg(feature = "experimental-api")] "CONFIG",
+    "PING", "HELP", "QUIT"
+];
 #[rustfmt::skip]
 pub static CONTROL_TRIGGER_ACTIONS: &[&str] = &[
     "consolidate", "backup", "restore",
-    #[cfg(feature = "experimental-api")]
-    "flush",
+    #[cfg(feature = "experimental-api")] "flush",
+    #[cfg(feature = "experimental-api")] "compact",
 ];
 
 static MANUAL_MODE_SEARCH: LazyLock<HashMap<&str, Vec<&str>>> =
@@ -265,19 +270,21 @@ impl ChannelCommandBase {
                             && !value.contains(META_PART_GROUP_OPEN)
                             && !value.contains(META_PART_GROUP_CLOSE)
                         {
-                            tracing::debug!("parsed meta part as: {} = {}", key, value);
+                            tracing::debug!("parsed meta part as: {key:?} = {value:?}");
 
                             Some(Ok((key, value)))
                         } else {
                             tracing::info!(
-                                "parsed meta part, but it contains reserved characters: {} = {}",
-                                key,
-                                value
+                                "parsed meta part, but it contains reserved characters: {key:?} = {value:?}"
                             );
 
                             Some(Err((key, value)))
                         };
                     }
+                } else {
+                    let (key, value) = (part, "");
+                    tracing::debug!("parsed meta part as: {key:?} = {value:?}");
+                    return Some(Ok((key, value)));
                 }
             }
 
@@ -716,6 +723,7 @@ impl ChannelCommandIngest {
 
                 // Define push parameters
                 let mut push_lang = None;
+                let mut push_assume_new = false;
 
                 // Parse meta parts (meta comes after text; extract meta parts second)
                 let mut last_meta_err = None;
@@ -723,7 +731,8 @@ impl ChannelCommandIngest {
                 while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
                 {
                     match Self::handle_push_meta(meta_result) {
-                        Ok(Some(push_lang_parsed)) => push_lang = Some(push_lang_parsed),
+                        Ok((Some(push_lang_parsed), None)) => push_lang = Some(push_lang_parsed),
+                        Ok((None, Some(PushMetaNew))) => push_assume_new = true,
                         Err(parse_err) => last_meta_err = Some(parse_err),
                         _ => {}
                     }
@@ -740,7 +749,7 @@ impl ChannelCommandIngest {
 
                     #[rustfmt::skip]
                     let query = Query::push(
-                        collection, bucket, object, &text, push_lang,
+                        collection, bucket, object, &text, push_lang, push_assume_new,
                         *ctx.normalization_config,
                         *ctx.tokenization_config,
                         ctx.stopwords_config,
@@ -751,6 +760,11 @@ impl ChannelCommandIngest {
                     ChannelCommandBase::commit_ok_operation(query, ctx.executor)
                 }
             }
+            #[cfg(feature = "experimental-api")]
+            _ => Err(ChannelCommandError::InvalidFormat(
+                "PUSH <collection> <bucket> <object> \"<text>\" [LANG(<locale>)]? [NEW]?",
+            )),
+            #[cfg(not(feature = "experimental-api"))]
             _ => Err(ChannelCommandError::InvalidFormat(
                 "PUSH <collection> <bucket> <object> \"<text>\" [LANG(<locale>)]?",
             )),
@@ -893,7 +907,7 @@ impl ChannelCommandIngest {
 
     fn handle_push_meta(
         meta_result: MetaPartsResult,
-    ) -> Result<Option<QueryGenericLang>, ChannelCommandError> {
+    ) -> Result<(Option<QueryGenericLang>, Option<PushMetaNew>), ChannelCommandError> {
         match meta_result {
             Ok((meta_key, meta_value)) => {
                 tracing::debug!("handle push meta: {} = {}", meta_key, meta_value);
@@ -902,7 +916,17 @@ impl ChannelCommandIngest {
                     "LANG" => {
                         // 'LANG(<locale>)' where <locale> ∈ ISO 639-3
                         if let Some(query_lang_parsed) = QueryGenericLang::from_value(meta_value) {
-                            Ok(Some(query_lang_parsed))
+                            Ok((Some(query_lang_parsed), None))
+                        } else {
+                            Err(ChannelCommandBase::make_error_invalid_meta_value(
+                                meta_key, meta_value,
+                            ))
+                        }
+                    }
+                    #[cfg(feature = "experimental-api")]
+                    "NEW" => {
+                        if meta_value.is_empty() {
+                            Ok((None, Some(PushMetaNew)))
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
                                 meta_key, meta_value,
@@ -920,6 +944,10 @@ impl ChannelCommandIngest {
         }
     }
 }
+
+/// This should be somewhere else, but the query routing code is so convoluted
+/// I(@RemiBardon) have no idea where to put it. I should rewrite it someday.
+struct PushMetaNew;
 
 impl ChannelCommandControl {
     pub fn dispatch_trigger(
@@ -942,7 +970,7 @@ impl ChannelCommandControl {
                     "consolidate" => {
                         if data_part.is_none() {
                             // Force a FST consolidate
-                            fst_pool.consolidate(true);
+                            fst_pool.consolidate(true, |_| true);
 
                             Ok(vec![ChannelCommandResponse::Ok])
                         } else {
@@ -953,12 +981,22 @@ impl ChannelCommandControl {
                     "flush" => {
                         if data_part.is_none() {
                             // Force a KV flush
-                            kv_pool.flush(true);
+                            kv_pool.flush(true, |_| true);
 
                             Ok(vec![ChannelCommandResponse::Ok])
                         } else {
                             Err(ChannelCommandError::InvalidFormat("TRIGGER flush"))
                         }
+                    }
+                    #[cfg(feature = "experimental-api")]
+                    "compact" => {
+                        let collections =
+                            data_part.map(|s| s.split_ascii_whitespace().collect::<Vec<_>>());
+
+                        // Force a KV compaction
+                        kv_pool.compact(collections.as_deref());
+
+                        Ok(vec![ChannelCommandResponse::Ok])
                     }
                     "backup" => {
                         match (data_part, last_part) {
@@ -1027,11 +1065,170 @@ impl ChannelCommandControl {
         }
     }
 
+    #[cfg(feature = "experimental-api")]
+    pub fn dispatch_config(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeControl,
+    ) -> ChannelResult {
+        const FORMAT: &str = "CONFIG <collection> (SET <key=value>...|RESET [key]...)";
+
+        let Some(collection) = parts.next() else {
+            return Err(ChannelCommandError::InvalidFormat(FORMAT));
+        };
+
+        tracing::debug!(collection, "dispatching config command");
+
+        match parts.next() {
+            Some("SET") => config_set(parts, ctx, collection),
+            Some("RESET") => config_reset(parts, ctx, collection),
+            Some(action) => {
+                tracing::warn!("Unknown CONFIG action: {action}");
+                Err(ChannelCommandError::NotFound)
+            }
+            None => Err(ChannelCommandError::InvalidFormat(FORMAT)),
+        }
+    }
+
     pub fn dispatch_help(
         parts: SplitWhitespace,
         _ctx: &ChannelMessageModeControl,
     ) -> ChannelResult {
         ChannelCommandBase::generic_dispatch_help(parts, &*MANUAL_MODE_CONTROL)
+    }
+}
+
+#[cfg(feature = "experimental-api")]
+// TODO: Use proper parsing to add support for quoted values (with spaces).
+fn config_set(
+    parts: SplitWhitespace,
+    ctx: &ChannelMessageModeControl,
+    collection: &str,
+) -> ChannelResult {
+    use sonic::executor::{DynamicConfig, RocksDbMemtable};
+
+    fn parse_bool(str: &str) -> Option<bool> {
+        match str {
+            "true" => Some(true),
+            "false" => Some(false),
+            _ => None,
+        }
+    }
+
+    // TODO: Maybe replace this by a proper deserializer? (If so, make sure to suport duplicate keys)
+    fn merge(
+        config: &mut DynamicConfig,
+        key: &str,
+        value: &str,
+    ) -> Result<(), ChannelCommandError> {
+        let invalid_meta_value =
+            || ChannelCommandError::InvalidMetaValue((key.to_owned(), value.to_owned()));
+
+        // WARN: Think about updating `CONFIG RESET` when adding new keys here!
+        match key {
+            "sonic.disable_janitor_tasks" => {
+                config.sonic.disable_janitor_tasks =
+                    Some(parse_bool(value).ok_or_else(invalid_meta_value)?);
+            }
+            "sonic.disable_fst_consolidate_task" => {
+                config.sonic.disable_fst_consolidate_task =
+                    Some(parse_bool(value).ok_or_else(invalid_meta_value)?);
+            }
+            "sonic.disable_kv_flush_task" => {
+                config.sonic.disable_kv_flush_task =
+                    Some(parse_bool(value).ok_or_else(invalid_meta_value)?);
+            }
+            "rocksdb.disable_auto_compactions" => {
+                config.rocksdb.disable_auto_compactions =
+                    Some(parse_bool(value).ok_or_else(invalid_meta_value)?);
+            }
+            "rocksdb.unordered_write" => {
+                config.rocksdb.unordered_write =
+                    Some(parse_bool(value).ok_or_else(invalid_meta_value)?);
+            }
+            "rocksdb.memtable" => match value {
+                "default" => config.rocksdb.memtable = Some(RocksDbMemtable::Default),
+                "vector" => config.rocksdb.memtable = Some(RocksDbMemtable::Vector),
+                _ => return Err(invalid_meta_value()),
+            },
+            key => {
+                tracing::warn!("Unknown dynamic configuration key: {key:?}");
+                return Err(ChannelCommandError::NotFound);
+            }
+        }
+
+        Ok(())
+    }
+
+    let mut config = (ctx.executor.dynamic_conf_store)
+        .get(collection)
+        .unwrap_or_default();
+
+    for part in parts {
+        match part.split_once("=") {
+            Some((key, value)) => merge(&mut config, key, value)?,
+
+            // If key is passed alone, consider it a boolean.
+            None => merge(&mut config, part, "true")?,
+        }
+    }
+
+    // NOTE: `set_dynamic_conf` updates `dynamic_conf_store` on success.
+    match ctx.executor.set_dynamic_conf(collection, config) {
+        Ok(()) => Ok(vec![ChannelCommandResponse::Ok]),
+        Err(error) => {
+            tracing::error!("{error:?}");
+            Err(ChannelCommandError::InternalError)
+        }
+    }
+}
+
+#[cfg(feature = "experimental-api")]
+fn config_reset(
+    parts: SplitWhitespace,
+    ctx: &ChannelMessageModeControl,
+    collection: &str,
+) -> ChannelResult {
+    let mut parts = parts.peekable();
+    let new_conf = if parts.peek().is_some() {
+        let mut new_conf = (ctx.executor.dynamic_conf_store)
+            .get(collection)
+            .unwrap_or_default();
+
+        macro_rules! match_reset {
+            ($key:ident => $($($path:ident).+),+) => {
+                match $key {
+                    $(stringify!($($path).+) => new_conf.$($path).+ = None,)+
+                    key => {
+                        tracing::warn!("Unknown dynamic configuration key: {key:?}");
+                        return Err(ChannelCommandError::NotFound);
+                    }
+                }
+            };
+        }
+
+        for key in parts {
+            match_reset!(key =>
+                sonic.disable_janitor_tasks,
+                sonic.disable_fst_consolidate_task,
+                sonic.disable_kv_flush_task,
+                rocksdb.disable_auto_compactions,
+                rocksdb.unordered_write,
+                rocksdb.memtable
+            );
+        }
+
+        new_conf
+    } else {
+        // If no argument was provided, reset the whole configuration.
+        sonic::DynamicConfig::default()
+    };
+
+    match ctx.executor.set_dynamic_conf(collection, new_conf) {
+        Ok(()) => Ok(vec![ChannelCommandResponse::Ok]),
+        Err(error) => {
+            tracing::error!("{error:?}");
+            Err(ChannelCommandError::InternalError)
+        }
     }
 }
 

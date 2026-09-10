@@ -79,7 +79,7 @@ tasks:
       ARGS_REST: { ref: .CLEAN_ARGS_LIST | rest | rest | join " " }
       ARGS_1: '{{ if regexMatch " -- " .ARGS_REST }}{{ .ARGS_REST | splitList " -- " | first }}{{ else }}{{ .ARGS_REST }}{{ end }}'
       ARGS_2: '{{ if regexMatch "-- " .ARGS_REST }}{{ .ARGS_REST | splitList "-- " | rest | join "-- " }}{{ end }}'
-      WORKTREE_PATH: '{{ if .GIT_REF | eq "HEAD" }}.{{ else }}{{ .MAIN_WORKTREE_PATH }}/../sonic-{{ .GIT_REF }}{{ end }}'
+      WORKTREE_PATH: '{{ if .GIT_REF | eq "HEAD" }}.{{ else }}{{ .MAIN_WORKTREE_PATH }}/../sonic-{{ .BASELINE_NAME }}{{ end }}'
       INSTALL_DIR: '{{ .MAIN_WORKTREE_PATH }}/target/bench-builds/{{ .BASELINE_NAME }}'
 
   bench:compare:
@@ -135,5 +135,7 @@ tasks:
 
   util:git-add-worktree:
     internal: true
-    cmd: git worktree add {{ shellQuote .WORKTREE_PATH }} {{ shellQuote .GIT_REF }}
-    if: test ! -d {{ shellQuote .WORKTREE_PATH }}
+    cmds:
+      - cmd: git worktree add {{ shellQuote .WORKTREE_PATH }} {{ shellQuote .GIT_REF }}
+        if: test ! -d {{ shellQuote .WORKTREE_PATH }}
+      - git -C {{ shellQuote .WORKTREE_PATH }} switch --detach {{ shellQuote .GIT_REF }}

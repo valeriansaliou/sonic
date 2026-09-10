@@ -33,7 +33,7 @@ pub enum Query<'a> {
         QuerySearchLimit,
         QuerySearchOffset,
     ),
-    Push(StoreItem<'a>, TokenLexer<'a>),
+    Push(StoreItem<'a>, TokenLexer<'a>, PushAssumeNew),
     Pop(StoreItem<'a>, TokenLexer<'a>),
     Count(StoreItem<'a>),
     FlushC(StoreItem<'a>),

@@ -5,7 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 mod generic;
-mod keyer;
+pub(crate) mod keyer;
 
 pub mod fst;
 pub mod identifiers;

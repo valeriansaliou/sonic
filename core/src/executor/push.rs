@@ -5,6 +5,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use hashbrown::HashSet;
 use rocksdb::WriteBatch;
 use std::sync::Arc;
 
@@ -12,9 +13,10 @@ use crate::lexer::TokenLexer;
 use crate::store::StoreItem;
 use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
+use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
-    pub fn push(&self, item: StoreItem, lexer: TokenLexer) -> Result<(), ()> {
+    pub fn push(&self, item: StoreItem, lexer: TokenLexer, assume_new: bool) -> Result<(), ()> {
         let StoreItem(collection, Some(bucket), Some(object)) = item else {
             return Err(());
         };
@@ -25,7 +27,8 @@ impl super::Executor {
         let _fst_read_guard = self.fst_pool.lock_read_access();
 
         let (Ok(kv_store), Ok(fst_store)) = (
-            self.kv_pool.acquire(StoreKVAcquireMode::Any, collection),
+            self.kv_pool
+                .acquire(StoreKVAcquireMode::Any, collection, None, |_| {}),
             self.fst_pool.acquire(collection, bucket),
         ) else {
             return Err(());
@@ -44,56 +47,54 @@ impl super::Executor {
             StoreFSTActionBuilder::access(fst_store),
         );
 
+        let mut batch = WriteBatch::default();
+
         // Try to resolve existing OID to IID, otherwise initialize IID (store the \
         //   bi-directional relationship)
         let oid = object.as_str();
-        let write_guard = kv_store.lock.write().unwrap();
-        let iid = kv_action.get_oid_to_iid(oid).unwrap_or(None).or_else(|| {
-            tracing::info!("must initialize push executor oid-to-iid and iid-to-oid");
+        let mut assign_new_iid = || {
+            tracing::trace!("must initialize push executor oid-to-iid and iid-to-oid");
 
             // Bump last stored increment
-            match kv_action.auto_increment_iid(Some(write_guard)) {
-                Ok(iid) => {
-                    let mut batch = WriteBatch::default();
+            let iid = kv_action.get_new_iid(&mut batch);
 
-                    // Associate OID <> IID (bidirectional)
-                    kv_action.set_oid_to_iid(&mut batch, oid, iid);
-                    kv_action.set_iid_to_oid(&mut batch, iid, oid);
+            // Associate OID <> IID (bidirectional)
+            kv_action.set_oid_to_iid(&mut batch, oid, iid);
+            kv_action.set_iid_to_oid(&mut batch, iid, oid);
 
-                    executor_ensure_op!(kv_action.write(batch));
-
-                    Some(iid)
-                }
-                Err(error) => {
-                    tracing::error!("{error}");
-
+            iid
+        };
+        let iid = if assume_new {
+            assign_new_iid()
+        } else {
+            (kv_action.get_oid_to_iid(oid))
+                .unwrap_or_else(|()| {
+                    tracing::error!("Error getting OID-To-IID");
                     None
-                }
-            }
-        });
-
-        let Some(iid) = iid else {
-            return Err(());
+                })
+                .unwrap_or_else(assign_new_iid)
         };
 
-        let mut batch = WriteBatch::default();
+        let mut tokens = HashSet::with_capacity_and_hasher(128, NoopU32HasherBuilder);
 
         for (token, term_hashed, _) in lexer {
             let term = token.as_str();
 
-            tracing::info!("has push executor term-to-iids: {iid}");
-
-            // Link IID to term
-            kv_action.add_term_to_iids(&mut batch, term_hashed, std::iter::once(iid));
-
-            // Link term to IID
-            kv_action.add_iid_to_terms(&mut batch, iid, std::iter::once(term_hashed));
+            tokens.insert(term_hashed);
 
             // Push to FST graph? (this consumes the term; to avoid sub-clones)
             if fst_action.push_word(&term, &self.app_conf.store.fst) {
-                tracing::debug!("push term committed to graph: {}", term);
+                tracing::trace!("push term committed to graph: {}", term);
             }
         }
+
+        for &term_hashed in tokens.iter() {
+            // Link IID to term
+            kv_action.add_term_to_iids(&mut batch, term_hashed, std::iter::once(iid));
+        }
+
+        // Link terms to IID
+        kv_action.add_iid_to_terms(&mut batch, iid, tokens.into_iter());
 
         executor_ensure_op!(kv_action.write(batch));
 

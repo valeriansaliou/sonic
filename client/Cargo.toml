@@ -44,6 +44,7 @@ raw-api = []
 logging-std = []
 log = ["dep:log"]
 tracing = ["dep:tracing"]
+experimental-api = []
 
 [[example]]
 name = "search_concurrent_async"

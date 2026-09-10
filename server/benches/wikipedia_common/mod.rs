@@ -56,27 +56,18 @@ impl std::fmt::Display for PushBenchmarkConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ParallelBenchmarkConfig {
-    pub nthreads: usize,
-}
+    #[serde(default)]
+    pub defer_compaction: bool,
 
-impl ParallelBenchmarkConfig {
-    pub fn update_command<'c>(&self, command: &'c mut Command) -> &'c mut Command {
-        command
-    }
-}
+    #[serde(default)]
+    pub rocksdb_unordered_write: Option<bool>,
 
-impl std::fmt::Display for ParallelBenchmarkConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "default")?;
-
-        let Self { nthreads } = self;
-
-        write!(f, "[threads:{nthreads}]")?;
-
-        Ok(())
-    }
+    #[serde(default)]
+    pub rocksdb_memtable: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -118,7 +109,7 @@ pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
         .or_insert_with(|| {
             let data_path = Path::new(SONIC_DATA_PATH).join("prepopulated");
 
-            let sonic = start_sonic(&data_path, |command| {
+            let sonic = start_sonic(None, &data_path, |command| {
                 apply_normalization(normalization_config, command)
             });
 
@@ -197,7 +188,7 @@ pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
         })
         .as_path();
 
-    start_sonic(path, |command| {
+    start_sonic(None, path, |command| {
         update_command(apply_normalization(normalization_config, command))
     })
 }

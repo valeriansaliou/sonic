@@ -9,7 +9,7 @@ use core::cmp::Eq;
 use core::hash::Hash;
 use hashbrown::HashMap;
 use std::fmt::Display;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, RwLockWriteGuard};
 use std::time::{Duration, SystemTime};
 
 pub trait StoreGeneric {
@@ -46,17 +46,22 @@ pub trait StoreGenericPool<
         Ok(store.clone())
     }
 
-    fn proceed_acquire_open(
+    fn proceed_acquire_open<'a>(
         kind: &str,
         collection_str: &str,
         pool_key: K,
-        pool: &Arc<RwLock<HashMap<K, Arc<S>>>>,
+        pool: &'a Arc<RwLock<HashMap<K, Arc<S>>>>,
         builder: &B,
+        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<K, Arc<S>>>>,
+        override_options: impl FnOnce(&mut B::Options),
     ) -> Result<Arc<S>, ()> {
-        match builder.build(pool_key) {
+        match builder.build(pool_key, override_options) {
             Ok(store) => {
                 // Acquire a thread-safe store pool reference in write mode
-                let mut store_pool_write = pool.write().unwrap();
+                let store_pool_write = match write_guard {
+                    Some(x) => x,
+                    None => &mut pool.write().unwrap(),
+                };
                 let store_box = Arc::new(store);
 
                 store_pool_write.insert(pool_key, store_box.clone());
@@ -88,6 +93,7 @@ pub trait StoreGenericPool<
         pool: &Arc<RwLock<HashMap<K, Arc<S>>>>,
         inactive_after: u64,
         access_lock: &Arc<RwLock<()>>,
+        filter: impl Fn(&K) -> bool,
     ) {
         tracing::debug!("scanning for {} store pool items to janitor", kind);
 
@@ -97,7 +103,8 @@ pub trait StoreGenericPool<
 
         let mut removal_register: Vec<K> = Vec::new();
 
-        for (collection_bucket, store) in pool.read().unwrap().iter() {
+        for (collection_bucket, store) in pool.read().unwrap().iter().filter(|(key, _)| filter(key))
+        {
             // Important: be lenient with system clock going back to a past duration, since \
             //   we may be running in a virtualized environment where clock is not guaranteed \
             //   to be monotonic. This is done to avoid poisoning associated mutexes by \
@@ -158,7 +165,13 @@ pub trait StoreGenericPool<
 }
 
 pub trait StoreGenericBuilder<K, S> {
-    fn build(&self, pool_key: K) -> Result<S, ()>;
+    type Options;
+
+    fn build(
+        &self,
+        pool_key: K,
+        override_options: impl FnOnce(&mut Self::Options),
+    ) -> Result<S, ()>;
 }
 
 pub trait StoreGenericActionBuilder {

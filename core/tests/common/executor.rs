@@ -69,6 +69,7 @@ pub fn make_test_executor_with_id(
             app_conf: Arc::new(app_conf),
             kv_pool,
             fst_pool,
+            dynamic_conf_store: Default::default(),
         },
     }
 }

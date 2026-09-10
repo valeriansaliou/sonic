@@ -10,5 +10,6 @@
 //! use.
 
 pub(crate) mod fmt;
+pub(crate) mod hash;
 pub(crate) mod itertools;
 pub mod serde;
