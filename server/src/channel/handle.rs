@@ -216,9 +216,11 @@ impl ChannelHandle {
                     }
                 }
                 Err(err) => {
-                    tracing::error!("closing channel thread with traceback: {}", err);
+                    // NOTE: Panicking here would unwind past the connected clients
+                    //   counter decrement in `client()`, leaking a client slot.
+                    tracing::debug!("closing channel thread: {}", err);
 
-                    panic!("closing channel");
+                    break 'handler;
                 }
             }
         }
