@@ -8,6 +8,14 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/v1.9.0...HEAD
 
+### Changes
+
+* packaging(docker): Bump Docker base image from `rust:slim-bullseye` to `rust:1-slim-trixie` (in `2d6cd53`)
+
+### Bug Fixes
+
+* fix(server): Do not panic when a channel read fails (in `534733e`, `2457da6`)
+
 ## [1.9.0] (2026-09-15)
 
 [1.9.0]: https://github.com/valeriansaliou/sonic/compare/v1.8.1...v1.9.0
