@@ -1,375 +1,1278 @@
 // Sonic
 //
 // Fast, lightweight and schema-less search backend
-// Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use std::borrow::Cow;
-use std::iter::Peekable;
-use std::sync::LazyLock;
-use std::time::Instant;
+//! Most tokenizing/lexing logic used by Sonic.
+//!
+//! This module would benefit from some refactoring, as functions are quite long
+//! at the moment. At least it works, that’s what counts the most. We’ll do some
+//! refactoring once Sonic v2 is released.
+// TODO: Refactor module to split long functions into more comprehensible ones.
 
-use hashbrown::HashSet;
-use regex::Regex;
-use unicode_segmentation::UnicodeSegmentation;
-use whatlang::Lang;
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
 
-use crate::config::{ConfigNormalization, ConfigStopwords, ConfigTokenization};
-use crate::lexer::stopwords::is_stopword;
-use crate::query::QueryGenericLang;
-use crate::store::identifiers::{StoreTermHash, StoreTermHashed};
+    use whatlang::Lang;
 
-use super::stopwords::LexerStopWord;
+    use super::itertools::UniqueBy;
+    use super::lexing::{SpecialTokenKind, TokenKind};
+    use super::preprocessor::{Preprocessor, Token};
 
-pub struct TokenLexerBuilder;
+    #[test]
+    fn test_preprocessor_can_yield_original_positions() {
+        let preprocessor = Preprocessor::default();
 
-type TokensIter<'s> = Box<dyn Iterator<Item = Token<'s>> + 's>;
+        let tokens = preprocessor.preprocess("I had a déjà-vu.", None);
+        let mut tokens_iter = tokens.tokens();
 
-static SPECIAL_PATTERNS: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(concat!(
-        r"(?P<email>[\w.+-]+@[\w-]+\.[\w.-]+)",
-        r"|(?P<username>@[^\s]*\w)",
-        r"|(?P<url>\w{2,}://[^\s]*[^\s.])",
-        r"|(?P<ipv4>\d{1,3}(?:\.\d{1,3}){3})(?:[^\.\d]|$)",
-        r"|(?P<phone>\+?\d+(?:[\s\.-]?\d+){4,})",
-        r"|(?P<domain>[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})",
-        r"|(?P<id>[\w\d:_-]*[\d_][\w\d:-]*)"
-    ))
-    .unwrap()
-});
+        assert_eq!(tokens_iter.next().unwrap().range(), 0..=1);
+        assert_eq!(tokens_iter.next().unwrap().range(), 2..=5);
+        assert_eq!(tokens_iter.next().unwrap().range(), 6..=7);
+        assert_eq!(tokens_iter.next().unwrap().range(), 8..=14); // Diacritics
+        assert_eq!(tokens_iter.next().unwrap().range(), 15..=17);
+    }
 
-pub struct Tokenizer<'s> {
-    config: ConfigTokenization,
-    text: &'s str,
-    lang: Option<Lang>,
-    regex_matches: Peekable<regex::CaptureMatches<'static, 's>>,
-    regex_cursor: usize,
-    tokens: Option<(TokensIter<'s>, usize)>,
-}
+    #[test]
+    fn test_preprocessor_can_fold_diacritics() {
+        let mut preprocessor = Preprocessor::default();
 
-impl<'s> Tokenizer<'s> {
-    fn new(text: &'s str, lang: Option<Lang>, config: &ConfigTokenization) -> Self {
-        let regex_matches = if config.detect_special_patterns {
-            SPECIAL_PATTERNS.captures_iter(text).peekable()
-        } else {
-            // NOTE: It’s not truly an no-op but it is if we try matching a non-empty line.
-            static NOOP_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^$").unwrap());
-            NOOP_REGEX.captures_iter(" ").peekable()
-        };
+        #[rustfmt::skip]
+        assert_eq!(
+            preprocessor.preprocess("I had a déjà-vu.", None).normalized_text(),
+            "i had a déjà vu"
+        );
 
-        Self {
-            config: *config,
-            lang,
-            regex_matches,
-            text,
-            regex_cursor: 0,
-            tokens: None,
+        preprocessor.normalization_config.diacritic_folding_enabled = true;
+
+        #[rustfmt::skip]
+        assert_eq!(
+            preprocessor.preprocess("I had a déjà-vu.", None).normalized_text(),
+            "i had a deja vu"
+        );
+    }
+
+    /// Ensures pattern detection can be disabled, and is by default compatible
+    /// with v1 indexes.
+    #[test]
+    fn test_preprocessor_pattern_detection_optional() {
+        let mut preprocessor = Preprocessor::default();
+
+        #[rustfmt::skip]
+        assert_eq!(
+            preprocessor
+                .preprocess("Please contact support@example.org", None)
+                .tokens().skip(2)
+                .map(|token| (token.normalized, token.kind, token.start, token.end, token.index_in_tokenized_text))
+                .collect::<Vec<_>>(),
+            [
+                ("support", TokenKind::Special(SpecialTokenKind::CompatSubtoken), 15, 22, 2),
+                ("example.org", TokenKind::Special(SpecialTokenKind::CompatSubtoken), 23, 34, 3),
+            ]
+        );
+
+        preprocessor
+            .tokenization_config
+            .compat_split_special_patterns = false;
+
+        #[rustfmt::skip]
+        assert_eq!(
+            preprocessor
+                .preprocess("Please contact support@example.org", None)
+                .tokens().skip(2).next()
+                .map(|token| (token.as_normalized().to_owned(), token.kind, token.start, token.end, token.index_in_tokenized_text))
+                .unwrap(),
+            ("support@example.org".to_owned(), TokenKind::Special(SpecialTokenKind::EmailAddress), 15, 34, 2)
+        );
+
+        preprocessor.tokenization_config.detect_special_patterns = false;
+
+        #[rustfmt::skip]
+        assert_eq!(
+            preprocessor
+                .preprocess("Please contact support@example.org", None)
+                .tokens().skip(2).map(|token| (token.normalized, token.kind)).collect::<Vec<_>>(),
+            [
+                ("support", TokenKind::Normal),
+                ("example.org", TokenKind::Normal),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_preprocessor_can_filter_stopwords() {
+        let mut preprocessor = Preprocessor::default();
+
+        preprocessor.stopwords_config.deny =
+            HashSet::from_iter(["is", "a"].into_iter().map(str::to_owned));
+
+        #[rustfmt::skip]
+        assert_eq!(
+            preprocessor
+                .preprocess("This is a test!", None)
+                .tokens().map(Token::into_original).collect::<Vec<_>>(),
+            ["This", "test"]
+        );
+
+        preprocessor.detect_stopwords = false;
+
+        #[rustfmt::skip]
+        assert_eq!(
+            preprocessor
+                .preprocess("This is a test!", None)
+                .tokens().map(Token::into_original).collect::<Vec<_>>(),
+            ["This", "is", "a", "test"]
+        );
+    }
+
+    #[test]
+    fn test_preprocessor_can_stem() {
+        let mut preprocessor = Preprocessor::default();
+
+        // Disable stopword filtering as it would influence results.
+        preprocessor.filter_stopwords = false;
+
+        #[rustfmt::skip]
+        assert_eq!(
+            preprocessor.preprocess("Hackers doing hacking", Some(Lang::Eng)).normalized_text(),
+            "hackers doing hacking"
+        );
+
+        preprocessor.normalization_config.stemming_enabled = true;
+
+        #[rustfmt::skip]
+        assert_eq!(
+            preprocessor.preprocess("Hackers doing hacking", Some(Lang::Eng)).normalized_text(),
+            "hacker do hack"
+        );
+
+        // NOTE: This works because of automatic language detection.
+        #[rustfmt::skip]
+        assert_eq!(
+            preprocessor.preprocess("Hackers doing hacking", None).normalized_text(),
+            "hacker do hack"
+        );
+    }
+
+    #[test]
+    fn test_preprocessor_can_unique_tokens() {
+        let mut preprocessor = Preprocessor::default();
+
+        // Disable stopword filtering as it would influence results.
+        preprocessor.filter_stopwords = false;
+
+        #[rustfmt::skip]
+        assert_eq!(
+            UniqueBy::new(
+                preprocessor.preprocess("This and this then that and that", None).tokens(),
+                Token::hash
+            )
+            .map(Token::into_normalized)
+            .collect::<Vec<_>>(),
+            ["this", "and", "then", "that"]
+        );
+    }
+
+    /// Ensures the preprocessor can detect special patterns, and normalizes
+    /// some of them.
+    #[test]
+    fn test_preprocessor_can_detect_patterns() {
+        fn test(sentence: &str, expected: &[(&str, TokenKind)]) {
+            let mut preprocessor = Preprocessor::default();
+            preprocessor
+                .tokenization_config
+                .compat_split_special_patterns = false;
+            preprocessor.detect_stopwords = false;
+
+            let output = preprocessor.preprocess(sentence, Some(Lang::Eng));
+            let tokens = (output.tokens())
+                // .inspect(|t| eprintln!("{t:?}"))
+                .take(256) // Breaks potential infinite loop.
+                .map(|token| (token.normalized, token.kind))
+                .collect::<Vec<_>>();
+
+            assert_eq!(tokens, expected, "{sentence:?}");
         }
+
+        // Email address.
+        #[rustfmt::skip]
+        test(
+            "Contact jane.doe@example.org, alice@example.org or bob+foo@example.org for support.",
+            &[
+                ("contact", TokenKind::Normal),
+                ("jane.doe@example.org", TokenKind::Special(SpecialTokenKind::EmailAddress)),
+                ("alice@example.org", TokenKind::Special(SpecialTokenKind::EmailAddress)),
+                ("or", TokenKind::Normal),
+                ("bob+foo@example.org", TokenKind::Special(SpecialTokenKind::EmailAddress)),
+                ("for", TokenKind::Normal),
+                ("support", TokenKind::Normal),
+            ],
+        );
+
+        // Phone number like.
+        #[rustfmt::skip]
+        test(
+            "You can also call me at 555-123-4567 or +33 6 12 34 56 78 (06.12.34.56.78 / 06 12 34 56 78).",
+            &[
+                ("you", TokenKind::Normal),
+                ("can", TokenKind::Normal),
+                ("also", TokenKind::Normal),
+                ("call", TokenKind::Normal),
+                ("me", TokenKind::Normal),
+                ("at", TokenKind::Normal),
+                ("5551234567", TokenKind::Special(SpecialTokenKind::PhoneNumber)),
+                ("or", TokenKind::Normal),
+                ("+33612345678", TokenKind::Special(SpecialTokenKind::PhoneNumber)),
+                ("0612345678", TokenKind::Special(SpecialTokenKind::PhoneNumber)),
+                ("0612345678", TokenKind::Special(SpecialTokenKind::PhoneNumber)),
+            ],
+        );
+
+        // UUID like.
+        #[rustfmt::skip]
+        test(
+            "My account is 6db14cb4-b82e-4e49-8016-ef76c4290a2f.",
+            &[
+                ("my", TokenKind::Normal),
+                ("account", TokenKind::Normal),
+                ("is", TokenKind::Normal),
+                ("6db14cb4-b82e-4e49-8016-ef76c4290a2f", TokenKind::Special(SpecialTokenKind::Id)),
+            ],
+        );
+
+        // Hash like.
+        #[rustfmt::skip]
+        test(
+            "Check out b244423d417369795292e9f4530d0c0e6fa07625 and 927ff7701795282232dda41e023c7c6ba29d5a15 (927ff77).",
+            &[
+                ("check", TokenKind::Normal),
+                ("out", TokenKind::Normal),
+                ("b244423d417369795292e9f4530d0c0e6fa07625", TokenKind::Special(SpecialTokenKind::Id)),
+                ("and", TokenKind::Normal),
+                ("927ff7701795282232dda41e023c7c6ba29d5a15", TokenKind::Special(SpecialTokenKind::Id)),
+                ("927ff77", TokenKind::Special(SpecialTokenKind::Id)),
+            ],
+        );
+
+        // URL.
+        #[rustfmt::skip]
+        test(
+            "Have a look at https://example.org/foo?id=123.",
+            &[
+                ("have", TokenKind::Normal),
+                ("a", TokenKind::Normal),
+                ("look", TokenKind::Normal),
+                ("at", TokenKind::Normal),
+                ("https://example.org/foo?id=123", TokenKind::Special(SpecialTokenKind::Url)),
+            ],
+        );
+
+        // Domain name.
+        #[rustfmt::skip]
+        test(
+            "My domain name is example.org.",
+            &[
+                ("my", TokenKind::Normal),
+                ("domain", TokenKind::Normal),
+                ("name", TokenKind::Normal),
+                ("is", TokenKind::Normal),
+                ("example.org", TokenKind::Special(SpecialTokenKind::Domain)),
+            ],
+        );
+        #[rustfmt::skip]
+        test(
+            "I don’t put punctuation correctly .See?",
+            &[
+                ("i", TokenKind::Normal),
+                ("don’t", TokenKind::Normal),
+                ("put", TokenKind::Normal),
+                ("punctuation", TokenKind::Normal),
+                ("correctly", TokenKind::Normal),
+                ("see", TokenKind::Normal),
+            ],
+        );
+
+        // IP addresses.
+        #[rustfmt::skip]
+        test(
+            "Try to ping 192.168.1.0, 0.0.0.0, 2606:4700::6812:1c68, or ::1.",
+            &[
+                ("try", TokenKind::Normal),
+                ("to", TokenKind::Normal),
+                ("ping", TokenKind::Normal),
+                ("192.168.1.0", TokenKind::Special(SpecialTokenKind::Ipv4)),
+                ("0.0.0.0", TokenKind::Special(SpecialTokenKind::Ipv4)),
+                ("2606:4700::6812:1c68", TokenKind::Special(SpecialTokenKind::Id)),
+                ("or", TokenKind::Normal),
+                ("::1", TokenKind::Special(SpecialTokenKind::Id)),
+            ],
+        );
+
+        // Username.
+        #[rustfmt::skip]
+        test(
+            "Contact @alice.",
+            &[
+                ("contact", TokenKind::Normal),
+                ("@alice", TokenKind::Special(SpecialTokenKind::Username)),
+            ],
+        );
+
+        // Code like.
+        #[rustfmt::skip]
+        test(
+            "It’s tested in test_tokenizer.",
+            &[
+                ("it’s", TokenKind::Normal),
+                ("tested", TokenKind::Normal),
+                ("in", TokenKind::Normal),
+                ("test_tokenizer", TokenKind::Special(SpecialTokenKind::Id)),
+            ],
+        );
     }
 }
 
-fn tokenize<'s>(text: &'s str, lang: Option<Lang>) -> Box<dyn Iterator<Item = &'s str> + 's> {
-    match lang {
-        #[cfg(feature = "tokenizer-chinese")]
-        Some(Lang::Cmn) => Box::from(
-            TOKENIZER_JIEBA
-                .cut(text, false)
-                .into_iter()
-                .map(|token| token.word),
-        ),
-        #[cfg(feature = "tokenizer-japanese")]
-        Some(Lang::Jpn) => match TOKENIZER_LINDERA.tokenize(text) {
-            Ok(tokens) => Box::from(tokens.into_iter()),
-            Err(err) => {
-                tracing::warn!("unable to tokenize japanese, falling back: {}", err);
+pub mod preprocessor {
+    use std::cell::OnceCell;
+    use std::ops::RangeInclusive;
+    use std::rc::Rc;
 
-                Box::from(text.unicode_words())
+    use whatlang::Lang;
+
+    use super::lang_detection::detect_lang;
+    use super::lexing::{Lexer, TokenKind};
+    use super::normalization::{Normalizer, Stemmer};
+    use crate::config::{ConfigNormalization, ConfigStopwords, ConfigTokenization};
+    use crate::lexer::stemming;
+    use crate::lexer::stopwords::is_stopword;
+    use crate::store::identifiers::{StoreTermHash, StoreTermHashed};
+
+    pub struct Preprocessor {
+        pub tokenization_config: ConfigTokenization,
+        pub normalization_config: ConfigNormalization,
+        pub stopwords_config: ConfigStopwords,
+        pub detect_stopwords: bool,
+        pub filter_stopwords: bool,
+    }
+
+    impl Preprocessor {
+        pub fn new(
+            tokenization_config: ConfigTokenization,
+            normalization_config: ConfigNormalization,
+            stopwords_config: ConfigStopwords,
+            detect_stopwords: bool,
+            filter_stopwords: bool,
+        ) -> Self {
+            Self {
+                tokenization_config,
+                normalization_config,
+                stopwords_config,
+                detect_stopwords,
+                filter_stopwords,
             }
-        },
-        _ => Box::from(text.unicode_words()),
-    }
-}
+        }
 
-impl<'s> Iterator for Tokenizer<'s> {
-    type Item = Token<'s>;
+        pub fn preprocess<'t>(&self, text: &'t str, lang: Option<Lang>) -> PreprocessorOutput<'t> {
+            let lang = match lang {
+                // If user provided a language, use it.
+                Some(hinted_lang) => {
+                    // Use hinted language (current lexer mode asks for a cleanup).
+                    tracing::debug!(?text, "using hinted lang: {hinted_lang:?}");
 
-    fn next(&mut self) -> Option<Self::Item> {
-        // If we were walking words, continue.
-        if let Some((words, end)) = self.tokens.as_mut() {
-            match words.next() {
-                Some(word) => return Some(word),
-                None => {
-                    self.regex_cursor = *end;
-                    self.tokens = None;
+                    lang
                 }
-            }
-        }
 
-        // Check where the next special chunk is located.
-        match self.regex_matches.peek() {
-            Some(captures) => {
-                let regex_match = captures.get_match();
-                let start = regex_match.start();
-                let end = regex_match.end();
-
-                // Up until that special chunk, tokenize normally.
-                if start > self.regex_cursor {
-                    let gap = &self.text[self.regex_cursor..start];
-                    let mut tokens = Box::new(tokenize(gap, self.lang).map(Token::Word));
-
-                    if let Some(token) = tokens.next() {
-                        self.tokens = Some((tokens, end));
-                        return Some(token);
-                    }
-                }
-
-                // Once all normal words have been visited, yield the special
-                // chunk.
-                let next = if self.config.compat_split_special_patterns {
-                    let regex_match = captures.get_match().as_str();
-                    let words = tokenize(regex_match, self.lang);
-
-                    let mut words = Box::new(words.map(|raw| Token::Special {
-                        raw,
-                        normalized: Cow::Borrowed(raw),
-                    }));
-
-                    let next = words.next().unwrap_or(Token::Special {
-                        raw: regex_match,
-                        normalized: Cow::Borrowed(regex_match),
-                    });
-
-                    self.tokens = Some((words, end));
-
-                    Some(next)
-                } else {
-                    Some(Token::special(captures))
-                };
-
-                // Advance the iterator now that we’ve visited all previous
-                // tokens.
-                self.regex_matches.next();
-                self.regex_cursor = end;
-
-                next
-            }
-            None => {
-                // When there are no more special chunks, finish by tokenizing
-                // normally.
-                let gap = &self.text[self.regex_cursor..];
-                let mut tokens = Box::from(tokenize(gap, self.lang).map(Token::Word));
-
-                if let Some(token) = tokens.next() {
-                    self.tokens = Some((tokens, self.text.len()));
-                    return Some(token);
-                }
-
-                None
-            }
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum Token<'s> {
-    /// Any word, for which fuzzy matching can be applied.
-    Word(&'s str),
-
-    /// A special token, like an email address, which should not be fuzzy
-    /// matched.
-    Special {
-        raw: &'s str,
-        normalized: Cow<'s, str>,
-    },
-}
-
-impl<'s> Token<'s> {
-    fn special(captures: &regex::Captures<'s>) -> Self {
-        let (raw, normalized) = if let Some(m) = captures.name("email") {
-            (m.as_str(), Cow::Borrowed(m.as_str()))
-        } else if let Some(m) = captures.name("username") {
-            (m.as_str(), Cow::Borrowed(m.as_str()))
-        } else if let Some(m) = captures.name("url") {
-            (m.as_str(), Cow::Borrowed(m.as_str()))
-        } else if let Some(m) = captures.name("ipv4") {
-            (m.as_str(), Cow::Borrowed(m.as_str()))
-        } else if let Some(m) = captures.name("phone") {
-            let raw = m.as_str();
-            let normalized: String = raw
-                .chars()
-                .filter(|c| c.is_ascii_digit() || *c == '+')
-                .collect();
-            (raw, Cow::Owned(normalized))
-        } else if let Some(m) = captures.name("domain") {
-            (m.as_str(), Cow::Borrowed(m.as_str()))
-        } else if let Some(m) = captures.name("id") {
-            (m.as_str(), Cow::Borrowed(m.as_str()))
-        } else {
-            unreachable!("One name always matches")
-        };
-
-        Self::Special { raw, normalized }
-    }
-}
-
-#[derive(PartialEq, Eq)]
-pub enum NormalizedToken {
-    /// Any word, for which fuzzy matching can be applied.
-    Word(String),
-
-    /// A special token, like an email address, which should not be fuzzy
-    /// matched.
-    Special(String),
-}
-
-impl std::fmt::Debug for NormalizedToken {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Word(str) => std::fmt::Debug::fmt(str, f),
-            Self::Special(str) => f.debug_tuple("Special").field(str).finish(),
-        }
-    }
-}
-
-impl std::ops::Deref for NormalizedToken {
-    type Target = String;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            Self::Word(str) => str,
-            Self::Special(str) => str,
-        }
-    }
-}
-
-impl NormalizedToken {
-    pub fn is_special(&self) -> bool {
-        matches!(self, Self::Special(_))
-    }
-
-    pub fn into_inner(self) -> String {
-        match self {
-            Self::Word(str) => str,
-            Self::Special(str) => str,
-        }
-    }
-}
-
-impl From<NormalizedToken> for String {
-    #[inline]
-    fn from(value: NormalizedToken) -> Self {
-        value.into_inner()
-    }
-}
-
-pub struct TokenLexer<'a> {
-    mode: TokenLexerMode,
-    locale: Option<Lang>,
-    #[cfg(feature = "stemming")]
-    snowball_algorithm: Option<snowball::Algorithm>,
-    tokenizer: Tokenizer<'a>,
-    yields: HashSet<StoreTermHashed>,
-    config: ConfigNormalization,
-    stopwords: &'a ConfigStopwords,
-}
-
-#[derive(PartialEq)]
-pub enum TokenLexerMode {
-    NormalizeAndCleanup,
-    NormalizeOnly,
-}
-
-impl TokenLexerMode {
-    pub fn should_cleanup(&self) -> bool {
-        match self {
-            Self::NormalizeAndCleanup => true,
-            Self::NormalizeOnly => false,
-        }
-    }
-}
-
-const TEXT_LANG_TRUNCATE_OVER_CHARS: usize = 200;
-const TEXT_LANG_DETECT_PROCEED_OVER_CHARS: usize = 20;
-const TEXT_LANG_DETECT_NGRAM_UNDER_CHARS: usize = 60;
-
-#[cfg(feature = "tokenizer-chinese")]
-static TOKENIZER_JIEBA: LazyLock<jieba_rs::Jieba> = LazyLock::new(jieba_rs::Jieba::new);
-
-#[cfg(feature = "tokenizer-japanese")]
-static TOKENIZER_LINDERA: LazyLock<lindera_tokenizer::tokenizer::Tokenizer> = LazyLock::new(|| {
-    lindera_tokenizer::tokenizer::Tokenizer::from_config(
-        lindera_tokenizer::tokenizer::TokenizerConfig {
-            dictionary: lindera_dictionary::DictionaryConfig {
-                kind: Some(lindera_dictionary::DictionaryKind::UniDic),
-                path: None,
-            },
-            user_dictionary: None,
-            mode: lindera_core::mode::Mode::Normal,
-        },
-    )
-    .expect("unable to initialize japanese tokenizer")
-});
-
-impl TokenLexerBuilder {
-    pub fn from<'a>(
-        mode: TokenLexerMode,
-        lang: Option<Lang>,
-        text: &'a str,
-        normalization_config: ConfigNormalization,
-        tokenization_config: ConfigTokenization,
-        stopwords_config: &'a ConfigStopwords,
-    ) -> Result<TokenLexer<'a>, ()> {
-        let locale = match lang {
-            // If user provided a language, use it.
-            Some(hinted_lang) => {
-                // Use hinted language (current lexer mode asks for a cleanup)
-                tracing::debug!(
-                    "using hinted locale: {} from lexer text: {}",
-                    hinted_lang,
-                    text
-                );
-
-                lang
-            }
-
-            None => match mode {
                 // If user asked to cleanup, detect the language.
-                TokenLexerMode::NormalizeAndCleanup => {
-                    let locale = Self::detect_lang(text);
-                    tracing::debug!("detected locale: {:?} from lexer text: {}", locale, text);
-                    locale
+                None if self.filter_stopwords => {
+                    let lang = detect_lang(text);
+                    tracing::debug!(?text, "detected lang: {lang:?}");
+                    lang
                 }
 
-                // If user asked not to cleanup but stemming is enabled, detect the language.
+                // If user asked not to cleanup but stemming is enabled,
+                // detect the language.
                 #[cfg(feature = "stemming")]
-                TokenLexerMode::NormalizeOnly if normalization_config.stemming_enabled => {
-                    let locale = Self::detect_lang(text);
-                    tracing::debug!("detected locale: {:?} from lexer text: {}", locale, text);
-                    locale
+                None if self.normalization_config.stemming_enabled => {
+                    let lang = detect_lang(text);
+                    tracing::debug!(?text, "detected lang: {lang:?}");
+                    lang
                 }
 
                 // Otherwise, don’t detect the language.
-                TokenLexerMode::NormalizeOnly => {
-                    tracing::debug!("not detecting locale from lexer text: {}", text);
+                None => {
+                    tracing::debug!("not detecting lang");
 
                     None
                 }
-            },
-        };
+            };
 
-        // Build final token builder iterator
-        Ok(TokenLexer::new(
-            mode,
-            text,
-            locale,
-            normalization_config,
-            tokenization_config,
-            stopwords_config,
-        ))
+            // PERF: By using Unicode Normalization Form KC, we are pretty
+            //   sure the normalized text won’t exceed `text.len()`. Because
+            //   we won’t store spaces nor stopwords, we might end up with a
+            //   lot of unused space. However, it’s better to waste a few bytes
+            //   than to re-allocate.
+            // NOTE: We do `+ 1` because we store spaces in normalized text
+            //   (for more useful printing) but if the input is space-separated
+            //   ASCII then the last pushed space character would cause a
+            //   useless re-allocation (since we pop it right after).
+            let mut text_normalized = String::with_capacity(text.len() + 1);
+            // PERF: It’s better to initialize `spans` with a low capacity
+            //   than the default `0` for `Vec::new`. We will fill it anyway.
+            let mut spans = Vec::<TokenSpan>::with_capacity(text.len() / 8);
+
+            let lexer = Lexer::new(self.tokenization_config);
+
+            let normalizer = Normalizer::new(self.normalization_config);
+
+            // Choose the stemming algorithm once
+            let stemming_algorithm: OnceCell<Option<Stemmer>> = OnceCell::new();
+
+            'tokenization: for (index, mut token) in lexer.lex(text, lang).enumerate() {
+                let (start_normalized, end_normalized) =
+                    normalizer.normalize(&token, &mut text_normalized);
+
+                let normalized = &text_normalized[start_normalized..end_normalized];
+
+                // Check if word is a stopword.
+                if self.detect_stopwords && is_stopword(normalized, lang, &self.stopwords_config) {
+                    if self.filter_stopwords {
+                        // Remove normalized word from normalized text as it won’t
+                        // be used.
+                        text_normalized.truncate(start_normalized);
+
+                        continue 'tokenization;
+                    } else {
+                        token.kind = TokenKind::Stopword;
+                    }
+                }
+
+                let mut span = TokenSpan {
+                    start_original: token.start,
+                    end_original: token.start + token.raw.len(),
+                    start_normalized,
+                    end_normalized,
+                    kind: token.kind,
+                    // NOTE: Index takes stopwords into account, even if skipped.
+                    index,
+                    hash: Rc::default(),
+                };
+
+                // Stemming
+                if self.normalization_config.stemming_enabled
+                    && let Some(stemmer) = stemming_algorithm.get_or_init(|| match lang {
+                        Some(ref lang) => stemming::snowball_algorithm(lang).map(Stemmer::new),
+                        None => None,
+                    })
+                {
+                    stemmer.stem(&mut span, &mut text_normalized);
+                }
+
+                spans.push(span);
+
+                // Push a whitespace so normalized text is easier to read.
+                // It’s not required at all, but it makes it easier for humans
+                // to read normalized text if printed.
+                text_normalized.push(' ');
+            }
+
+            // Remove trailing whitespace.
+            _ = text_normalized.pop();
+
+            PreprocessorOutput {
+                text_original: text,
+                text_normalized,
+                spans,
+            }
+        }
     }
 
-    fn detect_lang(text: &str) -> Option<Lang> {
+    impl Default for Preprocessor {
+        fn default() -> Self {
+            Self {
+                tokenization_config: ConfigTokenization {
+                    detect_special_patterns: true,
+                    compat_split_special_patterns: true,
+                },
+                normalization_config: ConfigNormalization {
+                    unicode_normalization: None,
+                    diacritic_folding_enabled: false,
+                    stemming_enabled: false,
+                },
+                stopwords_config: ConfigStopwords::default(),
+                detect_stopwords: true,
+                filter_stopwords: true,
+            }
+        }
+    }
+
+    /// Cache-optimized storage for tokenized text.
+    ///
+    /// See <https://youtu.be/ryfbBB3pHfI?si=wJAqA8wNYmWbaEh1> regarding why
+    /// this structure is more performant than a `Vec` of tokens.
+    pub struct PreprocessorOutput<'s> {
+        text_original: &'s str,
+        text_normalized: String,
+        spans: Vec<TokenSpan>,
+    }
+
+    impl<'s> PreprocessorOutput<'s> {
+        pub fn tokens(&'s self) -> TokensIter<'s> {
+            TokensIter {
+                spans: self.spans.iter(),
+                text_original: self.text_original,
+                text_normalized: self.text_normalized.as_str(),
+            }
+        }
+
+        pub fn original_text(&'s self) -> &'s str {
+            self.text_original
+        }
+
+        pub fn normalized_text(&'s self) -> &'s str {
+            self.text_normalized.as_str()
+        }
+    }
+
+    pub struct TokenSpan {
+        start_original: usize,
+        end_original: usize,
+        pub start_normalized: usize,
+        pub end_normalized: usize,
+        kind: TokenKind,
+        index: usize,
+        hash: Rc<OnceCell<StoreTermHashed>>,
+    }
+
+    /// Iterator over [`Tokens`].
+    pub struct TokensIter<'s> {
+        text_original: &'s str,
+        text_normalized: &'s str,
+        spans: std::slice::Iter<'s, TokenSpan>,
+    }
+
+    impl<'s> Iterator for TokensIter<'s> {
+        type Item = Token<'s>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            self.spans.next().map(|span| Token {
+                original: &self.text_original[span.start_original..span.end_original],
+                normalized: &self.text_normalized[span.start_normalized..span.end_normalized],
+                kind: span.kind,
+                start: span.start_original,
+                end: span.end_original,
+                index_in_tokenized_text: span.index,
+                hash: Rc::clone(&span.hash),
+            })
+        }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            self.spans.size_hint()
+        }
+    }
+
+    impl<'s> ExactSizeIterator for TokensIter<'s> {
+        fn len(&self) -> usize {
+            self.spans.len()
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct Token<'s> {
+        original: &'s str,
+
+        pub(super) normalized: &'s str,
+
+        /// Marker to differenciate special tokens (like email addresses), which
+        /// should be processed differently, (like disabling fuzzy matching
+        /// during search queries).
+        pub(super) kind: TokenKind,
+
+        /// Start index (byte) in original text.
+        pub(super) start: usize,
+
+        /// Start index (byte) in original text.
+        pub(super) end: usize,
+
+        /// Index of the token in the tokenized text (stopwords included).
+        ///
+        /// To get the index without considering stopwords, use
+        /// [`core::iter::Iterator::enumerate`].
+        pub(super) index_in_tokenized_text: usize,
+
+        hash: Rc<OnceCell<StoreTermHashed>>,
+    }
+
+    impl<'s> Token<'s> {
+        pub fn into_original(self) -> &'s str {
+            self.original
+        }
+
+        pub fn into_normalized(self) -> &'s str {
+            self.normalized
+        }
+
+        pub fn into_kind(self) -> TokenKind {
+            self.kind
+        }
+
+        pub const fn as_original(&self) -> &str {
+            self.original
+        }
+
+        pub const fn as_normalized(&self) -> &str {
+            self.normalized
+        }
+
+        pub const fn kind(&self) -> &TokenKind {
+            &self.kind
+        }
+
+        #[inline]
+        pub const fn is_special(&self) -> bool {
+            matches!(self.kind, TokenKind::Special(_))
+        }
+
+        #[inline]
+        pub const fn is_stopword(&self) -> bool {
+            matches!(self.kind, TokenKind::Stopword)
+        }
+
+        #[inline]
+        pub const fn is_not_stopword(&self) -> bool {
+            !self.is_stopword()
+        }
+
+        pub const fn range(&self) -> RangeInclusive<usize> {
+            self.start..=self.end
+        }
+
+        /// Hash of the **normalized** version of the token.
+        pub fn hash(&self) -> StoreTermHashed {
+            *(self.hash).get_or_init(|| StoreTermHash::from(self.normalized))
+        }
+
+        /// Hash of the **normalized** version of the token.
+        pub fn into_hash(self) -> StoreTermHashed {
+            *(self.hash).get_or_init(|| StoreTermHash::from(self.normalized))
+        }
+    }
+}
+
+pub mod lexing {
+    use std::{iter::Peekable, sync::LazyLock};
+
+    use regex::Regex;
+    use whatlang::Lang;
+
+    use crate::config::ConfigTokenization;
+
+    #[cfg(feature = "tokenizer-chinese")]
+    static TOKENIZER_JIEBA: LazyLock<jieba_rs::Jieba> = LazyLock::new(jieba_rs::Jieba::new);
+
+    #[cfg(feature = "tokenizer-japanese")]
+    static TOKENIZER_LINDERA: LazyLock<lindera_tokenizer::tokenizer::Tokenizer> =
+        LazyLock::new(|| {
+            lindera_tokenizer::tokenizer::Tokenizer::from_config(
+                lindera_tokenizer::tokenizer::TokenizerConfig {
+                    dictionary: lindera_dictionary::DictionaryConfig {
+                        kind: Some(lindera_dictionary::DictionaryKind::UniDic),
+                        path: None,
+                    },
+                    user_dictionary: None,
+                    mode: lindera_core::mode::Mode::Normal,
+                },
+            )
+            .expect("unable to initialize japanese tokenizer")
+        });
+
+    /// Splits text into tokens, depending on language.
+    pub struct Tokenizer {
+        lang: Option<Lang>,
+    }
+
+    impl Tokenizer {
+        fn tokenize<'s>(&self, text: &'s str) -> Box<dyn Iterator<Item = (usize, &'s str)> + 's> {
+            use unicode_segmentation::UnicodeSegmentation as _;
+
+            match self.lang {
+                #[cfg(feature = "tokenizer-chinese")]
+                Some(Lang::Cmn) => Box::from(
+                    TOKENIZER_JIEBA
+                        .cut(text, false)
+                        .into_iter()
+                        .map(|token| (token.start, token.word)),
+                ),
+                #[cfg(feature = "tokenizer-japanese")]
+                Some(Lang::Jpn) => match TOKENIZER_LINDERA.tokenize(text) {
+                    Ok(tokens) => Box::from(
+                        tokens
+                            .into_iter()
+                            .map(|token| (token.token_start, token.text)),
+                    ),
+                    Err(err) => {
+                        tracing::warn!("unable to tokenize japanese, falling back: {}", err);
+
+                        Box::from(text.unicode_word_indices())
+                    }
+                },
+                _ => Box::from(text.unicode_word_indices()),
+            }
+        }
+    }
+
+    #[test]
+    fn test_tokenizer_lang_none() {
+        let tokenizer = Tokenizer { lang: None };
+
+        assert_eq!(
+            tokenizer
+                .tokenize("This is an example.")
+                .map(|(_index, token)| token)
+                .collect::<Vec<_>>(),
+            vec!["This", "is", "an", "example"],
+        );
+    }
+
+    #[test]
+    fn test_tokenizer_latin() {
+        let tokenizer = Tokenizer {
+            lang: Some(Lang::Eng),
+        };
+
+        assert_eq!(
+            tokenizer
+                .tokenize("This is an example.")
+                .map(|(_index, token)| token)
+                .collect::<Vec<_>>(),
+            ["This", "is", "an", "example"],
+        );
+    }
+
+    #[cfg(feature = "tokenizer-chinese")]
+    #[test]
+    fn test_tokenizer_cmn() {
+        let tokenizer = Tokenizer {
+            lang: Some(Lang::Cmn),
+        };
+
+        assert_eq!(
+            tokenizer
+                .tokenize("我来到北京清华大学")
+                .map(|(_index, token)| token)
+                .collect::<Vec<_>>(),
+            ["我", "来到", "北京", "清华大学"],
+        );
+    }
+
+    #[cfg(feature = "tokenizer-japanese")]
+    #[test]
+    fn test_tokenizer_jpn() {
+        let tokenizer = Tokenizer {
+            lang: Some(Lang::Jpn),
+        };
+
+        assert_eq!(
+            tokenizer
+                .tokenize("関西国際空港限定トートバッグ")
+                .map(|(_index, token)| token)
+                .collect::<Vec<_>>(),
+            ["関西国際空港", "限定", "トートバッグ"],
+        );
+    }
+
+    /// Detects special patterns and splits text accordingly.
+    ///
+    /// Uses [`Tokenizer`] internally.
+    pub struct Lexer {
+        config: ConfigTokenization,
+    }
+
+    impl Lexer {
+        pub fn new(config: ConfigTokenization) -> Self {
+            Self { config }
+        }
+
+        pub fn lex<'s>(&self, text: &'s str, lang: Option<Lang>) -> LexerTokens<'s> {
+            // FIXME(major): Don’t allow trailing dot in `email`.
+            // FIXME(major): Allow `()` in `phone` (remember to update normalizer).
+            // TODO(major): Test that numbers in various scripts are all detected as special.
+            static SPECIAL_PATTERNS: LazyLock<Regex> = LazyLock::new(|| {
+                Regex::new(concat!(
+                    r"(?P<email>[\w.+-]+@[\w-]+\.[\w.-]+)",
+                    r"|(?P<username>@[^\s]*\w)",
+                    r"|(?P<url>\w{2,}://[^\s]*[^\s.])",
+                    r"|(?P<ipv4>\d{1,3}(?:\.\d{1,3}){3})(?:[^\.\d]|$)",
+                    r"|(?P<phone>\+?\d+(?:[\s\.-]?\d+){4,})",
+                    r"|(?P<domain>[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})",
+                    r"|(?P<id>[\w\d:_-]*[\d_][\w\d:-]*)"
+                ))
+                .unwrap()
+            });
+
+            let regex_matches = if self.config.detect_special_patterns {
+                SPECIAL_PATTERNS.captures_iter(text).peekable()
+            } else {
+                // NOTE: It’s not truly an no-op but it is if we try matching a non-empty line.
+                static NOOP_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^$").unwrap());
+                NOOP_REGEX.captures_iter(" ").peekable()
+            };
+
+            LexerTokens {
+                compat_split_special_patterns: self.config.compat_split_special_patterns,
+                tokenizer: Tokenizer { lang },
+                regex_matches,
+                text,
+                regex_cursor: 0,
+                tokens: None,
+            }
+        }
+    }
+
+    pub struct LexerTokens<'s> {
+        compat_split_special_patterns: bool,
+        text: &'s str,
+        tokenizer: Tokenizer,
+        regex_matches: Peekable<regex::CaptureMatches<'static, 's>>,
+        regex_cursor: usize,
+        tokens: Option<(Box<dyn Iterator<Item = LexerToken<'s>> + 's>, usize)>,
+    }
+
+    impl<'s> Iterator for LexerTokens<'s> {
+        type Item = LexerToken<'s>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            // If we were walking words, continue.
+            if let Some((tokens, end)) = self.tokens.as_mut() {
+                match tokens.next() {
+                    Some(token) => return Some(token),
+                    None => {
+                        self.regex_cursor = *end;
+                        self.tokens = None;
+                    }
+                }
+            }
+
+            // Check where the next special chunk is located.
+            match self.regex_matches.peek() {
+                Some(captures) => {
+                    let regex_match = captures.get_match();
+                    let start = regex_match.start();
+                    let end = regex_match.end();
+
+                    // Up until that special chunk, tokenize normally.
+                    if start > self.regex_cursor {
+                        let gap = &self.text[self.regex_cursor..start];
+                        let mut tokens = (self.tokenizer.tokenize(gap))
+                            // Map to normal token but also map local index
+                            // to global index.
+                            .map({
+                                let global_start = self.regex_cursor;
+                                move |(local_start, raw)| {
+                                    LexerToken::normal(global_start + local_start, raw)
+                                }
+                            });
+
+                        if let Some(token) = tokens.next() {
+                            self.tokens = Some((Box::new(tokens), end));
+                            return Some(token);
+                        }
+                    }
+
+                    // Once all normal words have been visited, yield the special chunk
+                    // (or sub-split if `compat_split_special_patterns` is enabled).
+                    let next = if self.compat_split_special_patterns {
+                        let regex_match = captures.get_match();
+                        let raw_tokens = self.tokenizer.tokenize(regex_match.as_str());
+
+                        let mut tokens = raw_tokens.map({
+                            let global_start = regex_match.start();
+
+                            move |(local_start, raw)| LexerToken {
+                                start: global_start + local_start,
+                                raw,
+                                kind: TokenKind::Special(SpecialTokenKind::CompatSubtoken),
+                            }
+                        });
+
+                        let next = tokens.next().unwrap_or(LexerToken {
+                            start: regex_match.start(),
+                            raw: regex_match.as_str(),
+                            kind: TokenKind::Special(SpecialTokenKind::CompatSubtoken),
+                        });
+
+                        self.tokens = Some((Box::new(tokens), end));
+
+                        Some(next)
+                    } else {
+                        Some(LexerToken::special(captures))
+                    };
+
+                    // Advance the iterator now that we’ve visited all previous
+                    // tokens.
+                    self.regex_matches.next();
+                    self.regex_cursor = end;
+
+                    next
+                }
+                None => {
+                    // When there are no more special chunks, finish by
+                    // tokenizing normally.
+                    let gap = &self.text[self.regex_cursor..];
+                    let mut tokens = (self.tokenizer.tokenize(gap))
+                        // Map to normal token but also map local index
+                        // to global index.
+                        .map({
+                            let global_start = self.regex_cursor;
+                            move |(local_start, raw)| {
+                                LexerToken::normal(global_start + local_start, raw)
+                            }
+                        });
+
+                    if let Some(token) = tokens.next() {
+                        self.tokens = Some((Box::from(tokens), self.text.len()));
+                        return Some(token);
+                    }
+
+                    None
+                }
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum TokenKind {
+        Normal,
+        Special(SpecialTokenKind),
+        Stopword,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum SpecialTokenKind {
+        EmailAddress,
+        Username,
+        Url,
+        Ipv4,
+        PhoneNumber,
+        Domain,
+        Id,
+        /// Special token created by `compat_split_special_patterns`. Should
+        /// still be considered special (e.g. disabling fuzzy matching), but
+        /// has no special meaning anymore.
+        CompatSubtoken,
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    pub struct LexerToken<'s> {
+        pub start: usize,
+        pub raw: &'s str,
+        pub kind: TokenKind,
+    }
+
+    impl<'s> LexerToken<'s> {
+        #[inline]
+        fn normal(start: usize, raw: &'s str) -> Self {
+            Self {
+                start,
+                raw,
+                kind: TokenKind::Normal,
+            }
+        }
+
+        #[inline]
+        fn special(captures: &regex::Captures<'s>) -> Self {
+            let (m, kind) = if let Some(m) = captures.name("email") {
+                (m, SpecialTokenKind::EmailAddress)
+            } else if let Some(m) = captures.name("username") {
+                (m, SpecialTokenKind::Username)
+            } else if let Some(m) = captures.name("url") {
+                (m, SpecialTokenKind::Url)
+            } else if let Some(m) = captures.name("ipv4") {
+                (m, SpecialTokenKind::Ipv4)
+            } else if let Some(m) = captures.name("phone") {
+                (m, SpecialTokenKind::PhoneNumber)
+            } else if let Some(m) = captures.name("domain") {
+                (m, SpecialTokenKind::Domain)
+            } else if let Some(m) = captures.name("id") {
+                (m, SpecialTokenKind::Id)
+            } else {
+                unreachable!("One name always matches")
+            };
+
+            Self {
+                start: m.start(),
+                raw: m.as_str(),
+                kind: TokenKind::Special(kind),
+            }
+        }
+
+        #[allow(dead_code)]
+        #[inline]
+        fn stopword(start: usize, raw: &'s str) -> Self {
+            Self {
+                start,
+                raw,
+                kind: TokenKind::Stopword,
+            }
+        }
+
+        pub fn end(&self) -> usize {
+            self.start + self.raw.len()
+        }
+    }
+}
+
+mod normalization {
+    use super::lexing::{LexerToken, SpecialTokenKind, TokenKind};
+    use super::preprocessor::TokenSpan;
+    use crate::config::{ConfigNormalization, UnicodeNormalization};
+
+    pub struct Normalizer {
+        normalization_config: ConfigNormalization,
+    }
+
+    impl Normalizer {
+        pub fn new(normalization_config: ConfigNormalization) -> Self {
+            Self {
+                normalization_config,
+            }
+        }
+
+        pub fn normalize(
+            &self,
+            token: &LexerToken,
+            text_normalized: &mut String,
+        ) -> (usize, usize) {
+            use unicode_normalization::UnicodeNormalization as _;
+            use unicode_normalization::char::is_combining_mark;
+
+            let start_normalized = text_normalized.len();
+
+            match token.kind {
+                TokenKind::Normal | TokenKind::Stopword => {
+                    // Case folding
+                    let chars = caseless::Caseless::default_case_fold(token.raw.chars());
+
+                    match (
+                        self.normalization_config.unicode_normalization,
+                        self.normalization_config.diacritic_folding_enabled,
+                    ) {
+                        (None, false) => {
+                            for char in chars {
+                                text_normalized.push(char);
+                            }
+                        }
+
+                        // Unicode normalization
+                        (Some(normalization), false) => {
+                            let chars = match normalization {
+                                UnicodeNormalization::Nfc => chars.nfc(),
+                                UnicodeNormalization::Nfkc => chars.nfkc(),
+                            };
+
+                            for char in chars {
+                                text_normalized.push(char);
+                            }
+                        }
+
+                        // Diacritic folding
+                        (None, true) => {
+                            for char in chars {
+                                for char in char.nfd().filter(|c| !is_combining_mark(*c)) {
+                                    text_normalized.push(char);
+                                }
+                            }
+                        }
+
+                        // Unicode normalization + diacritic folding
+                        (Some(normalization), true) => {
+                            // Diacritic folding
+                            // NOTE: Perform first as it makes the text end up in a
+                            //   normal form that might not be what the user wants.
+                            let chars = chars.nfd().filter(|c| !is_combining_mark(*c));
+
+                            let chars = match normalization {
+                                UnicodeNormalization::Nfc => chars.nfc(),
+                                UnicodeNormalization::Nfkc => chars.nfkc(),
+                            };
+
+                            for char in chars {
+                                text_normalized.push(char);
+                            }
+                        }
+                    }
+                }
+                TokenKind::Special(SpecialTokenKind::PhoneNumber) => {
+                    for char in token
+                        .raw
+                        .chars()
+                        .filter(|c| c.is_ascii_digit() || *c == '+')
+                    {
+                        text_normalized.push(char);
+                    }
+                }
+                TokenKind::Special(_) => {
+                    text_normalized.push_str(token.raw);
+                }
+            }
+
+            (start_normalized, text_normalized.len())
+        }
+    }
+
+    pub struct Stemmer {
+        algorithm: snowball::Algorithm,
+    }
+
+    impl Stemmer {
+        pub fn new(algorithm: snowball::Algorithm) -> Self {
+            Self { algorithm }
+        }
+
+        pub fn stem(&self, span: &mut TokenSpan, text_normalized: &mut String) {
+            match (self.algorithm.stemmer())
+                .stem(&text_normalized[span.start_normalized..span.end_normalized])
+            {
+                std::borrow::Cow::Borrowed(_) => { /* Nothing to do */ }
+                std::borrow::Cow::Owned(new_word) => {
+                    // Replace normalized word by new normalization.
+                    text_normalized.truncate(span.start_normalized);
+                    text_normalized.push_str(new_word.as_ref());
+                    span.end_normalized = text_normalized.len();
+                }
+            }
+        }
+    }
+}
+
+pub mod itertools {
+    /// A wrapper iterator that deduplicates elements.
+    pub struct UniqueBy<I: Iterator, F, T, H> {
+        inner: I,
+        seen: std::collections::HashSet<T, H>,
+        map: F,
+    }
+
+    impl<T, U, I, F> UniqueBy<I, F, U, std::hash::RandomState>
+    where
+        U: Eq + std::hash::Hash + Copy,
+        I: Iterator<Item = T>,
+        F: Fn(&T) -> U,
+    {
+        pub fn new(inner: I, map: F) -> Self {
+            Self {
+                seen: std::collections::HashSet::with_capacity(inner.size_hint().0),
+                inner,
+                map,
+            }
+        }
+    }
+
+    impl<T, U, I, F, H> UniqueBy<I, F, U, H>
+    where
+        U: Eq + std::hash::Hash + Copy,
+        I: Iterator<Item = T>,
+        F: Fn(&T) -> U,
+    {
+        pub fn new_with_hasher(inner: I, map: F, hasher: H) -> UniqueBy<I, F, U, H> {
+            UniqueBy {
+                seen: std::collections::HashSet::with_capacity_and_hasher(
+                    inner.size_hint().0,
+                    hasher,
+                ),
+                inner,
+                map,
+            }
+        }
+
+        pub fn seen(&self) -> &std::collections::HashSet<U, H> {
+            &self.seen
+        }
+    }
+
+    impl<T, U, I, F, H> Iterator for UniqueBy<I, F, U, H>
+    where
+        U: Eq + std::hash::Hash + Copy,
+        I: Iterator<Item = T>,
+        F: Fn(&T) -> U,
+        H: std::hash::BuildHasher,
+    {
+        type Item = T;
+
+        #[allow(clippy::manual_find, reason = "Readability")]
+        fn next(&mut self) -> Option<Self::Item> {
+            for next in self.inner.by_ref() {
+                if self.seen.insert((self.map)(&next)) {
+                    return Some(next);
+                }
+            }
+
+            None
+        }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            let (min, max) = self.inner.size_hint();
+            // PERF: By using `min / 2`, we benefit from more allocation upfront,
+            //   without allocating as much as `min`, and we know for sure there
+            //   will be at most 1 reallocation if the inner iterator contains
+            //   more than `min / 2` unique items. It seems like a sweet spot.
+            (min / 2, max)
+        }
+    }
+}
+
+pub mod to_rework {
+    use crate::query::QueryGenericLang;
+
+    #[derive(PartialEq)]
+    pub enum TokenLexerMode {
+        NormalizeAndCleanup,
+        NormalizeOnly,
+    }
+
+    impl TokenLexerMode {
+        pub fn should_cleanup(&self) -> bool {
+            match self {
+                Self::NormalizeAndCleanup => true,
+                Self::NormalizeOnly => false,
+            }
+        }
+    }
+
+    impl TokenLexerMode {
+        pub fn from_query_lang(lang: &Option<QueryGenericLang>) -> TokenLexerMode {
+            match lang {
+                Some(QueryGenericLang::Enabled(_)) => {
+                    // Cleanup with provided language
+                    TokenLexerMode::NormalizeAndCleanup
+                }
+                Some(QueryGenericLang::Disabled) => {
+                    // Normalize only (language purposefully set to 'none')
+                    TokenLexerMode::NormalizeOnly
+                }
+                None => {
+                    // Auto-detect language and cleanup (this is the default behavior)
+                    TokenLexerMode::NormalizeAndCleanup
+                }
+            }
+        }
+    }
+}
+
+// TODO: Migrate language detection tests from old tokenizer’s `token.rs`?
+mod lang_detection {
+    use std::time::Instant;
+
+    use whatlang::Lang;
+
+    use crate::lexer::stopwords::LexerStopWord;
+
+    const TEXT_LANG_TRUNCATE_OVER_CHARS: usize = 200;
+    const TEXT_LANG_DETECT_PROCEED_OVER_CHARS: usize = 20;
+    const TEXT_LANG_DETECT_NGRAM_UNDER_CHARS: usize = 60;
+
+    pub fn detect_lang(text: &str) -> Option<Lang> {
         tracing::debug!("detecting locale from lexer text: {}", text);
 
         // Detect only if text is long-enough to allow the text locale detection system to \
@@ -412,14 +1315,14 @@ impl TokenLexerBuilder {
                 TEXT_LANG_DETECT_NGRAM_UNDER_CHARS
             );
 
-            Self::detect_lang_slow(safe_text)
+            detect_lang_slow(safe_text)
         } else {
             tracing::debug!(
                 "lexer text is equal or longer than {} characters, using the fast method",
                 TEXT_LANG_DETECT_NGRAM_UNDER_CHARS
             );
 
-            Self::detect_lang_fast(safe_text)
+            detect_lang_fast(safe_text)
         }
     }
 
@@ -510,843 +1413,5 @@ impl TokenLexerBuilder {
                 None
             }
         }
-    }
-}
-
-impl<'a> TokenLexer<'a> {
-    fn new(
-        mode: TokenLexerMode,
-        text: &'a str,
-        locale: Option<Lang>,
-        normalization_config: ConfigNormalization,
-        tokenization_config: ConfigTokenization,
-        stopwords_config: &'a ConfigStopwords,
-    ) -> TokenLexer<'a> {
-        // Tokenize words (depending on the locale)
-        let tokenizer = Tokenizer::new(text, locale, &tokenization_config);
-
-        // Identify Snowball algorithm now to avoid doing it for every token.
-        #[cfg(feature = "stemming")]
-        let snowball_algorithm = match &locale {
-            Some(locale) => super::stemming::snowball_algorithm(locale),
-            None => None,
-        };
-
-        TokenLexer {
-            mode,
-            locale,
-            #[cfg(feature = "stemming")]
-            snowball_algorithm,
-            tokenizer,
-            yields: HashSet::new(),
-            config: normalization_config,
-            stopwords: stopwords_config,
-        }
-    }
-}
-
-impl TokenLexerMode {
-    pub fn from_query_lang(lang: &Option<QueryGenericLang>) -> TokenLexerMode {
-        match lang {
-            Some(QueryGenericLang::Enabled(_)) => {
-                // Cleanup with provided language
-                TokenLexerMode::NormalizeAndCleanup
-            }
-            Some(QueryGenericLang::Disabled) => {
-                // Normalize only (language purposefully set to 'none')
-                TokenLexerMode::NormalizeOnly
-            }
-            None => {
-                // Auto-detect language and cleanup (this is the default behavior)
-                TokenLexerMode::NormalizeAndCleanup
-            }
-        }
-    }
-}
-
-impl<'a> Iterator for TokenLexer<'a> {
-    type Item = (NormalizedToken, StoreTermHashed, usize);
-
-    // Guarantees provided by the lexer on the output: \
-    //   - Text is split per-word in a script-aware way \
-    //   - Words are normalized (i.e. case is folded (≈ lower-cased), \
-    //     diacritics are optionally folded, word is opionally stemmed) \
-    //   - Gibberish words are removed (ie. words that may just be junk) \
-    //   - Stop-words are removed
-    fn next(&mut self) -> Option<Self::Item> {
-        'tokenize: for token in self.tokenizer.by_ref() {
-            let (mut word, original_len) = match token {
-                Token::Word(original_word) => {
-                    let original_len = original_word.len();
-
-                    // NOTE: We use a single `String` to avoid unnecessary
-                    //   intermediate `String` allocations.
-                    let mut new_word = String::with_capacity(original_len);
-
-                    #[cfg(debug_assertions)]
-                    let mut current_word = new_word.clone();
-
-                    // Case folding
-                    let chars = caseless::Caseless::default_case_fold(original_word.chars());
-
-                    for char in chars {
-                        // Diacritic folding
-                        if self.config.diacritic_folding_enabled {
-                            use unicode_normalization::UnicodeNormalization as _;
-                            use unicode_normalization::char::is_combining_mark;
-
-                            for char in char.nfd().filter(|c| !is_combining_mark(*c)) {
-                                new_word.push(char);
-                            }
-                        } else {
-                            new_word.push(char);
-                        }
-                    }
-
-                    #[cfg(debug_assertions)]
-                    {
-                        tracing::trace!(
-                            "Case (+ diacritic?) folding: {current_word:?} -> {new_word:?}"
-                        );
-                        current_word = new_word.clone();
-                    }
-
-                    // Stemming
-                    #[cfg(feature = "stemming")]
-                    if self.config.stemming_enabled {
-                        if let Some(algo) = self.snowball_algorithm {
-                            new_word = String::from(snowball::stem(algo, &new_word));
-
-                            tracing::debug!(
-                                "lexer stemmed word {original_word:?} into {new_word:?} using Snowball algorithm {algo:?}"
-                            );
-
-                            #[cfg(debug_assertions)]
-                            {
-                                tracing::trace!("Stemming: {current_word:?} -> {new_word:?}");
-                                current_word = new_word.clone();
-                            }
-                        }
-                    }
-
-                    (NormalizedToken::Word(new_word), original_len)
-                }
-                Token::Special { normalized, .. } => {
-                    let len = normalized.len();
-                    (NormalizedToken::Special(normalized.into_owned()), len)
-                }
-            };
-
-            // Check if normalized word is a stop-word? (if should normalize and cleanup)
-            if self.mode.should_cleanup() && is_stopword(&word, self.locale, &self.stopwords) {
-                tracing::debug!("lexer did not yield word {word:?}: word is a stop-word");
-                continue 'tokenize;
-            }
-
-            if let Some(normalization) = self.config.unicode_normalization {
-                if let NormalizedToken::Word(word) = &mut word {
-                    use unicode_normalization::UnicodeNormalization as _;
-
-                    match normalization {
-                        crate::config::UnicodeNormalization::Nfc => *word = word.nfc().to_string(),
-                        crate::config::UnicodeNormalization::Nfkc => {
-                            *word = word.nfkc().to_string()
-                        }
-                    }
-                }
-            }
-
-            // Hash the term (this is used by all iterator consumers, as well as internally \
-            //   in the iterator to keep track of already-yielded words in a space-optimized \
-            //   manner, ie. by using 32-bit unsigned integer hashes)
-            let term_hash = StoreTermHash::from(&word);
-
-            // Check if word was not already yielded? (we return unique words)
-            if self.yields.contains(&term_hash) {
-                tracing::debug!("lexer did not yield word {word:?}: word already yielded");
-                continue 'tokenize;
-            }
-
-            tracing::debug!("lexer yielded word: {word:?}");
-
-            self.yields.insert(term_hash);
-
-            return Some((word, term_hash, original_len));
-        }
-
-        None
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const NORMALIZATION_CONFIG: ConfigNormalization = ConfigNormalization {
-        unicode_normalization: None,
-        diacritic_folding_enabled: false,
-        stemming_enabled: false,
-    };
-    const TOKENIZATION_CONFIG: ConfigTokenization = ConfigTokenization {
-        detect_special_patterns: true,
-        compat_split_special_patterns: false,
-    };
-    static STOPWORDS_CONFIG: LazyLock<ConfigStopwords> = LazyLock::new(|| ConfigStopwords {
-        allow: Default::default(),
-        deny: Default::default(),
-    });
-
-    #[test]
-    fn test_tokenizer() {
-        fn test(sentence: &str, expected: Vec<Token>) {
-            let tokens = Tokenizer::new(sentence, Some(Lang::Eng), &TOKENIZATION_CONFIG)
-                // .inspect(|t| eprintln!("{t:?}"))
-                .take(256) // Breaks potential infinite loop.
-                .collect::<Vec<_>>();
-
-            assert_eq!(tokens, expected, "{sentence:?}");
-        }
-
-        // Email address.
-        test(
-            "Contact jane.doe@example.org, alice@example.org or bob+foo@example.org for support.",
-            vec![
-                Token::Word("Contact"),
-                Token::Special {
-                    raw: "jane.doe@example.org",
-                    normalized: Cow::Borrowed("jane.doe@example.org"),
-                },
-                Token::Special {
-                    raw: "alice@example.org",
-                    normalized: Cow::Borrowed("alice@example.org"),
-                },
-                Token::Word("or"),
-                Token::Special {
-                    raw: "bob+foo@example.org",
-                    normalized: Cow::Borrowed("bob+foo@example.org"),
-                },
-                Token::Word("for"),
-                Token::Word("support"),
-            ],
-        );
-
-        // Phone number like.
-        test(
-            "You can also call me at 555-123-4567 or +33 6 12 34 56 78 (06.12.34.56.78 / 06 12 34 56 78).",
-            vec![
-                Token::Word("You"),
-                Token::Word("can"),
-                Token::Word("also"),
-                Token::Word("call"),
-                Token::Word("me"),
-                Token::Word("at"),
-                Token::Special {
-                    raw: "555-123-4567",
-                    normalized: Cow::Borrowed("5551234567"),
-                },
-                Token::Word("or"),
-                Token::Special {
-                    raw: "+33 6 12 34 56 78",
-                    normalized: Cow::Borrowed("+33612345678"),
-                },
-                Token::Special {
-                    raw: "06.12.34.56.78",
-                    normalized: Cow::Borrowed("0612345678"),
-                },
-                Token::Special {
-                    raw: "06 12 34 56 78",
-                    normalized: Cow::Borrowed("0612345678"),
-                },
-            ],
-        );
-
-        // UUID like.
-        test(
-            "My account is 6db14cb4-b82e-4e49-8016-ef76c4290a2f.",
-            vec![
-                Token::Word("My"),
-                Token::Word("account"),
-                Token::Word("is"),
-                Token::Special {
-                    raw: "6db14cb4-b82e-4e49-8016-ef76c4290a2f",
-                    normalized: Cow::Borrowed("6db14cb4-b82e-4e49-8016-ef76c4290a2f"),
-                },
-            ],
-        );
-
-        // Hash like.
-        test(
-            "Check out b244423d417369795292e9f4530d0c0e6fa07625 and 927ff7701795282232dda41e023c7c6ba29d5a15 (927ff77).",
-            vec![
-                Token::Word("Check"),
-                Token::Word("out"),
-                Token::Special {
-                    raw: "b244423d417369795292e9f4530d0c0e6fa07625",
-                    normalized: Cow::Borrowed("b244423d417369795292e9f4530d0c0e6fa07625"),
-                },
-                Token::Word("and"),
-                Token::Special {
-                    raw: "927ff7701795282232dda41e023c7c6ba29d5a15",
-                    normalized: Cow::Borrowed("927ff7701795282232dda41e023c7c6ba29d5a15"),
-                },
-                Token::Special {
-                    raw: "927ff77",
-                    normalized: Cow::Borrowed("927ff77"),
-                },
-            ],
-        );
-
-        // URL.
-        test(
-            "Have a look at https://example.org/foo?id=123.",
-            vec![
-                Token::Word("Have"),
-                Token::Word("a"),
-                Token::Word("look"),
-                Token::Word("at"),
-                Token::Special {
-                    raw: "https://example.org/foo?id=123",
-                    normalized: Cow::Borrowed("https://example.org/foo?id=123"),
-                },
-            ],
-        );
-
-        // Domain name.
-        test(
-            "My domain name is example.org.",
-            vec![
-                Token::Word("My"),
-                Token::Word("domain"),
-                Token::Word("name"),
-                Token::Word("is"),
-                Token::Special {
-                    raw: "example.org",
-                    normalized: Cow::Borrowed("example.org"),
-                },
-            ],
-        );
-        test(
-            "I don’t put punctuation correctly .See?",
-            vec![
-                Token::Word("I"),
-                Token::Word("don’t"),
-                Token::Word("put"),
-                Token::Word("punctuation"),
-                Token::Word("correctly"),
-                Token::Word("See"),
-            ],
-        );
-
-        // IP addresses.
-        test(
-            "Try to ping 192.168.1.0, 0.0.0.0, 2606:4700::6812:1c68, or ::1.",
-            vec![
-                Token::Word("Try"),
-                Token::Word("to"),
-                Token::Word("ping"),
-                Token::Special {
-                    raw: "192.168.1.0",
-                    normalized: Cow::Borrowed("192.168.1.0"),
-                },
-                Token::Special {
-                    raw: "0.0.0.0",
-                    normalized: Cow::Borrowed("0.0.0.0"),
-                },
-                Token::Special {
-                    raw: "2606:4700::6812:1c68",
-                    normalized: Cow::Borrowed("2606:4700::6812:1c68"),
-                },
-                Token::Word("or"),
-                Token::Special {
-                    raw: "::1",
-                    normalized: Cow::Borrowed("::1"),
-                },
-            ],
-        );
-
-        // Username.
-        test(
-            "Contact @alice.",
-            vec![
-                Token::Word("Contact"),
-                Token::Special {
-                    raw: "@alice",
-                    normalized: Cow::Borrowed("@alice"),
-                },
-            ],
-        );
-
-        // Code like.
-        test(
-            "It’s tested in test_tokenizer.",
-            vec![
-                Token::Word("It’s"),
-                Token::Word("tested"),
-                Token::Word("in"),
-                Token::Special {
-                    raw: "test_tokenizer",
-                    normalized: Cow::Borrowed("test_tokenizer"),
-                },
-            ],
-        );
-    }
-
-    #[test]
-    fn it_cleans_token_english() {
-        let token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup,
-            None,
-            "The quick brown fox jumps over the lazy dog!",
-            NORMALIZATION_CONFIG,
-            TOKENIZATION_CONFIG,
-            &STOPWORDS_CONFIG,
-        )
-        .unwrap();
-
-        assert_eq!(token_cleaner.locale, Some(Lang::Eng));
-
-        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
-
-        assert_eq!(tokens.next(), Some("quick".to_owned()));
-        assert_eq!(tokens.next(), Some("brown".to_owned()));
-        assert_eq!(tokens.next(), Some("fox".to_owned()));
-        assert_eq!(tokens.next(), Some("jumps".to_owned()));
-        assert_eq!(tokens.next(), Some("lazy".to_owned()));
-        assert_eq!(tokens.next(), Some("dog".to_owned()));
-        assert_eq!(tokens.next(), None);
-    }
-
-    #[test]
-    fn it_cleans_token_french() {
-        let token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup,
-            None,
-            "Le vif renard brun saute par dessus le chien paresseux.",
-            NORMALIZATION_CONFIG,
-            TOKENIZATION_CONFIG,
-            &STOPWORDS_CONFIG,
-        )
-        .unwrap();
-
-        assert_eq!(token_cleaner.locale, Some(Lang::Fra));
-
-        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
-
-        assert_eq!(tokens.next(), Some("renard".to_owned()));
-        assert_eq!(tokens.next(), Some("brun".to_owned()));
-        assert_eq!(tokens.next(), Some("saute".to_owned()));
-        assert_eq!(tokens.next(), Some("chien".to_owned()));
-        assert_eq!(tokens.next(), Some("paresseux".to_owned()));
-        assert_eq!(tokens.next(), None);
-    }
-
-    #[cfg(feature = "tokenizer-chinese")]
-    #[test]
-    fn it_cleans_token_chinese_jieba() {
-        let token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup,
-            None,
-            "我们中出了一个叛徒",
-            NORMALIZATION_CONFIG,
-            TOKENIZATION_CONFIG,
-            &STOPWORDS_CONFIG,
-        )
-        .unwrap();
-
-        assert_eq!(token_cleaner.locale, Some(Lang::Cmn));
-
-        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
-
-        assert_eq!(tokens.next(), Some("出".to_owned()));
-        assert_eq!(tokens.next(), Some("一个".to_owned()));
-        assert_eq!(tokens.next(), Some("叛徒".to_owned()));
-        assert_eq!(tokens.next(), None);
-    }
-
-    #[cfg(not(feature = "tokenizer-chinese"))]
-    #[test]
-    fn it_cleans_token_chinese_naive() {
-        let token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup,
-            None,
-            "快狐跨懒狗快狐跨懒狗",
-            NORMALIZATION_CONFIG,
-            TOKENIZATION_CONFIG,
-            &STOPWORDS_CONFIG,
-        )
-        .unwrap();
-
-        assert_eq!(token_cleaner.locale, Some(Lang::Cmn));
-
-        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
-
-        assert_eq!(tokens.next(), Some("快".to_owned()));
-        assert_eq!(tokens.next(), Some("狐".to_owned()));
-        assert_eq!(tokens.next(), Some("跨".to_owned()));
-        assert_eq!(tokens.next(), Some("懒".to_owned()));
-        assert_eq!(tokens.next(), Some("狗".to_owned()));
-        assert_eq!(tokens.next(), None);
-    }
-
-    #[cfg(feature = "tokenizer-japanese")]
-    #[test]
-    fn it_cleans_token_japanese_lindera_product() {
-        let mut token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup,
-            None,
-            "関西国際空港限定トートバッグ",
-            NORMALIZATION_CONFIG,
-            TOKENIZATION_CONFIG,
-            &STOPWORDS_CONFIG,
-        )
-        .unwrap();
-
-        assert_eq!(token_cleaner.locale, Some(Lang::Jpn));
-
-        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
-
-        assert_eq!(tokens.next(), Some("関西".to_owned()));
-        assert_eq!(tokens.next(), Some("国際".to_owned()));
-        assert_eq!(tokens.next(), Some("空港".to_owned()));
-        assert_eq!(tokens.next(), Some("限定".to_owned()));
-        assert_eq!(tokens.next(), Some("トート".to_owned()));
-        assert_eq!(tokens.next(), Some("バッグ".to_owned()));
-        assert_eq!(tokens.next(), None);
-    }
-
-    #[cfg(feature = "tokenizer-japanese")]
-    #[test]
-    fn it_cleans_token_japanese_lindera_food() {
-        let token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup,
-            None,
-            "𠮷野家",
-            NORMALIZATION_CONFIG,
-            TOKENIZATION_CONFIG,
-            &STOPWORDS_CONFIG,
-        )
-        .unwrap();
-
-        assert_eq!(token_cleaner.locale, None);
-
-        let token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup,
-            None,
-            "ヱビスビール",
-            NORMALIZATION_CONFIG,
-            TOKENIZATION_CONFIG,
-            &STOPWORDS_CONFIG,
-        )
-        .unwrap();
-
-        assert_eq!(token_cleaner.locale, None);
-    }
-
-    #[cfg(feature = "tokenizer-japanese")]
-    #[test]
-    fn it_cleans_token_japanese_lindera_sentence() {
-        let mut token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup,
-            None,
-            "𠮷野家でヱビスビールを飲んだ",
-            NORMALIZATION_CONFIG,
-            TOKENIZATION_CONFIG,
-            &STOPWORDS_CONFIG,
-        )
-        .unwrap();
-
-        assert_eq!(token_cleaner.locale, Some(Lang::Jpn));
-
-        let mut tokens = token_cleaner.map(|(token, _, _)| token.into_inner());
-
-        assert_eq!(tokens.next(), Some("𠮷".to_owned()));
-        assert_eq!(tokens.next(), Some("野家".to_owned()));
-        assert_eq!(tokens.next(), Some("ヱビス".to_owned()));
-        assert_eq!(tokens.next(), Some("ビール".to_owned()));
-        assert_eq!(tokens.next(), Some("飲ん".to_owned()));
-        assert_eq!(tokens.next(), None);
-    }
-
-    #[test]
-    fn it_cleans_token_emojis() {
-        let mut token_cleaner = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup,
-            None,
-            "🚀 🙋‍♂️🙋‍♂️🙋‍♂️",
-            NORMALIZATION_CONFIG,
-            TOKENIZATION_CONFIG,
-            &STOPWORDS_CONFIG,
-        )
-        .unwrap();
-
-        assert_eq!(token_cleaner.locale, None);
-
-        assert_eq!(token_cleaner.next(), None);
-    }
-
-    #[test]
-    fn it_cleans_token_lang_hinted() {
-        let token_cleaner_right = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup,
-            Some(Lang::Eng),
-            "This will be cleaned properly, as English was hinted rightfully so.",
-            NORMALIZATION_CONFIG,
-            TOKENIZATION_CONFIG,
-            &STOPWORDS_CONFIG,
-        )
-        .unwrap();
-        let token_cleaner_wrong = TokenLexerBuilder::from(
-            TokenLexerMode::NormalizeAndCleanup,
-            Some(Lang::Fra),
-            "This will not be cleaned properly, as French was hinted but this is English.",
-            NORMALIZATION_CONFIG,
-            TOKENIZATION_CONFIG,
-            &STOPWORDS_CONFIG,
-        )
-        .unwrap();
-
-        assert_eq!(token_cleaner_right.locale, Some(Lang::Eng));
-        assert_eq!(token_cleaner_wrong.locale, Some(Lang::Fra));
-
-        let mut tokens_right = token_cleaner_right.map(|(token, _, _)| token.into_inner());
-        let mut tokens_wrong = token_cleaner_wrong.map(|(token, _, _)| token.into_inner());
-
-        assert_eq!(tokens_right.next(), Some("cleaned".to_owned()));
-        assert_eq!(tokens_wrong.next(), Some("this".to_owned()));
-    }
-
-    #[test]
-    fn it_detects_lang_english_regular() {
-        assert_eq!(
-            TokenLexerBuilder::detect_lang("The quick brown fox jumps over the lazy dog!"),
-            Some(Lang::Eng)
-        );
-    }
-
-    #[test]
-    fn it_detects_lang_english_long() {
-        assert_eq!(
-            TokenLexerBuilder::detect_lang(
-                r#"Running an electrical current through water splits it into oxygen and hydrogen,
-                the latter of which can be used as a reliable, zero-emission fuel source. In the past,
-                the process of purifying water beforehand was too energy intensive for this process to
-                be useful — but now scientists have figured out how to skip the process altogether and
-                convert seawater into usable hydrogen"#
-            ),
-            Some(Lang::Eng)
-        );
-    }
-
-    #[test]
-    fn it_doesnt_detect_lang_english_tiny() {
-        assert_eq!(TokenLexerBuilder::detect_lang("The quick"), None);
-    }
-}
-
-#[cfg(all(feature = "benchmark", test))]
-mod benches {
-    extern crate test;
-
-    use super::*;
-    use test::Bencher;
-
-    #[bench]
-    fn bench_normalize_token_french_build(b: &mut Bencher) {
-        b.iter(|| {
-            TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeOnly,
-                "Le vif renard brun saute par dessus le chien paresseux.",
-                NORMALIZATION_CONFIG,
-                TOKENIZATION_CONFIG,
-                &STOPWORDS_CONFIG,
-            )
-        });
-    }
-
-    #[bench]
-    fn bench_normalize_token_french_exhaust(b: &mut Bencher) {
-        b.iter(|| {
-            let token_cleaner = TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeOnly,
-                "Le vif renard brun saute par dessus le chien paresseux.",
-                NORMALIZATION_CONFIG,
-                TOKENIZATION_CONFIG,
-                &STOPWORDS_CONFIG,
-            )
-            .unwrap();
-
-            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
-        });
-    }
-
-    #[bench]
-    fn bench_clean_token_english_regular_build(b: &mut Bencher) {
-        b.iter(|| {
-            TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup,
-                None,
-                "The quick brown fox jumps over the lazy dog!",
-                NORMALIZATION_CONFIG,
-                TOKENIZATION_CONFIG,
-                &STOPWORDS_CONFIG,
-            )
-        });
-    }
-
-    #[bench]
-    fn bench_clean_token_english_regular_exhaust(b: &mut Bencher) {
-        b.iter(|| {
-            let token_cleaner = TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup,
-                None,
-                "The quick brown fox jumps over the lazy dog!",
-                NORMALIZATION_CONFIG,
-                TOKENIZATION_CONFIG,
-                &STOPWORDS_CONFIG,
-            )
-            .unwrap();
-
-            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
-        });
-    }
-
-    #[bench]
-    fn bench_clean_token_english_long_exhaust(b: &mut Bencher) {
-        b.iter(|| {
-            let token_cleaner = TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup,
-                None,
-                r#"Running an electrical current through water splits it into oxygen and hydrogen,
-                the latter of which can be used as a reliable, zero-emission fuel source. In the
-                past, the process of purifying water beforehand was too energy intensive for this
-                process to be useful — but now scientists have figured out how to skip the process
-                altogether and convert seawater into usable hydrogen"#,
-                NORMALIZATION_CONFIG,
-                TOKENIZATION_CONFIG,
-                &STOPWORDS_CONFIG,
-            )
-            .unwrap();
-
-            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
-        });
-    }
-
-    #[bench]
-    fn bench_clean_token_english_hinted_build(b: &mut Bencher) {
-        b.iter(|| {
-            TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup(Some(Lang::Eng)),
-                "The quick brown fox jumps over the lazy dog!",
-                NORMALIZATION_CONFIG,
-                TOKENIZATION_CONFIG,
-                &STOPWORDS_CONFIG,
-            )
-        });
-    }
-
-    #[bench]
-    fn bench_clean_token_english_hinted_exhaust(b: &mut Bencher) {
-        b.iter(|| {
-            let token_cleaner = TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup(Some(Lang::Eng)),
-                "The quick brown fox jumps over the lazy dog!",
-                NORMALIZATION_CONFIG,
-                TOKENIZATION_CONFIG,
-                &STOPWORDS_CONFIG,
-            )
-            .unwrap();
-
-            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
-        });
-    }
-
-    #[bench]
-    fn bench_clean_token_chinese_build(b: &mut Bencher) {
-        b.iter(|| {
-            TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup,
-                None,
-                "我们中出了一个叛徒",
-                NORMALIZATION_CONFIG,
-                TOKENIZATION_CONFIG,
-                &STOPWORDS_CONFIG,
-            )
-        });
-    }
-
-    #[bench]
-    fn bench_clean_token_chinese_exhaust(b: &mut Bencher) {
-        b.iter(|| {
-            let token_cleaner = TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup,
-                None,
-                "我们中出了一个叛徒",
-                NORMALIZATION_CONFIG,
-                TOKENIZATION_CONFIG,
-                &STOPWORDS_CONFIG,
-            )
-            .unwrap();
-
-            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
-        });
-    }
-
-    #[bench]
-    fn bench_clean_token_japanese_build(b: &mut Bencher) {
-        b.iter(|| {
-            TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup,
-                None,
-                "関西国際空港限定トートバッグ",
-                NORMALIZATION_CONFIG,
-                TOKENIZATION_CONFIG,
-                &STOPWORDS_CONFIG,
-            )
-        });
-    }
-
-    #[bench]
-    fn bench_clean_token_japanese_exhaust(b: &mut Bencher) {
-        b.iter(|| {
-            let token_cleaner = TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeAndCleanup,
-                None,
-                "関西国際空港限定トートバッグ",
-                NORMALIZATION_CONFIG,
-                TOKENIZATION_CONFIG,
-                &STOPWORDS_CONFIG,
-            )
-            .unwrap();
-
-            token_cleaner.map(|value| value.1).collect::<Vec<u32>>()
-        });
-    }
-
-    #[bench]
-    fn bench_detect_lang_english_short(b: &mut Bencher) {
-        b.iter(|| TokenLexerBuilder::detect_lang("The quick brown fox."));
-    }
-
-    #[bench]
-    fn bench_detect_lang_english_regular(b: &mut Bencher) {
-        b.iter(|| TokenLexerBuilder::detect_lang("The quick brown fox jumps over the lazy dog!"));
-    }
-
-    #[bench]
-    fn bench_detect_lang_english_long(b: &mut Bencher) {
-        b.iter(|| {
-            TokenLexerBuilder::detect_lang(
-                r#"Running an electrical current through water splits it into oxygen and hydrogen,
-            the latter of which can be used as a reliable, zero-emission fuel source. In the past,
-            the process of purifying water beforehand was too energy intensive for this process to
-            be useful — but now scientists have figured out how to skip the process altogether and
-            convert seawater into usable hydrogen"#,
-            )
-        });
-    }
-
-    #[bench]
-    fn bench_dont_detect_lang_english_tiny(b: &mut Bencher) {
-        b.iter(|| TokenLexerBuilder::detect_lang("The quick"));
     }
 }

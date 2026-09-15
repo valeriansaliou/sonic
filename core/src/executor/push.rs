@@ -5,18 +5,23 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use hashbrown::HashSet;
 use rocksdb::WriteBatch;
 use std::sync::Arc;
 
-use crate::lexer::TokenLexer;
+use crate::lexer::itertools::UniqueBy;
+use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::StoreItem;
 use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
 use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
-    pub fn push(&self, item: StoreItem, lexer: TokenLexer, assume_new: bool) -> Result<(), ()> {
+    pub fn push(
+        &self,
+        item: StoreItem,
+        input: PreprocessorOutput,
+        assume_new: bool,
+    ) -> Result<(), ()> {
         let StoreItem(collection, Some(bucket), Some(object)) = item else {
             return Err(());
         };
@@ -75,26 +80,24 @@ impl super::Executor {
                 .unwrap_or_else(assign_new_iid)
         };
 
-        let mut tokens = HashSet::with_capacity_and_hasher(128, NoopU32HasherBuilder);
+        let mut tokens =
+            UniqueBy::new_with_hasher(input.tokens(), Token::hash, NoopU32HasherBuilder);
 
-        for (token, term_hashed, _) in lexer {
-            let term = token.as_str();
-
-            tokens.insert(term_hashed);
+        for token in &mut tokens {
+            let term = token.as_normalized();
+            let term_hashed = token.hash();
 
             // Push to FST graph? (this consumes the term; to avoid sub-clones)
             if fst_action.push_word(&term, &self.app_conf.store.fst) {
                 tracing::trace!("push term committed to graph: {}", term);
             }
-        }
 
-        for &term_hashed in tokens.iter() {
             // Link IID to term
             kv_action.add_term_to_iids(&mut batch, term_hashed, std::iter::once(iid));
         }
 
         // Link terms to IID
-        kv_action.add_iid_to_terms(&mut batch, iid, tokens.into_iter());
+        kv_action.add_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());
 
         executor_ensure_op!(kv_action.write(batch));
 

@@ -9,14 +9,16 @@ use linked_hash_set::LinkedHashSet;
 use rocksdb::WriteBatch;
 use std::iter::FromIterator;
 
-use crate::lexer::TokenLexer;
+use crate::lexer::itertools::UniqueBy;
+use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::StoreItem;
 use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::identifiers::StoreTermHashed;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
+use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
-    pub fn pop(&self, item: StoreItem, lexer: TokenLexer) -> Result<u32, ()> {
+    pub fn pop(&self, item: StoreItem, input: PreprocessorOutput) -> Result<u32, ()> {
         if let StoreItem(collection, Some(bucket), Some(object)) = item {
             // Important: acquire database access read lock, and reference it in context. This \
             //   prevents the database from being erased while using it in this block.
@@ -59,16 +61,12 @@ impl super::Executor {
                                 iid_terms_hashed_vec
                             );
 
-                            let pop_terms: Vec<(String, StoreTermHashed)> = lexer
-                                .map(|(token, hash, _len)| (token.into_inner(), hash))
-                                .collect();
-
                             let iid_terms_hashed: LinkedHashSet<StoreTermHashed> =
                                 LinkedHashSet::from_iter(iid_terms_hashed_vec.iter().copied());
 
                             let remaining_terms: LinkedHashSet<StoreTermHashed> = iid_terms_hashed
                                 .difference(&LinkedHashSet::from_iter(
-                                    pop_terms.iter().map(|item| item.1),
+                                    input.tokens().map(Token::into_hash),
                                 ))
                                 .copied()
                                 .collect();
@@ -98,12 +96,21 @@ impl super::Executor {
                                 } else {
                                     tracing::info!("nuke only certain terms for pop executor");
 
+                                    let tokens = UniqueBy::new_with_hasher(
+                                        input.tokens(),
+                                        Token::hash,
+                                        NoopU32HasherBuilder,
+                                    );
+
                                     // Nuke IID in Term-to-IIDs list
-                                    for (pop_term, pop_term_hashed) in &pop_terms {
+                                    for token in tokens {
+                                        let (pop_term, pop_term_hashed) =
+                                            (token.as_normalized(), token.hash());
+
                                         // Check that term is linked to IID (and should be removed)
-                                        if iid_terms_hashed.contains(pop_term_hashed) {
+                                        if iid_terms_hashed.contains(&pop_term_hashed) {
                                             if let Ok(Some(mut pop_term_iids)) =
-                                                kv_action.get_term_to_iids(*pop_term_hashed)
+                                                kv_action.get_term_to_iids(pop_term_hashed)
                                             {
                                                 // Remove IID from list of IIDs to be popped
                                                 pop_term_iids.retain(|cur_iid| cur_iid != &iid);
@@ -112,7 +119,7 @@ impl super::Executor {
                                                     // IIDs list was empty, delete whole key
                                                     kv_action.delete_term_to_iids(
                                                         &mut batch,
-                                                        *pop_term_hashed,
+                                                        pop_term_hashed,
                                                     );
 
                                                     // Pop from FST graph (does not exist anymore)
@@ -126,7 +133,7 @@ impl super::Executor {
                                                     // Re-build IIDs list w/o current IID
                                                     kv_action.set_term_to_iids(
                                                         &mut batch,
-                                                        *pop_term_hashed,
+                                                        pop_term_hashed,
                                                         pop_term_iids.into_iter(),
                                                     );
                                                 }
