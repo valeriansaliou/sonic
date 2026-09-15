@@ -163,9 +163,9 @@ impl StoreFSTPool {
     }
 
     pub fn acquire<T: AsRef<str>>(&self, collection: T, bucket: T) -> Result<StoreFSTBox, ()> {
-        let (collection_str, bucket_str) = (collection.as_ref(), bucket.as_ref());
+        let (collection, bucket) = (collection.as_ref(), bucket.as_ref());
 
-        let pool_key = StoreFSTKey::from_str(collection_str, bucket_str);
+        let pool_key = StoreFSTKey::from_str(collection, bucket);
 
         // Freeze acquire lock, and reference it in context
         // Notice: this prevents two graphs on the same collection to be opened at the same time.
@@ -175,14 +175,13 @@ impl StoreFSTPool {
         let graph_pool_read = self.graph_pool.read().unwrap();
 
         if let Some(store_fst) = graph_pool_read.get(&pool_key) {
-            proceed_acquire_cache("fst", collection_str, pool_key, store_fst)
+            proceed_acquire_cache("fst", collection, pool_key, store_fst)
         } else {
             tracing::info!(
-                "fst store not in pool for collection: {} <{:x}> / bucket: {} <{:x}>, opening it",
-                collection_str,
-                pool_key.collection_hash,
-                bucket_str,
-                pool_key.bucket_hash
+                ?pool_key,
+                ?collection,
+                ?bucket,
+                "fst store not in pool, opening it"
             );
 
             // Important: we need to drop the read reference first, to avoid dead-locking \
@@ -197,7 +196,7 @@ impl StoreFSTPool {
 
             proceed_acquire_open(
                 "fst",
-                collection_str,
+                collection,
                 pool_key,
                 &self.graph_pool,
                 &builder,
@@ -218,7 +217,7 @@ impl StoreFSTPool {
     }
 
     pub fn backup(&self, path: &Path) -> Result<(), io::Error> {
-        tracing::debug!("backing up all fst stores to path: {:?}", path);
+        tracing::debug!("backing up all fst stores to path: {path:?}");
 
         // Create backup directory (full path)
         fs::create_dir_all(path)?;
@@ -234,7 +233,7 @@ impl StoreFSTPool {
     }
 
     pub fn restore(&self, path: &Path) -> Result<(), io::Error> {
-        tracing::debug!("restoring all fst stores from path: {:?}", path);
+        tracing::debug!("restoring all fst stores from path: {path:?}");
 
         // Proceed dump action (restore)
         self.dump_action(
@@ -290,32 +289,24 @@ impl StoreFSTPool {
                         .unwrap()
                         .elapsed()
                         .unwrap_or_else(|err| {
-                            tracing::error!(
-                                "fst key: {} last consolidated duration clock issue, zeroing: {}",
-                                key,
-                                err
-                            );
+                            tracing::error!("fst key {key:?} last consolidated duration clock issue, zeroing: {err:?}");
 
                             // Assuming a zero seconds fallback duration
                             Duration::from_secs(0)
-                        })
-                        .as_secs();
+                        });
 
                     if force
-                        || not_consolidated_for >= self.fst_store_config.graph.consolidate_after
+                        || not_consolidated_for.as_secs()
+                            >= self.fst_store_config.graph.consolidate_after
                     {
                         tracing::info!(
-                            "fst key: {} not consolidated for: {} seconds, may consolidate",
-                            key,
-                            not_consolidated_for
+                            "fst key {key:?} not consolidated for {not_consolidated_for:.1?}, may consolidate"
                         );
 
                         keys_consolidate.push(*key);
                     } else {
                         tracing::debug!(
-                            "fst key: {} not consolidated for: {} seconds, no consolidate",
-                            key,
-                            not_consolidated_for
+                            "fst key: {key:?} not consolidated for {not_consolidated_for:.1?}, no consolidate"
                         );
                     }
                 }
@@ -340,7 +331,7 @@ impl StoreFSTPool {
             for key in &keys_consolidate {
                 graph_consolidate_write.remove(key);
 
-                tracing::debug!("fst key: {} cleared from consolidate register", key);
+                tracing::debug!("fst key {key:?} cleared from consolidate register");
             }
         }
 
@@ -357,7 +348,7 @@ impl StoreFSTPool {
                     let _access = self.graph_access_lock.write().unwrap();
 
                     let do_close = if let Some(store) = self.graph_pool.read().unwrap().get(key) {
-                        tracing::debug!("fst key: {} consolidate started", key);
+                        tracing::debug!("fst key: {key:?} consolidate started");
 
                         let consolidate_counts = self.consolidate_item(store);
 
@@ -365,7 +356,7 @@ impl StoreFSTPool {
                         count_pushed += consolidate_counts.2;
                         count_popped += consolidate_counts.3;
 
-                        tracing::debug!("fst key: {} consolidate complete", key);
+                        tracing::debug!("fst key: {key:?} consolidate complete");
 
                         // Should close this FST?
                         consolidate_counts.0
@@ -394,10 +385,7 @@ impl StoreFSTPool {
         }
 
         tracing::info!(
-            "done scanning for fst store pool items to consolidate (move: {}, push: {}, pop: {})",
-            count_moved,
-            count_pushed,
-            count_popped
+            "done scanning for fst store pool items to consolidate (move: {count_moved}, push: {count_pushed}, pop: {count_popped})"
         );
     }
 
@@ -422,7 +410,7 @@ impl StoreFSTPool {
                 (collection.file_type(), collection.file_name().to_str())
             {
                 if collection_file_type.is_dir() {
-                    tracing::debug!("fst collection ongoing {}: {}", action, collection_name);
+                    tracing::debug!("fst collection ongoing {action}: {collection_name}");
 
                     // Create write folder for collection
                     fs::create_dir_all(write_path.join(collection_name))?;
@@ -446,10 +434,7 @@ impl StoreFSTPool {
                                     &bucket_file_name[..(bucket_file_name_len - fst_extension_len)];
 
                                 tracing::debug!(
-                                    "fst bucket ongoing {}: {}/{}",
-                                    action,
-                                    collection_name,
-                                    bucket_name
+                                    "fst bucket ongoing {action}: {collection_name}/{bucket_name}"
                                 );
 
                                 fn_item(
@@ -481,17 +466,16 @@ impl StoreFSTPool {
         let _access = self.graph_access_lock.write().unwrap();
 
         // Generate path to FST backup
-        let fst_backup_path = backup_path.join(collection_name).join(format!(
-            "{}{}",
-            bucket_name,
-            StoreFSTPathMode::Backup.extension()
-        ));
+        let fst_backup_path = {
+            let ext = StoreFSTPathMode::Backup.extension();
+            assert!(ext.starts_with("."));
+            backup_path
+                .join(collection_name)
+                .join(format!("{bucket_name}{ext}"))
+        };
 
         tracing::debug!(
-            "fst bucket: {}/{} backing up to path: {:?}",
-            collection_name,
-            bucket_name,
-            fst_backup_path
+            "fst bucket {collection_name}/{bucket_name} backing up to path: {fst_backup_path:?}"
         );
 
         // Erase any previously-existing FST backup
@@ -530,11 +514,7 @@ impl StoreFSTPool {
                 }
 
                 tracing::info!(
-                    "fst bucket: {}/{} backed up to path: {:?} ({} words)",
-                    collection_name,
-                    bucket_name,
-                    fst_backup_path,
-                    count_words
+                    "fst bucket {collection_name}/{bucket_name} backed up to path: {fst_backup_path:?} ({count_words} words)"
                 );
             }
         }
@@ -554,10 +534,7 @@ impl StoreFSTPool {
         let _access = self.graph_access_lock.write().unwrap();
 
         tracing::debug!(
-            "fst bucket: {}/{} restoring from path: {:?}",
-            collection_name,
-            bucket_name,
-            origin_path
+            "fst bucket {collection_name}/{bucket_name} restoring from path: {origin_path:?}"
         );
 
         // Convert names to hashes (as names are hashes encoded as base-16 strings, but we need \
@@ -604,11 +581,7 @@ impl StoreFSTPool {
                     .map_err(|_| io::Error::other("graph restore finish failure"))?;
 
                 tracing::info!(
-                    "fst bucket: {}/{} restored to path: {:?} from backup: {:?}",
-                    collection_name,
-                    bucket_name,
-                    fst_path,
-                    origin_path
+                    "fst bucket: {collection_name}/{bucket_name} restored to path: {fst_path:?} from backup: {origin_path:?}"
                 );
             }
         }
@@ -707,8 +680,7 @@ impl StoreFSTPool {
                                                 {
                                                     // Could not insert word in FST
                                                     tracing::error!(
-                                                        "failed inserting new from old in fst: {}",
-                                                        err
+                                                        "failed inserting new from old in fst: {err:?}",
                                                     );
                                                 } else {
                                                     // Word inserted in FST
@@ -744,8 +716,7 @@ impl StoreFSTPool {
                                     if let Err(err) = tmp_fst_builder.insert(old_fst_word) {
                                         // Could not move word to FST
                                         tracing::error!(
-                                            "failed inserting old word in fst: {}",
-                                            err
+                                            "failed inserting old word in fst: {err:?}"
                                         );
                                     } else {
                                         // Word moved to FST
@@ -777,8 +748,7 @@ impl StoreFSTPool {
                                 if let Err(err) = tmp_fst_builder.insert(push_front) {
                                     // Could not insert word in FST
                                     tracing::error!(
-                                        "failed inserting new word from complete in fst: {}",
-                                        err
+                                        "failed inserting new word from complete in fst: {err:?}"
                                     );
                                 } else {
                                     // Word inserted in FST
@@ -803,37 +773,31 @@ impl StoreFSTPool {
                                 // Proceed temporary FST to final FST path rename
                                 if fs::rename(&bucket_tmp_path, &bucket_final_path).is_ok() {
                                     tracing::info!(
-                                        "done consolidate fst at path: {:?}",
-                                        bucket_final_path
+                                        "done consolidate fst at path: {bucket_final_path:?}"
                                     );
                                 } else {
                                     tracing::error!(
-                                        "error consolidating fst at path: {:?}",
-                                        bucket_final_path
+                                        "error consolidating fst at path: {bucket_final_path:?}"
                                     );
                                 }
                             } else {
                                 tracing::error!(
-                                    "error finishing building temporary fst at path: {:?}",
-                                    bucket_tmp_path
+                                    "error finishing building temporary fst at path: {bucket_tmp_path:?}"
                                 );
                             }
                         } else {
                             tracing::error!(
-                                "error starting building temporary fst at path: {:?}",
-                                bucket_tmp_path
+                                "error starting building temporary fst at path: {bucket_tmp_path:?}"
                             );
                         }
                     } else {
                         tracing::error!(
-                            "error initializing temporary fst at path: {:?}",
-                            bucket_tmp_path
+                            "error initializing temporary fst at path: {bucket_tmp_path:?}"
                         );
                     }
                 } else {
                     tracing::error!(
-                        "error initializing temporary fst directory at path: {:?}",
-                        bucket_tmp_path_parent
+                        "error initializing temporary fst directory at path: {bucket_tmp_path_parent:?}"
                     );
                 }
             } else {
@@ -849,11 +813,7 @@ impl StoreFSTPool {
     }
 
     fn close(&self, collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) {
-        tracing::debug!(
-            "closing finite-state transducer graph for collection: <{:x}> and bucket: <{:x}>",
-            collection_hash,
-            bucket_hash
-        );
+        tracing::debug!("closing fst graph <{collection_hash:x}>/<{bucket_hash:x}>");
 
         let bucket_target = StoreFSTKey::from_atom(collection_hash, bucket_hash);
 
@@ -871,11 +831,7 @@ impl<'build> StoreFSTBuilder<'build> {
         bucket_hash: StoreFSTAtom,
         fst_store_config: &crate::config::ConfigStoreFST,
     ) -> Result<FSTSet, FSTError> {
-        tracing::debug!(
-            "opening finite-state transducer graph for collection: <{:x}> and bucket: <{:x}>",
-            collection_hash,
-            bucket_hash
-        );
+        tracing::debug!("opening fst graph for <{collection_hash:x}>/<{bucket_hash:x}>");
 
         let collection_bucket_path = fst_store_config.path(
             StoreFSTPathMode::Permanent,
@@ -906,10 +862,10 @@ impl crate::config::ConfigStoreFST {
         collection_hash: StoreFSTAtom,
         bucket_hash: Option<StoreFSTAtom>,
     ) -> PathBuf {
-        let mut final_path = self.path.join(format!("{:x}", collection_hash));
+        let mut final_path = self.path.join(format!("{collection_hash:x}"));
 
         if let Some(bucket_hash) = bucket_hash {
-            final_path = final_path.join(format!("{:x}{}", bucket_hash, mode.extension()));
+            final_path = final_path.join(format!("{bucket_hash:x}{ext}", ext = mode.extension()));
         }
 
         final_path
@@ -943,7 +899,7 @@ impl<'build> StoreGenericBuilder<StoreFSTKey, StoreFST> for StoreFSTBuilder<'bui
             }
         })
         .map_err(|err| {
-            tracing::error!("failed opening fst: {}", err);
+            tracing::error!("failed opening fst: {err:?}");
         })
     }
 }
@@ -976,20 +932,14 @@ impl StoreFST {
         // Regex write failed? (this should not happen)
         if let Err(err) = write_result {
             tracing::error!(
-                "could not lookup word in fst via 'begins': {} because regex write failed: {}",
-                word,
-                err
+                "could not lookup word in fst via 'begins': {word:?} because regex write failed: {err:?}"
             );
 
             return Err(());
         }
 
         // Proceed word lookup
-        tracing::debug!(
-            "looking-up word in fst via 'begins': {} with regex: {}",
-            word,
-            regex_str
-        );
+        tracing::debug!("looking-up word in fst via 'begins': {word:?} with regex: {regex_str:?}");
 
         if let Ok(regex) = Regex::new(&regex_str) {
             Ok(self.graph.search(regex).into_stream())
@@ -1004,9 +954,7 @@ impl StoreFST {
         typo_factor: u32,
     ) -> Result<FSTStream<'_, Levenshtein>, ()> {
         tracing::debug!(
-            "looking-up word in fst via 'typos': {} with typo factor: {}",
-            word,
-            typo_factor
+            "looking-up word in fst via 'typos': {word:?} with typo factor: {typo_factor:?}"
         );
 
         if let Ok(fuzzy) = Levenshtein::new(word, typo_factor) {
@@ -1017,15 +965,12 @@ impl StoreFST {
     }
 
     pub fn should_consolidate(&self) {
+        let target = self.target;
+
         // Check if not already scheduled
-        if !self
-            .graph_consolidate
-            .read()
-            .unwrap()
-            .contains(&self.target)
-        {
+        if !self.graph_consolidate.read().unwrap().contains(&target) {
             // Schedule target for next consolidation tick (ie. collection + bucket tuple)
-            self.graph_consolidate.write().unwrap().insert(self.target);
+            self.graph_consolidate.write().unwrap().insert(target);
 
             // Bump 'last consolidated' time, effectively de-bouncing consolidation to a fixed \
             //   and predictable tick time in the future.
@@ -1036,12 +981,9 @@ impl StoreFST {
             // Perform an early drop of the lock (frees up write lock early)
             drop(last_consolidated_value);
 
-            tracing::info!("graph consolidation scheduled on pool key: {}", self.target);
+            tracing::info!("graph consolidation scheduled on pool key: {target}");
         } else {
-            tracing::debug!(
-                "graph consolidation already scheduled on pool key: {}",
-                self.target
-            );
+            tracing::debug!("graph consolidation already scheduled on pool key: {target}");
         }
     }
 }
@@ -1092,9 +1034,8 @@ impl StoreGenericActionBuilder for StoreFSTPool {
 
         if !bucket_atoms.is_empty() {
             tracing::debug!(
-                "will force-close {} fst buckets for collection: {}",
-                bucket_atoms.len(),
-                collection_str
+                "will force-close {nbuckets} fst buckets for collection {collection_str:?}",
+                nbuckets = bucket_atoms.len()
             );
 
             let (mut graph_pool_write, mut graph_consolidate_write) = (
@@ -1104,9 +1045,7 @@ impl StoreGenericActionBuilder for StoreFSTPool {
 
             for bucket_atom in bucket_atoms {
                 tracing::debug!(
-                    "fst bucket graph force close for bucket: {}/<{:x}>",
-                    collection_str,
-                    bucket_atom
+                    "fst bucket graph force close for bucket: {collection_str}/<{bucket_atom:x}>"
                 );
 
                 let bucket_target = StoreFSTKey::from_atom(collection_atom, bucket_atom);
@@ -1119,9 +1058,7 @@ impl StoreGenericActionBuilder for StoreFSTPool {
         // Remove all FSTs on-disk
         if collection_path.exists() {
             tracing::debug!(
-                "fst collection store exists, erasing: {}/* at path: {:?}",
-                collection_str,
-                &collection_path
+                "fst collection store exists, erasing: {collection_str}/* at path: {collection_path:?}"
             );
 
             // Remove FST graph storage from filesystem
@@ -1136,9 +1073,7 @@ impl StoreGenericActionBuilder for StoreFSTPool {
             }
         } else {
             tracing::debug!(
-                "fst collection store does not exist, consider already erased: {}/* at path: {:?}",
-                collection_str,
-                &collection_path
+                "fst collection store does not exist, consider already erased: {collection_str}/* at path: {collection_path:?}"
             );
 
             Ok(0)
@@ -1146,11 +1081,7 @@ impl StoreGenericActionBuilder for StoreFSTPool {
     }
 
     fn proceed_erase_bucket(&self, collection_str: &str, bucket_str: &str) -> Result<u32, ()> {
-        tracing::debug!(
-            "sub-erase on fst bucket: {} for collection: {}",
-            bucket_str,
-            collection_str
-        );
+        tracing::debug!("sub-erase on fst bucket {bucket_str:?} for collection {collection_str:?}");
 
         let (collection_atom, bucket_atom) = (
             StoreKeyerHasher::to_compact(collection_str),
@@ -1169,10 +1100,7 @@ impl StoreGenericActionBuilder for StoreFSTPool {
         // Remove FST on-disk
         if bucket_path.exists() {
             tracing::debug!(
-                "fst bucket graph exists, erasing: {}/{} at path: {:?}",
-                collection_str,
-                bucket_str,
-                &bucket_path
+                "fst bucket graph exists, erasing: {collection_str}/{bucket_str} at path: {bucket_path:?}"
             );
 
             // Remove FST graph storage from filesystem
@@ -1187,10 +1115,7 @@ impl StoreGenericActionBuilder for StoreFSTPool {
             }
         } else {
             tracing::debug!(
-                "fst bucket graph does not exist, consider already erased: {}/{} at path: {:?}",
-                collection_str,
-                bucket_str,
-                &bucket_path
+                "fst bucket graph does not exist, consider already erased: {collection_str}/{bucket_str} at path: {bucket_path:?}"
             );
 
             Ok(0)
@@ -1351,12 +1276,12 @@ impl StoreFSTAction {
 
     pub fn lookup_begins(
         &self,
-        from_word: &str,
+        word: &str,
         // Length before stemming. Useful to calculate correct score.
         original_word_len: usize,
     ) -> Option<impl Iterator<Item = (String, u16)>> {
         // Word over limit? (abort, the FST does not perform well over large words)
-        if Self::word_over_limit(from_word) {
+        if Self::word_over_limit(word) {
             return None;
         }
 
@@ -1364,14 +1289,11 @@ impl StoreFSTAction {
             return None;
         }
 
-        let Ok(stream) = self.store.lookup_begins(from_word) else {
+        let Ok(stream) = self.store.lookup_begins(word) else {
             return None;
         };
 
-        tracing::debug!(
-            word = ?from_word,
-            "looking up for word in 'begins' fst stream"
-        );
+        tracing::debug!(?word, "looking up for word in 'begins' fst stream");
 
         Some(FSTStreamIterator(stream).map(move |word| {
             // WARN: Calculating distance to original word length might
@@ -1384,19 +1306,20 @@ impl StoreFSTAction {
 
     pub fn lookup_typos(
         &self,
-        from_word: &str,
+        word: &str,
         typo_factor: u32,
     ) -> Option<impl Iterator<Item = (String, u16)>> {
         if !self.config().fuzzy_matching_enabled {
             return None;
         }
 
-        let Ok(stream) = self.store.lookup_typos(from_word, typo_factor) else {
+        let Ok(stream) = self.store.lookup_typos(word, typo_factor) else {
             return None;
         };
 
         tracing::debug!(
-            word = ?from_word, typo_factor,
+            ?word,
+            typo_factor,
             "looking up for word in 'typos' fst stream"
         );
 
@@ -1419,7 +1342,7 @@ impl StoreFSTAction {
             .map(|words| words.into_iter().skip(offset).take(limit).collect())
         {
             Err(err) => {
-                tracing::debug!("conversion of stream failed: {}", err);
+                tracing::debug!("conversion of stream failed: {err:?}");
                 Err(())
             }
             Ok(words) => Ok(words),
@@ -1432,7 +1355,7 @@ impl StoreFSTAction {
 
     fn word_over_limit(word: &str) -> bool {
         if word.len() > WORD_LIMIT_LENGTH {
-            tracing::debug!("got over-limit fst word: {}", word);
+            tracing::debug!("got over-limit fst word: {word:?}");
 
             true
         } else {
@@ -1481,7 +1404,7 @@ impl StoreFSTMisc {
                     }
                 }
             } else {
-                tracing::error!("failed reading directory for count: {:?}", collection_path);
+                tracing::error!("failed reading directory for count: {collection_path:?}");
 
                 return Err(());
             }
@@ -1497,23 +1420,19 @@ impl StoreFSTMisc {
     ) -> bool {
         // Over bytes limit?
         let max_size = fst_graph_config.max_size * 1024;
-
         if bytes_count >= max_size {
             tracing::info!(
-                "fst has exceeded maximum allowed bytes: {} over limit: {}",
-                bytes_count,
-                max_size
+                "fst has exceeded maximum allowed bytes: {bytes_count} over limit: {max_size}"
             );
 
             return true;
         }
 
         // Over words limit?
-        if words_count >= fst_graph_config.max_words {
+        let max_words = fst_graph_config.max_words;
+        if words_count >= max_words {
             tracing::info!(
-                "fst has exceeded maximum allowed words: {} over limit: {}",
-                words_count,
-                fst_graph_config.max_words
+                "fst has exceeded maximum allowed words: {words_count} over limit: {max_words}"
             );
 
             return true;
@@ -1541,12 +1460,6 @@ impl StoreFSTKey {
 
     pub fn as_collection_hash(&self) -> &StoreFSTAtom {
         &self.collection_hash
-    }
-}
-
-impl fmt::Display for StoreFSTKey {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<{:x}>/<{:x}>", self.collection_hash, self.bucket_hash)
     }
 }
 
@@ -1646,6 +1559,12 @@ impl fmt::Debug for StoreFSTPool {
             .field("graph_access_lock", &AsPrettyRwLock(graph_access_lock))
             .field("graph_consolidate", &AsPrettyRwLock(graph_consolidate))
             .finish_non_exhaustive()
+    }
+}
+
+impl fmt::Display for StoreFSTKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "<{:x}>/<{:x}>", self.collection_hash, self.bucket_hash)
     }
 }
 
