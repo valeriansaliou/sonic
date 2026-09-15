@@ -8,6 +8,41 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/v1.8.1...HEAD
 
+This version introduces substantial performance improvements to `PUSH` requests.
+
+While most improvements should benefit all Sonic users, some new experimental features were introduced to address specific high-scale needs which shouldn’t be a concern for most users. For now those API introductions are hidden behind the `experimental-api` feature flag, which won’t be enabled in official builds of Sonic. We’ll take those out of the experimental stage after using it in production and confirming that the chosen design is a good long-term choice.
+
+### Changes
+
+Performance improvements:
+
+* perf(core): Reduce locks contention caused by `IIDIncr` (in `f7de118`)
+* perf(core): Use a single `rocksdb::WriteBatch` per Sonic request (in `606cb31`, `981d1bc`)
+* perf(core): Use merge operators for `TermToIIDs` and `IIDToTerms` (in `b5921a1`, `6bd24cb`)
+* perf(core): Perform fewer merge operations by writing less often (in `3207a35`)
+* perf(core): Avoid `get_meta_to_value` read in `auto_increment_iid` (in `79fa14f`)
+* perf(core): And various other performance improvements
+
+Dependency updates:
+
+* deps(core): Bump `rocksdb` from `0.24` to `0.25` (in `80c3827`)
+* deps(server): Bump `clap` from `4.6.6` to `4.6.7` (in `2e153c4`)
+* deps(server): Update locked `chacha20` version (in `6fab659`)
+* deps(server): Enable `rocksdb/jemalloc` when `allocator-jemalloc` is enabled (in `67624ac`)
+
+### New Features
+
+* feat(server): Add experimental `TRIGGER compact` (in `ba4e974`)
+* feat(server): Add experimental `CONFIG` control command (https://github.com/valeriansaliou/sonic/issues/400) (in `a7a5497`, `03a2a4e`)
+* feat(core): Add experimental `NEW` flag to `PUSH` (in `f94cba0`)
+* feat(core): `impl Debug for sonic::Config` (in `6464cbf`)
+
+### Bug Fixes
+
+* fix(server): Preserve escaped character after unrecognized escapes (#398) (in `e6a72da`, `ad5914b`, `85ab93e`)
+* fix(server): Fix panic when client closes connection before `ENDED` (in `80c3665`)
+* fix(core): Fix `max_flushes` (in `36de4c5`)
+
 ## [1.8.1] (2026-08-16)
 
 [1.8.1]: https://github.com/valeriansaliou/sonic/compare/v1.8.0...v1.8.1
