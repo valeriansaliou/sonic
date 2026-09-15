@@ -25,7 +25,7 @@ Performance improvements:
 * Avoid `get_meta_to_value` read in `auto_increment_iid` (in `79fa14f`)
 * And various other performance improvements
 
-Updated dependencies:
+Dependency updates:
 
 * Bump `rocksdb` from `0.24` to `0.25` (in `80c3827`)
 
@@ -33,6 +33,7 @@ Updated dependencies:
 
 * Add `allocator-jemalloc` feature flag to enable `rocksdb/jemalloc`
 * Add experimental `NEW` flag to `PUSH` (in `f94cba0`)
+* `impl Debug for sonic::Config` (in `6464cbf`)
 
 ### Bug Fixes
 
