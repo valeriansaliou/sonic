@@ -82,6 +82,18 @@ impl ChannelHandle {
         // Increment connected clients count
         *CLIENTS_CONNECTED.write().unwrap() += 1;
 
+        struct AutoDecrement<'a>(&'a std::sync::RwLock<u32>);
+
+        impl<'a> Drop for AutoDecrement<'a> {
+            fn drop(&mut self) {
+                *self.0.write().unwrap() -= 1
+            }
+        }
+
+        // Auto-decrement connected clients count when this finishes.
+        // NOTE: Works even when code panics, as long as `panic = "unwind"`.
+        let _slot_guard = AutoDecrement(&CLIENTS_CONNECTED);
+
         // Ensure channel mode is set
         match self.ensure_start(&stream) {
             Ok(mode) => {
@@ -99,7 +111,8 @@ impl ChannelHandle {
                 )
                 .expect("write failed");
 
-                self.handle_stream(mode, stream);
+                self.handle_stream(mode, stream)
+                    .unwrap_or_else(|err| tracing::error!("closing channel thread: {err:?}"));
             }
             Err(err) => match write!(stream, "ENDED {}{}", err.to_str(), LINE_FEED) {
                 Ok(()) => {}
@@ -107,9 +120,6 @@ impl ChannelHandle {
                 Err(err) => panic!("write failed: {err:?}"),
             },
         }
-
-        // Decrement connected clients count
-        *CLIENTS_CONNECTED.write().unwrap() -= 1;
     }
 
     fn configure_stream(&self, stream: &TcpStream, is_established: bool) {
@@ -133,7 +143,11 @@ impl ChannelHandle {
         );
     }
 
-    fn handle_stream(&self, mode: ChannelMode, mut stream: TcpStream) {
+    fn handle_stream(
+        &self,
+        mode: ChannelMode,
+        mut stream: TcpStream,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // Initialize packet buffer
         let mut buffer: VecDeque<u8> = VecDeque::with_capacity(MAX_LINE_SIZE);
 
@@ -145,7 +159,7 @@ impl ChannelHandle {
                 Ok(n) => {
                     // Should close?
                     if n == 0 {
-                        break;
+                        break 'handler Ok(());
                     }
 
                     let (mut chunk, mut read) =
@@ -166,7 +180,7 @@ impl ChannelHandle {
                                     == ChannelMessageResult::Close
                                 {
                                     // Should close?
-                                    break 'handler;
+                                    break 'handler Ok(());
                                 }
 
                                 // Important: clear the contents of the line, as it has just been \
@@ -206,22 +220,17 @@ impl ChannelHandle {
                         // in the buffer. Most likely the client does not
                         // implement a proper back-pressure management system,
                         // thus we terminate it.
-                        tracing::error!("closing channel thread because of buffer overflow");
-
-                        panic!(
-                            "buffer overflow ({}/{} bytes)",
-                            buffer.len() + read.len(),
-                            MAX_LINE_SIZE
-                        );
+                        break 'handler Err(Box::new(std::io::Error::new(
+                            ErrorKind::InvalidData,
+                            format!(
+                                "buffer overflow ({}/{} bytes)",
+                                buffer.len() + read.len(),
+                                MAX_LINE_SIZE,
+                            ),
+                        )));
                     }
                 }
-                Err(err) => {
-                    // NOTE: Panicking here would unwind past the connected clients
-                    //   counter decrement in `client()`, leaking a client slot.
-                    tracing::debug!("closing channel thread: {}", err);
-
-                    break 'handler;
-                }
+                Err(err) => break 'handler Err(Box::new(err)),
             }
         }
     }
