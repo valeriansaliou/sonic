@@ -8,6 +8,12 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/client-v0.4.0...HEAD
 
+### New Features
+
+* Add `experimental-api` feature flag (in `b6291fd`)
+* Add support for experimental `CONFIG` command (in `1482375`)
+* Add support for experimental `NEW` in `PUSH` (in `664e357`)
+
 ## [0.4.0] (2026-08-16)
 
 [0.4.0]: https://github.com/valeriansaliou/sonic/compare/client-v0.3.0...client-v0.4.0
