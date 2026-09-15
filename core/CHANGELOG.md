@@ -8,6 +8,32 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/core-v0.2.1...HEAD
 
+This version introduces substantial performance improvements to `PUSH` requests.
+
+### Changes
+
+Performance improvements:
+
+* Reduce locks contention caused by `IIDIncr` (in `f7de118`)
+* Use a single `rocksdb::WriteBatch` per Sonic request (in `606cb31`, `981d1bc`)
+* Use merge operators for `TermToIIDs` and `IIDToTerms` (in `b5921a1`, `6bd24cb`)
+* Perform fewer merge operations by writing less often (in `3207a35`)
+* Avoid `get_meta_to_value` read in `auto_increment_iid` (in `79fa14f`)
+* And various other performance improvements
+
+Updated dependencies:
+
+* Bump `rocksdb` from `0.24` to `0.25` (in `80c3827`)
+
+### New Features
+
+* Add `allocator-jemalloc` feature flag to enable `rocksdb/jemalloc`
+* Add experimental `NEW` flag to `PUSH` (in `f94cba0`)
+
+### Bug Fixes
+
+* Fix `max_flushes` (in `36de4c5`)
+
 ## [0.2.1] (2026-08-16)
 
 [0.2.1]: https://github.com/valeriansaliou/sonic/compare/core-v0.2.0...core-v0.2.1
