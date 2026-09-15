@@ -1,21 +1,27 @@
 // Sonic
 //
 // Fast, lightweight and schema-less search backend
-// Copyright: 2026, DualFroz <me@dualfroz.com>
+// Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 mod common;
 
-use std::io::{BufRead, BufReader, Write};
-use std::net::TcpStream;
-use std::time::Duration;
-
 use crate::common::prelude::*;
 
-const TCP_TIMEOUT: u64 = 1;
-
+/// Ensures read timeouts release client slots.
+///
+/// See <https://github.com/valeriansaliou/sonic/pull/403>
+/// and <https://github.com/valeriansaliou/sonic/issues/256>.
+///
+/// Copyright: 2026, DualFroz <me@dualfroz.com>
 #[test]
-fn read_timeout_releases_client_slot() {
+fn pull_403() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+
+    const TCP_TIMEOUT: u64 = 1;
+
     let ctx =
         start_empty(|command| command.env("SONIC_CHANNEL__TCP_TIMEOUT", TCP_TIMEOUT.to_string()));
 
