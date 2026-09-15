@@ -16,152 +16,157 @@ pub trait StoreGeneric {
     fn ref_last_used(&self) -> &RwLock<SystemTime>;
 }
 
-pub trait StoreGenericPool<
+pub fn proceed_acquire_cache<K: Display, S: StoreGeneric>(
+    kind: &str,
+    collection_str: &str,
+    pool_key: K,
+    store: &Arc<S>,
+) -> Result<Arc<S>, ()> {
+    tracing::debug!(
+        "{} store acquired from pool for collection: {} (pool key: {})",
+        kind,
+        collection_str,
+        pool_key
+    );
+
+    // Bump store last used date (avoids early janitor eviction)
+    let mut last_used_value = store.ref_last_used().write().unwrap();
+
+    *last_used_value = SystemTime::now();
+
+    // Perform an early drop of the lock (frees up write lock early)
+    drop(last_used_value);
+
+    Ok(store.clone())
+}
+
+pub fn proceed_acquire_open<
+    'a,
     K: Hash + Eq + Copy + Display,
     S: StoreGeneric,
     B: StoreGenericBuilder<K, S>,
->
-{
-    fn proceed_acquire_cache(
-        kind: &str,
-        collection_str: &str,
-        pool_key: K,
-        store: &Arc<S>,
-    ) -> Result<Arc<S>, ()> {
-        tracing::debug!(
-            "{} store acquired from pool for collection: {} (pool key: {})",
-            kind,
-            collection_str,
-            pool_key
-        );
+>(
+    kind: &str,
+    collection_str: &str,
+    pool_key: K,
+    pool: &'a Arc<RwLock<HashMap<K, Arc<S>>>>,
+    builder: &B,
+    write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<K, Arc<S>>>>,
+    override_options: impl FnOnce(&mut B::Options),
+) -> Result<Arc<S>, ()> {
+    match builder.build(pool_key, override_options) {
+        Ok(store) => {
+            // Acquire a thread-safe store pool reference in write mode
+            let store_pool_write = match write_guard {
+                Some(x) => x,
+                None => &mut pool.write().unwrap(),
+            };
+            let store_box = Arc::new(store);
 
-        // Bump store last used date (avoids early janitor eviction)
-        let mut last_used_value = store.ref_last_used().write().unwrap();
+            store_pool_write.insert(pool_key, Arc::clone(&store_box));
 
-        *last_used_value = SystemTime::now();
+            tracing::debug!(
+                "opened and cached {} store in pool for collection: {} (pool key: {})",
+                kind,
+                collection_str,
+                pool_key
+            );
 
-        // Perform an early drop of the lock (frees up write lock early)
-        drop(last_used_value);
+            Ok(store_box)
+        }
+        Err(_) => {
+            tracing::error!(
+                "failed opening {} store for collection: {} (pool key: {})",
+                kind,
+                collection_str,
+                pool_key
+            );
 
-        Ok(store.clone())
+            Err(())
+        }
     }
+}
 
-    fn proceed_acquire_open<'a>(
-        kind: &str,
-        collection_str: &str,
-        pool_key: K,
-        pool: &'a Arc<RwLock<HashMap<K, Arc<S>>>>,
-        builder: &B,
-        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<K, Arc<S>>>>,
-        override_options: impl FnOnce(&mut B::Options),
-    ) -> Result<Arc<S>, ()> {
-        match builder.build(pool_key, override_options) {
-            Ok(store) => {
-                // Acquire a thread-safe store pool reference in write mode
-                let store_pool_write = match write_guard {
-                    Some(x) => x,
-                    None => &mut pool.write().unwrap(),
-                };
-                let store_box = Arc::new(store);
+pub fn proceed_janitor<K: Hash + Eq + Display + Copy, S: StoreGeneric>(
+    kind: &str,
+    pool: &Arc<RwLock<HashMap<K, Arc<S>>>>,
+    inactive_after: u64,
+    access_lock: &Arc<RwLock<()>>,
+    filter: impl Fn(&K) -> bool,
+) {
+    tracing::debug!("scanning for {} store pool items to janitor", kind);
 
-                store_pool_write.insert(pool_key, store_box.clone());
+    // Acquire access lock (in blocking write mode), and reference it in context
+    // Notice: this prevents store to be acquired from any context
+    let _access = access_lock.write().unwrap();
 
-                tracing::debug!(
-                    "opened and cached {} store in pool for collection: {} (pool key: {})",
-                    kind,
-                    collection_str,
-                    pool_key
-                );
+    let mut removal_register: Vec<K> = Vec::new();
 
-                Ok(store_box)
-            }
-            Err(_) => {
+    let store_pool_read = pool.read().unwrap();
+
+    for (collection_bucket, store) in store_pool_read.iter().filter(|(key, _)| filter(key)) {
+        // Important: be lenient with system clock going back to a past duration, since \
+        //   we may be running in a virtualized environment where clock is not guaranteed \
+        //   to be monotonic. This is done to avoid poisoning associated mutexes by \
+        //   crashing on unwrap().
+        let last_used_elapsed = store
+            .ref_last_used()
+            .read()
+            .unwrap()
+            .elapsed()
+            .unwrap_or_else(|err| {
                 tracing::error!(
-                    "failed opening {} store for collection: {} (pool key: {})",
-                    kind,
-                    collection_str,
-                    pool_key
+                    "store pool item: {} last used duration clock issue, zeroing: {}",
+                    collection_bucket,
+                    err
                 );
 
-                Err(())
-            }
+                // Assuming a zero seconds fallback duration
+                Duration::from_secs(0)
+            })
+            .as_secs();
+
+        if last_used_elapsed >= inactive_after {
+            tracing::debug!(
+                "found expired {} store pool item: {}; elapsed time: {}s",
+                kind,
+                collection_bucket,
+                last_used_elapsed
+            );
+
+            // Notice: the bucket value needs to be cloned, as we cannot reference as value \
+            //   that will outlive referenced value once we remove it from its owner set.
+            removal_register.push(*collection_bucket);
+        } else {
+            tracing::debug!(
+                "found non-expired {} store pool item: {}; elapsed time: {}s",
+                kind,
+                collection_bucket,
+                last_used_elapsed
+            );
         }
     }
 
-    fn proceed_janitor(
-        kind: &str,
-        pool: &Arc<RwLock<HashMap<K, Arc<S>>>>,
-        inactive_after: u64,
-        access_lock: &Arc<RwLock<()>>,
-        filter: impl Fn(&K) -> bool,
-    ) {
-        tracing::debug!("scanning for {} store pool items to janitor", kind);
+    let store_pool_read = if removal_register.is_empty() {
+        store_pool_read
+    } else {
+        drop(store_pool_read);
 
-        // Acquire access lock (in blocking write mode), and reference it in context
-        // Notice: this prevents store to be acquired from any context
-        let _access = access_lock.write().unwrap();
+        let mut store_pool_write = pool.write().unwrap();
 
-        let mut removal_register: Vec<K> = Vec::new();
-
-        for (collection_bucket, store) in pool.read().unwrap().iter().filter(|(key, _)| filter(key))
-        {
-            // Important: be lenient with system clock going back to a past duration, since \
-            //   we may be running in a virtualized environment where clock is not guaranteed \
-            //   to be monotonic. This is done to avoid poisoning associated mutexes by \
-            //   crashing on unwrap().
-            let last_used_elapsed = store
-                .ref_last_used()
-                .read()
-                .unwrap()
-                .elapsed()
-                .unwrap_or_else(|err| {
-                    tracing::error!(
-                        "store pool item: {} last used duration clock issue, zeroing: {}",
-                        collection_bucket,
-                        err
-                    );
-
-                    // Assuming a zero seconds fallback duration
-                    Duration::from_secs(0)
-                })
-                .as_secs();
-
-            if last_used_elapsed >= inactive_after {
-                tracing::debug!(
-                    "found expired {} store pool item: {}; elapsed time: {}s",
-                    kind,
-                    collection_bucket,
-                    last_used_elapsed
-                );
-
-                // Notice: the bucket value needs to be cloned, as we cannot reference as value \
-                //   that will outlive referenced value once we remove it from its owner set.
-                removal_register.push(*collection_bucket);
-            } else {
-                tracing::debug!(
-                    "found non-expired {} store pool item: {}; elapsed time: {}s",
-                    kind,
-                    collection_bucket,
-                    last_used_elapsed
-                );
-            }
+        for collection_bucket in removal_register.iter() {
+            store_pool_write.remove(collection_bucket);
         }
 
-        if !removal_register.is_empty() {
-            let mut store_pool_write = pool.write().unwrap();
+        RwLockWriteGuard::downgrade(store_pool_write)
+    };
 
-            for collection_bucket in &removal_register {
-                store_pool_write.remove(collection_bucket);
-            }
-        }
-
-        tracing::info!(
-            "done scanning for {} store pool items to janitor, expired {} items, now has {} items",
-            kind,
-            removal_register.len(),
-            pool.read().unwrap().len()
-        );
-    }
+    tracing::info!(
+        "done scanning for {} store pool items to janitor, expired {} items, now has {} items",
+        kind,
+        removal_register.len(),
+        store_pool_read.len(),
+    );
 }
 
 pub trait StoreGenericBuilder<K, S> {

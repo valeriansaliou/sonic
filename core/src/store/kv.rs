@@ -27,11 +27,10 @@ use std::thread;
 use std::time::{Duration, SystemTime};
 
 use crate::config::ConfigStoreKVDatabase;
+use crate::store::generic::{proceed_acquire_cache, proceed_acquire_open, proceed_janitor};
 use crate::util::hash::NoopU32HasherBuilder;
 
-use super::generic::{
-    StoreGeneric, StoreGenericActionBuilder, StoreGenericBuilder, StoreGenericPool,
-};
+use super::generic::{StoreGeneric, StoreGenericActionBuilder, StoreGenericBuilder};
 use super::identifiers::*;
 use super::item::StoreItemPart;
 use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher, StoreKeyerKey, StoreKeyerPrefix};
@@ -148,16 +147,14 @@ impl StoreKVPool {
         match write_guard {
             Some(ref store_pool_write) => {
                 if let Some(store_kv) = store_pool_write.get(&pool_key) {
-                    return Self::proceed_acquire_cache("kv", collection, pool_key, store_kv)
-                        .map(Some);
+                    return proceed_acquire_cache("kv", collection, pool_key, store_kv).map(Some);
                 }
             }
             None => {
                 let store_pool_read = self.pool.read().unwrap();
 
                 if let Some(store_kv) = store_pool_read.get(&pool_key) {
-                    return Self::proceed_acquire_cache("kv", collection, pool_key, store_kv)
-                        .map(Some);
+                    return proceed_acquire_cache("kv", collection, pool_key, store_kv).map(Some);
                 }
             }
         };
@@ -182,7 +179,7 @@ impl StoreKVPool {
         };
 
         // Open KV database.
-        Self::proceed_acquire_open(
+        proceed_acquire_open(
             "kv",
             collection,
             pool_key,
@@ -224,7 +221,7 @@ impl StoreKVPool {
     }
 
     pub fn janitor(&self, filter: impl Fn(&StoreKVKey) -> bool) {
-        Self::proceed_janitor(
+        proceed_janitor(
             "kv",
             &self.pool,
             self.kv_store_config.pool.inactive_after,
@@ -528,8 +525,6 @@ impl StoreKVPool {
         Ok(())
     }
 }
-
-impl StoreGenericPool<StoreKVKey, StoreKV, StoreKVBuilder> for StoreKVPool {}
 
 impl StoreKVBuilder {
     fn open(

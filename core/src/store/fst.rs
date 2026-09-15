@@ -28,11 +28,10 @@ use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
-use super::generic::{
-    StoreGeneric, StoreGenericActionBuilder, StoreGenericBuilder, StoreGenericPool,
-};
+use super::generic::{StoreGeneric, StoreGenericActionBuilder, StoreGenericBuilder};
 use super::keyer::StoreKeyerHasher;
 use crate::lexer::ranges::LexerRegexRange;
+use crate::store::generic::{proceed_acquire_cache, proceed_acquire_open, proceed_janitor};
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
@@ -176,7 +175,7 @@ impl StoreFSTPool {
         let graph_pool_read = self.graph_pool.read().unwrap();
 
         if let Some(store_fst) = graph_pool_read.get(&pool_key) {
-            Self::proceed_acquire_cache("fst", collection_str, pool_key, store_fst)
+            proceed_acquire_cache("fst", collection_str, pool_key, store_fst)
         } else {
             tracing::info!(
                 "fst store not in pool for collection: {} <{:x}> / bucket: {} <{:x}>, opening it",
@@ -196,7 +195,7 @@ impl StoreFSTPool {
                 fst_action_config: self.fst_action_config,
             };
 
-            Self::proceed_acquire_open(
+            proceed_acquire_open(
                 "fst",
                 collection_str,
                 pool_key,
@@ -209,7 +208,7 @@ impl StoreFSTPool {
     }
 
     pub fn janitor(&self, filter: impl Fn(&StoreFSTKey) -> bool) {
-        Self::proceed_janitor(
+        proceed_janitor(
             "fst",
             &self.graph_pool,
             self.fst_store_config.pool.inactive_after,
@@ -865,8 +864,6 @@ impl StoreFSTPool {
             .remove(&bucket_target);
     }
 }
-
-impl<'build> StoreGenericPool<StoreFSTKey, StoreFST, StoreFSTBuilder<'build>> for StoreFSTPool {}
 
 impl<'build> StoreFSTBuilder<'build> {
     fn open(
