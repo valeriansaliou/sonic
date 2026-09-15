@@ -804,9 +804,9 @@ impl StoreFSTPool {
                 tracing::error!("error opening old fst");
             }
 
-            // Reset all pending sets
-            *pending_push_write = HashSet::new();
-            *pending_pop_write = HashSet::new();
+            // Clear all pending sets.
+            pending_push_write.clear();
+            pending_pop_write.clear();
         }
 
         (should_close, count_moved, count_pushed, count_popped)
