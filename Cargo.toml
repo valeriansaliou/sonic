@@ -25,6 +25,7 @@ lto = true
 debug = false
 debug-assertions = false
 strip = true
+panic = "unwind"
 
 [profile.relwithdebinfo]
 inherits = "release"
