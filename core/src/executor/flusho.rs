@@ -8,7 +8,7 @@
 use rocksdb::WriteBatch;
 
 use crate::store::StoreItem;
-use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVPool};
 
 impl super::Executor {
     pub fn flusho(&self, item: StoreItem) -> Result<u32, ()> {
@@ -31,7 +31,7 @@ impl super::Executor {
                 // Important: acquire bucket store write lock
                 executor_kv_lock_write!(kv_store);
 
-                let kv_action = StoreKVActionBuilder::access_read_write(bucket, kv_store);
+                let kv_action = StoreKVPool::access_read_write(bucket, kv_store);
 
                 // Try to resolve existing OID to IID (if it does not exist, there is nothing to \
                 //   be flushed)

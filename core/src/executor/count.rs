@@ -8,7 +8,7 @@
 use crate::store::StoreItem;
 use crate::store::fst::{StoreFSTActionBuilder, StoreFSTMisc};
 use crate::store::kv::StoreKVAcquireMode;
-use crate::store::kv::StoreKVActionBuilder;
+use crate::store::kv::StoreKVPool;
 
 impl super::Executor {
     pub fn count(&self, item: StoreItem) -> Result<u32, ()> {
@@ -33,7 +33,7 @@ impl super::Executor {
                     // Important: acquire bucket store read lock
                     executor_kv_lock_read!(kv_store);
 
-                    let kv_action = StoreKVActionBuilder::access_read_only(bucket, kv_store);
+                    let kv_action = StoreKVPool::access_read_only(bucket, kv_store);
 
                     // Try to resolve existing OID to IID
                     let oid = object.as_str();

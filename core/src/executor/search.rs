@@ -15,7 +15,7 @@ use crate::query::{
 use crate::store::StoreItem;
 use crate::store::fst::{StoreFSTActionBuilder, typo_factor};
 use crate::store::identifiers::{StoreObjectIID, StoreTermHash, StoreTermHashed};
-use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVActionReadOnly};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVActionReadOnly, StoreKVPool};
 use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
@@ -67,7 +67,7 @@ impl super::Executor {
             executor_kv_lock_read!(kv_store);
 
             let (kv_action, fst_action) = (
-                StoreKVActionBuilder::access_read_only(bucket, kv_store),
+                StoreKVPool::access_read_only(bucket, kv_store),
                 StoreFSTActionBuilder::access(fst_store),
             );
 

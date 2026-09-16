@@ -6,7 +6,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::store::StoreItem;
-use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVPool};
 
 impl super::Executor {
     pub fn flushb(&self, item: StoreItem) -> Result<u32, ()> {
@@ -38,7 +38,7 @@ impl super::Executor {
                     collection.as_str()
                 );
 
-                let kv_action = StoreKVActionBuilder::access_read_write(bucket, kv_store);
+                let kv_action = StoreKVPool::access_read_write(bucket, kv_store);
 
                 // Notice: we cannot use the provided KV bucket erasure helper there, as \
                 //   erasing a bucket requires a database lock, which would incur a dead-lock, \

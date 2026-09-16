@@ -69,10 +69,6 @@ pub struct StoreKV {
     iid_incr_per_bucket: RwLock<HashMap<u32, StoreObjectIID, NoopU32HasherBuilder>>,
 }
 
-pub struct StoreKVActionBuilder<'build> {
-    pub kv_pool: &'build StoreKVPool,
-}
-
 pub struct StoreKVActionReadOnly<'a> {
     bucket: StoreItemPart<'a>,
     store: Arc<StoreKV>,
@@ -829,7 +825,7 @@ impl StoreGeneric for StoreKV {
     }
 }
 
-impl<'build> StoreKVActionBuilder<'build> {
+impl StoreKVPool {
     pub fn access_read_only<'a>(
         bucket: StoreItemPart<'a>,
         store: Arc<StoreKV>,
@@ -849,13 +845,13 @@ impl<'build> StoreKVActionBuilder<'build> {
     }
 }
 
-impl<'build> StoreGenericActionBuilder for StoreKVActionBuilder<'build> {
+impl StoreGenericActionBuilder for StoreKVPool {
     fn proceed_erase_collection(&self, collection_str: &str) -> Result<u32, ()> {
         let collection_atom = StoreKeyerHasher::to_compact(collection_str);
-        let collection_path = self.kv_pool.kv_store_config.path(collection_atom);
+        let collection_path = self.kv_store_config.path(collection_atom);
 
         // Force a KV store close
-        self.kv_pool.close_(collection_atom, None);
+        self.close_(collection_atom, None);
 
         if !collection_path.exists() {
             tracing::debug!(
@@ -1575,10 +1571,8 @@ mod tests {
             .acquire(StoreKVAcquireMode::Any, "c:test:3", None, |_| {})
             .unwrap()
             .unwrap();
-        let action = StoreKVActionBuilder::access_read_write(
-            StoreItemPart::from_str("b:test:3").unwrap(),
-            store,
-        );
+        let action =
+            StoreKVPool::access_read_write(StoreItemPart::from_str("b:test:3").unwrap(), store);
 
         assert!(action.get_meta_to_value(StoreMetaKey::IIDIncr).is_ok());
         assert!({

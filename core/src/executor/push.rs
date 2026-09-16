@@ -12,7 +12,7 @@ use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::StoreItem;
 use crate::store::fst::StoreFSTActionBuilder;
-use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVPool};
 use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
@@ -48,7 +48,7 @@ impl super::Executor {
         };
 
         let (kv_action, fst_action) = (
-            StoreKVActionBuilder::access_read_write(bucket, Arc::clone(&kv_store)),
+            StoreKVPool::access_read_write(bucket, Arc::clone(&kv_store)),
             StoreFSTActionBuilder::access(fst_store),
         );
 

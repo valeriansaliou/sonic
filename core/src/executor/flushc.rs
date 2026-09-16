@@ -6,7 +6,6 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::store::StoreItem;
-use crate::store::kv::StoreKVActionBuilder;
 
 impl super::Executor {
     pub fn flushc(&self, item: StoreItem) -> Result<u32, ()> {
@@ -19,12 +18,8 @@ impl super::Executor {
             let _kv_write_guard = self.kv_pool.lock_write_access();
             let _fst_write_guard = self.fst_pool.lock_write_access();
 
-            let kv_action_builder = StoreKVActionBuilder {
-                kv_pool: &self.kv_pool,
-            };
-
             match (
-                kv_action_builder.erase(collection, None),
+                self.kv_pool.erase(collection, None),
                 self.fst_pool.erase(collection, None),
             ) {
                 (Ok(erase_count), Ok(_)) => Ok(erase_count),
