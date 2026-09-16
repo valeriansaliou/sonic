@@ -5,6 +5,8 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+// TODO(major): Change index structure so bucket comes first.
+
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
 use std::fmt;
 use std::hash::Hasher;
