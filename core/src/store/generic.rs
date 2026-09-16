@@ -17,9 +17,9 @@ pub trait StoreGeneric {
 }
 
 pub trait StoreGenericPool:
-    std::ops::Deref<Target = RwLock<HashMap<Self::Key, Arc<Self::Store>, Self::HashBuilder>>>
+    std::ops::Deref<Target = RwLock<HashMap<Self::StoreId, Arc<Self::Store>, Self::HashBuilder>>>
 {
-    type Key: Hash + Eq;
+    type StoreId: Hash + Eq;
     type Store: StoreGeneric;
     type HashBuilder: std::hash::BuildHasher;
 
@@ -37,18 +37,18 @@ pub trait StoreGenericPool:
 pub(super) trait StoreGenericPoolExt: StoreGenericPool {
     fn proceed_acquire_cache(
         collection_str: &str,
-        pool_key: Self::Key,
+        store_id: Self::StoreId,
         store: &Arc<Self::Store>,
     ) -> Result<Arc<Self::Store>, ()>
     where
-        Self::Key: Display,
+        Self::StoreId: Display,
     {
         let kind = Self::kind();
 
         tracing::debug!(
-            "{kind} store acquired from pool for collection: {} (pool key: {})",
+            "{kind} store acquired from pool for collection: {} (id: {})",
             collection_str,
-            pool_key
+            store_id
         );
 
         // Bump store last used date (avoids early janitor eviction)
@@ -61,18 +61,18 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
     fn proceed_acquire_open<'a>(
         &'a self,
         collection_str: &str,
-        pool_key: Self::Key,
-        build: impl FnOnce(&'a Self, Self::Key) -> Result<Self::Store, ()>,
+        store_id: Self::StoreId,
+        build: impl FnOnce(&'a Self, Self::StoreId) -> Result<Self::Store, ()>,
         write_guard: Option<
-            &mut RwLockWriteGuard<'a, HashMap<Self::Key, Arc<Self::Store>, Self::HashBuilder>>,
+            &mut RwLockWriteGuard<'a, HashMap<Self::StoreId, Arc<Self::Store>, Self::HashBuilder>>,
         >,
     ) -> Result<Arc<Self::Store>, ()>
     where
-        Self::Key: Display + Copy,
+        Self::StoreId: Display + Copy,
     {
         let kind = Self::kind();
 
-        match build(self, pool_key) {
+        match build(self, store_id) {
             Ok(store) => {
                 // Acquire a thread-safe store pool reference in write mode
                 let store_pool_write = match write_guard {
@@ -81,17 +81,17 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
                 };
                 let store_box = Arc::new(store);
 
-                store_pool_write.insert(pool_key, Arc::clone(&store_box));
+                store_pool_write.insert(store_id, Arc::clone(&store_box));
 
                 tracing::debug!(
-                    "opened and cached {kind} store in pool for collection: {collection_str} (pool key: {pool_key})"
+                    "opened and cached {kind} store in pool for collection: {collection_str} (id: {store_id})"
                 );
 
                 Ok(store_box)
             }
             Err(_) => {
                 tracing::error!(
-                    "failed opening {kind} store for collection: {collection_str} (pool key: {pool_key})"
+                    "failed opening {kind} store for collection: {collection_str} (id: {store_id})"
                 );
 
                 Err(())
@@ -99,9 +99,9 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
         }
     }
 
-    fn proceed_janitor(&self, filter: impl Fn(&Self::Key) -> bool)
+    fn proceed_janitor(&self, filter: impl Fn(&Self::StoreId) -> bool)
     where
-        Self::Key: Display + Copy,
+        Self::StoreId: Display + Copy,
     {
         let kind = Self::kind();
 
@@ -111,7 +111,7 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
         // Notice: this prevents store to be acquired from any context
         let _access = self.access_lock().write().unwrap();
 
-        let mut removal_register: Vec<Self::Key> = Vec::new();
+        let mut removal_register: Vec<Self::StoreId> = Vec::new();
 
         let store_pool_read = self.read().unwrap();
 

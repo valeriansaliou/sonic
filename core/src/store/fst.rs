@@ -39,20 +39,20 @@ pub struct StoreFSTPool {
     fst_store_config: Arc<crate::config::ConfigStoreFST>,
     // NOTE: This shouldn’t be here, but until a big rewrite let’s not care.
     pub fst_action_config: StoreFSTActionConfig,
-    graph_pool: Arc<RwLock<HashMap<StoreFSTKey, StoreFSTBox>>>,
+    graph_pool: Arc<RwLock<HashMap<StoreFSTId, StoreFSTBox>>>,
     graph_acquire_lock: Arc<Mutex<()>>,
     graph_rebuild_lock: Arc<Mutex<()>>,
     graph_access_lock: Arc<RwLock<()>>,
-    graph_consolidate: Arc<RwLock<HashSet<StoreFSTKey>>>,
+    graph_consolidate: Arc<RwLock<HashSet<StoreFSTId>>>,
 }
 
 pub struct StoreFST {
     graph: FSTSet,
-    target: StoreFSTKey,
+    target: StoreFSTId,
     pending: StoreFSTPending,
     last_used: Arc<RwLock<SystemTime>>,
     last_consolidated: Arc<RwLock<SystemTime>>,
-    graph_consolidate: Arc<RwLock<HashSet<StoreFSTKey>>>,
+    graph_consolidate: Arc<RwLock<HashSet<StoreFSTId>>>,
     // NOTE: This shouldn’t be here, but until a big rewrite let’s not care.
     action_config: StoreFSTActionConfig,
 }
@@ -68,7 +68,7 @@ pub struct StoreFSTActionBuilder<'build> {
 }
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
-pub struct StoreFSTKey {
+pub struct StoreFSTId {
     collection_hash: StoreFSTAtom,
     bucket_hash: StoreFSTAtom,
 }
@@ -147,7 +147,7 @@ impl StoreFSTPool {
     pub fn acquire<T: AsRef<str>>(&self, collection: T, bucket: T) -> Result<Arc<StoreFST>, ()> {
         let (collection, bucket) = (collection.as_ref(), bucket.as_ref());
 
-        let pool_key = StoreFSTKey::from_str(collection, bucket);
+        let store_id = StoreFSTId::from_str(collection, bucket);
 
         // Freeze acquire lock, and reference it in context
         // Notice: this prevents two graphs on the same collection to be opened at the same time.
@@ -156,11 +156,11 @@ impl StoreFSTPool {
         // Acquire a thread-safe store pool reference in read mode
         let graph_pool_read = self.graph_pool.read().unwrap();
 
-        if let Some(store_fst) = graph_pool_read.get(&pool_key) {
-            Self::proceed_acquire_cache(collection, pool_key, store_fst)
+        if let Some(store_fst) = graph_pool_read.get(&store_id) {
+            Self::proceed_acquire_cache(collection, store_id, store_fst)
         } else {
             tracing::info!(
-                ?pool_key,
+                ?store_id,
                 ?collection,
                 ?bucket,
                 "fst store not in pool, opening it"
@@ -170,11 +170,11 @@ impl StoreFSTPool {
             //   when acquiring the RWLock in write mode in this block.
             drop(graph_pool_read);
 
-            self.proceed_acquire_open(collection, pool_key, Self::build, None)
+            self.proceed_acquire_open(collection, store_id, Self::build, None)
         }
     }
 
-    pub fn janitor(&self, filter: impl Fn(&StoreFSTKey) -> bool) {
+    pub fn janitor(&self, filter: impl Fn(&StoreFSTId) -> bool) {
         self.proceed_janitor(filter)
     }
 
@@ -207,7 +207,7 @@ impl StoreFSTPool {
         )
     }
 
-    pub fn consolidate(&self, force: bool, filter: impl Fn(&StoreFSTKey) -> bool) {
+    pub fn consolidate(&self, force: bool, filter: impl Fn(&StoreFSTId) -> bool) {
         tracing::debug!("scanning for fst store pool items to consolidate");
 
         // Notice: we do not consolidate all items at each tick, we try to even out multiple \
@@ -227,7 +227,7 @@ impl StoreFSTPool {
         }
 
         // Step 1: List keys to be consolidated
-        let mut keys_consolidate: Vec<StoreFSTKey> = Vec::new();
+        let mut keys_consolidate: Vec<StoreFSTId> = Vec::new();
 
         {
             // Acquire access lock (in blocking write mode), and reference it in context
@@ -488,7 +488,7 @@ impl StoreFSTPool {
         };
 
         let origin_fst = self
-            .open(StoreFSTKey {
+            .open(StoreFSTId {
                 collection_hash: collection_hash as StoreFSTAtom,
                 bucket_hash: bucket_hash as StoreFSTAtom,
             })
@@ -544,16 +544,16 @@ impl StoreFSTPool {
             return Ok(());
         };
 
-        let store_key =
-            StoreFSTKey::from_atom(collection_hash as StoreFSTAtom, bucket_hash as StoreFSTAtom);
+        let store_id =
+            StoreFSTId::from_atom(collection_hash as StoreFSTAtom, bucket_hash as StoreFSTAtom);
 
         // Force a FST store close.
-        self.close(store_key);
+        self.close(store_id);
 
         // Generate path to FST.
         let fst_path = self
             .fst_store_config
-            .store_path(store_key, StoreFSTPathMode::Permanent);
+            .store_path(store_id, StoreFSTPathMode::Permanent);
 
         // Remove existing FST data?
         if fst_path.exists() {
@@ -798,19 +798,19 @@ impl StoreFSTPool {
         Ok(should_close)
     }
 
-    fn close(&self, key: StoreFSTKey) {
-        tracing::debug!("Closing fst graph {key}");
+    fn close(&self, id: StoreFSTId) {
+        tracing::debug!("Closing fst graph {id}");
 
-        self.graph_pool.write().unwrap().remove(&key);
-        self.graph_consolidate.write().unwrap().remove(&key);
+        self.graph_pool.write().unwrap().remove(&id);
+        self.graph_consolidate.write().unwrap().remove(&id);
     }
 
-    fn open(&self, key: StoreFSTKey) -> Result<FSTSet, FSTError> {
-        tracing::debug!("Opening fst graph for {key}");
+    fn open(&self, id: StoreFSTId) -> Result<FSTSet, FSTError> {
+        tracing::debug!("Opening fst graph for {id}");
 
         let collection_bucket_path = self
             .fst_store_config
-            .store_path(key, StoreFSTPathMode::Permanent);
+            .store_path(id, StoreFSTPathMode::Permanent);
 
         if collection_bucket_path.exists() {
             // Open graph at path for collection
@@ -831,11 +831,11 @@ impl crate::config::ConfigStoreFST {
         self.path.join(format!("{collection_hash:x}"))
     }
 
-    fn store_path(&self, key: StoreFSTKey, mode: StoreFSTPathMode) -> PathBuf {
-        let StoreFSTKey {
+    fn store_path(&self, id: StoreFSTId, mode: StoreFSTPathMode) -> PathBuf {
+        let StoreFSTId {
             collection_hash,
             bucket_hash,
-        } = key;
+        } = id;
 
         let extension = mode.extension();
         assert!(extension.starts_with("."));
@@ -846,15 +846,15 @@ impl crate::config::ConfigStoreFST {
 }
 
 impl StoreFSTPool {
-    fn build(&self, pool_key: StoreFSTKey) -> Result<StoreFST, ()> {
-        let graph = (self.open(pool_key))
+    fn build(&self, store_id: StoreFSTId) -> Result<StoreFST, ()> {
+        let graph = (self.open(store_id))
             .map_err(|error| tracing::error!("Failed opening fst: {error:?}"))?;
 
         let now = SystemTime::now();
 
         Ok(StoreFST {
             graph,
-            target: pool_key,
+            target: store_id,
             pending: StoreFSTPending::default(),
             last_used: Arc::new(RwLock::new(now)),
             last_consolidated: Arc::new(RwLock::new(now)),
@@ -916,16 +916,16 @@ impl StoreFST {
     }
 
     pub fn should_consolidate(&self) {
-        let target = self.target;
+        let id = self.target;
 
         // Check if not already scheduled.
-        if self.graph_consolidate.read().unwrap().contains(&target) {
-            tracing::debug!("Graph consolidation already scheduled on pool key: {target}");
+        if self.graph_consolidate.read().unwrap().contains(&id) {
+            tracing::debug!("Graph consolidation already scheduled on pool: {id}");
             return;
         };
 
         // Schedule target for next consolidation tick (i.e. collection + bucket tuple).
-        self.graph_consolidate.write().unwrap().insert(target);
+        self.graph_consolidate.write().unwrap().insert(id);
 
         // Bump “last consolidated” time, effectively de-bouncing consolidation
         // to a fixed and predictable tick time in the future.
@@ -936,7 +936,7 @@ impl StoreFST {
         // Perform an early drop of the lock (frees up write lock early).
         drop(last_consolidated_value);
 
-        tracing::info!("Graph consolidation scheduled on pool key: {target}");
+        tracing::info!("Graph consolidation scheduled on pool: {id}");
     }
 }
 
@@ -953,7 +953,7 @@ impl StoreFSTPool {
 }
 
 impl std::ops::Deref for StoreFSTPool {
-    type Target = RwLock<HashMap<StoreFSTKey, Arc<StoreFST>>>;
+    type Target = RwLock<HashMap<StoreFSTId, Arc<StoreFST>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.graph_pool
@@ -961,7 +961,7 @@ impl std::ops::Deref for StoreFSTPool {
 }
 
 impl StoreGenericPool for StoreFSTPool {
-    type Key = StoreFSTKey;
+    type StoreId = StoreFSTId;
     type Store = StoreFST;
     type HashBuilder = DefaultHashBuilder;
 
@@ -991,9 +991,9 @@ impl StoreGenericPool for StoreFSTPool {
         {
             let graph_pool_read = self.graph_pool.read().unwrap();
 
-            for target_key in graph_pool_read.keys() {
-                if target_key.collection_hash == collection_atom {
-                    bucket_atoms.push(target_key.bucket_hash);
+            for store_id in graph_pool_read.keys() {
+                if store_id.collection_hash == collection_atom {
+                    bucket_atoms.push(store_id.bucket_hash);
                 }
             }
         }
@@ -1012,7 +1012,7 @@ impl StoreGenericPool for StoreFSTPool {
                     "fst bucket graph force close for bucket: {collection_name}/<{bucket_atom:x}>"
                 );
 
-                let bucket_target = StoreFSTKey::from_atom(collection_atom, bucket_atom);
+                let bucket_target = StoreFSTId::from_atom(collection_atom, bucket_atom);
 
                 graph_pool_write.remove(&bucket_target);
                 graph_consolidate_write.remove(&bucket_target);
@@ -1054,14 +1054,14 @@ impl StoreGenericPool for StoreFSTPool {
             "Sub-erase on fst bucket {bucket_name:?} for collection {collection_name:?}"
         );
 
-        let store_key = StoreFSTKey::from_str(collection_name, bucket_name);
+        let store_id = StoreFSTId::from_str(collection_name, bucket_name);
 
         let bucket_path = self
             .fst_store_config
-            .store_path(store_key, StoreFSTPathMode::Permanent);
+            .store_path(store_id, StoreFSTPathMode::Permanent);
 
         // Force a FST graph close.
-        self.close(store_key);
+        self.close(store_id);
 
         // Remove on-disk FST.
         if bucket_path.exists() {
@@ -1416,16 +1416,16 @@ impl StoreFSTMisc {
     }
 }
 
-impl StoreFSTKey {
-    pub fn from_atom(collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) -> StoreFSTKey {
-        StoreFSTKey {
+impl StoreFSTId {
+    pub fn from_atom(collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) -> StoreFSTId {
+        StoreFSTId {
             collection_hash,
             bucket_hash,
         }
     }
 
-    pub fn from_str(collection_str: &str, bucket_str: &str) -> StoreFSTKey {
-        StoreFSTKey {
+    pub fn from_str(collection_str: &str, bucket_str: &str) -> StoreFSTId {
+        StoreFSTId {
             collection_hash: StoreKeyerHasher::to_compact(collection_str),
             bucket_hash: StoreKeyerHasher::to_compact(bucket_str),
         }
@@ -1535,13 +1535,13 @@ impl fmt::Debug for StoreFSTPool {
     }
 }
 
-impl fmt::Display for StoreFSTKey {
+impl fmt::Display for StoreFSTId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "<{:x}>/<{:x}>", self.collection_hash, self.bucket_hash)
     }
 }
 
-impl fmt::Debug for StoreFSTKey {
+impl fmt::Debug for StoreFSTId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self, f)
     }

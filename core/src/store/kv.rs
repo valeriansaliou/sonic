@@ -38,7 +38,7 @@ use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher, StoreKeyerKey, StoreKeye
 //   force it to be `'static`.
 #[derive(Clone)]
 pub struct StoreKVPool {
-    pool: Arc<RwLock<HashMap<StoreKVKey, Arc<StoreKV>>>>,
+    pool: Arc<RwLock<HashMap<StoreKVId, Arc<StoreKV>>>>,
     kv_store_config: Arc<crate::config::ConfigStoreKV>,
     store_access_lock: Arc<RwLock<()>>,
     store_acquire_lock: Arc<Mutex<()>>,
@@ -75,7 +75,7 @@ pub struct StoreKVActionReadWrite<'a> {
 }
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
-pub struct StoreKVKey {
+pub struct StoreKVId {
     collection_hash: StoreKVAtom,
 }
 
@@ -118,11 +118,11 @@ impl StoreKVPool {
         &'a self,
         mode: StoreKVAcquireMode,
         collection: impl AsRef<str>,
-        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVKey, Arc<StoreKV>>>>,
+        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVId, Arc<StoreKV>>>>,
         override_options: impl FnOnce(&mut rocksdb::Options),
     ) -> Result<Option<Arc<StoreKV>>, ()> {
         let collection = collection.as_ref();
-        let pool_key = StoreKVKey::from_str(collection);
+        let store_id = StoreKVId::from_str(collection);
 
         // Freeze acquire lock, and reference it in context
         // Notice: this prevents two databases on the same collection to be opened at the same time.
@@ -131,24 +131,24 @@ impl StoreKVPool {
         // Return cached value if store is already open.
         match write_guard {
             Some(ref store_pool_write) => {
-                if let Some(store_kv) = store_pool_write.get(&pool_key) {
-                    return Self::proceed_acquire_cache(collection, pool_key, store_kv).map(Some);
+                if let Some(store_kv) = store_pool_write.get(&store_id) {
+                    return Self::proceed_acquire_cache(collection, store_id, store_kv).map(Some);
                 }
             }
             None => {
                 let store_pool_read = self.pool.read().unwrap();
 
-                if let Some(store_kv) = store_pool_read.get(&pool_key) {
-                    return Self::proceed_acquire_cache(collection, pool_key, store_kv).map(Some);
+                if let Some(store_kv) = store_pool_read.get(&store_id) {
+                    return Self::proceed_acquire_cache(collection, store_id, store_kv).map(Some);
                 }
             }
         };
 
-        tracing::info!("kv store not in pool for collection: {collection} {pool_key}, opening it");
+        tracing::info!("kv store not in pool for collection: {collection} {store_id}, opening it");
 
         // Check if can open database?
         let can_open_db = if mode == StoreKVAcquireMode::OpenOnly {
-            self.kv_store_config.store_path(pool_key).exists()
+            self.kv_store_config.store_path(store_id).exists()
         } else {
             true
         };
@@ -162,8 +162,8 @@ impl StoreKVPool {
         // Open KV database.
         self.proceed_acquire_open(
             collection,
-            pool_key,
-            |pool, pool_key| pool.build(pool_key, override_options),
+            store_id,
+            |pool, store_id| pool.build(store_id, override_options),
             write_guard,
         )
         .map(Some)
@@ -171,30 +171,30 @@ impl StoreKVPool {
 
     fn close_<'a>(
         &'a self,
-        key: StoreKVKey,
-        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVKey, Arc<StoreKV>>>>,
+        store_id: StoreKVId,
+        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVId, Arc<StoreKV>>>>,
     ) {
-        tracing::debug!("closing key-value database for collection: {key}");
+        tracing::debug!("closing key-value database for collection: {store_id}");
 
         let store_pool_write = match write_guard {
             Some(x) => x,
             None => &mut self.pool.write().unwrap(),
         };
 
-        store_pool_write.remove(&key);
+        store_pool_write.remove(&store_id);
     }
 
     pub fn close<'a>(
         &'a self,
         collection_name: &str,
-        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVKey, Arc<StoreKV>>>>,
+        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVId, Arc<StoreKV>>>>,
     ) -> Result<(), ()> {
-        self.close_(StoreKVKey::from_str(collection_name), write_guard);
+        self.close_(StoreKVId::from_str(collection_name), write_guard);
 
         Ok(())
     }
 
-    pub fn janitor(&self, filter: impl Fn(&StoreKVKey) -> bool) {
+    pub fn janitor(&self, filter: impl Fn(&StoreKVId) -> bool) {
         self.proceed_janitor(filter)
     }
 
@@ -225,7 +225,7 @@ impl StoreKVPool {
         )
     }
 
-    pub fn flush(&self, force: bool, filter: impl Fn(&StoreKVKey) -> bool) {
+    pub fn flush(&self, force: bool, filter: impl Fn(&StoreKVId) -> bool) {
         tracing::debug!("scanning for kv store pool items to flush to disk");
 
         // Acquire flush lock, and reference it in context
@@ -233,7 +233,7 @@ impl StoreKVPool {
         let _flush = self.store_flush_lock.lock().unwrap();
 
         // Step 1: List keys to be flushed
-        let mut keys_flush: Vec<StoreKVKey> = Vec::new();
+        let mut keys_flush: Vec<StoreKVId> = Vec::new();
 
         let store_pool_read = self.pool.read().unwrap();
 
@@ -315,27 +315,27 @@ impl StoreKVPool {
             None => tracing::debug!("compacting all collections…"),
         }
 
-        let collections: Vec<StoreKVKey> = match collections_opt {
+        let store_ids: Vec<StoreKVId> = match collections_opt {
             Some(collections) => collections
                 .iter()
-                .map(|&s| StoreKVKey::from_str(s))
+                .map(|&s| StoreKVId::from_str(s))
                 .collect(),
             None => {
                 let pool_guard = self.pool.read().unwrap();
 
-                let collections = pool_guard.keys().map(StoreKVKey::to_owned).collect();
+                let store_ids = pool_guard.keys().map(StoreKVId::to_owned).collect();
 
                 drop(pool_guard);
 
-                collections
+                store_ids
             }
         };
 
-        for collection_hash in collections.iter() {
+        for store_id in store_ids.iter() {
             let pool_guard = self.pool.write().unwrap();
 
-            let Some(store) = pool_guard.get(collection_hash).map(Arc::clone) else {
-                tracing::warn!("Cannot compact {collection_hash:?}: no open connection");
+            let Some(store) = pool_guard.get(store_id).map(Arc::clone) else {
+                tracing::warn!("Cannot compact {store_id:?}: no open connection");
                 continue;
             };
 
@@ -351,7 +351,7 @@ impl StoreKVPool {
             thread::yield_now();
         }
 
-        tracing::info!("done compacting {collections:?}");
+        tracing::info!("done compacting {store_ids:?}");
     }
 
     #[allow(clippy::type_complexity)]
@@ -415,10 +415,7 @@ impl StoreKVPool {
         };
 
         let origin_kv = self
-            .open(
-                StoreKVKey::from_atom(collection_hash as StoreKVAtom),
-                |_| {},
-            )
+            .open(StoreKVId::from_atom(collection_hash as StoreKVAtom), |_| {})
             .map_err(|_| io::Error::other("database open failure"))?;
 
         // Initialize KV database backup engine
@@ -460,13 +457,13 @@ impl StoreKVPool {
             return Ok(());
         };
 
-        let store_key = StoreKVKey::from_atom(collection_hash as StoreKVAtom);
+        let store_id = StoreKVId::from_atom(collection_hash as StoreKVAtom);
 
         // Force a KV store close
-        self.close_(store_key, None);
+        self.close_(store_id, None);
 
         // Generate path to KV
-        let kv_path = self.kv_store_config.store_path(store_key);
+        let kv_path = self.kv_store_config.store_path(store_id);
 
         // Remove existing KV database data?
         if kv_path.exists() {
@@ -498,10 +495,10 @@ impl StoreKVPool {
 
     fn open(
         &self,
-        key: StoreKVKey,
+        store_id: StoreKVId,
         override_options: impl FnOnce(&mut rocksdb::Options),
     ) -> Result<DB, DBError> {
-        tracing::debug!("opening key-value database for collection: {key}");
+        tracing::debug!("opening key-value database for collection: {store_id}");
 
         // Configure database options
         let mut db_options = self.configure();
@@ -509,7 +506,7 @@ impl StoreKVPool {
         override_options(&mut db_options);
 
         // Open database at path for collection
-        DB::open(&db_options, self.kv_store_config.store_path(key))
+        DB::open(&db_options, self.kv_store_config.store_path(store_id))
     }
 
     #[rustfmt::skip]
@@ -651,8 +648,8 @@ impl StoreKVPool {
 }
 
 impl crate::config::ConfigStoreKV {
-    fn store_path(&self, key: StoreKVKey) -> PathBuf {
-        let StoreKVKey { collection_hash } = key;
+    fn store_path(&self, id: StoreKVId) -> PathBuf {
+        let StoreKVId { collection_hash } = id;
 
         self.path.join(format!("{collection_hash:x}"))
     }
@@ -661,10 +658,10 @@ impl crate::config::ConfigStoreKV {
 impl StoreKVPool {
     fn build(
         &self,
-        pool_key: StoreKVKey,
+        store_id: StoreKVId,
         override_options: impl FnOnce(&mut rocksdb::Options),
     ) -> Result<StoreKV, ()> {
-        match self.open(pool_key, override_options) {
+        match self.open(store_id, override_options) {
             Ok(db) => {
                 let now = SystemTime::now();
 
@@ -824,7 +821,7 @@ impl StoreKVPool {
 }
 
 impl std::ops::Deref for StoreKVPool {
-    type Target = RwLock<HashMap<StoreKVKey, Arc<StoreKV>>>;
+    type Target = RwLock<HashMap<StoreKVId, Arc<StoreKV>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.pool
@@ -832,7 +829,7 @@ impl std::ops::Deref for StoreKVPool {
 }
 
 impl StoreGenericPool for StoreKVPool {
-    type Key = StoreKVKey;
+    type StoreId = StoreKVId;
     type Store = StoreKV;
     type HashBuilder = DefaultHashBuilder;
 
@@ -849,11 +846,11 @@ impl StoreGenericPool for StoreKVPool {
     }
 
     fn proceed_erase_collection(&self, collection_str: &str) -> Result<u32, ()> {
-        let store_key = StoreKVKey::from_str(collection_str);
-        let collection_path = self.kv_store_config.store_path(store_key);
+        let store_id = StoreKVId::from_str(collection_str);
+        let collection_path = self.kv_store_config.store_path(store_id);
 
         // Force a KV store close
-        self.close_(store_key, None);
+        self.close_(store_id, None);
 
         if !collection_path.exists() {
             tracing::debug!(
@@ -1530,14 +1527,14 @@ fn u32_max(existing_val: Option<&[u8]>, operands: &MergeOperands) -> Option<Vec<
     Some(encode_u32(res).to_vec())
 }
 
-impl StoreKVKey {
-    pub fn from_atom(collection_hash: StoreKVAtom) -> StoreKVKey {
-        StoreKVKey { collection_hash }
+impl StoreKVId {
+    pub fn from_atom(collection_hash: StoreKVAtom) -> StoreKVId {
+        StoreKVId { collection_hash }
     }
 
     #[allow(clippy::should_implement_trait)]
-    pub fn from_str(collection_str: &str) -> StoreKVKey {
-        StoreKVKey {
+    pub fn from_str(collection_str: &str) -> StoreKVId {
+        StoreKVId {
             collection_hash: StoreKeyerHasher::to_compact(collection_str),
         }
     }
@@ -1547,7 +1544,7 @@ impl StoreKVKey {
     }
 }
 
-impl fmt::Display for StoreKVKey {
+impl fmt::Display for StoreKVId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "<{:x}>", self.collection_hash)
     }
@@ -1773,7 +1770,7 @@ impl fmt::Debug for StoreKVPool {
     }
 }
 
-impl fmt::Debug for StoreKVKey {
+impl fmt::Debug for StoreKVId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self, f)
     }
