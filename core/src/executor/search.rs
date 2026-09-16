@@ -66,7 +66,7 @@ impl super::Executor {
             // Important: acquire bucket store read lock
             executor_kv_lock_read!(kv_store);
 
-            let kv_action = StoreKVPool::access_read_only(bucket, kv_store);
+            let kv_action = StoreKVPool::access_read_only(bucket, &kv_store);
 
             // FIXME: `IIDIncr` will get out-of-sync after a `FLUSHO`
             //   (see https://github.com/valeriansaliou/sonic/issues/392).

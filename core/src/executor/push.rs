@@ -6,7 +6,6 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use rocksdb::WriteBatch;
-use std::sync::Arc;
 
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
@@ -46,7 +45,7 @@ impl super::Executor {
             return Err(());
         };
 
-        let kv_action = StoreKVPool::access_read_write(bucket, Arc::clone(&kv_store));
+        let kv_action = StoreKVPool::access_read_write(bucket, &kv_store);
 
         let mut batch = WriteBatch::default();
 

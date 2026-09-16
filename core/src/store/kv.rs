@@ -71,12 +71,12 @@ pub struct StoreKV {
 
 pub struct StoreKVActionReadOnly<'a> {
     bucket: StoreItemPart<'a>,
-    store: Arc<StoreKV>,
+    store: &'a StoreKV,
 }
 
 pub struct StoreKVActionReadWrite<'a> {
     bucket: StoreItemPart<'a>,
-    store: Arc<StoreKV>,
+    store: &'a StoreKV,
 }
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
@@ -828,14 +828,14 @@ impl StoreGeneric for StoreKV {
 impl StoreKVPool {
     pub fn access_read_only<'a>(
         bucket: StoreItemPart<'a>,
-        store: Arc<StoreKV>,
+        store: &'a StoreKV,
     ) -> StoreKVActionReadOnly<'a> {
         StoreKVActionReadOnly { bucket, store }
     }
 
     pub fn access_read_write<'a>(
         bucket: StoreItemPart<'a>,
-        store: Arc<StoreKV>,
+        store: &'a StoreKV,
     ) -> StoreKVActionReadWrite<'a> {
         StoreKVActionReadWrite { bucket, store }
     }
@@ -1062,10 +1062,10 @@ impl<'a> StoreKVActionReadOnly<'a> {
 
 impl<'a> StoreKVActionReadWrite<'a> {
     /// This is `O(1)`, nothing meaningful happens.
-    fn to_read_only<'b>(&'b self) -> StoreKVActionReadOnly<'b> {
+    fn as_read_only<'b>(&'b self) -> StoreKVActionReadOnly<'b> {
         StoreKVActionReadOnly {
             bucket: self.bucket,
-            store: Arc::clone(&self.store),
+            store: self.store,
         }
     }
 
@@ -1073,7 +1073,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
     ///
     /// [IDX=0] ((meta)) ~> ((value))
     pub fn get_meta_to_value(&self, meta: StoreMetaKey) -> Result<Option<StoreMetaValue>, ()> {
-        self.to_read_only().get_meta_to_value(meta)
+        self.as_read_only().get_meta_to_value(meta)
     }
 
     pub fn set_meta_to_value(
@@ -1094,7 +1094,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
     }
 
     pub fn get_iid_incr(&self) -> Result<Option<StoreObjectIID>, Box<dyn std::error::Error>> {
-        self.to_read_only().get_iid_incr()
+        self.as_read_only().get_iid_incr()
     }
 
     pub fn get_new_iid(&self, batch: &mut WriteBatch) -> StoreObjectIID {
@@ -1109,7 +1109,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
         &self,
         term_hashed: StoreTermHashed,
     ) -> Result<Option<Vec<StoreObjectIID>>, ()> {
-        self.to_read_only().get_term_to_iids(term_hashed)
+        self.as_read_only().get_term_to_iids(term_hashed)
     }
 
     // TODO(pref): Update merge operator to support deletion and get rid of this.
@@ -1158,7 +1158,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
     ///
     /// [IDX=2] ((oid)) ~> ((iid))
     pub fn get_oid_to_iid(&self, oid: StoreObjectOID) -> Result<Option<StoreObjectIID>, ()> {
-        self.to_read_only().get_oid_to_iid(oid)
+        self.as_read_only().get_oid_to_iid(oid)
     }
 
     pub fn set_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOID, iid: StoreObjectIID) {
@@ -1186,7 +1186,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
     ///
     /// [IDX=3] ((iid)) ~> ((oid))
     pub fn get_iid_to_oid(&self, iid: StoreObjectIID) -> Result<Option<String>, ()> {
-        self.to_read_only().get_iid_to_oid(iid)
+        self.as_read_only().get_iid_to_oid(iid)
     }
 
     pub fn set_iid_to_oid(&self, batch: &mut WriteBatch, iid: StoreObjectIID, oid: StoreObjectOID) {
@@ -1212,7 +1212,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
         &self,
         iid: StoreObjectIID,
     ) -> Result<Option<Vec<StoreTermHashed>>, ()> {
-        self.to_read_only().get_iid_to_terms(iid)
+        self.as_read_only().get_iid_to_terms(iid)
     }
 
     pub fn set_iid_to_terms(
@@ -1572,7 +1572,7 @@ mod tests {
             .unwrap()
             .unwrap();
         let action =
-            StoreKVPool::access_read_write(StoreItemPart::from_str("b:test:3").unwrap(), store);
+            StoreKVPool::access_read_write(StoreItemPart::from_str("b:test:3").unwrap(), &store);
 
         assert!(action.get_meta_to_value(StoreMetaKey::IIDIncr).is_ok());
         assert!({
