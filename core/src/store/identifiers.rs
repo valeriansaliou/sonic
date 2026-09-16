@@ -4,9 +4,6 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use std::hash::Hasher;
-use twox_hash::XxHash32;
-
 macro_rules! impl_u32_wrapper_utils {
     ($t:ty) => {
         impl From<u32> for $t {
@@ -85,6 +82,9 @@ impl StoreMetaKey {
 
 impl From<&str> for StoreTermHash {
     fn from(term: &str) -> Self {
+        use std::hash::Hasher as _;
+        use twox_hash::XxHash32;
+
         let mut hasher = XxHash32::with_seed(0);
 
         hasher.write(term.as_bytes());
