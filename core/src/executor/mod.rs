@@ -132,7 +132,7 @@ impl Executor {
             "Re-opening KV store connection for {collection:?} with new dynamic configuration overrides…"
         );
 
-        let mut kv_pool_write_guard = self.kv_pool.pool_write_guard();
+        let mut kv_pool_write_guard = self.kv_pool.write().unwrap();
 
         self.kv_pool
             .close(collection, Some(&mut kv_pool_write_guard))

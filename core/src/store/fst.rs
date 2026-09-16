@@ -13,7 +13,7 @@ use fst::{
 };
 use fst_levenshtein::Levenshtein;
 use fst_regex::Regex;
-use hashbrown::{HashMap, HashSet};
+use hashbrown::{DefaultHashBuilder, HashMap, HashSet};
 use indexmap::IndexMap;
 use radix::RadixNum;
 use regex_syntax::escape as regex_escape;
@@ -28,10 +28,12 @@ use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
-use super::generic::{StoreGeneric, StoreGenericActionBuilder};
+use super::generic::{StoreGeneric, StoreGenericPool};
 use super::keyer::StoreKeyerHasher;
 use crate::lexer::ranges::LexerRegexRange;
-use crate::store::generic::{proceed_acquire_cache, proceed_acquire_open, proceed_janitor};
+use crate::store::generic::{
+    dispatch_erase, proceed_acquire_cache, proceed_acquire_open, proceed_janitor,
+};
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
@@ -145,7 +147,7 @@ impl StoreFSTPool {
         self.graph_access_lock.write().unwrap()
     }
 
-    pub fn acquire<T: AsRef<str>>(&self, collection: T, bucket: T) -> Result<StoreFSTBox, ()> {
+    pub fn acquire<T: AsRef<str>>(&self, collection: T, bucket: T) -> Result<Arc<StoreFST>, ()> {
         let (collection, bucket) = (collection.as_ref(), bucket.as_ref());
 
         let pool_key = StoreFSTKey::from_str(collection, bucket);
@@ -158,7 +160,7 @@ impl StoreFSTPool {
         let graph_pool_read = self.graph_pool.read().unwrap();
 
         if let Some(store_fst) = graph_pool_read.get(&pool_key) {
-            proceed_acquire_cache("fst", collection, pool_key, store_fst)
+            proceed_acquire_cache::<StoreFSTPool>(collection, pool_key, store_fst)
         } else {
             tracing::info!(
                 ?pool_key,
@@ -171,25 +173,12 @@ impl StoreFSTPool {
             //   when acquiring the RWLock in write mode in this block.
             drop(graph_pool_read);
 
-            proceed_acquire_open(
-                "fst",
-                collection,
-                pool_key,
-                &self.graph_pool,
-                |pool_key| self.build(pool_key),
-                None,
-            )
+            proceed_acquire_open(self, collection, pool_key, Self::build, None)
         }
     }
 
     pub fn janitor(&self, filter: impl Fn(&StoreFSTKey) -> bool) {
-        proceed_janitor(
-            "fst",
-            &self.graph_pool,
-            self.fst_store_config.pool.inactive_after,
-            &self.graph_access_lock,
-            filter,
-        )
+        proceed_janitor(self, filter)
     }
 
     pub fn backup(&self, path: &Path) -> Result<(), io::Error> {
@@ -962,11 +951,35 @@ impl StoreGeneric for StoreFST {
 
 impl StoreFSTPool {
     pub fn erase<T: AsRef<str>>(&self, collection: T, bucket: Option<T>) -> Result<u32, ()> {
-        self.dispatch_erase("fst", collection, bucket)
+        dispatch_erase(self, collection, bucket)
     }
 }
 
-impl StoreGenericActionBuilder for StoreFSTPool {
+impl std::ops::Deref for StoreFSTPool {
+    type Target = RwLock<HashMap<StoreFSTKey, Arc<StoreFST>>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.graph_pool
+    }
+}
+
+impl StoreGenericPool for StoreFSTPool {
+    type Key = StoreFSTKey;
+    type Store = StoreFST;
+    type HashBuilder = DefaultHashBuilder;
+
+    fn kind() -> &'static str {
+        "fst"
+    }
+
+    fn consider_inactive_after_secs(&self) -> u64 {
+        self.fst_store_config.pool.inactive_after
+    }
+
+    fn access_lock(&self) -> &RwLock<()> {
+        &self.graph_access_lock
+    }
+
     fn proceed_erase_collection(&self, collection_name: &str) -> Result<u32, ()> {
         let collection_atom = StoreKeyerHasher::to_compact(collection_name);
         let collection_path = self.fst_store_config.collection_path(collection_atom);

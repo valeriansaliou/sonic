@@ -6,7 +6,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
-use hashbrown::HashMap;
+use hashbrown::{DefaultHashBuilder, HashMap};
 use radix::RadixNum;
 use rocksdb::backup::{
     BackupEngine as DBBackupEngine, BackupEngineOptions as DBBackupEngineOptions,
@@ -27,10 +27,12 @@ use std::thread;
 use std::time::{Duration, SystemTime};
 
 use crate::config::ConfigStoreKVDatabase;
-use crate::store::generic::{proceed_acquire_cache, proceed_acquire_open, proceed_janitor};
+use crate::store::generic::{
+    dispatch_erase, proceed_acquire_cache, proceed_acquire_open, proceed_janitor,
+};
 use crate::util::hash::NoopU32HasherBuilder;
 
-use super::generic::{StoreGeneric, StoreGenericActionBuilder};
+use super::generic::{StoreGeneric, StoreGenericPool};
 use super::identifiers::*;
 use super::item::StoreItemPart;
 use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher, StoreKeyerKey, StoreKeyerPrefix};
@@ -113,12 +115,6 @@ impl StoreKVPool {
         self.store_access_lock.write().unwrap()
     }
 
-    pub fn pool_write_guard<'a>(
-        &'a self,
-    ) -> RwLockWriteGuard<'a, HashMap<StoreKVKey, Arc<StoreKV>>> {
-        self.pool.write().unwrap()
-    }
-
     // TODO(refactor): Replace `mode` and `config_overrides` by a struct with
     //   `create_if_missing: bool` instead of `mode` and `bypass_cache: bool`.
     pub fn acquire<'a>(
@@ -139,14 +135,16 @@ impl StoreKVPool {
         match write_guard {
             Some(ref store_pool_write) => {
                 if let Some(store_kv) = store_pool_write.get(&pool_key) {
-                    return proceed_acquire_cache("kv", collection, pool_key, store_kv).map(Some);
+                    return proceed_acquire_cache::<StoreKVPool>(collection, pool_key, store_kv)
+                        .map(Some);
                 }
             }
             None => {
                 let store_pool_read = self.pool.read().unwrap();
 
                 if let Some(store_kv) = store_pool_read.get(&pool_key) {
-                    return proceed_acquire_cache("kv", collection, pool_key, store_kv).map(Some);
+                    return proceed_acquire_cache::<StoreKVPool>(collection, pool_key, store_kv)
+                        .map(Some);
                 }
             }
         };
@@ -168,11 +166,10 @@ impl StoreKVPool {
 
         // Open KV database.
         proceed_acquire_open(
-            "kv",
+            self,
             collection,
             pool_key,
-            &self.pool,
-            |pool_key| self.build(pool_key, override_options),
+            |pool, pool_key| pool.build(pool_key, override_options),
             write_guard,
         )
         .map(Some)
@@ -204,13 +201,7 @@ impl StoreKVPool {
     }
 
     pub fn janitor(&self, filter: impl Fn(&StoreKVKey) -> bool) {
-        proceed_janitor(
-            "kv",
-            &self.pool,
-            self.kv_store_config.pool.inactive_after,
-            &self.store_access_lock,
-            filter,
-        )
+        proceed_janitor(self, filter)
     }
 
     pub fn backup(&self, path: &Path) -> Result<(), io::Error> {
@@ -834,11 +825,35 @@ impl StoreKV {
 
 impl StoreKVPool {
     pub fn erase<T: AsRef<str>>(&self, collection: T, bucket: Option<T>) -> Result<u32, ()> {
-        self.dispatch_erase("kv", collection, bucket)
+        dispatch_erase(self, collection, bucket)
     }
 }
 
-impl StoreGenericActionBuilder for StoreKVPool {
+impl std::ops::Deref for StoreKVPool {
+    type Target = RwLock<HashMap<StoreKVKey, Arc<StoreKV>>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.pool
+    }
+}
+
+impl StoreGenericPool for StoreKVPool {
+    type Key = StoreKVKey;
+    type Store = StoreKV;
+    type HashBuilder = DefaultHashBuilder;
+
+    fn kind() -> &'static str {
+        "kv"
+    }
+
+    fn consider_inactive_after_secs(&self) -> u64 {
+        self.kv_store_config.pool.inactive_after
+    }
+
+    fn access_lock(&self) -> &RwLock<()> {
+        &self.store_access_lock
+    }
+
     fn proceed_erase_collection(&self, collection_str: &str) -> Result<u32, ()> {
         let store_key = StoreKVKey::from_str(collection_str);
         let collection_path = self.kv_store_config.store_path(store_key);
