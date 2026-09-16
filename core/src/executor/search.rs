@@ -15,7 +15,7 @@ use crate::query::{
 use crate::store::StoreItem;
 use crate::store::fst::typo_factor;
 use crate::store::identifiers::{StoreObjectIID, StoreTermHash, StoreTermHashed};
-use crate::store::kv::{StoreKVAcquireMode, StoreKVActionReadOnly, StoreKVPool};
+use crate::store::kv::{StoreKVAcquireMode, StoreKVActionReadOnly};
 use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
@@ -66,7 +66,7 @@ impl super::Executor {
             // Important: acquire bucket store read lock
             executor_kv_lock_read!(kv_store);
 
-            let kv_action = StoreKVPool::access_read_only(bucket, &kv_store);
+            let kv_action = kv_store.access_read_only(bucket);
 
             // FIXME: `IIDIncr` will get out-of-sync after a `FLUSHO`
             //   (see https://github.com/valeriansaliou/sonic/issues/392).

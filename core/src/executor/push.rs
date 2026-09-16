@@ -10,7 +10,7 @@ use rocksdb::WriteBatch;
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::StoreItem;
-use crate::store::kv::{StoreKVAcquireMode, StoreKVPool};
+use crate::store::kv::StoreKVAcquireMode;
 use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
@@ -45,7 +45,7 @@ impl super::Executor {
             return Err(());
         };
 
-        let kv_action = StoreKVPool::access_read_write(bucket, &kv_store);
+        let kv_action = kv_store.access_read_write(bucket);
 
         let mut batch = WriteBatch::default();
 

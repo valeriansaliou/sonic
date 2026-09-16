@@ -825,21 +825,26 @@ impl StoreGeneric for StoreKV {
     }
 }
 
-impl StoreKVPool {
-    pub fn access_read_only<'a>(
-        bucket: StoreItemPart<'a>,
-        store: &'a StoreKV,
-    ) -> StoreKVActionReadOnly<'a> {
-        StoreKVActionReadOnly { bucket, store }
+impl StoreKV {
+    pub fn access_read_only<'a>(&'a self, bucket: StoreItemPart<'a>) -> StoreKVActionReadOnly<'a> {
+        StoreKVActionReadOnly {
+            bucket,
+            store: self,
+        }
     }
 
     pub fn access_read_write<'a>(
+        &'a self,
         bucket: StoreItemPart<'a>,
-        store: &'a StoreKV,
     ) -> StoreKVActionReadWrite<'a> {
-        StoreKVActionReadWrite { bucket, store }
+        StoreKVActionReadWrite {
+            bucket,
+            store: self,
+        }
     }
+}
 
+impl StoreKVPool {
     pub fn erase<T: AsRef<str>>(&self, collection: T, bucket: Option<T>) -> Result<u32, ()> {
         self.dispatch_erase("kv", collection, bucket)
     }
@@ -1571,8 +1576,7 @@ mod tests {
             .acquire(StoreKVAcquireMode::Any, "c:test:3", None, |_| {})
             .unwrap()
             .unwrap();
-        let action =
-            StoreKVPool::access_read_write(StoreItemPart::from_str("b:test:3").unwrap(), &store);
+        let action = store.access_read_write(StoreItemPart::from_str("b:test:3").unwrap());
 
         assert!(action.get_meta_to_value(StoreMetaKey::IIDIncr).is_ok());
         assert!({
