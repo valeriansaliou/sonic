@@ -27,12 +27,9 @@ use std::thread;
 use std::time::{Duration, SystemTime};
 
 use crate::config::ConfigStoreKVDatabase;
-use crate::store::generic::{
-    dispatch_erase, proceed_acquire_cache, proceed_acquire_open, proceed_janitor,
-};
 use crate::util::hash::NoopU32HasherBuilder;
 
-use super::generic::{StoreGeneric, StoreGenericPool};
+use super::generic::{StoreGeneric, StoreGenericPool, StoreGenericPoolExt as _};
 use super::identifiers::*;
 use super::item::StoreItemPart;
 use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher, StoreKeyerKey, StoreKeyerPrefix};
@@ -135,16 +132,14 @@ impl StoreKVPool {
         match write_guard {
             Some(ref store_pool_write) => {
                 if let Some(store_kv) = store_pool_write.get(&pool_key) {
-                    return proceed_acquire_cache::<StoreKVPool>(collection, pool_key, store_kv)
-                        .map(Some);
+                    return Self::proceed_acquire_cache(collection, pool_key, store_kv).map(Some);
                 }
             }
             None => {
                 let store_pool_read = self.pool.read().unwrap();
 
                 if let Some(store_kv) = store_pool_read.get(&pool_key) {
-                    return proceed_acquire_cache::<StoreKVPool>(collection, pool_key, store_kv)
-                        .map(Some);
+                    return Self::proceed_acquire_cache(collection, pool_key, store_kv).map(Some);
                 }
             }
         };
@@ -165,8 +160,7 @@ impl StoreKVPool {
         }
 
         // Open KV database.
-        proceed_acquire_open(
-            self,
+        self.proceed_acquire_open(
             collection,
             pool_key,
             |pool, pool_key| pool.build(pool_key, override_options),
@@ -201,7 +195,7 @@ impl StoreKVPool {
     }
 
     pub fn janitor(&self, filter: impl Fn(&StoreKVKey) -> bool) {
-        proceed_janitor(self, filter)
+        self.proceed_janitor(filter)
     }
 
     pub fn backup(&self, path: &Path) -> Result<(), io::Error> {
@@ -825,7 +819,7 @@ impl StoreKV {
 
 impl StoreKVPool {
     pub fn erase<T: AsRef<str>>(&self, collection: T, bucket: Option<T>) -> Result<u32, ()> {
-        dispatch_erase(self, collection, bucket)
+        self.dispatch_erase(collection, bucket)
     }
 }
 

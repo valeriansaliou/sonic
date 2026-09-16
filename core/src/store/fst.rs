@@ -28,12 +28,9 @@ use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
-use super::generic::{StoreGeneric, StoreGenericPool};
+use super::generic::{StoreGeneric, StoreGenericPool, StoreGenericPoolExt as _};
 use super::keyer::StoreKeyerHasher;
 use crate::lexer::ranges::LexerRegexRange;
-use crate::store::generic::{
-    dispatch_erase, proceed_acquire_cache, proceed_acquire_open, proceed_janitor,
-};
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
@@ -160,7 +157,7 @@ impl StoreFSTPool {
         let graph_pool_read = self.graph_pool.read().unwrap();
 
         if let Some(store_fst) = graph_pool_read.get(&pool_key) {
-            proceed_acquire_cache::<StoreFSTPool>(collection, pool_key, store_fst)
+            Self::proceed_acquire_cache(collection, pool_key, store_fst)
         } else {
             tracing::info!(
                 ?pool_key,
@@ -173,12 +170,12 @@ impl StoreFSTPool {
             //   when acquiring the RWLock in write mode in this block.
             drop(graph_pool_read);
 
-            proceed_acquire_open(self, collection, pool_key, Self::build, None)
+            self.proceed_acquire_open(collection, pool_key, Self::build, None)
         }
     }
 
     pub fn janitor(&self, filter: impl Fn(&StoreFSTKey) -> bool) {
-        proceed_janitor(self, filter)
+        self.proceed_janitor(filter)
     }
 
     pub fn backup(&self, path: &Path) -> Result<(), io::Error> {
@@ -951,7 +948,7 @@ impl StoreGeneric for StoreFST {
 
 impl StoreFSTPool {
     pub fn erase<T: AsRef<str>>(&self, collection: T, bucket: Option<T>) -> Result<u32, ()> {
-        dispatch_erase(self, collection, bucket)
+        self.dispatch_erase(collection, bucket)
     }
 }
 
