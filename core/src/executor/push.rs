@@ -80,7 +80,7 @@ impl super::Executor {
 
         for token in &mut tokens {
             let term = token.as_normalized();
-            let term_hashed = token.hash();
+            let term_hash = token.hash();
 
             // Push to FST graph? (this consumes the term; to avoid sub-clones)
             if fst_store.push_word(&term, &self.app_conf.store.fst) {
@@ -88,7 +88,7 @@ impl super::Executor {
             }
 
             // Link IID to term
-            kv_action.add_term_to_iids(&mut batch, term_hashed, std::iter::once(iid));
+            kv_action.add_term_to_iids(&mut batch, term_hash, std::iter::once(iid));
         }
 
         // Link terms to IID

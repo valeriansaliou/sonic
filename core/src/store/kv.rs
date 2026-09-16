@@ -927,9 +927,9 @@ impl<'a> StoreKVActionReadOnly<'a> {
     /// [IDX=1] ((term)) ~> [((iid))]
     pub fn get_term_to_iids(
         &self,
-        term_hashed: StoreTermHash,
+        term_hash: StoreTermHash,
     ) -> Result<Option<Vec<StoreObjectIID>>, ()> {
-        let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hashed);
+        let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hash);
 
         tracing::debug!("store get term-to-iids: {store_key}");
 
@@ -1106,19 +1106,19 @@ impl<'a> StoreKVActionReadWrite<'a> {
     #[inline]
     pub fn get_term_to_iids(
         &self,
-        term_hashed: StoreTermHash,
+        term_hash: StoreTermHash,
     ) -> Result<Option<Vec<StoreObjectIID>>, ()> {
-        self.as_read_only().get_term_to_iids(term_hashed)
+        self.as_read_only().get_term_to_iids(term_hash)
     }
 
     // TODO(pref): Update merge operator to support deletion and get rid of this.
     pub fn set_term_to_iids(
         &self,
         batch: &mut WriteBatch,
-        term_hashed: StoreTermHash,
+        term_hash: StoreTermHash,
         iids: impl ExactSizeIterator<Item = StoreObjectIID>,
     ) {
-        let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hashed);
+        let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hash);
 
         tracing::debug!("store set term-to-iids: {store_key}");
 
@@ -1133,10 +1133,10 @@ impl<'a> StoreKVActionReadWrite<'a> {
     pub fn add_term_to_iids(
         &self,
         batch: &mut WriteBatch,
-        term_hashed: StoreTermHash,
+        term_hash: StoreTermHash,
         iids: impl Iterator<Item = StoreObjectIID>,
     ) {
-        let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hashed);
+        let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hash);
 
         tracing::debug!("store add term-to-iids: {store_key}");
 
@@ -1145,8 +1145,8 @@ impl<'a> StoreKVActionReadWrite<'a> {
         }
     }
 
-    pub fn delete_term_to_iids(&self, batch: &mut WriteBatch, term_hashed: StoreTermHash) {
-        let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hashed);
+    pub fn delete_term_to_iids(&self, batch: &mut WriteBatch, term_hash: StoreTermHash) {
+        let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hash);
 
         tracing::debug!("store delete term-to-iids: {store_key}");
 
@@ -1215,33 +1215,33 @@ impl<'a> StoreKVActionReadWrite<'a> {
         &self,
         batch: &mut WriteBatch,
         iid: StoreObjectIID,
-        terms_hashed: impl ExactSizeIterator<Item = StoreTermHash>,
+        terms_hashes: impl ExactSizeIterator<Item = StoreTermHash>,
     ) {
         let store_key = StoreKeyerBuilder::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store set iid-to-terms: {store_key}");
 
         // Encode term list into storage serialized format
-        let terms_hashed_encoded = encode_u32_list_mapped(terms_hashed);
+        let terms_hashes_encoded = encode_u32_list_mapped(terms_hashes);
 
         tracing::debug!(
-            "store set iid-to-terms: {store_key} with encoded value: {terms_hashed_encoded:?}"
+            "store set iid-to-terms: {store_key} with encoded value: {terms_hashes_encoded:?}"
         );
 
-        batch.put(&store_key.as_bytes(), &terms_hashed_encoded)
+        batch.put(&store_key.as_bytes(), &terms_hashes_encoded)
     }
 
     pub fn add_iid_to_terms(
         &self,
         batch: &mut WriteBatch,
         iid: StoreObjectIID,
-        terms_hashed: impl Iterator<Item = StoreTermHash>,
+        terms_hashes: impl Iterator<Item = StoreTermHash>,
     ) {
         let store_key = StoreKeyerBuilder::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store add iid-to-terms: {store_key}");
 
-        for term_hash in terms_hashed {
+        for term_hash in terms_hashes {
             batch.merge(&store_key.as_bytes(), term_hash.into_bytes());
         }
     }
@@ -1259,11 +1259,11 @@ impl<'a> StoreKVActionReadWrite<'a> {
         batch: &mut WriteBatch,
         iid: StoreObjectIID,
         oid: StoreObjectOID,
-        iid_terms_hashed: &[StoreTermHash],
+        iid_terms_hashes: &[StoreTermHash],
     ) -> u32 {
         let mut count = 0;
 
-        tracing::debug!("store batch flush bucket: {iid} with hashed terms: {iid_terms_hashed:?}");
+        tracing::debug!("store batch flush bucket: {iid} with hashed terms: {iid_terms_hashes:?}");
 
         // Delete OID <> IID association
         self.delete_oid_to_iid(batch, oid);
@@ -1271,22 +1271,22 @@ impl<'a> StoreKVActionReadWrite<'a> {
         self.delete_iid_to_terms(batch, iid);
 
         // Delete IID from each associated term
-        for iid_term in iid_terms_hashed {
-            let Ok(Some(mut iid_term_iids)) = self.get_term_to_iids(*iid_term) else {
+        for term_hash in iid_terms_hashes {
+            let Ok(Some(mut term_iids)) = self.get_term_to_iids(*term_hash) else {
                 continue;
             };
 
-            if iid_term_iids.contains(&iid) {
+            if term_iids.contains(&iid) {
                 count += 1;
 
                 // Remove IID from list of IIDs
-                iid_term_iids.retain(|&cur_iid| cur_iid != iid);
+                term_iids.retain(|&cur_iid| cur_iid != iid);
             }
 
-            if iid_term_iids.is_empty() {
-                self.delete_term_to_iids(batch, *iid_term)
+            if term_iids.is_empty() {
+                self.delete_term_to_iids(batch, *term_hash)
             } else {
-                self.set_term_to_iids(batch, *iid_term, iid_term_iids.into_iter())
+                self.set_term_to_iids(batch, *term_hash, term_iids.into_iter())
             };
         }
 

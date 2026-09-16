@@ -51,16 +51,16 @@ impl super::Executor {
                     if let Some(iid) = iid_value {
                         // Try to resolve existing search terms from IID, and perform an algebraic \
                         //   AND on all popped terms to generate a list of terms to be cleaned up.
-                        if let Ok(Some(iid_terms_hashed_vec)) = kv_action.get_iid_to_terms(iid) {
+                        if let Ok(Some(iid_terms_hashes_vec)) = kv_action.get_iid_to_terms(iid) {
                             tracing::info!(
                                 "got pop executor stored iid-to-terms: {:?}",
-                                iid_terms_hashed_vec
+                                iid_terms_hashes_vec
                             );
 
-                            let iid_terms_hashed: LinkedHashSet<StoreTermHash> =
-                                LinkedHashSet::from_iter(iid_terms_hashed_vec.iter().copied());
+                            let iid_terms_hashes: LinkedHashSet<StoreTermHash> =
+                                LinkedHashSet::from_iter(iid_terms_hashes_vec.iter().copied());
 
-                            let remaining_terms: LinkedHashSet<StoreTermHash> = iid_terms_hashed
+                            let remaining_terms: LinkedHashSet<StoreTermHash> = iid_terms_hashes
                                 .difference(&LinkedHashSet::from_iter(
                                     input.tokens().map(Token::into_hash),
                                 ))
@@ -73,7 +73,7 @@ impl super::Executor {
                                 iid
                             );
 
-                            count_popped = (iid_terms_hashed.len() - remaining_terms.len()) as u32;
+                            count_popped = (iid_terms_hashes.len() - remaining_terms.len()) as u32;
 
                             if count_popped > 0 {
                                 let mut batch = WriteBatch::default();
@@ -87,7 +87,7 @@ impl super::Executor {
                                         &mut batch,
                                         iid,
                                         oid,
-                                        &iid_terms_hashed_vec,
+                                        &iid_terms_hashes_vec,
                                     );
                                 } else {
                                     tracing::info!("nuke only certain terms for pop executor");
@@ -100,13 +100,13 @@ impl super::Executor {
 
                                     // Nuke IID in Term-to-IIDs list
                                     for token in tokens {
-                                        let (pop_term, pop_term_hashed) =
+                                        let (pop_term, pop_term_hash) =
                                             (token.as_normalized(), token.hash());
 
                                         // Check that term is linked to IID (and should be removed)
-                                        if iid_terms_hashed.contains(&pop_term_hashed) {
+                                        if iid_terms_hashes.contains(&pop_term_hash) {
                                             if let Ok(Some(mut pop_term_iids)) =
-                                                kv_action.get_term_to_iids(pop_term_hashed)
+                                                kv_action.get_term_to_iids(pop_term_hash)
                                             {
                                                 // Remove IID from list of IIDs to be popped
                                                 pop_term_iids.retain(|cur_iid| cur_iid != &iid);
@@ -115,21 +115,21 @@ impl super::Executor {
                                                     // IIDs list was empty, delete whole key
                                                     kv_action.delete_term_to_iids(
                                                         &mut batch,
-                                                        pop_term_hashed,
+                                                        pop_term_hash,
                                                     );
 
                                                     // Pop from FST graph (does not exist anymore)
                                                     if fst_store.pop_word(pop_term) {
                                                         tracing::debug!(
                                                             "pop term hash nuked from graph: {:?}",
-                                                            pop_term_hashed
+                                                            pop_term_hash
                                                         );
                                                     }
                                                 } else {
                                                     // Re-build IIDs list w/o current IID
                                                     kv_action.set_term_to_iids(
                                                         &mut batch,
-                                                        pop_term_hashed,
+                                                        pop_term_hash,
                                                         pop_term_iids.into_iter(),
                                                     );
                                                 }
