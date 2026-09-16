@@ -40,21 +40,15 @@ pub fn proceed_acquire_cache<K: Display, S: StoreGeneric>(
     Ok(store.clone())
 }
 
-pub fn proceed_acquire_open<
-    'a,
-    K: Hash + Eq + Copy + Display,
-    S: StoreGeneric,
-    B: StoreGenericBuilder<K, S>,
->(
+pub fn proceed_acquire_open<'a, K: Hash + Eq + Copy + Display, S: StoreGeneric>(
     kind: &str,
     collection_str: &str,
     pool_key: K,
     pool: &'a Arc<RwLock<HashMap<K, Arc<S>>>>,
-    builder: &B,
+    build: impl FnOnce(K) -> Result<S, ()>,
     write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<K, Arc<S>>>>,
-    override_options: impl FnOnce(&mut B::Options),
 ) -> Result<Arc<S>, ()> {
-    match builder.build(pool_key, override_options) {
+    match build(pool_key) {
         Ok(store) => {
             // Acquire a thread-safe store pool reference in write mode
             let store_pool_write = match write_guard {
@@ -167,16 +161,6 @@ pub fn proceed_janitor<K: Hash + Eq + Display + Copy, S: StoreGeneric>(
         removal_register.len(),
         store_pool_read.len(),
     );
-}
-
-pub trait StoreGenericBuilder<K, S> {
-    type Options;
-
-    fn build(
-        &self,
-        pool_key: K,
-        override_options: impl FnOnce(&mut Self::Options),
-    ) -> Result<S, ()>;
 }
 
 pub trait StoreGenericActionBuilder {

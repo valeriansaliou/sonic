@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
-use super::generic::{StoreGeneric, StoreGenericActionBuilder, StoreGenericBuilder};
+use super::generic::{StoreGeneric, StoreGenericActionBuilder};
 use super::keyer::StoreKeyerHasher;
 use crate::lexer::ranges::LexerRegexRange;
 use crate::store::generic::{proceed_acquire_cache, proceed_acquire_open, proceed_janitor};
@@ -44,13 +44,6 @@ pub struct StoreFSTPool {
     graph_acquire_lock: Arc<Mutex<()>>,
     graph_rebuild_lock: Arc<Mutex<()>>,
     graph_access_lock: Arc<RwLock<()>>,
-    graph_consolidate: Arc<RwLock<HashSet<StoreFSTKey>>>,
-}
-
-pub struct StoreFSTBuilder<'build> {
-    fst_store_config: &'build crate::config::ConfigStoreFST,
-    // NOTE: This shouldn’t be here, but until a big rewrite let’s not care.
-    fst_action_config: StoreFSTActionConfig,
     graph_consolidate: Arc<RwLock<HashSet<StoreFSTKey>>>,
 }
 
@@ -178,20 +171,13 @@ impl StoreFSTPool {
             //   when acquiring the RWLock in write mode in this block.
             drop(graph_pool_read);
 
-            let builder = StoreFSTBuilder {
-                fst_store_config: &self.fst_store_config,
-                graph_consolidate: Arc::clone(&self.graph_consolidate),
-                fst_action_config: self.fst_action_config,
-            };
-
             proceed_acquire_open(
                 "fst",
                 collection,
                 pool_key,
                 &self.graph_pool,
-                &builder,
+                |pool_key| self.build(pool_key),
                 None,
-                |_| {},
             )
         }
     }
@@ -515,12 +501,9 @@ impl StoreFSTPool {
             return Ok(());
         };
 
-        let origin_fst = StoreFSTBuilder::open(
-            collection_hash as StoreFSTAtom,
-            bucket_hash as StoreFSTAtom,
-            &self.fst_store_config,
-        )
-        .map_err(|error| io::Error::other(format!("Graph open failure: {error:?}")))?;
+        let origin_fst = self
+            .open(collection_hash as StoreFSTAtom, bucket_hash as StoreFSTAtom)
+            .map_err(|error| io::Error::other(format!("Graph open failure: {error:?}")))?;
 
         let mut origin_fst_stream = origin_fst.stream();
 
@@ -640,12 +623,9 @@ impl StoreFSTPool {
         }
 
         // Read old FST (or default to empty FST).
-        let old_fst = StoreFSTBuilder::open(
-            store.target.collection_hash,
-            store.target.bucket_hash,
-            &self.fst_store_config,
-        )
-        .map_err(|error| tracing::error!("Error opening old fst: {error:?}"))?;
+        let old_fst = self
+            .open(store.target.collection_hash, store.target.bucket_hash)
+            .map_err(|error| tracing::error!("Error opening old fst: {error:?}"))?;
 
         // Initialize the new FST (temporary).
         let bucket_tmp_path = self.fst_store_config.path(
@@ -843,15 +823,15 @@ impl StoreFSTPool {
     }
 }
 
-impl<'build> StoreFSTBuilder<'build> {
+impl StoreFSTPool {
     fn open(
+        &self,
         collection_hash: StoreFSTAtom,
         bucket_hash: StoreFSTAtom,
-        fst_store_config: &crate::config::ConfigStoreFST,
     ) -> Result<FSTSet, FSTError> {
         tracing::debug!("Opening fst graph for <{collection_hash:x}>/<{bucket_hash:x}>");
 
-        let collection_bucket_path = fst_store_config.path(
+        let collection_bucket_path = self.fst_store_config.path(
             StoreFSTPathMode::Permanent,
             collection_hash,
             Some(bucket_hash),
@@ -888,20 +868,11 @@ impl crate::config::ConfigStoreFST {
     }
 }
 
-impl<'build> StoreGenericBuilder<StoreFSTKey, StoreFST> for StoreFSTBuilder<'build> {
-    type Options = ();
-
-    fn build(
-        &self,
-        pool_key: StoreFSTKey,
-        _override_options: impl FnOnce(&mut Self::Options),
-    ) -> Result<StoreFST, ()> {
-        let graph = Self::open(
-            pool_key.collection_hash,
-            pool_key.bucket_hash,
-            self.fst_store_config,
-        )
-        .map_err(|error| tracing::error!("Failed opening fst: {error:?}"))?;
+impl StoreFSTPool {
+    fn build(&self, pool_key: StoreFSTKey) -> Result<StoreFST, ()> {
+        let graph = self
+            .open(pool_key.collection_hash, pool_key.bucket_hash)
+            .map_err(|error| tracing::error!("Failed opening fst: {error:?}"))?;
 
         let now = SystemTime::now();
 

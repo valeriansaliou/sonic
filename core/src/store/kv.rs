@@ -30,7 +30,7 @@ use crate::config::ConfigStoreKVDatabase;
 use crate::store::generic::{proceed_acquire_cache, proceed_acquire_open, proceed_janitor};
 use crate::util::hash::NoopU32HasherBuilder;
 
-use super::generic::{StoreGeneric, StoreGenericActionBuilder, StoreGenericBuilder};
+use super::generic::{StoreGeneric, StoreGenericActionBuilder};
 use super::identifiers::*;
 use super::item::StoreItemPart;
 use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher, StoreKeyerKey, StoreKeyerPrefix};
@@ -44,10 +44,6 @@ pub struct StoreKVPool {
     store_access_lock: Arc<RwLock<()>>,
     store_acquire_lock: Arc<Mutex<()>>,
     store_flush_lock: Arc<Mutex<()>>,
-}
-
-pub struct StoreKVBuilder {
-    kv_store_config: Arc<crate::config::ConfigStoreKV>,
 }
 
 pub struct StoreKV {
@@ -170,19 +166,14 @@ impl StoreKVPool {
             return Ok(None);
         }
 
-        let builder = StoreKVBuilder {
-            kv_store_config: Arc::clone(&self.kv_store_config),
-        };
-
         // Open KV database.
         proceed_acquire_open(
             "kv",
             collection,
             pool_key,
             &self.pool,
-            &builder,
+            |pool_key| self.build(pool_key, override_options),
             write_guard,
-            override_options,
         )
         .map(Some)
     }
@@ -442,11 +433,9 @@ impl StoreKVPool {
             return Ok(());
         };
 
-        let origin_kv = StoreKVBuilder {
-            kv_store_config: Arc::clone(&self.kv_store_config),
-        }
-        .open(collection_hash as StoreKVAtom, |_| {})
-        .map_err(|_| io::Error::other("database open failure"))?;
+        let origin_kv = self
+            .open(collection_hash as StoreKVAtom, |_| {})
+            .map_err(|_| io::Error::other("database open failure"))?;
 
         // Initialize KV database backup engine
         let kv_backup_options = DBBackupEngineOptions::new(&kv_backup_path)
@@ -522,7 +511,7 @@ impl StoreKVPool {
     }
 }
 
-impl StoreKVBuilder {
+impl StoreKVPool {
     fn open(
         &self,
         collection_hash: StoreKVAtom,
@@ -683,9 +672,7 @@ impl crate::config::ConfigStoreKV {
     }
 }
 
-impl StoreGenericBuilder<StoreKVKey, StoreKV> for StoreKVBuilder {
-    type Options = rocksdb::Options;
-
+impl StoreKVPool {
     fn build(
         &self,
         pool_key: StoreKVKey,
