@@ -502,7 +502,10 @@ impl StoreFSTPool {
         };
 
         let origin_fst = self
-            .open(collection_hash as StoreFSTAtom, bucket_hash as StoreFSTAtom)
+            .open(StoreFSTKey {
+                collection_hash: collection_hash as StoreFSTAtom,
+                bucket_hash: bucket_hash as StoreFSTAtom,
+            })
             .map_err(|error| io::Error::other(format!("Graph open failure: {error:?}")))?;
 
         let mut origin_fst_stream = origin_fst.stream();
@@ -555,15 +558,16 @@ impl StoreFSTPool {
             return Ok(());
         };
 
+        let store_key =
+            StoreFSTKey::from_atom(collection_hash as StoreFSTAtom, bucket_hash as StoreFSTAtom);
+
         // Force a FST store close.
-        self.close(collection_hash as StoreFSTAtom, bucket_hash as StoreFSTAtom);
+        self.close(store_key);
 
         // Generate path to FST.
-        let fst_path = self.fst_store_config.path(
-            StoreFSTPathMode::Permanent,
-            collection_hash as StoreFSTAtom,
-            Some(bucket_hash as StoreFSTAtom),
-        );
+        let fst_path = self
+            .fst_store_config
+            .store_path(store_key, StoreFSTPathMode::Permanent);
 
         // Remove existing FST data?
         if fst_path.exists() {
@@ -623,16 +627,13 @@ impl StoreFSTPool {
         }
 
         // Read old FST (or default to empty FST).
-        let old_fst = self
-            .open(store.target.collection_hash, store.target.bucket_hash)
+        let old_fst = (self.open(store.target))
             .map_err(|error| tracing::error!("Error opening old fst: {error:?}"))?;
 
         // Initialize the new FST (temporary).
-        let bucket_tmp_path = self.fst_store_config.path(
-            StoreFSTPathMode::Temporary,
-            store.target.collection_hash,
-            Some(store.target.bucket_hash),
-        );
+        let bucket_tmp_path = self
+            .fst_store_config
+            .store_path(store.target, StoreFSTPathMode::Temporary);
 
         let bucket_tmp_path_parent = bucket_tmp_path.parent().unwrap();
 
@@ -780,11 +781,9 @@ impl StoreFSTPool {
                 // Replace old FST with new FST (this nukes the old FST).
                 // NOTE: There is no need to re-open the new FST, as it will be
                 //   automatically opened on its next access.
-                let bucket_final_path = self.fst_store_config.path(
-                    StoreFSTPathMode::Permanent,
-                    store.target.collection_hash,
-                    Some(store.target.bucket_hash),
-                );
+                let bucket_final_path = self
+                    .fst_store_config
+                    .store_path(store.target, StoreFSTPathMode::Permanent);
 
                 // Proceed temporary FST to final FST path rename?
                 match fs::rename(&bucket_tmp_path, &bucket_final_path) {
@@ -813,29 +812,19 @@ impl StoreFSTPool {
         Ok(should_close)
     }
 
-    fn close(&self, collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) {
-        tracing::debug!("Closing fst graph <{collection_hash:x}>/<{bucket_hash:x}>");
+    fn close(&self, key: StoreFSTKey) {
+        tracing::debug!("Closing fst graph {key}");
 
-        let bucket_target = StoreFSTKey::from_atom(collection_hash, bucket_hash);
-
-        (self.graph_pool.write().unwrap()).remove(&bucket_target);
-        (self.graph_consolidate.write().unwrap()).remove(&bucket_target);
+        self.graph_pool.write().unwrap().remove(&key);
+        self.graph_consolidate.write().unwrap().remove(&key);
     }
-}
 
-impl StoreFSTPool {
-    fn open(
-        &self,
-        collection_hash: StoreFSTAtom,
-        bucket_hash: StoreFSTAtom,
-    ) -> Result<FSTSet, FSTError> {
-        tracing::debug!("Opening fst graph for <{collection_hash:x}>/<{bucket_hash:x}>");
+    fn open(&self, key: StoreFSTKey) -> Result<FSTSet, FSTError> {
+        tracing::debug!("Opening fst graph for {key}");
 
-        let collection_bucket_path = self.fst_store_config.path(
-            StoreFSTPathMode::Permanent,
-            collection_hash,
-            Some(bucket_hash),
-        );
+        let collection_bucket_path = self
+            .fst_store_config
+            .store_path(key, StoreFSTPathMode::Permanent);
 
         if collection_bucket_path.exists() {
             // Open graph at path for collection
@@ -852,26 +841,27 @@ impl StoreFSTPool {
 }
 
 impl crate::config::ConfigStoreFST {
-    fn path(
-        &self,
-        mode: StoreFSTPathMode,
-        collection_hash: StoreFSTAtom,
-        bucket_hash: Option<StoreFSTAtom>,
-    ) -> PathBuf {
-        let mut final_path = self.path.join(format!("{collection_hash:x}"));
+    fn collection_path(&self, collection_hash: StoreFSTAtom) -> PathBuf {
+        self.path.join(format!("{collection_hash:x}"))
+    }
 
-        if let Some(bucket_hash) = bucket_hash {
-            final_path = final_path.join(format!("{bucket_hash:x}{ext}", ext = mode.extension()));
-        }
+    fn store_path(&self, key: StoreFSTKey, mode: StoreFSTPathMode) -> PathBuf {
+        let StoreFSTKey {
+            collection_hash,
+            bucket_hash,
+        } = key;
 
-        final_path
+        let extension = mode.extension();
+        assert!(extension.starts_with("."));
+
+        self.collection_path(collection_hash)
+            .join(format!("{bucket_hash:x}{extension}"))
     }
 }
 
 impl StoreFSTPool {
     fn build(&self, pool_key: StoreFSTKey) -> Result<StoreFST, ()> {
-        let graph = self
-            .open(pool_key.collection_hash, pool_key.bucket_hash)
+        let graph = (self.open(pool_key))
             .map_err(|error| tracing::error!("Failed opening fst: {error:?}"))?;
 
         let now = SystemTime::now();
@@ -978,10 +968,8 @@ impl StoreFSTPool {
 
 impl StoreGenericActionBuilder for StoreFSTPool {
     fn proceed_erase_collection(&self, collection_name: &str) -> Result<u32, ()> {
-        let path_mode = StoreFSTPathMode::Permanent;
-
         let collection_atom = StoreKeyerHasher::to_compact(collection_name);
-        let collection_path = self.fst_store_config.path(path_mode, collection_atom, None);
+        let collection_path = self.fst_store_config.collection_path(collection_atom);
 
         // Force a FST graph close (on all contained buckets)
         // NOTE: we first need to scan for opened buckets in-memory, as not all FSTs may be
@@ -1056,19 +1044,14 @@ impl StoreGenericActionBuilder for StoreFSTPool {
             "Sub-erase on fst bucket {bucket_name:?} for collection {collection_name:?}"
         );
 
-        let (collection_atom, bucket_atom) = (
-            StoreKeyerHasher::to_compact(collection_name),
-            StoreKeyerHasher::to_compact(bucket_name),
-        );
+        let store_key = StoreFSTKey::from_str(collection_name, bucket_name);
 
-        let bucket_path = self.fst_store_config.path(
-            StoreFSTPathMode::Permanent,
-            collection_atom,
-            Some(bucket_atom),
-        );
+        let bucket_path = self
+            .fst_store_config
+            .store_path(store_key, StoreFSTPathMode::Permanent);
 
         // Force a FST graph close.
-        self.close(collection_atom, bucket_atom);
+        self.close(store_key);
 
         // Remove on-disk FST.
         if bucket_path.exists() {
@@ -1360,7 +1343,7 @@ impl StoreFSTMisc {
         let path_mode = StoreFSTPathMode::Permanent;
 
         let collection_atom = StoreKeyerHasher::to_compact(collection.as_ref());
-        let collection_path = fst_store_config.path(path_mode, collection_atom, None);
+        let collection_path = fst_store_config.collection_path(collection_atom);
 
         if !collection_path.exists() {
             return Ok(0);

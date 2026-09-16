@@ -155,7 +155,7 @@ impl StoreKVPool {
 
         // Check if can open database?
         let can_open_db = if mode == StoreKVAcquireMode::OpenOnly {
-            self.kv_store_config.path(pool_key.collection_hash).exists()
+            self.kv_store_config.store_path(pool_key).exists()
         } else {
             true
         };
@@ -180,19 +180,17 @@ impl StoreKVPool {
 
     fn close_<'a>(
         &'a self,
-        collection_hash: StoreKVAtom,
+        key: StoreKVKey,
         write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVKey, Arc<StoreKV>>>>,
     ) {
-        tracing::debug!("closing key-value database for collection: <{collection_hash:x}>");
+        tracing::debug!("closing key-value database for collection: {key}");
 
         let store_pool_write = match write_guard {
             Some(x) => x,
             None => &mut self.pool.write().unwrap(),
         };
 
-        let collection_target = StoreKVKey::from_atom(collection_hash);
-
-        store_pool_write.remove(&collection_target);
+        store_pool_write.remove(&key);
     }
 
     pub fn close<'a>(
@@ -200,9 +198,7 @@ impl StoreKVPool {
         collection_name: &str,
         write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVKey, Arc<StoreKV>>>>,
     ) -> Result<(), ()> {
-        let collection_hash = StoreKeyerHasher::to_compact(collection_name);
-
-        self.close_(collection_hash as StoreKVAtom, write_guard);
+        self.close_(StoreKVKey::from_str(collection_name), write_guard);
 
         Ok(())
     }
@@ -434,7 +430,10 @@ impl StoreKVPool {
         };
 
         let origin_kv = self
-            .open(collection_hash as StoreKVAtom, |_| {})
+            .open(
+                StoreKVKey::from_atom(collection_hash as StoreKVAtom),
+                |_| {},
+            )
             .map_err(|_| io::Error::other("database open failure"))?;
 
         // Initialize KV database backup engine
@@ -476,11 +475,13 @@ impl StoreKVPool {
             return Ok(());
         };
 
+        let store_key = StoreKVKey::from_atom(collection_hash as StoreKVAtom);
+
         // Force a KV store close
-        self.close_(collection_hash as StoreKVAtom, None);
+        self.close_(store_key, None);
 
         // Generate path to KV
-        let kv_path = self.kv_store_config.path(collection_hash as StoreKVAtom);
+        let kv_path = self.kv_store_config.store_path(store_key);
 
         // Remove existing KV database data?
         if kv_path.exists() {
@@ -509,15 +510,13 @@ impl StoreKVPool {
 
         Ok(())
     }
-}
 
-impl StoreKVPool {
     fn open(
         &self,
-        collection_hash: StoreKVAtom,
+        key: StoreKVKey,
         override_options: impl FnOnce(&mut rocksdb::Options),
     ) -> Result<DB, DBError> {
-        tracing::debug!("opening key-value database for collection: <{collection_hash:x}>");
+        tracing::debug!("opening key-value database for collection: {key}");
 
         // Configure database options
         let mut db_options = self.configure();
@@ -525,7 +524,7 @@ impl StoreKVPool {
         override_options(&mut db_options);
 
         // Open database at path for collection
-        DB::open(&db_options, self.kv_store_config.path(collection_hash))
+        DB::open(&db_options, self.kv_store_config.store_path(key))
     }
 
     #[rustfmt::skip]
@@ -667,7 +666,9 @@ impl StoreKVPool {
 }
 
 impl crate::config::ConfigStoreKV {
-    fn path(&self, collection_hash: StoreKVAtom) -> PathBuf {
+    fn store_path(&self, key: StoreKVKey) -> PathBuf {
+        let StoreKVKey { collection_hash } = key;
+
         self.path.join(format!("{collection_hash:x}"))
     }
 }
@@ -678,7 +679,7 @@ impl StoreKVPool {
         pool_key: StoreKVKey,
         override_options: impl FnOnce(&mut rocksdb::Options),
     ) -> Result<StoreKV, ()> {
-        match self.open(pool_key.collection_hash, override_options) {
+        match self.open(pool_key, override_options) {
             Ok(db) => {
                 let now = SystemTime::now();
 
@@ -839,11 +840,11 @@ impl StoreKVPool {
 
 impl StoreGenericActionBuilder for StoreKVPool {
     fn proceed_erase_collection(&self, collection_str: &str) -> Result<u32, ()> {
-        let collection_atom = StoreKeyerHasher::to_compact(collection_str);
-        let collection_path = self.kv_store_config.path(collection_atom);
+        let store_key = StoreKVKey::from_str(collection_str);
+        let collection_path = self.kv_store_config.store_path(store_key);
 
         // Force a KV store close
-        self.close_(collection_atom, None);
+        self.close_(store_key, None);
 
         if !collection_path.exists() {
             tracing::debug!(
