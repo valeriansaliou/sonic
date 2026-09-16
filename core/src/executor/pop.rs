@@ -12,7 +12,7 @@ use std::iter::FromIterator;
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::StoreItem;
-use crate::store::identifiers::StoreTermHashed;
+use crate::store::identifiers::StoreTermHash;
 use crate::store::kv::StoreKVAcquireMode;
 use crate::util::hash::NoopU32HasherBuilder;
 
@@ -57,10 +57,10 @@ impl super::Executor {
                                 iid_terms_hashed_vec
                             );
 
-                            let iid_terms_hashed: LinkedHashSet<StoreTermHashed> =
+                            let iid_terms_hashed: LinkedHashSet<StoreTermHash> =
                                 LinkedHashSet::from_iter(iid_terms_hashed_vec.iter().copied());
 
-                            let remaining_terms: LinkedHashSet<StoreTermHashed> = iid_terms_hashed
+                            let remaining_terms: LinkedHashSet<StoreTermHash> = iid_terms_hashed
                                 .difference(&LinkedHashSet::from_iter(
                                     input.tokens().map(Token::into_hash),
                                 ))
@@ -121,7 +121,7 @@ impl super::Executor {
                                                     // Pop from FST graph (does not exist anymore)
                                                     if fst_store.pop_word(pop_term) {
                                                         tracing::debug!(
-                                                            "pop term hash nuked from graph: {}",
+                                                            "pop term hash nuked from graph: {:?}",
                                                             pop_term_hashed
                                                         );
                                                     }
@@ -142,7 +142,7 @@ impl super::Executor {
                                     }
 
                                     // Bump IID-to-Terms list
-                                    let remaining_terms_vec: Vec<StoreTermHashed> =
+                                    let remaining_terms_vec: Vec<StoreTermHash> =
                                         Vec::from_iter(remaining_terms);
 
                                     kv_action.set_iid_to_terms(

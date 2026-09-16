@@ -22,7 +22,7 @@ pub struct StoreKeyerHasher;
 
 enum StoreKeyerIdx<'a> {
     MetaToValue(&'a StoreMetaKey),
-    TermToIIDs(StoreTermHashed),
+    TermToIIDs(StoreTermHash),
     OIDToIID(StoreObjectOID<'a>),
     IIDToOID(StoreObjectIID),
     IIDToTerms(StoreObjectIID),
@@ -50,8 +50,8 @@ impl StoreKeyerBuilder {
         Self::make(StoreKeyerIdx::MetaToValue(meta), bucket)
     }
 
-    pub fn term_to_iids(bucket: &str, term_hash: StoreTermHashed) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::TermToIIDs(term_hash), bucket)
+    pub fn term_to_iids(bucket: &str, term_hash: impl Into<StoreTermHash>) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::TermToIIDs(term_hash.into()), bucket)
     }
 
     pub fn oid_to_iid<'a>(bucket: &'a str, oid: StoreObjectOID<'a>) -> StoreKeyer {
@@ -101,7 +101,7 @@ impl StoreKeyerBuilder {
     fn route_to_compact(idx: &StoreKeyerIdx) -> u32 {
         match idx {
             StoreKeyerIdx::MetaToValue(route) => route.as_u32(),
-            StoreKeyerIdx::TermToIIDs(route) => *route,
+            StoreKeyerIdx::TermToIIDs(route) => route.into(),
             StoreKeyerIdx::OIDToIID(route) => StoreKeyerHasher::to_compact(route),
             StoreKeyerIdx::IIDToOID(route) => *route,
             StoreKeyerIdx::IIDToTerms(route) => *route,

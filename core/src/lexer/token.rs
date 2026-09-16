@@ -347,7 +347,7 @@ pub mod preprocessor {
     use crate::config::{ConfigNormalization, ConfigStopwords, ConfigTokenization};
     use crate::lexer::stemming;
     use crate::lexer::stopwords::is_stopword;
-    use crate::store::identifiers::{StoreTermHash, StoreTermHashed};
+    use crate::store::identifiers::StoreTermHash;
 
     pub struct Preprocessor {
         pub tokenization_config: ConfigTokenization,
@@ -542,7 +542,7 @@ pub mod preprocessor {
         pub end_normalized: usize,
         kind: TokenKind,
         index: usize,
-        hash: Rc<OnceCell<StoreTermHashed>>,
+        hash: Rc<OnceCell<StoreTermHash>>,
     }
 
     /// Iterator over [`Tokens`].
@@ -601,7 +601,7 @@ pub mod preprocessor {
         /// [`core::iter::Iterator::enumerate`].
         pub(super) index_in_tokenized_text: usize,
 
-        hash: Rc<OnceCell<StoreTermHashed>>,
+        hash: Rc<OnceCell<StoreTermHash>>,
     }
 
     impl<'s> Token<'s> {
@@ -649,12 +649,12 @@ pub mod preprocessor {
         }
 
         /// Hash of the **normalized** version of the token.
-        pub fn hash(&self) -> StoreTermHashed {
+        pub fn hash(&self) -> StoreTermHash {
             *(self.hash).get_or_init(|| StoreTermHash::from(self.normalized))
         }
 
         /// Hash of the **normalized** version of the token.
-        pub fn into_hash(self) -> StoreTermHashed {
+        pub fn into_hash(self) -> StoreTermHash {
             *(self.hash).get_or_init(|| StoreTermHash::from(self.normalized))
         }
     }

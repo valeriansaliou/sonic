@@ -14,7 +14,7 @@ use crate::query::{
 };
 use crate::store::StoreItem;
 use crate::store::fst::typo_factor;
-use crate::store::identifiers::{StoreObjectIID, StoreTermHash, StoreTermHashed};
+use crate::store::identifiers::{StoreObjectIID, StoreTermHash};
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionReadOnly};
 use crate::util::hash::NoopU32HasherBuilder;
 
@@ -499,7 +499,7 @@ fn test_overall_score() {
     ); // 2/3
 }
 
-fn document_frequency(term_hash: StoreTermHashed, kv_action: &StoreKVActionReadOnly<'_>) -> u64 {
+fn document_frequency(term_hash: StoreTermHash, kv_action: &StoreKVActionReadOnly<'_>) -> u64 {
     kv_action
         .get_term_to_iids(term_hash)
         .inspect_err(|err| tracing::error!("{err:?}"))
@@ -540,7 +540,7 @@ fn merge_suggestions(
 
         tracing::trace!(?term, ?suggested_word, "got completed word for term");
 
-        let suggested_term_hash = StoreTermHash::from(&suggested_word);
+        let suggested_term_hash = StoreTermHash::from(suggested_word.as_str());
         let suggested_iids = match kv_action.get_term_to_iids(suggested_term_hash) {
             Ok(Some(suggested_iids)) => suggested_iids,
             Ok(None) => continue,

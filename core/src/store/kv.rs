@@ -927,7 +927,7 @@ impl<'a> StoreKVActionReadOnly<'a> {
     /// [IDX=1] ((term)) ~> [((iid))]
     pub fn get_term_to_iids(
         &self,
-        term_hashed: StoreTermHashed,
+        term_hashed: StoreTermHash,
     ) -> Result<Option<Vec<StoreObjectIID>>, ()> {
         let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hashed);
 
@@ -1021,10 +1021,7 @@ impl<'a> StoreKVActionReadOnly<'a> {
     /// IID-to-Terms mapper
     ///
     /// [IDX=4] ((iid)) ~> [((term))]
-    pub fn get_iid_to_terms(
-        &self,
-        iid: StoreObjectIID,
-    ) -> Result<Option<Vec<StoreTermHashed>>, ()> {
+    pub fn get_iid_to_terms(&self, iid: StoreObjectIID) -> Result<Option<Vec<StoreTermHash>>, ()> {
         let store_key = StoreKeyerBuilder::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store get iid-to-terms: {store_key}");
@@ -1033,7 +1030,7 @@ impl<'a> StoreKVActionReadOnly<'a> {
             Ok(Some(value)) => {
                 tracing::debug!("got iid-to-terms: {store_key} with encoded value: {value:?}");
 
-                decode_u32_list(&value).map(|value_decoded| {
+                decode_u32_list_mapped(&value).map(|value_decoded| {
                     tracing::debug!(
                         "got iid-to-terms: {store_key} with decoded value: {value_decoded:?}"
                     );
@@ -1109,7 +1106,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
     #[inline]
     pub fn get_term_to_iids(
         &self,
-        term_hashed: StoreTermHashed,
+        term_hashed: StoreTermHash,
     ) -> Result<Option<Vec<StoreObjectIID>>, ()> {
         self.as_read_only().get_term_to_iids(term_hashed)
     }
@@ -1118,7 +1115,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
     pub fn set_term_to_iids(
         &self,
         batch: &mut WriteBatch,
-        term_hashed: StoreTermHashed,
+        term_hashed: StoreTermHash,
         iids: impl ExactSizeIterator<Item = StoreObjectIID>,
     ) {
         let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hashed);
@@ -1136,7 +1133,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
     pub fn add_term_to_iids(
         &self,
         batch: &mut WriteBatch,
-        term_hashed: StoreTermHashed,
+        term_hashed: StoreTermHash,
         iids: impl Iterator<Item = StoreObjectIID>,
     ) {
         let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hashed);
@@ -1148,7 +1145,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
         }
     }
 
-    pub fn delete_term_to_iids(&self, batch: &mut WriteBatch, term_hashed: StoreTermHashed) {
+    pub fn delete_term_to_iids(&self, batch: &mut WriteBatch, term_hashed: StoreTermHash) {
         let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hashed);
 
         tracing::debug!("store delete term-to-iids: {store_key}");
@@ -1210,10 +1207,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
     /// IID-to-Terms mapper
     ///
     /// [IDX=4] ((iid)) ~> [((term))]
-    pub fn get_iid_to_terms(
-        &self,
-        iid: StoreObjectIID,
-    ) -> Result<Option<Vec<StoreTermHashed>>, ()> {
+    pub fn get_iid_to_terms(&self, iid: StoreObjectIID) -> Result<Option<Vec<StoreTermHash>>, ()> {
         self.as_read_only().get_iid_to_terms(iid)
     }
 
@@ -1221,14 +1215,14 @@ impl<'a> StoreKVActionReadWrite<'a> {
         &self,
         batch: &mut WriteBatch,
         iid: StoreObjectIID,
-        terms_hashed: impl ExactSizeIterator<Item = u32>,
+        terms_hashed: impl ExactSizeIterator<Item = StoreTermHash>,
     ) {
         let store_key = StoreKeyerBuilder::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store set iid-to-terms: {store_key}");
 
         // Encode term list into storage serialized format
-        let terms_hashed_encoded = encode_u32_list(terms_hashed);
+        let terms_hashed_encoded = encode_u32_list_mapped(terms_hashed);
 
         tracing::debug!(
             "store set iid-to-terms: {store_key} with encoded value: {terms_hashed_encoded:?}"
@@ -1241,14 +1235,14 @@ impl<'a> StoreKVActionReadWrite<'a> {
         &self,
         batch: &mut WriteBatch,
         iid: StoreObjectIID,
-        terms_hashed: impl Iterator<Item = u32>,
+        terms_hashed: impl Iterator<Item = StoreTermHash>,
     ) {
         let store_key = StoreKeyerBuilder::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store add iid-to-terms: {store_key}");
 
         for term_hash in terms_hashed {
-            batch.merge(&store_key.as_bytes(), encode_u32(term_hash));
+            batch.merge(&store_key.as_bytes(), term_hash.into_bytes());
         }
     }
 
@@ -1265,7 +1259,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
         batch: &mut WriteBatch,
         iid: StoreObjectIID,
         oid: StoreObjectOID,
-        iid_terms_hashed: &[StoreTermHashed],
+        iid_terms_hashed: &[StoreTermHash],
     ) -> u32 {
         let mut count = 0;
 
@@ -1374,6 +1368,12 @@ impl<'a> StoreKVActionReadWrite<'a> {
     }
 }
 
+impl StoreTermHash {
+    pub fn into_bytes(self) -> [u8; 4] {
+        encode_u32(self.into())
+    }
+}
+
 fn encode_u32(decoded: u32) -> [u8; 4] {
     let mut encoded = [0; 4];
 
@@ -1386,19 +1386,24 @@ fn decode_u32(encoded: &[u8]) -> Result<u32, ()> {
     Cursor::new(encoded).read_u32::<LittleEndian>().or(Err(()))
 }
 
-fn encode_u32_list(decoded: impl ExactSizeIterator<Item = u32>) -> Vec<u8> {
+fn encode_u32_list_mapped<T: Into<u32>>(decoded: impl ExactSizeIterator<Item = T>) -> Vec<u8> {
     // Pre-reserve required capacity as to avoid heap resizes (50%
     // performance gain relative to initializing this with a zero-capacity)
     let mut encoded = Vec::with_capacity(decoded.len() * 4);
 
     for decoded_item in decoded {
-        encoded.extend(&encode_u32(decoded_item))
+        encoded.extend(&encode_u32(decoded_item.into()))
     }
 
     encoded
 }
 
-fn decode_u32_list(encoded: &[u8]) -> Result<Vec<u32>, ()> {
+#[inline(always)]
+fn encode_u32_list(decoded: impl ExactSizeIterator<Item = u32>) -> Vec<u8> {
+    encode_u32_list_mapped(decoded)
+}
+
+fn decode_u32_list_mapped<T: From<u32>>(encoded: &[u8]) -> Result<Vec<T>, ()> {
     // Pre-reserve required capacity as to avoid heap resizes (50%
     // performance gain relative to initializing this with a zero-capacity)
     let mut decoded = Vec::with_capacity(encoded.len() / 4);
@@ -1406,13 +1411,18 @@ fn decode_u32_list(encoded: &[u8]) -> Result<Vec<u32>, ()> {
     for encoded_chunk in encoded.chunks(4) {
         match decode_u32(encoded_chunk) {
             Ok(decoded_chunk) => {
-                decoded.push(decoded_chunk);
+                decoded.push(T::from(decoded_chunk));
             }
             Err(_err) => return Err(()),
         }
     }
 
     Ok(decoded)
+}
+
+#[inline(always)]
+fn decode_u32_list(encoded: &[u8]) -> Result<Vec<u32>, ()> {
+    decode_u32_list_mapped(encoded)
 }
 
 fn default_merge_operator(
@@ -1586,15 +1596,15 @@ mod tests {
             action.write(batch).is_ok()
         });
 
-        assert!(action.get_term_to_iids(1).is_ok());
+        assert!(action.get_term_to_iids(1.into()).is_ok());
         assert!({
             let mut batch = WriteBatch::default();
-            action.set_term_to_iids(&mut batch, 1, [0, 1, 2].into_iter());
+            action.set_term_to_iids(&mut batch, 1.into(), [0, 1, 2].into_iter());
             action.write(batch).is_ok()
         });
         assert!({
             let mut batch = WriteBatch::default();
-            action.delete_term_to_iids(&mut batch, 1);
+            action.delete_term_to_iids(&mut batch, 1.into());
             action.write(batch).is_ok()
         });
 
@@ -1625,7 +1635,7 @@ mod tests {
         assert!(action.get_iid_to_terms(4).is_ok());
         assert!({
             let mut batch = WriteBatch::default();
-            action.set_iid_to_terms(&mut batch, 4, [45402].into_iter());
+            action.set_iid_to_terms(&mut batch, 4, [StoreTermHash::from(45402)].into_iter());
             action.write(batch).is_ok()
         });
         assert!({
