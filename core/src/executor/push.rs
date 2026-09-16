@@ -11,7 +11,6 @@ use std::sync::Arc;
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::StoreItem;
-use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVPool};
 use crate::util::hash::NoopU32HasherBuilder;
 
@@ -47,10 +46,7 @@ impl super::Executor {
             return Err(());
         };
 
-        let (kv_action, fst_action) = (
-            StoreKVPool::access_read_write(bucket, Arc::clone(&kv_store)),
-            StoreFSTActionBuilder::access(fst_store),
-        );
+        let kv_action = StoreKVPool::access_read_write(bucket, Arc::clone(&kv_store));
 
         let mut batch = WriteBatch::default();
 
@@ -88,7 +84,7 @@ impl super::Executor {
             let term_hashed = token.hash();
 
             // Push to FST graph? (this consumes the term; to avoid sub-clones)
-            if fst_action.push_word(&term, &self.app_conf.store.fst) {
+            if fst_store.push_word(&term, &self.app_conf.store.fst) {
                 tracing::trace!("push term committed to graph: {}", term);
             }
 

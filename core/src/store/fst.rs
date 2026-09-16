@@ -75,16 +75,6 @@ pub struct StoreFSTActionBuilder<'build> {
     pub fst_store_config: &'build crate::config::ConfigStoreFST,
 }
 
-pub struct StoreFSTAction {
-    store: StoreFSTBox,
-}
-
-impl StoreFSTAction {
-    fn config(&self) -> &StoreFSTActionConfig {
-        &self.store.action_config
-    }
-}
-
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct StoreFSTKey {
     collection_hash: StoreFSTAtom,
@@ -936,7 +926,7 @@ impl StoreFST {
         self.graph.into_stream()
     }
 
-    pub fn lookup_begins(&self, word: &str) -> Result<FSTStream<'_, Regex>, ()> {
+    pub fn lookup_begins_(&self, word: &str) -> Result<FSTStream<'_, Regex>, ()> {
         // NOTE: This regex maps over an unicode range, for speed reasons at scale.
         //   We found out that the 'match any' syntax ('.*') was super-slow. Using the restrictive
         //   syntax below divided the cost of e.g. a search query by 2. The regex below has been
@@ -964,7 +954,7 @@ impl StoreFST {
         Ok(self.graph.search(regex).into_stream())
     }
 
-    pub fn lookup_typos(
+    pub fn lookup_typos_(
         &self,
         word: &str,
         typo_factor: u32,
@@ -1006,16 +996,6 @@ impl StoreFST {
 impl StoreGeneric for StoreFST {
     fn ref_last_used(&self) -> &RwLock<SystemTime> {
         &self.last_used
-    }
-}
-
-impl<'build> StoreFSTActionBuilder<'build> {
-    pub fn access(store: StoreFSTBox) -> StoreFSTAction {
-        Self::build(store)
-    }
-
-    fn build(store: StoreFSTBox) -> StoreFSTAction {
-        StoreFSTAction { store }
     }
 }
 
@@ -1152,7 +1132,7 @@ impl StoreGenericActionBuilder for StoreFSTPool {
     }
 }
 
-impl StoreFSTAction {
+impl StoreFST {
     pub fn push_word(&self, word: &str, fst_store_config: &crate::config::ConfigStoreFST) -> bool {
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(word) {
@@ -1162,16 +1142,16 @@ impl StoreFSTAction {
         let word_bytes = word.as_bytes();
 
         // Nuke word from 'pop' set? (void a previous un-consolidated commit)
-        if self.store.pending.pop.read().unwrap().contains(word_bytes) {
-            self.store.pending.pop.write().unwrap().remove(word_bytes);
+        if self.pending.pop.read().unwrap().contains(word_bytes) {
+            self.pending.pop.write().unwrap().remove(word_bytes);
         }
 
         // Add word in 'push' set? (only if word is not in FST)
         // NOTE: also check whether FST is over limits or not from there, to avoid
         //   stacking words that could never be consolidated to final FST anyway.
-        let graph_fst = self.store.graph.as_fst();
+        let graph_fst = self.graph.as_fst();
 
-        if self.store.graph.contains(&word) {
+        if self.graph.contains(&word) {
             return false;
         }
 
@@ -1184,7 +1164,7 @@ impl StoreFSTAction {
         }
 
         {
-            let pending_push_guard = self.store.pending.push.read().unwrap();
+            let pending_push_guard = self.pending.push.read().unwrap();
 
             if pending_push_guard.contains(word_bytes)
                 || pending_push_guard.len() >= fst_store_config.graph.max_words
@@ -1193,9 +1173,9 @@ impl StoreFSTAction {
             }
         }
 
-        (self.store.pending.push.write().unwrap()).insert(word_bytes.to_vec());
+        (self.pending.push.write().unwrap()).insert(word_bytes.to_vec());
 
-        self.store.should_consolidate();
+        self.should_consolidate();
 
         true
     }
@@ -1209,22 +1189,22 @@ impl StoreFSTAction {
         let word_bytes = word.as_bytes();
 
         // Nuke word from 'push' set? (void a previous un-consolidated commit)
-        if self.store.pending.push.read().unwrap().contains(word_bytes) {
-            self.store.pending.push.write().unwrap().remove(word_bytes);
+        if self.pending.push.read().unwrap().contains(word_bytes) {
+            self.pending.push.write().unwrap().remove(word_bytes);
         }
 
-        if !self.store.graph.contains(word_bytes) {
+        if !self.graph.contains(word_bytes) {
             return false;
         }
 
         // Add word in 'pop' set? (only if word is in FST)
-        if self.store.pending.pop.read().unwrap().contains(word_bytes) {
+        if self.pending.pop.read().unwrap().contains(word_bytes) {
             return false;
         }
 
-        (self.store.pending.pop.write().unwrap()).insert(word_bytes.to_vec());
+        (self.pending.pop.write().unwrap()).insert(word_bytes.to_vec());
 
-        self.store.should_consolidate();
+        self.should_consolidate();
 
         true
     }
@@ -1245,7 +1225,7 @@ impl StoreFSTAction {
 
         let mut found_words: IndexMap<String, u16> = IndexMap::with_capacity(limit);
 
-        if self.config().prefix_matching_enabled {
+        if self.action_config.prefix_matching_enabled {
             // Try to complete provided word
             if let Some(stream) = self.lookup_begins(from_word, original_word_len) {
                 for (word, score) in stream {
@@ -1264,7 +1244,7 @@ impl StoreFSTAction {
         }
 
         // Try to fuzzy-suggest other words? (e.g. correct typos)
-        if self.config().fuzzy_matching_enabled && found_words.len() < limit {
+        if self.action_config.fuzzy_matching_enabled && found_words.len() < limit {
             // Allow more typos in word as the word gets longer, up to a maximum limit
             let max_typo_factor = max_typo_factor.unwrap_or(typo_factor(original_word_len));
             let mut typo_factor = 1u32;
@@ -1312,11 +1292,11 @@ impl StoreFSTAction {
             return None;
         }
 
-        if !self.config().prefix_matching_enabled {
+        if !self.action_config.prefix_matching_enabled {
             return None;
         }
 
-        let Ok(stream) = self.store.lookup_begins(word) else {
+        let Ok(stream) = self.lookup_begins_(word) else {
             return None;
         };
 
@@ -1336,11 +1316,11 @@ impl StoreFSTAction {
         word: &str,
         typo_factor: u32,
     ) -> Option<impl Iterator<Item = (String, u16)>> {
-        if !self.config().fuzzy_matching_enabled {
+        if !self.action_config.fuzzy_matching_enabled {
             return None;
         }
 
-        let Ok(stream) = self.store.lookup_typos(word, typo_factor) else {
+        let Ok(stream) = self.lookup_typos_(word, typo_factor) else {
             return None;
         };
 
@@ -1361,7 +1341,7 @@ impl StoreFSTAction {
     }
 
     pub fn list_words(&self, limit: usize, offset: usize) -> Result<Vec<String>, ()> {
-        let stream = self.store.as_stream();
+        let stream = self.as_stream();
 
         // Enumerate words from FST stream.
         match stream
@@ -1377,7 +1357,7 @@ impl StoreFSTAction {
     }
 
     pub fn count_words(&self) -> usize {
-        self.store.cardinality()
+        self.cardinality()
     }
 
     fn word_over_limit(word: &str) -> bool {
@@ -1537,7 +1517,7 @@ mod tests {
 
         let store = fst_pool.acquire("c:test:2", "b:test:2").unwrap();
 
-        assert!(store.lookup_typos("valerien", 1).is_ok());
+        assert!(store.lookup_typos_("valerien", 1).is_ok());
     }
 
     fn test_fst_pool() -> StoreFSTPool {

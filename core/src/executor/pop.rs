@@ -12,7 +12,6 @@ use std::iter::FromIterator;
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::StoreItem;
-use crate::store::fst::StoreFSTActionBuilder;
 use crate::store::identifiers::StoreTermHashed;
 use crate::store::kv::{StoreKVAcquireMode, StoreKVPool};
 use crate::util::hash::NoopU32HasherBuilder;
@@ -40,10 +39,7 @@ impl super::Executor {
                 // Important: acquire bucket store write lock
                 executor_kv_lock_write!(kv_store);
 
-                let (kv_action, fst_action) = (
-                    StoreKVPool::access_read_write(bucket, kv_store),
-                    StoreFSTActionBuilder::access(fst_store),
-                );
+                let kv_action = StoreKVPool::access_read_write(bucket, kv_store);
 
                 // Try to resolve existing OID to IID (if it does not exist, there is nothing to \
                 //   be flushed)
@@ -123,7 +119,7 @@ impl super::Executor {
                                                     );
 
                                                     // Pop from FST graph (does not exist anymore)
-                                                    if fst_action.pop_word(pop_term) {
+                                                    if fst_store.pop_word(pop_term) {
                                                         tracing::debug!(
                                                             "pop term hash nuked from graph: {}",
                                                             pop_term_hashed

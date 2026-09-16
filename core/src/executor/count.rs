@@ -6,7 +6,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::store::StoreItem;
-use crate::store::fst::{StoreFSTActionBuilder, StoreFSTMisc};
+use crate::store::fst::StoreFSTMisc;
 use crate::store::kv::StoreKVAcquireMode;
 use crate::store::kv::StoreKVPool;
 
@@ -62,9 +62,7 @@ impl super::Executor {
                 let _fst_read_guard = self.fst_pool.lock_read_access();
 
                 if let Ok(fst_store) = self.fst_pool.acquire(collection, bucket) {
-                    let fst_action = StoreFSTActionBuilder::access(fst_store);
-
-                    Ok(fst_action.count_words() as u32)
+                    Ok(fst_store.count_words() as u32)
                 } else {
                     Err(())
                 }
