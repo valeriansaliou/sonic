@@ -58,12 +58,12 @@ impl StoreKeyerBuilder {
         Self::make(StoreKeyerIdx::OIDToIID(oid), bucket)
     }
 
-    pub fn iid_to_oid(bucket: &str, iid: StoreObjectIID) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::IIDToOID(iid), bucket)
+    pub fn iid_to_oid(bucket: &str, iid: impl Into<StoreObjectIID>) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::IIDToOID(iid.into()), bucket)
     }
 
-    pub fn iid_to_terms(bucket: &str, iid: StoreObjectIID) -> StoreKeyer {
-        Self::make(StoreKeyerIdx::IIDToTerms(iid), bucket)
+    pub fn iid_to_terms(bucket: &str, iid: impl Into<StoreObjectIID>) -> StoreKeyer {
+        Self::make(StoreKeyerIdx::IIDToTerms(iid.into()), bucket)
     }
 
     fn make<'a>(idx: StoreKeyerIdx<'a>, bucket: &'a str) -> StoreKeyer {
@@ -103,8 +103,8 @@ impl StoreKeyerBuilder {
             StoreKeyerIdx::MetaToValue(route) => route.as_u32(),
             StoreKeyerIdx::TermToIIDs(route) => route.into(),
             StoreKeyerIdx::OIDToIID(route) => StoreKeyerHasher::to_compact(route),
-            StoreKeyerIdx::IIDToOID(route) => *route,
-            StoreKeyerIdx::IIDToTerms(route) => *route,
+            StoreKeyerIdx::IIDToOID(route) => route.into(),
+            StoreKeyerIdx::IIDToTerms(route) => route.into(),
         }
     }
 }

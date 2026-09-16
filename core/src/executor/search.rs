@@ -76,8 +76,8 @@ impl super::Executor {
                 .get_iid_incr()
                 .map_err(|err| tracing::warn!("{err:?}"))?
             {
-                Some(last_iid) => u64::from(last_iid) + 1,
-                None => 0,
+                Some(last_iid) => (u32::from(last_iid) + 1) as u64,
+                None => 0u64,
             };
 
             if document_count < idf_min_doc_count {

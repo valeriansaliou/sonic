@@ -7,7 +7,54 @@
 use std::hash::Hasher;
 use twox_hash::XxHash32;
 
-pub type StoreObjectIID = u32;
+macro_rules! impl_u32_wrapper_utils {
+    ($t:ty) => {
+        impl From<u32> for $t {
+            fn from(value: u32) -> Self {
+                Self(value)
+            }
+        }
+
+        impl From<$t> for u32 {
+            fn from(value: $t) -> Self {
+                value.0
+            }
+        }
+
+        impl From<&$t> for u32 {
+            fn from(value: &$t) -> Self {
+                value.0
+            }
+        }
+
+        impl std::fmt::Debug for $t {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                std::fmt::Debug::fmt(&self.0, f)
+            }
+        }
+    };
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct StoreObjectIID(u32);
+
+impl_u32_wrapper_utils!(StoreObjectIID);
+
+impl StoreObjectIID {
+    pub fn saturating_add(self, rhs: u32) -> Self {
+        Self(self.0.saturating_add(rhs))
+    }
+}
+
+impl std::str::FromStr for StoreObjectIID {
+    type Err = <u32 as std::str::FromStr>::Err;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        u32::from_str(s).map(Self)
+    }
+}
+
 pub type StoreObjectOID<'a> = &'a str;
 
 /// Remember to use [`crate::util::hash::NoopU32HasherBuilder`], as
@@ -16,29 +63,7 @@ pub type StoreObjectOID<'a> = &'a str;
 #[repr(transparent)]
 pub struct StoreTermHash(u32);
 
-impl From<u32> for StoreTermHash {
-    fn from(value: u32) -> Self {
-        Self(value)
-    }
-}
-
-impl From<StoreTermHash> for u32 {
-    fn from(value: StoreTermHash) -> Self {
-        value.0
-    }
-}
-
-impl From<&StoreTermHash> for u32 {
-    fn from(value: &StoreTermHash) -> Self {
-        value.0
-    }
-}
-
-impl std::fmt::Debug for StoreTermHash {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self.0, f)
-    }
-}
+impl_u32_wrapper_utils!(StoreTermHash);
 
 pub enum StoreMetaKey {
     IIDIncr,

@@ -68,7 +68,7 @@ impl super::Executor {
                                 .collect();
 
                             tracing::debug!(
-                                "got pop executor terms remaining terms: {:?} for iid: {}",
+                                "got pop executor terms remaining terms: {:?} for iid: {:?}",
                                 remaining_terms,
                                 iid
                             );
