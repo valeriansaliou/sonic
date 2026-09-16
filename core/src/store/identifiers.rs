@@ -63,6 +63,19 @@ pub struct StoreTermHash(u32);
 
 impl_u32_wrapper_utils!(StoreTermHash);
 
+impl From<&str> for StoreTermHash {
+    fn from(term: &str) -> Self {
+        use std::hash::Hasher as _;
+        use twox_hash::XxHash32;
+
+        let mut hasher = XxHash32::with_seed(0);
+
+        hasher.write(term.as_bytes());
+
+        Self(hasher.finish() as u32)
+    }
+}
+
 pub enum StoreMetaKey {
     IIDIncr,
 }
@@ -78,19 +91,6 @@ impl StoreMetaKey {
         match self {
             StoreMetaKey::IIDIncr => 0,
         }
-    }
-}
-
-impl From<&str> for StoreTermHash {
-    fn from(term: &str) -> Self {
-        use std::hash::Hasher as _;
-        use twox_hash::XxHash32;
-
-        let mut hasher = XxHash32::with_seed(0);
-
-        hasher.write(term.as_bytes());
-
-        Self(hasher.finish() as u32)
     }
 }
 
