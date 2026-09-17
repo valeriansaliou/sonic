@@ -6,13 +6,6 @@
 
 pub struct StoreItemBuilder;
 
-#[derive(PartialEq, Debug)]
-pub struct StoreItem<'a>(
-    pub StoreItemPart<'a>,
-    pub Option<StoreItemPart<'a>>,
-    pub Option<StoreItemPart<'a>>,
-);
-
 #[derive(Copy, Clone, PartialEq)]
 pub struct StoreItemPart<'a>(&'a str);
 
@@ -67,10 +60,10 @@ impl<'a> AsRef<str> for StoreItemPart<'a> {
 }
 
 impl StoreItemBuilder {
-    pub fn from_depth_1(collection: &str) -> Result<StoreItem<'_>, StoreItemError> {
+    pub fn from_depth_1<'a>(collection: &'a str) -> Result<StoreItemPart<'a>, StoreItemError> {
         // Validate & box collection
         if let Ok(collection_item) = StoreItemPart::from_str(collection) {
-            Ok(StoreItem(collection_item, None, None))
+            Ok(collection_item)
         } else {
             Err(StoreItemError::InvalidCollection)
         }
@@ -79,15 +72,13 @@ impl StoreItemBuilder {
     pub fn from_depth_2<'a>(
         collection: &'a str,
         bucket: &'a str,
-    ) -> Result<StoreItem<'a>, StoreItemError> {
+    ) -> Result<(StoreItemPart<'a>, StoreItemPart<'a>), StoreItemError> {
         // Validate & box collection + bucket
         match (
             StoreItemPart::from_str(collection),
             StoreItemPart::from_str(bucket),
         ) {
-            (Ok(collection_item), Ok(bucket_item)) => {
-                Ok(StoreItem(collection_item, Some(bucket_item), None))
-            }
+            (Ok(collection_item), Ok(bucket_item)) => Ok((collection_item, bucket_item)),
             (Err(_), _) => Err(StoreItemError::InvalidCollection),
             (_, Err(_)) => Err(StoreItemError::InvalidBucket),
         }
@@ -97,18 +88,16 @@ impl StoreItemBuilder {
         collection: &'a str,
         bucket: &'a str,
         object: &'a str,
-    ) -> Result<StoreItem<'a>, StoreItemError> {
+    ) -> Result<(StoreItemPart<'a>, StoreItemPart<'a>, StoreItemPart<'a>), StoreItemError> {
         // Validate & box collection + bucket + object
         match (
             StoreItemPart::from_str(collection),
             StoreItemPart::from_str(bucket),
             StoreItemPart::from_str(object),
         ) {
-            (Ok(collection_item), Ok(bucket_item), Ok(object_item)) => Ok(StoreItem(
-                collection_item,
-                Some(bucket_item),
-                Some(object_item),
-            )),
+            (Ok(collection_item), Ok(bucket_item), Ok(object_item)) => {
+                Ok((collection_item, bucket_item, object_item))
+            }
             (Err(_), _, _) => Err(StoreItemError::InvalidCollection),
             (_, Err(_), _) => Err(StoreItemError::InvalidBucket),
             (_, _, Err(_)) => Err(StoreItemError::InvalidObject),
@@ -124,7 +113,7 @@ mod tests {
     fn it_builds_store_item_depth_1() {
         assert_eq!(
             StoreItemBuilder::from_depth_1("c:test:1"),
-            Ok(StoreItem(StoreItemPart("c:test:1"), None, None))
+            Ok(StoreItemPart("c:test:1"))
         );
         assert_eq!(
             StoreItemBuilder::from_depth_1(""),
@@ -136,11 +125,7 @@ mod tests {
     fn it_builds_store_item_depth_2() {
         assert_eq!(
             StoreItemBuilder::from_depth_2("c:test:2", "b:test:2"),
-            Ok(StoreItem(
-                StoreItemPart("c:test:2"),
-                Some(StoreItemPart("b:test:2")),
-                None
-            ))
+            Ok((StoreItemPart("c:test:2"), StoreItemPart("b:test:2")))
         );
         assert_eq!(
             StoreItemBuilder::from_depth_2("", "b:test:2"),
@@ -156,10 +141,10 @@ mod tests {
     fn it_builds_store_item_depth_3() {
         assert_eq!(
             StoreItemBuilder::from_depth_3("c:test:3", "b:test:3", "o:test:3"),
-            Ok(StoreItem(
+            Ok((
                 StoreItemPart("c:test:3"),
-                Some(StoreItemPart("b:test:3")),
-                Some(StoreItemPart("o:test:3"))
+                StoreItemPart("b:test:3"),
+                StoreItemPart("o:test:3")
             ))
         );
         assert_eq!(

@@ -36,10 +36,10 @@ impl<'a> Query<'a> {
         );
 
         match StoreItemBuilder::from_depth_2(collection, bucket) {
-            Ok(store) => {
+            Ok((c, b)) => {
                 let text_lexed =
                     preprocessor.preprocess(terms, lang.and_then(QueryGenericLang::into_lang_opt));
-                Ok(Query::Search(store, query_id, text_lexed, limit, offset))
+                Ok(Query::Search(c, b, query_id, text_lexed, limit, offset))
             }
             Err(_err) => Err(()),
         }
@@ -65,9 +65,9 @@ impl<'a> Query<'a> {
         );
 
         match StoreItemBuilder::from_depth_2(collection, bucket) {
-            Ok(store) => {
+            Ok((c, b)) => {
                 let text_lexed = preprocessor.preprocess(terms, None);
-                Ok(Query::Suggest(store, query_id, text_lexed, limit))
+                Ok(Query::Suggest(c, b, query_id, text_lexed, limit))
             }
             Err(_err) => Err(()),
         }
@@ -81,7 +81,7 @@ impl<'a> Query<'a> {
         offset: QuerySearchOffset,
     ) -> Result<Self, ()> {
         match StoreItemBuilder::from_depth_2(collection, bucket) {
-            Ok(store) => Ok(Query::List(store, query_id, limit, offset)),
+            Ok((c, b)) => Ok(Query::List(c, b, query_id, limit, offset)),
             _ => Err(()),
         }
     }
@@ -108,10 +108,10 @@ impl<'a> Query<'a> {
         );
 
         match StoreItemBuilder::from_depth_3(collection, bucket, object) {
-            Ok(store) => {
+            Ok((c, b, o)) => {
                 let text_lexed =
                     preprocessor.preprocess(text, lang.and_then(QueryGenericLang::into_lang_opt));
-                Ok(Query::Push(store, text_lexed, assume_new))
+                Ok(Query::Push(c, b, o, text_lexed, assume_new))
             }
             Err(_err) => Err(()),
         }
@@ -135,9 +135,9 @@ impl<'a> Query<'a> {
         );
 
         match StoreItemBuilder::from_depth_3(collection, bucket, object) {
-            Ok(store) => {
+            Ok((c, b, o)) => {
                 let text_lexed = preprocessor.preprocess(text, None);
-                Ok(Query::Pop(store, text_lexed))
+                Ok(Query::Pop(c, b, o, text_lexed))
             }
             Err(_err) => Err(()),
         }
@@ -148,37 +148,35 @@ impl<'a> Query<'a> {
         bucket: Option<&'a str>,
         object: Option<&'a str>,
     ) -> Result<Self, ()> {
-        let store_result = match (bucket, object) {
+        match (bucket, object) {
             (Some(bucket_inner), Some(object_inner)) => {
                 StoreItemBuilder::from_depth_3(collection, bucket_inner, object_inner)
+                    .map(|(c, b, o)| Query::Count(c, Some(b), Some(o)))
             }
-            (Some(bucket_inner), None) => StoreItemBuilder::from_depth_2(collection, bucket_inner),
-            _ => StoreItemBuilder::from_depth_1(collection),
-        };
-
-        match store_result {
-            Ok(store) => Ok(Query::Count(store)),
-            _ => Err(()),
+            (Some(bucket_inner), None) => StoreItemBuilder::from_depth_2(collection, bucket_inner)
+                .map(|(c, b)| Query::Count(c, Some(b), None)),
+            _ => StoreItemBuilder::from_depth_1(collection).map(|c| Query::Count(c, None, None)),
         }
+        .map_err(|error| tracing::warn!("Invalid count request: {error:?}"))
     }
 
     pub fn flushc(collection: &'a str) -> Result<Self, ()> {
         match StoreItemBuilder::from_depth_1(collection) {
-            Ok(store) => Ok(Query::FlushC(store)),
+            Ok(c) => Ok(Query::FlushC(c)),
             _ => Err(()),
         }
     }
 
     pub fn flushb(collection: &'a str, bucket: &'a str) -> Result<Self, ()> {
         match StoreItemBuilder::from_depth_2(collection, bucket) {
-            Ok(store) => Ok(Query::FlushB(store)),
+            Ok((c, b)) => Ok(Query::FlushB(c, b)),
             _ => Err(()),
         }
     }
 
     pub fn flusho(collection: &'a str, bucket: &'a str, object: &'a str) -> Result<Self, ()> {
         match StoreItemBuilder::from_depth_3(collection, bucket, object) {
-            Ok(store) => Ok(Query::FlushO(store)),
+            Ok((c, b, o)) => Ok(Query::FlushO(c, b, o)),
             _ => Err(()),
         }
     }

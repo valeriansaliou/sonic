@@ -9,21 +9,19 @@ use rocksdb::WriteBatch;
 
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
-use crate::store::StoreItem;
+use crate::store::StoreItemPart;
 use crate::store::kv::StoreKVAcquireMode;
 use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
     pub fn push(
         &self,
-        item: StoreItem,
+        collection: StoreItemPart,
+        bucket: StoreItemPart,
+        object: StoreItemPart,
         input: PreprocessorOutput,
         assume_new: bool,
     ) -> Result<(), ()> {
-        let StoreItem(collection, Some(bucket), Some(object)) = item else {
-            return Err(());
-        };
-
         // Important: acquire database access read lock, and reference it in context. This \
         //   prevents the database from being erased while using it in this block.
         let _kv_read_guard = self.kv_pool.lock_read_access();
