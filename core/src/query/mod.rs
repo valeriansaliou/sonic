@@ -10,6 +10,7 @@ mod types;
 
 use crate::lexer::preprocessor::PreprocessorOutput;
 use crate::store::StoreItemPart;
+use crate::store::identifiers::StoreObjectOID;
 
 pub use self::types::*;
 
@@ -39,22 +40,22 @@ pub enum Query<'a> {
     Push(
         StoreItemPart<'a>,
         StoreItemPart<'a>,
-        StoreItemPart<'a>,
+        StoreObjectOID<'a>,
         PreprocessorOutput<'a>,
         PushAssumeNew,
     ),
     Pop(
         StoreItemPart<'a>,
         StoreItemPart<'a>,
-        StoreItemPart<'a>,
+        StoreObjectOID<'a>,
         PreprocessorOutput<'a>,
     ),
     Count(
         StoreItemPart<'a>,
         Option<StoreItemPart<'a>>,
-        Option<StoreItemPart<'a>>,
+        Option<StoreObjectOID<'a>>,
     ),
     FlushC(StoreItemPart<'a>),
     FlushB(StoreItemPart<'a>, StoreItemPart<'a>),
-    FlushO(StoreItemPart<'a>, StoreItemPart<'a>, StoreItemPart<'a>),
+    FlushO(StoreItemPart<'a>, StoreItemPart<'a>, StoreObjectOID<'a>),
 }

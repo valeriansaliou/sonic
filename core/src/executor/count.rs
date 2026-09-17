@@ -7,6 +7,7 @@
 
 use crate::store::StoreItemPart;
 use crate::store::fst::StoreFSTMisc;
+use crate::store::identifiers::StoreObjectOID;
 use crate::store::kv::StoreKVAcquireMode;
 
 impl super::Executor {
@@ -15,7 +16,7 @@ impl super::Executor {
         &self,
         collection: StoreItemPart,
         bucket: StoreItemPart,
-        oid: StoreItemPart,
+        oid: StoreObjectOID,
     ) -> Result<u32, ()> {
         // Important: acquire database access read lock, and reference it in context. This \
         //   prevents the database from being erased while using it in this block.
@@ -39,7 +40,7 @@ impl super::Executor {
 
             // Try to resolve existing OID to IID
             kv_action
-                .get_oid_to_iid(&oid)
+                .get_oid_to_iid(oid)
                 .unwrap_or(None)
                 .map(|iid| {
                     // List terms for IID

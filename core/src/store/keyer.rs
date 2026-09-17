@@ -191,7 +191,7 @@ mod tests {
     #[test]
     fn it_keys_oid_to_iid() {
         assert_eq!(
-            StoreKeyerBuilder::oid_to_iid(&"bucket:3".into(), &"conversation:6501e83a".to_string())
+            StoreKeyerBuilder::oid_to_iid(&"bucket:3".into(), "conversation:6501e83a".into())
                 .as_bytes(),
             &[2, 171, 194, 213, 57, 31, 156, 118, 213]
         );

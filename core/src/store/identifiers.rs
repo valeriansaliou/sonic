@@ -5,8 +5,10 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use crate::store::StoreItemPart;
+
 macro_rules! impl_u32_wrapper_utils {
-    ($t:ty) => {
+    ($t:ident) => {
         impl From<u32> for $t {
             fn from(value: u32) -> Self {
                 Self(value)
@@ -25,11 +27,8 @@ macro_rules! impl_u32_wrapper_utils {
             }
         }
 
-        impl std::fmt::Debug for $t {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                std::fmt::Debug::fmt(&self.0, f)
-            }
-        }
+        crate::util::impl_transparent_wrapper_utils!(base for $t(u32));
+        crate::util::impl_transparent_wrapper_utils!(Debug for $t(u32));
     };
 }
 
@@ -45,15 +44,21 @@ impl StoreObjectIID {
     }
 }
 
-impl std::str::FromStr for StoreObjectIID {
-    type Err = <u32 as std::str::FromStr>::Err;
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StoreObjectOID<'a>(pub(super) StoreItemPart<'a>);
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        u32::from_str(s).map(Self)
+crate::util::impl_transparent_wrapper_utils!(base for StoreObjectOID<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(Debug for StoreObjectOID<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(Display for StoreObjectOID<'a>(StoreItemPart<'a>));
+
+impl<'a, T> From<T> for StoreObjectOID<'a>
+where
+    StoreItemPart<'a>: From<T>,
+{
+    fn from(value: T) -> Self {
+        Self(value.into())
     }
 }
-
-pub type StoreObjectOID<'a> = &'a str;
 
 /// Remember to use [`crate::util::hash::NoopU32HasherBuilder`], as
 /// `StoreTermHash` values are already hashed (by xxHash)!

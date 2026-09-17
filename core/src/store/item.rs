@@ -4,8 +4,14 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-#[derive(Copy, Clone, PartialEq)]
-pub struct StoreItemPart<'a>(&'a str);
+use crate::store::identifiers::StoreObjectOID;
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StoreItemPart<'a>(pub(super) &'a str);
+
+crate::util::impl_transparent_wrapper_utils!(base for StoreItemPart<'a>(&'a str));
+crate::util::impl_transparent_wrapper_utils!(Debug for StoreItemPart<'a>(&'a str));
+crate::util::impl_transparent_wrapper_utils!(Display for StoreItemPart<'a>(&'a str));
 
 const STORE_ITEM_PART_LEN_MIN: usize = 1;
 const STORE_ITEM_PART_LEN_MAX: usize = 128;
@@ -34,31 +40,9 @@ pub fn bucket(str: &'static str) -> StoreItemPart<'static> {
     StoreItemPart::from_str(str).unwrap()
 }
 
-impl<'a> std::ops::Deref for StoreItemPart<'a> {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        self.0
-    }
-}
-
 impl<'a> AsRef<str> for StoreItemPart<'a> {
     fn as_ref(&self) -> &str {
         self.0
-    }
-}
-
-impl<'a> std::fmt::Display for StoreItemPart<'a> {
-    #[inline]
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&self.0, f)
-    }
-}
-
-impl<'a> std::fmt::Debug for StoreItemPart<'a> {
-    #[inline]
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self.0, f)
     }
 }
 
@@ -101,16 +85,18 @@ impl StoreItemBuilder {
         collection: &'a str,
         bucket: &'a str,
         object: &'a str,
-    ) -> Result<(StoreItemPart<'a>, StoreItemPart<'a>, StoreItemPart<'a>), StoreItemError> {
+    ) -> Result<(StoreItemPart<'a>, StoreItemPart<'a>, StoreObjectOID<'a>), StoreItemError> {
         // Validate & box collection + bucket + object
         match (
             StoreItemPart::from_str(collection),
             StoreItemPart::from_str(bucket),
             StoreItemPart::from_str(object),
         ) {
-            (Ok(collection_item), Ok(bucket_item), Ok(object_item)) => {
-                Ok((collection_item, bucket_item, object_item))
-            }
+            (Ok(collection_item), Ok(bucket_item), Ok(object_item)) => Ok((
+                collection_item,
+                bucket_item,
+                StoreObjectOID::from(object_item),
+            )),
             (Err(_), _, _) => Err(StoreItemError::InvalidCollection),
             (_, Err(_), _) => Err(StoreItemError::InvalidBucket),
             (_, _, Err(_)) => Err(StoreItemError::InvalidObject),
@@ -157,7 +143,7 @@ mod tests {
             Ok((
                 StoreItemPart("c:test:3"),
                 StoreItemPart("b:test:3"),
-                StoreItemPart("o:test:3")
+                StoreItemPart("o:test:3").into()
             ))
         );
         assert_eq!(

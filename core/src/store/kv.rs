@@ -1273,7 +1273,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
         let (k_meta_to_value, k_term_to_iids, k_oid_to_iid, k_iid_to_oid, k_iid_to_terms) = (
             StoreKeyerBuilder::meta_to_value(&bucket, &StoreMetaKey::IIDIncr),
             StoreKeyerBuilder::term_to_iids(&bucket, 0),
-            StoreKeyerBuilder::oid_to_iid(&bucket, ""),
+            StoreKeyerBuilder::oid_to_iid(&bucket, StoreObjectOID(StoreItemPart(""))),
             StoreKeyerBuilder::iid_to_oid(&bucket, 0),
             StoreKeyerBuilder::iid_to_terms(&bucket, 0),
         );
@@ -1604,22 +1604,22 @@ mod tests {
             action.write(batch).is_ok()
         });
 
-        assert!(action.get_oid_to_iid(&"s".to_string()).is_ok());
+        assert!(action.get_oid_to_iid("s".into()).is_ok());
         assert!({
             let mut batch = WriteBatch::default();
-            action.set_oid_to_iid(&mut batch, &"s".to_string(), 4.into());
+            action.set_oid_to_iid(&mut batch, "s".into(), 4.into());
             action.write(batch).is_ok()
         });
         assert!({
             let mut batch = WriteBatch::default();
-            action.delete_oid_to_iid(&mut batch, &"s".to_string());
+            action.delete_oid_to_iid(&mut batch, "s".into());
             action.write(batch).is_ok()
         });
 
         assert!(action.get_iid_to_oid(4.into()).is_ok());
         assert!({
             let mut batch = WriteBatch::default();
-            action.set_iid_to_oid(&mut batch, 4.into(), &"s".to_string());
+            action.set_iid_to_oid(&mut batch, 4.into(), "s".into());
             action.write(batch).is_ok()
         });
         assert!({
