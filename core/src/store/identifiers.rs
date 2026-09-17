@@ -23,7 +23,7 @@ impl StoreObjectIID {
 
 // MARK: OID
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct StoreObjectOID<'a>(pub(super) StoreItemPart<'a>);
 
 crate::util::impl_transparent_wrapper_utils!(base for StoreObjectOID<'a>(StoreItemPart<'a>));
