@@ -12,7 +12,7 @@ const STORE_ITEM_PART_LEN_MAX: usize = 128;
 
 impl<'a> StoreItemPart<'a> {
     #[allow(clippy::should_implement_trait)]
-    pub fn from_str(part: &'a str) -> Result<Self, ()> {
+    fn from_str(part: &'a str) -> Result<Self, ()> {
         let len = part.len();
 
         if (STORE_ITEM_PART_LEN_MIN..=STORE_ITEM_PART_LEN_MAX).contains(&len) && part.is_ascii() {
@@ -21,10 +21,17 @@ impl<'a> StoreItemPart<'a> {
             Err(())
         }
     }
+}
 
-    pub fn as_str(&self) -> &'a str {
-        self.0
+#[cfg(test)]
+impl From<&'static str> for StoreItemPart<'static> {
+    fn from(value: &'static str) -> Self {
+        Self(value)
     }
+}
+
+pub fn bucket(str: &'static str) -> StoreItemPart<'static> {
+    StoreItemPart::from_str(str).unwrap()
 }
 
 impl<'a> std::ops::Deref for StoreItemPart<'a> {
@@ -35,16 +42,23 @@ impl<'a> std::ops::Deref for StoreItemPart<'a> {
     }
 }
 
+impl<'a> AsRef<str> for StoreItemPart<'a> {
+    fn as_ref(&self) -> &str {
+        self.0
+    }
+}
+
+impl<'a> std::fmt::Display for StoreItemPart<'a> {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
 impl<'a> std::fmt::Debug for StoreItemPart<'a> {
     #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Debug::fmt(&self.0, f)
-    }
-}
-
-impl<'a> AsRef<str> for StoreItemPart<'a> {
-    fn as_ref(&self) -> &str {
-        self.0
     }
 }
 

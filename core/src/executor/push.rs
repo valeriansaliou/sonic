@@ -18,7 +18,7 @@ impl super::Executor {
         &self,
         collection: StoreItemPart,
         bucket: StoreItemPart,
-        object: StoreItemPart,
+        oid: StoreItemPart,
         input: PreprocessorOutput,
         assume_new: bool,
     ) -> Result<(), ()> {
@@ -49,7 +49,6 @@ impl super::Executor {
 
         // Try to resolve existing OID to IID, otherwise initialize IID (store the \
         //   bi-directional relationship)
-        let oid = object.as_str();
         let mut assign_new_iid = || {
             tracing::trace!("must initialize push executor oid-to-iid and iid-to-oid");
 
@@ -57,15 +56,15 @@ impl super::Executor {
             let iid = kv_action.get_new_iid(&mut batch);
 
             // Associate OID <> IID (bidirectional)
-            kv_action.set_oid_to_iid(&mut batch, oid, iid);
-            kv_action.set_iid_to_oid(&mut batch, iid, oid);
+            kv_action.set_oid_to_iid(&mut batch, &oid, iid);
+            kv_action.set_iid_to_oid(&mut batch, iid, &oid);
 
             iid
         };
         let iid = if assume_new {
             assign_new_iid()
         } else {
-            (kv_action.get_oid_to_iid(oid))
+            (kv_action.get_oid_to_iid(&oid))
                 .unwrap_or_else(|()| {
                     tracing::error!("Error getting OID-To-IID");
                     None

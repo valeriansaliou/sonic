@@ -1267,15 +1267,15 @@ impl<'a> StoreKVActionReadWrite<'a> {
     }
 
     pub fn batch_erase_bucket(&self) -> Result<u32, ()> {
-        let bucket = self.bucket.as_str();
+        let bucket = self.bucket;
 
         // Generate all key prefix values (with dummy post-prefix values; we dont care)
         let (k_meta_to_value, k_term_to_iids, k_oid_to_iid, k_iid_to_oid, k_iid_to_terms) = (
-            StoreKeyerBuilder::meta_to_value(bucket, &StoreMetaKey::IIDIncr),
-            StoreKeyerBuilder::term_to_iids(bucket, 0),
-            StoreKeyerBuilder::oid_to_iid(bucket, ""),
-            StoreKeyerBuilder::iid_to_oid(bucket, 0),
-            StoreKeyerBuilder::iid_to_terms(bucket, 0),
+            StoreKeyerBuilder::meta_to_value(&bucket, &StoreMetaKey::IIDIncr),
+            StoreKeyerBuilder::term_to_iids(&bucket, 0),
+            StoreKeyerBuilder::oid_to_iid(&bucket, ""),
+            StoreKeyerBuilder::iid_to_oid(&bucket, 0),
+            StoreKeyerBuilder::iid_to_terms(&bucket, 0),
         );
 
         let key_prefixes = [
@@ -1575,7 +1575,7 @@ mod tests {
             .acquire(StoreKVAcquireMode::Any, "c:test:3", None, |_| {})
             .unwrap()
             .unwrap();
-        let action = store.access_read_write(StoreItemPart::from_str("b:test:3").unwrap());
+        let action = store.access_read_write("b:test:3".into());
 
         assert!(action.get_meta_to_value(StoreMetaKey::IIDIncr).is_ok());
         assert!({

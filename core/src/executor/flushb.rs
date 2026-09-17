@@ -31,11 +31,7 @@ impl super::Executor {
             executor_kv_lock_write!(kv_store);
 
             // Store exists, proceed erasure.
-            tracing::debug!(
-                "collection store exists, erasing: {} from {}",
-                bucket.as_str(),
-                collection.as_str()
-            );
+            tracing::debug!("collection store exists, erasing: {bucket} from {collection}");
 
             let kv_action = kv_store.access_read_write(bucket);
 

@@ -8,6 +8,7 @@
 // TODO(major): Change index structure so bucket comes first.
 
 use super::identifiers::*;
+use super::item::StoreItemPart;
 
 pub struct StoreKeyerBuilder;
 
@@ -58,28 +59,28 @@ impl<'a> StoreKeyerIdx<'a> {
 }
 
 impl StoreKeyerBuilder {
-    pub fn meta_to_value<'a>(bucket: &'a str, meta: &'a StoreMetaKey) -> StoreKVKey {
+    pub fn meta_to_value<'a>(bucket: &'a StoreItemPart, meta: &'a StoreMetaKey) -> StoreKVKey {
         Self::make(StoreKeyerIdx::MetaToValue(meta), bucket)
     }
 
-    pub fn term_to_iids(bucket: &str, term_hash: impl Into<StoreTermHash>) -> StoreKVKey {
+    pub fn term_to_iids(bucket: &StoreItemPart, term_hash: impl Into<StoreTermHash>) -> StoreKVKey {
         Self::make(StoreKeyerIdx::TermToIIDs(term_hash.into()), bucket)
     }
 
-    pub fn oid_to_iid<'a>(bucket: &'a str, oid: StoreObjectOID<'a>) -> StoreKVKey {
+    pub fn oid_to_iid<'a>(bucket: &'a StoreItemPart, oid: StoreObjectOID<'a>) -> StoreKVKey {
         Self::make(StoreKeyerIdx::OIDToIID(oid), bucket)
     }
 
-    pub fn iid_to_oid(bucket: &str, iid: impl Into<StoreObjectIID>) -> StoreKVKey {
+    pub fn iid_to_oid(bucket: &StoreItemPart, iid: impl Into<StoreObjectIID>) -> StoreKVKey {
         Self::make(StoreKeyerIdx::IIDToOID(iid.into()), bucket)
     }
 
-    pub fn iid_to_terms(bucket: &str, iid: impl Into<StoreObjectIID>) -> StoreKVKey {
+    pub fn iid_to_terms(bucket: &StoreItemPart, iid: impl Into<StoreObjectIID>) -> StoreKVKey {
         Self::make(StoreKeyerIdx::IIDToTerms(iid.into()), bucket)
     }
 
     /// Key format: `[idx<1B> | bucket<4B> | route<4B>]`
-    fn make<'a>(idx: StoreKeyerIdx<'a>, bucket: &'a str) -> StoreKVKey {
+    fn make<'a>(idx: StoreKeyerIdx<'a>, bucket: &'a StoreItemPart) -> StoreKVKey {
         use byteorder::{ByteOrder, LittleEndian};
 
         // Encode key bucket + key route from u32 to array of u8 (ie. binary)
@@ -170,7 +171,7 @@ mod tests {
     #[test]
     fn it_keys_meta_to_value() {
         assert_eq!(
-            StoreKeyerBuilder::meta_to_value("bucket:1", &StoreMetaKey::IIDIncr).as_bytes(),
+            StoreKeyerBuilder::meta_to_value(&"bucket:1".into(), &StoreMetaKey::IIDIncr).as_bytes(),
             &[0, 108, 244, 29, 93, 0, 0, 0, 0]
         );
     }
@@ -178,11 +179,11 @@ mod tests {
     #[test]
     fn it_keys_term_to_iids() {
         assert_eq!(
-            StoreKeyerBuilder::term_to_iids("bucket:2", 772137347).as_bytes(),
+            StoreKeyerBuilder::term_to_iids(&"bucket:2".into(), 772137347).as_bytes(),
             &[1, 50, 220, 166, 65, 131, 225, 5, 46]
         );
         assert_eq!(
-            StoreKeyerBuilder::term_to_iids("bucket:2", 3582484684).as_bytes(),
+            StoreKeyerBuilder::term_to_iids(&"bucket:2".into(), 3582484684).as_bytes(),
             &[1, 50, 220, 166, 65, 204, 96, 136, 213]
         );
     }
@@ -190,7 +191,7 @@ mod tests {
     #[test]
     fn it_keys_oid_to_iid() {
         assert_eq!(
-            StoreKeyerBuilder::oid_to_iid("bucket:3", &"conversation:6501e83a".to_string())
+            StoreKeyerBuilder::oid_to_iid(&"bucket:3".into(), &"conversation:6501e83a".to_string())
                 .as_bytes(),
             &[2, 171, 194, 213, 57, 31, 156, 118, 213]
         );
@@ -199,7 +200,7 @@ mod tests {
     #[test]
     fn it_keys_iid_to_oid() {
         assert_eq!(
-            StoreKeyerBuilder::iid_to_oid("bucket:4", 10292198).as_bytes(),
+            StoreKeyerBuilder::iid_to_oid(&"bucket:4".into(), 10292198).as_bytes(),
             &[3, 105, 12, 54, 147, 230, 11, 157, 0]
         );
     }
@@ -207,11 +208,11 @@ mod tests {
     #[test]
     fn it_keys_iid_to_terms() {
         assert_eq!(
-            StoreKeyerBuilder::iid_to_terms("bucket:5", 1).as_bytes(),
+            StoreKeyerBuilder::iid_to_terms(&"bucket:5".into(), 1).as_bytes(),
             &[4, 137, 142, 73, 67, 1, 0, 0, 0]
         );
         assert_eq!(
-            StoreKeyerBuilder::iid_to_terms("bucket:5", 20).as_bytes(),
+            StoreKeyerBuilder::iid_to_terms(&"bucket:5".into(), 20).as_bytes(),
             &[4, 137, 142, 73, 67, 20, 0, 0, 0]
         );
     }
@@ -225,13 +226,16 @@ mod tests {
     #[test]
     fn it_formats_key() {
         assert_eq!(
-            &format!("{}", StoreKeyerBuilder::term_to_iids("bucket:6", 72137347)),
+            &format!(
+                "{}",
+                StoreKeyerBuilder::term_to_iids(&"bucket:6".into(), 72137347)
+            ),
             "'1:71198b49:44cba83' [1, 73, 139, 25, 113, 131, 186, 76, 4]"
         );
         assert_eq!(
             &format!(
                 "{}",
-                StoreKeyerBuilder::meta_to_value("bucket:6", &StoreMetaKey::IIDIncr)
+                StoreKeyerBuilder::meta_to_value(&"bucket:6".into(), &StoreMetaKey::IIDIncr)
             ),
             "'0:71198b49:0' [0, 73, 139, 25, 113, 0, 0, 0, 0]"
         );

@@ -15,7 +15,7 @@ impl super::Executor {
         &self,
         collection: StoreItemPart,
         bucket: StoreItemPart,
-        object: StoreItemPart,
+        oid: StoreItemPart,
     ) -> Result<u32, ()> {
         // Important: acquire database access read lock, and reference it in context. This \
         //   prevents the database from being erased while using it in this block.
@@ -38,10 +38,8 @@ impl super::Executor {
             let kv_action = kv_store.access_read_only(bucket);
 
             // Try to resolve existing OID to IID
-            let oid = object.as_str();
-
             kv_action
-                .get_oid_to_iid(oid)
+                .get_oid_to_iid(&oid)
                 .unwrap_or(None)
                 .map(|iid| {
                     // List terms for IID

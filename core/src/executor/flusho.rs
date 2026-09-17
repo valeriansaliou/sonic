@@ -15,7 +15,7 @@ impl super::Executor {
         &self,
         collection: StoreItemPart,
         bucket: StoreItemPart,
-        object: StoreItemPart,
+        oid: StoreItemPart,
     ) -> Result<u32, ()> {
         // Important: acquire database access read lock, and reference it in context. This \
         //   prevents the database from being erased while using it in this block.
@@ -39,9 +39,7 @@ impl super::Executor {
 
             // Try to resolve existing OID to IID (if it does not exist, there is nothing to \
             //   be flushed)
-            let oid = object.as_str();
-
-            if let Ok(iid_value) = kv_action.get_oid_to_iid(oid) {
+            if let Ok(iid_value) = kv_action.get_oid_to_iid(&oid) {
                 let mut count_flushed = 0;
 
                 if let Some(iid) = iid_value {
@@ -60,7 +58,7 @@ impl super::Executor {
 
                     // Flush bucket (batch operation, as it is shared w/ other executors)
                     let batch_count =
-                        kv_action.batch_flush_bucket(&mut batch, iid, oid, &iid_terms);
+                        kv_action.batch_flush_bucket(&mut batch, iid, &oid, &iid_terms);
 
                     if kv_action.write(batch).is_ok() {
                         count_flushed += batch_count;
