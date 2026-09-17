@@ -5,28 +5,16 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use fst::automaton::AlwaysMatch;
-use fst::set::Stream as FSTStream;
-use fst::{
-    Automaton, Error as FSTError, IntoStreamer, Set as FSTSet, SetBuilder as FSTSetBuilder,
-    Streamer,
-};
-use fst_levenshtein::Levenshtein;
-use fst_regex::Regex;
+use fst::{IntoStreamer as _, Streamer as _};
 use hashbrown::{DefaultHashBuilder, HashMap, HashSet};
-use indexmap::IndexMap;
 use radix::RadixNum;
 use regex_syntax::escape as regex_escape;
 use std::collections::VecDeque;
-use std::fmt;
-use std::fs::{self, File};
-use std::io::{self, BufRead, BufReader, BufWriter, Write};
-use std::iter::FromIterator;
+use std::fs::File;
 use std::path::{Path, PathBuf};
-use std::str;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use std::thread;
 use std::time::{Duration, SystemTime};
+use std::{fmt, fs, io};
 
 use super::generic::{StoreGeneric, StoreGenericPool, StoreGenericPoolExt as _};
 use super::keyer::StoreKeyerHasher;
@@ -47,7 +35,7 @@ pub struct StoreFSTPool {
 }
 
 pub struct StoreFST {
-    graph: FSTSet,
+    graph: fst::Set,
     target: StoreFSTId,
     pending: StoreFSTPending,
     last_used: Arc<RwLock<SystemTime>>,
@@ -254,7 +242,7 @@ impl StoreFSTPool {
                             tracing::error!("fst key {key:?} last consolidated duration clock issue, zeroing: {err:?}");
 
                             // Assuming a zero seconds fallback duration
-                            Duration::from_secs(0)
+                            Duration::ZERO
                         });
 
                     if force
@@ -344,7 +332,7 @@ impl StoreFSTPool {
             // to this thread's work when other threads are done. On large setups, this
             // loop can starve other threads due to the locks used (unfortunately they
             // are all necessary).
-            thread::yield_now();
+            std::thread::yield_now();
         }
 
         tracing::info!(
@@ -446,6 +434,8 @@ impl StoreFSTPool {
         collection_name: &str,
         bucket_name: &str,
     ) -> Result<(), io::Error> {
+        use io::Write as _;
+
         // Acquire access lock (in blocking write mode), and reference it in context
         // Notice: this prevents store to be acquired from any context.
         let _access = self.graph_access_lock.write().unwrap();
@@ -468,7 +458,7 @@ impl StoreFSTPool {
 
         // Stream actual FST data to FST backup.
         let backup_fst_file = File::create(&fst_backup_path)?;
-        let mut backup_fst_writer = BufWriter::new(backup_fst_file);
+        let mut backup_fst_writer = io::BufWriter::new(backup_fst_file);
 
         // Convert names to hashes (as names are hashes encoded as base-16
         // strings, but we need them as proper integers).
@@ -519,6 +509,8 @@ impl StoreFSTPool {
         collection_name: &str,
         bucket_name: &str,
     ) -> Result<(), io::Error> {
+        use io::BufRead as _;
+
         // Acquire access lock (in blocking write mode) to prevent store from
         // being acquired from any context.
         let _access = self.graph_access_lock.write().unwrap();
@@ -561,10 +553,10 @@ impl StoreFSTPool {
         }
 
         // Stream backup words to restored FST.
-        let fst_writer = BufWriter::new(File::create(&fst_path)?);
-        let fst_backup_reader = BufReader::new(File::open(&origin_path)?);
+        let fst_writer = io::BufWriter::new(File::create(&fst_path)?);
+        let fst_backup_reader = io::BufReader::new(File::open(&origin_path)?);
 
-        let mut fst_builder = FSTSetBuilder::new(fst_writer).map_err(|error| {
+        let mut fst_builder = fst::SetBuilder::new(fst_writer).map_err(|error| {
             io::Error::other(format!("Graph restore builder failure: {error:?}"))
         })?;
 
@@ -637,10 +629,10 @@ impl StoreFSTPool {
             )
         })?;
 
-        let tmp_fst_writer = BufWriter::new(tmp_fst_file);
+        let tmp_fst_writer = io::BufWriter::new(tmp_fst_file);
 
         // Create a builder that can be used to insert new key-value pairs.
-        let mut tmp_fst_builder = FSTSetBuilder::new(tmp_fst_writer).map_err(|error| {
+        let mut tmp_fst_builder = fst::SetBuilder::new(tmp_fst_writer).map_err(|error| {
             tracing::error!(
                 "Error starting building temporary fst at path {bucket_tmp_path:?}: {error:?}"
             )
@@ -805,7 +797,7 @@ impl StoreFSTPool {
         self.graph_consolidate.write().unwrap().remove(&id);
     }
 
-    fn open(&self, id: StoreFSTId) -> Result<FSTSet, FSTError> {
+    fn open(&self, id: StoreFSTId) -> Result<fst::Set, fst::Error> {
         tracing::debug!("Opening fst graph for {id}");
 
         let collection_bucket_path = self
@@ -817,11 +809,11 @@ impl StoreFSTPool {
             // SAFETY: This is unsafe, as loaded memory is a memory-mapped file, that cannot be
             //   guaranteed not to be muted while we own a read handle to it. Though, we use
             //   higher-level locking mechanisms on all callers of this method, so we are safe.
-            unsafe { FSTSet::from_path(collection_bucket_path) }
+            unsafe { fst::Set::from_path(collection_bucket_path) }
         } else {
             // FST does not exist on disk; generate an empty FST for now
             // (until a consolidation task occurs and populates the on-disk FST).
-            FSTSet::from_iter(std::iter::empty::<&str>())
+            fst::Set::from_iter(std::iter::empty::<&str>())
         }
     }
 }
@@ -869,11 +861,11 @@ impl StoreFST {
         self.graph.len()
     }
 
-    pub fn as_stream(&self) -> FSTStream<'_, AlwaysMatch> {
+    pub fn as_stream(&self) -> fst::set::Stream<'_> {
         self.graph.into_stream()
     }
 
-    pub fn lookup_begins_(&self, word: &str) -> Result<FSTStream<'_, Regex>, ()> {
+    pub fn lookup_begins_(&self, word: &str) -> Result<fst::set::Stream<'_, fst_regex::Regex>, ()> {
         // NOTE: This regex maps over an unicode range, for speed reasons at scale.
         //   We found out that the 'match any' syntax ('.*') was super-slow. Using the restrictive
         //   syntax below divided the cost of e.g. a search query by 2. The regex below has been
@@ -896,7 +888,7 @@ impl StoreFST {
         // Proceed word lookup.
         tracing::debug!("Looking-up word in fst via 'begins': {word:?} with regex: {regex_str:?}");
 
-        let regex = Regex::new(&regex_str).map_err(|_error| ())?;
+        let regex = fst_regex::Regex::new(&regex_str).map_err(|_error| ())?;
 
         Ok(self.graph.search(regex).into_stream())
     }
@@ -905,12 +897,12 @@ impl StoreFST {
         &self,
         word: &str,
         typo_factor: u32,
-    ) -> Result<FSTStream<'_, Levenshtein>, ()> {
+    ) -> Result<fst::set::Stream<'_, fst_levenshtein::Levenshtein>, ()> {
         tracing::debug!(
             "Looking-up word in fst via 'typos': {word:?} with typo factor: {typo_factor:?}"
         );
 
-        let fuzzy = Levenshtein::new(word, typo_factor).map_err(|_error| ())?;
+        let fuzzy = fst_levenshtein::Levenshtein::new(word, typo_factor).map_err(|_error| ())?;
 
         Ok(self.graph.search(fuzzy).into_stream())
     }
@@ -1182,6 +1174,8 @@ impl StoreFST {
         limit: usize,
         max_typo_factor: Option<u32>,
     ) -> Option<impl ExactSizeIterator<Item = (String, u16)> + DoubleEndedIterator + use<>> {
+        use indexmap::IndexMap;
+
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(from_word) {
             return None;
@@ -1439,9 +1433,9 @@ impl StoreFSTId {
 // MARK: - Helpers
 
 #[repr(transparent)]
-struct FSTStreamIterator<'a, A: Automaton>(fst::set::Stream<'a, A>);
+struct FSTStreamIterator<'a, A: fst::Automaton>(fst::set::Stream<'a, A>);
 
-impl<'a, A: Automaton> Iterator for FSTStreamIterator<'a, A> {
+impl<'a, A: fst::Automaton> Iterator for FSTStreamIterator<'a, A> {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {

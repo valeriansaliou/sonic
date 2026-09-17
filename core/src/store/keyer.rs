@@ -7,12 +7,6 @@
 
 // TODO(major): Change index structure so bucket comes first.
 
-use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
-use std::fmt;
-use std::hash::Hasher;
-use std::io::Cursor;
-use twox_hash::XxHash32;
-
 use super::identifiers::*;
 
 pub struct StoreKeyerBuilder;
@@ -33,9 +27,9 @@ impl AsRef<[u8]> for StoreKVKey {
     }
 }
 
-impl fmt::Debug for StoreKVKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.0, f)
+impl std::fmt::Debug for StoreKVKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.0, f)
     }
 }
 
@@ -84,8 +78,9 @@ impl StoreKeyerBuilder {
         Self::make(StoreKeyerIdx::IIDToTerms(iid.into()), bucket)
     }
 
+    /// Key format: `[idx<1B> | bucket<4B> | route<4B>]`
     fn make<'a>(idx: StoreKeyerIdx<'a>, bucket: &'a str) -> StoreKVKey {
-        // Key format: [idx<1B> | bucket<4B> | route<4B>]
+        use byteorder::{ByteOrder, LittleEndian};
 
         // Encode key bucket + key route from u32 to array of u8 (ie. binary)
         let (mut bucket_encoded, mut route_encoded) = ([0; 4], [0; 4]);
@@ -135,6 +130,9 @@ impl StoreKVKey {
 impl StoreKeyerHasher {
     #![allow(clippy::wrong_self_convention)]
     pub fn to_compact(part: &str) -> u32 {
+        use std::hash::Hasher as _;
+        use twox_hash::XxHash32;
+
         let mut hasher = XxHash32::with_seed(0);
 
         hasher.write(part.as_bytes());
@@ -142,8 +140,11 @@ impl StoreKeyerHasher {
     }
 }
 
-impl fmt::Display for StoreKVKey {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl std::fmt::Display for StoreKVKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use byteorder::{LittleEndian, ReadBytesExt as _};
+        use std::io::Cursor;
+
         let Self(bytes) = self;
 
         let key_idx = bytes[0];

@@ -5,26 +5,17 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use byteorder::{ByteOrder, LittleEndian, ReadBytesExt};
-use hashbrown::{DefaultHashBuilder, HashMap};
+use hashbrown::{DefaultHashBuilder, HashMap, HashSet};
 use radix::RadixNum;
 use rocksdb::backup::{
     BackupEngine as DBBackupEngine, BackupEngineOptions as DBBackupEngineOptions,
     RestoreOptions as DBRestoreOptions,
 };
-use rocksdb::{
-    DB, DBCompactionStyle, DBCompressionType, Env as DBEnv, Error as DBError, FlushOptions,
-    MergeOperands, WriteBatch, WriteOptions,
-};
-use std::collections::HashSet;
-use std::fmt;
-use std::fs;
-use std::io::{self, Cursor};
+use rocksdb::{DB, WriteBatch};
 use std::path::{Path, PathBuf};
-use std::str;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use std::thread;
 use std::time::{Duration, SystemTime};
+use std::{fmt, fs, io};
 
 use crate::config::ConfigStoreKVDatabase;
 use crate::util::hash::NoopU32HasherBuilder;
@@ -301,7 +292,7 @@ impl StoreKVPool {
             drop(pool_guard);
 
             // Give a bit of time to other threads before continuing
-            thread::yield_now();
+            std::thread::yield_now();
         }
 
         tracing::info!(
@@ -348,7 +339,7 @@ impl StoreKVPool {
             // Give a bit of time to other threads before continuing
             // PERF: Compactions can take a very long time, and collections are
             //   likely to be very few, so it’s better to yield between runs.
-            thread::yield_now();
+            std::thread::yield_now();
         }
 
         tracing::info!("done compacting {store_ids:?}");
@@ -421,7 +412,7 @@ impl StoreKVPool {
         // Initialize KV database backup engine
         let kv_backup_options = DBBackupEngineOptions::new(&kv_backup_path)
             .map_err(|_| io::Error::other("backup engine options acquire failure"))?;
-        let kv_backup_environment = DBEnv::new()
+        let kv_backup_environment = rocksdb::Env::new()
             .map_err(|_| io::Error::other("backup engine environment acquire failure"))?;
 
         let mut kv_backup_engine = DBBackupEngine::open(&kv_backup_options, &kv_backup_environment)
@@ -476,7 +467,7 @@ impl StoreKVPool {
         // Initialize KV database backup engine
         let kv_backup_options = DBBackupEngineOptions::new(&origin_path)
             .map_err(|_| io::Error::other("backup engine options acquire failure"))?;
-        let kv_backup_environment = DBEnv::new()
+        let kv_backup_environment = rocksdb::Env::new()
             .map_err(|_| io::Error::other("backup engine environment acquire failure"))?;
 
         let mut kv_backup_engine = DBBackupEngine::open(&kv_backup_options, &kv_backup_environment)
@@ -497,7 +488,7 @@ impl StoreKVPool {
         &self,
         store_id: StoreKVId,
         override_options: impl FnOnce(&mut rocksdb::Options),
-    ) -> Result<DB, DBError> {
+    ) -> Result<DB, rocksdb::Error> {
         tracing::debug!("opening key-value database for collection: {store_id}");
 
         // Configure database options
@@ -562,7 +553,7 @@ impl StoreKVPool {
         // Set static options
         db_options.create_if_missing(true);
         db_options.set_use_fsync(false);
-        db_options.set_compaction_style(DBCompactionStyle::Level);
+        db_options.set_compaction_style(rocksdb::DBCompactionStyle::Level);
         db_options.set_merge_operator_associative("default_merge", default_merge_operator);
 
         // Set dynamic options
@@ -588,9 +579,9 @@ impl StoreKVPool {
         //   will get overriden if `compression_type` is also specified.
         if let Some(compress) = compress {
             db_options.set_compression_type(if *compress {
-                DBCompressionType::Zstd
+                rocksdb::DBCompressionType::Zstd
             } else {
-                DBCompressionType::None
+                rocksdb::DBCompressionType::None
             });
         }
         if_some!(db_options.set_compression_type(compression_type));
@@ -684,9 +675,9 @@ impl StoreKVPool {
 }
 
 impl StoreKV {
-    fn flush(&self) -> Result<(), DBError> {
+    fn flush(&self) -> Result<(), rocksdb::Error> {
         // Generate flush options
-        let mut flush_options = FlushOptions::default();
+        let mut flush_options = rocksdb::FlushOptions::default();
 
         flush_options.set_wait(true);
 
@@ -694,9 +685,9 @@ impl StoreKV {
         self.database.flush_opt(&flush_options)
     }
 
-    fn do_write(&self, batch: WriteBatch) -> Result<(), DBError> {
+    fn do_write(&self, batch: WriteBatch) -> Result<(), rocksdb::Error> {
         // Configure this write
-        let mut write_options = WriteOptions::default();
+        let mut write_options = rocksdb::WriteOptions::default();
 
         // WAL disabled?
         if !self.kv_store_config.database.write_ahead_log {
@@ -784,7 +775,7 @@ impl StoreKV {
 }
 
 impl<'a> StoreKVActionReadWrite<'a> {
-    pub fn write(&self, batch: WriteBatch) -> Result<(), DBError> {
+    pub fn write(&self, batch: WriteBatch) -> Result<(), rocksdb::Error> {
         self.store.do_write(batch)
     }
 }
@@ -1380,6 +1371,8 @@ impl StoreObjectIID {
 }
 
 fn encode_u32(decoded: u32) -> [u8; 4] {
+    use byteorder::{ByteOrder, LittleEndian};
+
     let mut encoded = [0; 4];
 
     LittleEndian::write_u32(&mut encoded, decoded);
@@ -1393,7 +1386,11 @@ fn decode_u32_mapped<T: From<u32>>(encoded: &[u8]) -> Result<T, ()> {
 }
 
 fn decode_u32(encoded: &[u8]) -> Result<u32, ()> {
-    Cursor::new(encoded).read_u32::<LittleEndian>().or(Err(()))
+    use byteorder::{LittleEndian, ReadBytesExt as _};
+
+    io::Cursor::new(encoded)
+        .read_u32::<LittleEndian>()
+        .or(Err(()))
 }
 
 fn encode_u32_list_mapped<T: Into<u32>>(decoded: impl ExactSizeIterator<Item = T>) -> Vec<u8> {
@@ -1428,7 +1425,7 @@ fn decode_u32_list_mapped<T: From<u32>>(encoded: &[u8]) -> Result<Vec<T>, ()> {
 fn default_merge_operator(
     key: &[u8],
     existing_val: Option<&[u8]>,
-    operands: &MergeOperands,
+    operands: &rocksdb::MergeOperands,
 ) -> Option<Vec<u8>> {
     match key[0] {
         // StoreKeyerIdx::MetaToValue(StoreMetaKey::IIDIncr)
@@ -1449,7 +1446,10 @@ fn default_merge_operator(
 
 /// This efficiently prepends new u32 values to an existing slice, removing
 /// duplicates along the way.
-fn prepend_u32_list(existing_val: Option<&[u8]>, operands: &MergeOperands) -> Option<Vec<u8>> {
+fn prepend_u32_list(
+    existing_val: Option<&[u8]>,
+    operands: &rocksdb::MergeOperands,
+) -> Option<Vec<u8>> {
     const WORD_LEN: usize = 4;
 
     let current: &[u8] = existing_val.unwrap_or_default();
@@ -1502,7 +1502,7 @@ fn prepend_u32_list(existing_val: Option<&[u8]>, operands: &MergeOperands) -> Op
 ///
 /// It’s used for `IIDIncr`, where we can’t guarantee the order in which
 /// incremental values will effectively be written.
-fn u32_max(existing_val: Option<&[u8]>, operands: &MergeOperands) -> Option<Vec<u8>> {
+fn u32_max(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -> Option<Vec<u8>> {
     let mut res = match existing_val {
         Some(bytes) if bytes.len() == 4 => {
             // SAFETY: `bytes` is guaranteed to be 4 bytes long.
