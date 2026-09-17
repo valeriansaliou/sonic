@@ -26,7 +26,7 @@ pub(super) mod constants {
 pub struct StoreKVKey([u8; 9]);
 
 impl StoreKVKey {
-    pub fn meta_to_value<'a>(bucket: &'a StoreItemPart, meta: &'a StoreMetaKey) -> StoreKVKey {
+    pub fn meta_to_value(bucket: &StoreItemPart, meta: &StoreMetaKey) -> StoreKVKey {
         Self::make(META_TO_VALUE, bucket, meta.as_u32())
     }
 
@@ -34,7 +34,7 @@ impl StoreKVKey {
         Self::make(TERM_TO_IIDS, bucket, term_hash.into().into())
     }
 
-    pub fn oid_to_iid<'a>(bucket: &'a StoreItemPart, oid: StoreObjectOID<'a>) -> StoreKVKey {
+    pub fn oid_to_iid(bucket: &StoreItemPart, oid: StoreObjectOID) -> StoreKVKey {
         Self::make(OID_TO_IID, bucket, oid.into_compact())
     }
 
