@@ -4,19 +4,8 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-pub struct StoreItemBuilder;
-
 #[derive(Copy, Clone, PartialEq)]
 pub struct StoreItemPart<'a>(&'a str);
-
-// TODO: Change variant names
-#[allow(clippy::enum_variant_names)]
-#[derive(PartialEq, Debug)]
-pub enum StoreItemError {
-    InvalidCollection,
-    InvalidBucket,
-    InvalidObject,
-}
 
 const STORE_ITEM_PART_LEN_MIN: usize = 1;
 const STORE_ITEM_PART_LEN_MAX: usize = 128;
@@ -57,6 +46,16 @@ impl<'a> AsRef<str> for StoreItemPart<'a> {
     fn as_ref(&self) -> &str {
         self.0
     }
+}
+
+pub enum StoreItemBuilder {}
+
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, PartialEq)]
+pub enum StoreItemError {
+    InvalidCollection,
+    InvalidBucket,
+    InvalidObject,
 }
 
 impl StoreItemBuilder {
