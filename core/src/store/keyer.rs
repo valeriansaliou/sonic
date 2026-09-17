@@ -14,46 +14,6 @@ use super::item::StoreItemPart;
 #[repr(transparent)]
 pub struct StoreKVKey([u8; 9]);
 
-impl From<[u8; 9]> for StoreKVKey {
-    fn from(value: [u8; 9]) -> Self {
-        Self(value)
-    }
-}
-
-impl AsRef<[u8]> for StoreKVKey {
-    fn as_ref(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl std::fmt::Debug for StoreKVKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self.0, f)
-    }
-}
-
-enum StoreKeyerIdx<'a> {
-    MetaToValue(&'a StoreMetaKey),
-    TermToIIDs(StoreTermHash),
-    OIDToIID(StoreObjectOID<'a>),
-    IIDToOID(StoreObjectIID),
-    IIDToTerms(StoreObjectIID),
-}
-
-impl<'a> StoreKeyerIdx<'a> {
-    pub fn to_index(&self) -> u8 {
-        // WARN: Don’t update values here, it would break stuff
-        //   (e.g. `default_merge_operator`)! Only add new cases.
-        match self {
-            StoreKeyerIdx::MetaToValue(_) => 0,
-            StoreKeyerIdx::TermToIIDs(_) => 1,
-            StoreKeyerIdx::OIDToIID(_) => 2,
-            StoreKeyerIdx::IIDToOID(_) => 3,
-            StoreKeyerIdx::IIDToTerms(_) => 4,
-        }
-    }
-}
-
 impl StoreKVKey {
     pub fn meta_to_value<'a>(bucket: &'a StoreItemPart, meta: &'a StoreMetaKey) -> StoreKVKey {
         Self::make(StoreKeyerIdx::MetaToValue(meta), bucket)
@@ -124,6 +84,18 @@ impl StoreKVKey {
     }
 }
 
+impl From<[u8; 9]> for StoreKVKey {
+    fn from(value: [u8; 9]) -> Self {
+        Self(value)
+    }
+}
+
+impl AsRef<[u8]> for StoreKVKey {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 impl std::fmt::Display for StoreKVKey {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         use byteorder::{LittleEndian, ReadBytesExt as _};
@@ -144,6 +116,34 @@ impl std::fmt::Display for StoreKVKey {
         );
 
         write!(f, "'{key_idx}:{key_bucket:x}:{key_route:x}' {bytes:?}")
+    }
+}
+
+impl std::fmt::Debug for StoreKVKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+enum StoreKeyerIdx<'a> {
+    MetaToValue(&'a StoreMetaKey),
+    TermToIIDs(StoreTermHash),
+    OIDToIID(StoreObjectOID<'a>),
+    IIDToOID(StoreObjectIID),
+    IIDToTerms(StoreObjectIID),
+}
+
+impl<'a> StoreKeyerIdx<'a> {
+    pub fn to_index(&self) -> u8 {
+        // WARN: Don’t update values here, it would break stuff
+        //   (e.g. `default_merge_operator`)! Only add new cases.
+        match self {
+            StoreKeyerIdx::MetaToValue(_) => 0,
+            StoreKeyerIdx::TermToIIDs(_) => 1,
+            StoreKeyerIdx::OIDToIID(_) => 2,
+            StoreKeyerIdx::IIDToOID(_) => 3,
+            StoreKeyerIdx::IIDToTerms(_) => 4,
+        }
     }
 }
 
