@@ -59,12 +59,6 @@ impl StoreKVKey {
             r0, r1, r2, r3, // [route<4B>]
         ])
     }
-}
-
-impl StoreKVKey {
-    pub fn as_bytes(&self) -> &[u8; 9] {
-        &self.0
-    }
 
     /// Prefix format: `[idx<1B> | bucket<4B>]`
     pub fn into_prefix(self) -> [u8; 5] {
@@ -109,48 +103,48 @@ mod tests {
     #[test]
     fn it_keys_meta_to_value() {
         assert_eq!(
-            StoreKVKey::meta_to_value(&"bucket:1".into(), &StoreMetaKey::IIDIncr).as_bytes(),
-            &[0, 108, 244, 29, 93, 0, 0, 0, 0]
+            StoreKVKey::meta_to_value(&"bucket:1".into(), &StoreMetaKey::IIDIncr).0,
+            [0, 108, 244, 29, 93, 0, 0, 0, 0]
         );
     }
 
     #[test]
     fn it_keys_term_to_iids() {
         assert_eq!(
-            StoreKVKey::term_to_iids(&"bucket:2".into(), 772137347).as_bytes(),
-            &[1, 50, 220, 166, 65, 131, 225, 5, 46]
+            StoreKVKey::term_to_iids(&"bucket:2".into(), 772137347).0,
+            [1, 50, 220, 166, 65, 131, 225, 5, 46]
         );
         assert_eq!(
-            StoreKVKey::term_to_iids(&"bucket:2".into(), 3582484684).as_bytes(),
-            &[1, 50, 220, 166, 65, 204, 96, 136, 213]
+            StoreKVKey::term_to_iids(&"bucket:2".into(), 3582484684).0,
+            [1, 50, 220, 166, 65, 204, 96, 136, 213]
         );
     }
 
     #[test]
     fn it_keys_oid_to_iid() {
         assert_eq!(
-            StoreKVKey::oid_to_iid(&"bucket:3".into(), "conversation:6501e83a".into()).as_bytes(),
-            &[2, 171, 194, 213, 57, 31, 156, 118, 213]
+            StoreKVKey::oid_to_iid(&"bucket:3".into(), "conversation:6501e83a".into()).0,
+            [2, 171, 194, 213, 57, 31, 156, 118, 213]
         );
     }
 
     #[test]
     fn it_keys_iid_to_oid() {
         assert_eq!(
-            StoreKVKey::iid_to_oid(&"bucket:4".into(), 10292198).as_bytes(),
-            &[3, 105, 12, 54, 147, 230, 11, 157, 0]
+            StoreKVKey::iid_to_oid(&"bucket:4".into(), 10292198).0,
+            [3, 105, 12, 54, 147, 230, 11, 157, 0]
         );
     }
 
     #[test]
     fn it_keys_iid_to_terms() {
         assert_eq!(
-            StoreKVKey::iid_to_terms(&"bucket:5".into(), 1).as_bytes(),
-            &[4, 137, 142, 73, 67, 1, 0, 0, 0]
+            StoreKVKey::iid_to_terms(&"bucket:5".into(), 1).0,
+            [4, 137, 142, 73, 67, 1, 0, 0, 0]
         );
         assert_eq!(
-            StoreKVKey::iid_to_terms(&"bucket:5".into(), 20).as_bytes(),
-            &[4, 137, 142, 73, 67, 20, 0, 0, 0]
+            StoreKVKey::iid_to_terms(&"bucket:5".into(), 20).0,
+            [4, 137, 142, 73, 67, 20, 0, 0, 0]
         );
     }
 

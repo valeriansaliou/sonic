@@ -712,7 +712,7 @@ impl StoreKV {
         bucket: &StoreItemPart<'a>,
     ) -> Result<Option<StoreObjectIID>, Box<dyn std::error::Error>> {
         let store_key = StoreKVKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
-        let value = self.database.get(store_key.as_bytes())?;
+        let value = self.database.get(store_key)?;
 
         match value {
             Some(bytes) => match decode_u32_mapped(&bytes) {
@@ -748,7 +748,7 @@ impl StoreKV {
         drop(write_guard);
 
         let key = StoreKVKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
-        batch.merge(key.as_bytes(), iid.into_bytes());
+        batch.merge(key, iid.into_bytes());
 
         iid
     }
@@ -873,7 +873,7 @@ impl<'a> StoreKVActionReadOnly<'a> {
 
         tracing::debug!("store get meta-to-value: {store_key}");
 
-        match self.store.database.get(&store_key.as_bytes()) {
+        match self.store.database.get(store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got meta-to-value: {store_key}");
 
@@ -909,7 +909,7 @@ impl<'a> StoreKVActionReadOnly<'a> {
 
         tracing::debug!("store get term-to-iids: {store_key}");
 
-        match self.store.database.get(&store_key.as_bytes()) {
+        match self.store.database.get(store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got term-to-iids: {store_key} with encoded value: {value:?}");
 
@@ -942,7 +942,7 @@ impl<'a> StoreKVActionReadOnly<'a> {
 
         tracing::debug!("store get oid-to-iid: {store_key}");
 
-        match self.store.database.get(&store_key.as_bytes()) {
+        match self.store.database.get(store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got oid-to-iid: {store_key} with encoded value: {value:?}");
 
@@ -975,7 +975,7 @@ impl<'a> StoreKVActionReadOnly<'a> {
 
         tracing::debug!("store get iid-to-oid: {store_key}");
 
-        match self.store.database.get(&store_key.as_bytes()) {
+        match self.store.database.get(store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got iid-to-oid: {store_key}");
 
@@ -1002,7 +1002,7 @@ impl<'a> StoreKVActionReadOnly<'a> {
 
         tracing::debug!("store get iid-to-terms: {store_key}");
 
-        match self.store.database.get(&store_key.as_bytes()) {
+        match self.store.database.get(store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got iid-to-terms: {store_key} with encoded value: {value:?}");
 
@@ -1064,7 +1064,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
 
         tracing::debug!("store set meta-to-value: {store_key}");
 
-        batch.put(&store_key.as_bytes(), value.to_string().as_bytes())
+        batch.put(store_key, value.to_string().as_bytes())
     }
 
     pub fn get_iid_incr(&self) -> Result<Option<StoreObjectIID>, Box<dyn std::error::Error>> {
@@ -1102,7 +1102,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
 
         tracing::debug!("store set term-to-iids: {store_key} with encoded value: {iids_encoded:?}");
 
-        batch.put(&store_key.as_bytes(), &iids_encoded)
+        batch.put(store_key, &iids_encoded)
     }
 
     pub fn add_term_to_iids(
@@ -1116,7 +1116,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
         tracing::debug!("store add term-to-iids: {store_key}");
 
         for iid in iids {
-            batch.merge(store_key.as_bytes(), iid.into_bytes());
+            batch.merge(store_key, iid.into_bytes());
         }
     }
 
@@ -1125,7 +1125,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
 
         tracing::debug!("store delete term-to-iids: {store_key}");
 
-        batch.delete(&store_key.as_bytes())
+        batch.delete(store_key)
     }
 
     /// OID-to-IID mapper
@@ -1145,7 +1145,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
 
         tracing::debug!("store set oid-to-iid: {store_key} with encoded value: {iid_encoded:?}");
 
-        batch.put(&store_key.as_bytes(), &iid_encoded)
+        batch.put(store_key, &iid_encoded)
     }
 
     pub fn delete_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOID) {
@@ -1153,7 +1153,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
 
         tracing::debug!("store delete oid-to-iid: {store_key}");
 
-        batch.delete(&store_key.as_bytes())
+        batch.delete(store_key)
     }
 
     /// IID-to-OID mapper
@@ -1168,7 +1168,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
 
         tracing::debug!("store set iid-to-oid: {store_key}");
 
-        batch.put(&store_key.as_bytes(), oid.as_bytes())
+        batch.put(store_key, oid.as_bytes())
     }
 
     pub fn delete_iid_to_oid(&self, batch: &mut WriteBatch, iid: StoreObjectIID) {
@@ -1176,7 +1176,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
 
         tracing::debug!("store delete iid-to-oid: {store_key}");
 
-        batch.delete(&store_key.as_bytes())
+        batch.delete(store_key)
     }
 
     /// IID-to-Terms mapper
@@ -1203,7 +1203,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
             "store set iid-to-terms: {store_key} with encoded value: {terms_hashes_encoded:?}"
         );
 
-        batch.put(&store_key.as_bytes(), &terms_hashes_encoded)
+        batch.put(store_key, &terms_hashes_encoded)
     }
 
     pub fn add_iid_to_terms(
@@ -1217,7 +1217,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
         tracing::debug!("store add iid-to-terms: {store_key}");
 
         for term_hash in terms_hashes {
-            batch.merge(&store_key.as_bytes(), term_hash.into_bytes());
+            batch.merge(store_key, term_hash.into_bytes());
         }
     }
 
@@ -1226,7 +1226,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
 
         tracing::debug!("store delete iid-to-terms: {store_key}");
 
-        batch.delete(&store_key.as_bytes())
+        batch.delete(store_key)
     }
 
     pub fn batch_flush_bucket(
