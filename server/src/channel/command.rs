@@ -14,17 +14,17 @@ use std::str::{self, SplitWhitespace};
 use std::sync::LazyLock;
 use std::vec::Vec;
 
-use sonic::query::{
+use sonic::Executor;
+use sonic::executor::{
     ListMetaData, QueryGenericLang, QueryMetaData, QuerySearchLimit, QuerySearchOffset,
 };
-use sonic::store::operation::StoreOperationDispatch;
-use sonic::{Executor, Query};
 
 use super::format::unescape;
 use super::message::{
     ChannelMessageModeControl, ChannelMessageModeIngest, ChannelMessageModeSearch,
 };
 use super::statistics::ChannelStatistics;
+use crate::query::{Query, operation::StoreOperationDispatch};
 
 #[derive(PartialEq)]
 pub enum ChannelCommandError {

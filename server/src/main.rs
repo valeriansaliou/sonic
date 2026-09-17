@@ -26,7 +26,9 @@
 mod channel;
 mod config;
 mod logger;
+mod query;
 mod tasker;
+mod util;
 
 use std::str::FromStr;
 use std::sync::Arc;

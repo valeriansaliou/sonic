@@ -152,7 +152,7 @@ macro_rules! exec {
     (internal_ lang_txt) => { "" };
     (internal_ lang_txt $lang:expr) => { format!(" LANG({})", $lang) };
 
-    (internal_ limit) => { sonic::query::QuerySearchLimit::MAX };
+    (internal_ limit) => { sonic::executor::QuerySearchLimit::MAX };
     (internal_ limit $limit:expr) => { $limit };
 
     (internal_ limit_txt) => { "" };

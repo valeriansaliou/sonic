@@ -7,11 +7,11 @@
 
 use indexmap::IndexMap;
 
-use crate::lexer::itertools::UniqueBy;
-use crate::lexer::preprocessor::{PreprocessorOutput, Token};
-use crate::query::{
+use super::types::{
     QueryMatchScore, QueryResultScore, QuerySearchID, QuerySearchLimit, QuerySearchOffset,
 };
+use crate::lexer::itertools::UniqueBy;
+use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::StoreItemPart;
 use crate::store::fst::typo_factor;
 use crate::store::identifiers::{StoreObjectIID, StoreTermHash};

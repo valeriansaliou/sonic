@@ -5,8 +5,10 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use sonic::Executor;
+
+use super::Query;
 use crate::util::itertools::Itertools as _;
-use crate::{Executor, Query};
 
 pub struct StoreOperationDispatch;
 

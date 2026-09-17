@@ -5,12 +5,13 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use sonic::config::{ConfigNormalization, ConfigStopwords, ConfigTokenization};
+use sonic::executor::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset};
+use sonic::lexer::preprocessor::Preprocessor;
+use sonic::lexer::to_rework::TokenLexerMode;
+use sonic::store::StoreItemBuilder;
+
 use super::Query;
-use super::types::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset};
-use crate::config::{ConfigNormalization, ConfigStopwords, ConfigTokenization};
-use crate::lexer::preprocessor::Preprocessor;
-use crate::lexer::to_rework::TokenLexerMode;
-use crate::store::StoreItemBuilder;
 
 impl<'a> Query<'a> {
     #[allow(clippy::too_many_arguments)] // This will be reworked at some point.

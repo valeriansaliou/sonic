@@ -6,13 +6,12 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 mod builder;
-mod types;
+pub(crate) mod operation;
 
-use crate::lexer::preprocessor::PreprocessorOutput;
-use crate::store::StoreItemPart;
-use crate::store::identifiers::StoreObjectOID;
-
-pub use self::types::*;
+use sonic::executor::*;
+use sonic::lexer::preprocessor::PreprocessorOutput;
+use sonic::store::StoreItemPart;
+use sonic::store::identifiers::StoreObjectOID;
 
 pub enum Query<'a> {
     Search(

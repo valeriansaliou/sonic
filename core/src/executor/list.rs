@@ -5,7 +5,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use crate::query::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
+use super::types::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
 use crate::store::StoreItemPart;
 
 impl super::Executor {

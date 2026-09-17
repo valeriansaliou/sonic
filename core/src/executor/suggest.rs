@@ -5,8 +5,8 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use super::types::{QuerySearchID, QuerySearchLimit};
 use crate::lexer::preprocessor::PreprocessorOutput;
-use crate::query::{QuerySearchID, QuerySearchLimit};
 use crate::store::StoreItemPart;
 
 impl super::Executor {

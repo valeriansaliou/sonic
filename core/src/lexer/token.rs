@@ -1223,7 +1223,7 @@ pub mod itertools {
 }
 
 pub mod to_rework {
-    use crate::query::QueryGenericLang;
+    use crate::executor::QueryGenericLang;
 
     #[derive(PartialEq)]
     pub enum TokenLexerMode {

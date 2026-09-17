@@ -13,6 +13,7 @@ use crate::util::hash::NoopU32HasherBuilder;
 
 #[macro_use]
 mod macros;
+mod types;
 
 mod count;
 mod flushb;
@@ -23,6 +24,8 @@ mod pop;
 mod push;
 mod search;
 mod suggest;
+
+pub use types::*;
 
 pub struct Executor {
     pub app_conf: Arc<crate::Config>,

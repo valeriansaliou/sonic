@@ -11,7 +11,6 @@
 
 pub(crate) mod fmt;
 pub(crate) mod hash;
-pub(crate) mod itertools;
 pub mod serde;
 
 macro_rules! impl_transparent_wrapper_utils {
