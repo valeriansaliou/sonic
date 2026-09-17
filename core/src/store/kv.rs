@@ -22,7 +22,7 @@ use crate::util::hash::NoopU32HasherBuilder;
 use super::generic::*;
 use super::identifiers::*;
 use super::item::StoreItemPart;
-use super::keyer::StoreKVKey;
+use super::keyer::*;
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.

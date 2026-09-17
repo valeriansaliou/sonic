@@ -96,6 +96,19 @@ impl std::fmt::Debug for StoreKVKey {
     }
 }
 
+pub enum StoreMetaKey {
+    IIDIncr,
+}
+
+impl StoreMetaKey {
+    pub const fn as_u32(&self) -> u32 {
+        // WARN: Don’t update values here, it would break the index! Only add new cases.
+        match self {
+            StoreMetaKey::IIDIncr => 0,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
