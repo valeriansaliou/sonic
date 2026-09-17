@@ -6,7 +6,6 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use hashbrown::{DefaultHashBuilder, HashMap, HashSet};
-use radix::RadixNum;
 use rocksdb::backup::{
     BackupEngine as DBBackupEngine, BackupEngineOptions as DBBackupEngineOptions,
     RestoreOptions as DBRestoreOptions,
@@ -20,7 +19,7 @@ use std::{fmt, fs, io};
 use crate::config::ConfigStoreKVDatabase;
 use crate::util::hash::NoopU32HasherBuilder;
 
-use super::generic::{StoreGeneric, StoreGenericPool, StoreGenericPoolExt as _};
+use super::generic::*;
 use super::identifiers::*;
 use super::item::StoreItemPart;
 use super::keyer::{StoreKVKey, StoreKeyerBuilder, StoreKeyerHasher};
@@ -77,8 +76,6 @@ pub enum StoreKVAcquireMode {
 }
 
 type StoreKVAtom = u32;
-
-const ATOM_HASH_RADIX: usize = 16;
 
 impl StoreKVPool {
     pub fn new(kv_store_config: Arc<crate::config::ConfigStoreKV>) -> Self {
@@ -397,16 +394,10 @@ impl StoreKVPool {
         // Create backup folder for collection
         fs::create_dir_all(backup_path.join(collection_name))?;
 
-        // Convert names to hashes (as names are hashes encoded as base-16
-        // strings, but we need them as proper integers)
-        let Ok(collection_hash) =
-            RadixNum::from_str(collection_name, ATOM_HASH_RADIX).and_then(|num| num.as_decimal())
-        else {
-            return Ok(());
-        };
+        let store_id = StoreKVId::try_from_str_base16(collection_name)?;
 
         let origin_kv = self
-            .open(StoreKVId::from_atom(collection_hash as StoreKVAtom), |_| {})
+            .open(store_id, |_| {})
             .map_err(|_| io::Error::other("database open failure"))?;
 
         // Initialize KV database backup engine
@@ -440,15 +431,7 @@ impl StoreKVPool {
 
         tracing::debug!("kv collection: {collection_name} restoring from path: {origin_path:?}");
 
-        // Convert names to hashes (as names are hashes encoded as base-16
-        // strings, but we need them as proper integers)
-        let Ok(collection_hash) =
-            RadixNum::from_str(collection_name, ATOM_HASH_RADIX).and_then(|num| num.as_decimal())
-        else {
-            return Ok(());
-        };
-
-        let store_id = StoreKVId::from_atom(collection_hash as StoreKVAtom);
+        let store_id = StoreKVId::try_from_str_base16(collection_name)?;
 
         // Force a KV store close
         self.close_(store_id, None);
@@ -1537,6 +1520,15 @@ impl StoreKVId {
         StoreKVId {
             collection_hash: StoreKeyerHasher::to_compact(collection_str),
         }
+    }
+
+    /// Converts names to hashes (as names are hashes encoded as base-16
+    /// strings, but we need them as proper integers).
+    #[inline]
+    pub fn try_from_str_base16(collection_name_b16: &str) -> Result<StoreKVId, io::Error> {
+        let collection_hash = u32_from_base16(collection_name_b16)?;
+
+        Ok(Self::from_atom(collection_hash))
     }
 
     pub fn as_collection_hash(&self) -> &StoreKVAtom {

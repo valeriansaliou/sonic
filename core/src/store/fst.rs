@@ -7,7 +7,6 @@
 
 use fst::{IntoStreamer as _, Streamer as _};
 use hashbrown::{DefaultHashBuilder, HashMap, HashSet};
-use radix::RadixNum;
 use regex_syntax::escape as regex_escape;
 use std::collections::VecDeque;
 use std::fs::File;
@@ -16,7 +15,7 @@ use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{Duration, SystemTime};
 use std::{fmt, fs, io};
 
-use super::generic::{StoreGeneric, StoreGenericPool, StoreGenericPoolExt as _};
+use super::generic::*;
 use super::keyer::StoreKeyerHasher;
 use crate::lexer::ranges::LexerRegexRange;
 
@@ -89,7 +88,6 @@ impl Default for StoreFSTActionConfig {
 }
 
 const WORD_LIMIT_LENGTH: usize = 40;
-const ATOM_HASH_RADIX: usize = 16;
 
 impl StoreFSTPathMode {
     fn extension(&self) -> &'static str {
@@ -460,28 +458,9 @@ impl StoreFSTPool {
         let backup_fst_file = File::create(&fst_backup_path)?;
         let mut backup_fst_writer = io::BufWriter::new(backup_fst_file);
 
-        // Convert names to hashes (as names are hashes encoded as base-16
-        // strings, but we need them as proper integers).
-        let (Ok(collection_radix), Ok(bucket_radix)) = (
-            RadixNum::from_str(collection_name, ATOM_HASH_RADIX),
-            RadixNum::from_str(bucket_name, ATOM_HASH_RADIX),
-        ) else {
-            // TODO(errors): Return an error.
-            return Ok(());
-        };
+        let store_id = StoreFSTId::try_from_str_base16(collection_name, bucket_name)?;
 
-        let (Ok(collection_hash), Ok(bucket_hash)) =
-            (collection_radix.as_decimal(), bucket_radix.as_decimal())
-        else {
-            // TODO(errors): Return an error.
-            return Ok(());
-        };
-
-        let origin_fst = self
-            .open(StoreFSTId {
-                collection_hash: collection_hash as StoreFSTAtom,
-                bucket_hash: bucket_hash as StoreFSTAtom,
-            })
+        let origin_fst = (self.open(store_id))
             .map_err(|error| io::Error::other(format!("Graph open failure: {error:?}")))?;
 
         let mut origin_fst_stream = origin_fst.stream();
@@ -519,25 +498,7 @@ impl StoreFSTPool {
             "fst bucket {collection_name}/{bucket_name} restoring from path: {origin_path:?}"
         );
 
-        // Convert names to hashes (as names are hashes encoded as base-16
-        // strings, but we need them as proper integers).
-        let (Ok(collection_radix), Ok(bucket_radix)) = (
-            RadixNum::from_str(collection_name, ATOM_HASH_RADIX),
-            RadixNum::from_str(bucket_name, ATOM_HASH_RADIX),
-        ) else {
-            // TODO(errors): Return an error.
-            return Ok(());
-        };
-
-        let (Ok(collection_hash), Ok(bucket_hash)) =
-            (collection_radix.as_decimal(), bucket_radix.as_decimal())
-        else {
-            // TODO(errors): Return an error.
-            return Ok(());
-        };
-
-        let store_id =
-            StoreFSTId::from_atom(collection_hash as StoreFSTAtom, bucket_hash as StoreFSTAtom);
+        let store_id = StoreFSTId::try_from_str_base16(collection_name, bucket_name)?;
 
         // Force a FST store close.
         self.close(store_id);
@@ -1423,6 +1384,19 @@ impl StoreFSTId {
             collection_hash: StoreKeyerHasher::to_compact(collection_str),
             bucket_hash: StoreKeyerHasher::to_compact(bucket_str),
         }
+    }
+
+    /// Converts names to hashes (as names are hashes encoded as base-16
+    /// strings, but we need them as proper integers).
+    #[inline]
+    pub fn try_from_str_base16(
+        collection_name_b16: &str,
+        bucket_name_b16: &str,
+    ) -> Result<StoreFSTId, io::Error> {
+        let collection_hash = u32_from_base16(collection_name_b16)?;
+        let bucket_hash = u32_from_base16(bucket_name_b16)?;
+
+        Ok(Self::from_atom(collection_hash, bucket_hash))
     }
 
     pub fn as_collection_hash(&self) -> &StoreFSTAtom {

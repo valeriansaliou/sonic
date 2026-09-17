@@ -190,3 +190,16 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
 }
 
 impl<Pool: StoreGenericPool> StoreGenericPoolExt for Pool {}
+
+pub(super) fn u32_from_base16(str_b16: &str) -> Result<u32, std::io::Error> {
+    use radix::RadixNum;
+    use std::io;
+
+    const ATOM_HASH_RADIX: usize = 16;
+
+    let decimal: usize = RadixNum::from_str(str_b16, ATOM_HASH_RADIX)
+        .and_then(|num| num.as_decimal())
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
+
+    u32::try_from(decimal).map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))
+}
