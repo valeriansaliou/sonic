@@ -10,45 +10,56 @@
 use super::identifiers::*;
 use super::item::StoreItemPart;
 
+use self::constants::*;
+
+// WARN: Don’t update values here, it would break the index! Only add new cases.
+pub(super) mod constants {
+    pub const META_TO_VALUE: u8 = 0;
+    pub const TERM_TO_IIDS: u8 = 1;
+    pub const OID_TO_IID: u8 = 2;
+    pub const IID_TO_OID: u8 = 3;
+    pub const IID_TO_TERMS: u8 = 4;
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct StoreKVKey([u8; 9]);
 
 impl StoreKVKey {
     pub fn meta_to_value<'a>(bucket: &'a StoreItemPart, meta: &'a StoreMetaKey) -> StoreKVKey {
-        Self::make(StoreKeyerIdx::MetaToValue(meta), bucket)
+        Self::make(META_TO_VALUE, bucket, meta.as_u32())
     }
 
     pub fn term_to_iids(bucket: &StoreItemPart, term_hash: impl Into<StoreTermHash>) -> StoreKVKey {
-        Self::make(StoreKeyerIdx::TermToIIDs(term_hash.into()), bucket)
+        Self::make(TERM_TO_IIDS, bucket, term_hash.into().into())
     }
 
     pub fn oid_to_iid<'a>(bucket: &'a StoreItemPart, oid: StoreObjectOID<'a>) -> StoreKVKey {
-        Self::make(StoreKeyerIdx::OIDToIID(oid), bucket)
+        Self::make(OID_TO_IID, bucket, oid.into_compact())
     }
 
     pub fn iid_to_oid(bucket: &StoreItemPart, iid: impl Into<StoreObjectIID>) -> StoreKVKey {
-        Self::make(StoreKeyerIdx::IIDToOID(iid.into()), bucket)
+        Self::make(IID_TO_OID, bucket, iid.into().into())
     }
 
     pub fn iid_to_terms(bucket: &StoreItemPart, iid: impl Into<StoreObjectIID>) -> StoreKVKey {
-        Self::make(StoreKeyerIdx::IIDToTerms(iid.into()), bucket)
+        Self::make(IID_TO_TERMS, bucket, iid.into().into())
     }
 
     /// Key format: `[idx<1B> | bucket<4B> | route<4B>]`
-    fn make<'a>(idx: StoreKeyerIdx<'a>, bucket: &'a StoreItemPart) -> StoreKVKey {
+    fn make<'a>(idx: u8, bucket: &'a StoreItemPart, route: u32) -> StoreKVKey {
         use byteorder::{ByteOrder, LittleEndian};
 
         // Encode key bucket + key route from u32 to array of u8 (ie. binary)
         let (mut bucket_encoded, mut route_encoded) = ([0; 4], [0; 4]);
 
         LittleEndian::write_u32(&mut bucket_encoded, bucket.into_compact());
-        LittleEndian::write_u32(&mut route_encoded, Self::route_to_compact(&idx));
+        LittleEndian::write_u32(&mut route_encoded, route);
 
         // Generate final binary key
         StoreKVKey::from([
             // [idx<1B>]
-            idx.to_index(),
+            idx,
             // [bucket<4B>]
             bucket_encoded[0],
             bucket_encoded[1],
@@ -60,16 +71,6 @@ impl StoreKVKey {
             route_encoded[2],
             route_encoded[3],
         ])
-    }
-
-    fn route_to_compact(idx: &StoreKeyerIdx) -> u32 {
-        match idx {
-            StoreKeyerIdx::MetaToValue(route) => route.as_u32(),
-            StoreKeyerIdx::TermToIIDs(route) => route.into(),
-            StoreKeyerIdx::OIDToIID(route) => route.into_compact(),
-            StoreKeyerIdx::IIDToOID(route) => route.into(),
-            StoreKeyerIdx::IIDToTerms(route) => route.into(),
-        }
     }
 }
 
@@ -122,28 +123,6 @@ impl std::fmt::Display for StoreKVKey {
 impl std::fmt::Debug for StoreKVKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Debug::fmt(&self.0, f)
-    }
-}
-
-enum StoreKeyerIdx<'a> {
-    MetaToValue(&'a StoreMetaKey),
-    TermToIIDs(StoreTermHash),
-    OIDToIID(StoreObjectOID<'a>),
-    IIDToOID(StoreObjectIID),
-    IIDToTerms(StoreObjectIID),
-}
-
-impl<'a> StoreKeyerIdx<'a> {
-    pub fn to_index(&self) -> u8 {
-        // WARN: Don’t update values here, it would break stuff
-        //   (e.g. `default_merge_operator`)! Only add new cases.
-        match self {
-            StoreKeyerIdx::MetaToValue(_) => 0,
-            StoreKeyerIdx::TermToIIDs(_) => 1,
-            StoreKeyerIdx::OIDToIID(_) => 2,
-            StoreKeyerIdx::IIDToOID(_) => 3,
-            StoreKeyerIdx::IIDToTerms(_) => 4,
-        }
     }
 }
 

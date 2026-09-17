@@ -1415,11 +1415,13 @@ fn default_merge_operator(
     existing_val: Option<&[u8]>,
     operands: &rocksdb::MergeOperands,
 ) -> Option<Vec<u8>> {
+    use super::keyer::constants::*;
+
     match key[0] {
-        // StoreKeyerIdx::MetaToValue(StoreMetaKey::IIDIncr)
-        0 if key[5..9] == encode_u32(0) => u32_max(existing_val, operands),
-        // StoreKeyerIdx::TermToIIDs | StoreKeyerIdx::IIDToTerms
-        1 | 4 => {
+        META_TO_VALUE if key[5..9] == encode_u32(StoreMetaKey::IIDIncr.as_u32()) => {
+            u32_max(existing_val, operands)
+        }
+        TERM_TO_IIDS | IID_TO_TERMS => {
             // eprintln!(
             //     "prepend_u32_list({}): {}/{}",
             //     &key[0],
