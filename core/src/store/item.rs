@@ -27,6 +27,16 @@ impl<'a> StoreItemPart<'a> {
             Err(())
         }
     }
+
+    pub fn into_compact(&self) -> u32 {
+        use std::hash::Hasher as _;
+        use twox_hash::XxHash32;
+
+        let mut hasher = XxHash32::with_seed(0);
+
+        hasher.write(self.0.as_bytes());
+        hasher.finish() as u32
+    }
 }
 
 #[cfg(test)]

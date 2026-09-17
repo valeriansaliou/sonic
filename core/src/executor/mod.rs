@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
-use crate::store::keyer::StoreKeyerHasher;
+use crate::store::StoreItemPart;
 use crate::util::hash::NoopU32HasherBuilder;
 
 #[macro_use]
@@ -56,13 +56,13 @@ impl std::fmt::Debug for Executor {
 pub struct DynamicConfigStore(RwLock<HashMap<u32, DynamicConfig, NoopU32HasherBuilder>>);
 
 impl DynamicConfigStore {
-    pub fn insert(&self, collection: &str, config: DynamicConfig) {
-        (self.0.write().unwrap()).insert(StoreKeyerHasher::to_compact(collection), config);
+    pub fn insert(&self, collection: StoreItemPart, config: DynamicConfig) {
+        (self.0.write().unwrap()).insert(collection.into_compact(), config);
     }
 
-    pub fn get(&self, collection: &str) -> Option<DynamicConfig> {
+    pub fn get(&self, collection: StoreItemPart) -> Option<DynamicConfig> {
         (self.0.read().unwrap())
-            .get(&StoreKeyerHasher::to_compact(collection))
+            .get(&collection.into_compact())
             .copied()
     }
 
@@ -124,7 +124,7 @@ pub enum RocksDbMemtable {
 impl Executor {
     pub fn set_dynamic_conf(
         &self,
-        collection: &str,
+        collection: StoreItemPart,
         new_conf: DynamicConfig,
     ) -> Result<(), Box<dyn std::error::Error>> {
         tracing::debug!(

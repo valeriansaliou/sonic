@@ -16,8 +16,8 @@ use std::time::{Duration, SystemTime};
 use std::{fmt, fs, io};
 
 use super::generic::*;
-use super::keyer::StoreKeyerHasher;
 use crate::lexer::ranges::LexerRegexRange;
+use crate::store::StoreItemPart;
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
@@ -130,10 +130,12 @@ impl StoreFSTPool {
         self.graph_access_lock.write().unwrap()
     }
 
-    pub fn acquire<T: AsRef<str>>(&self, collection: T, bucket: T) -> Result<Arc<StoreFST>, ()> {
-        let (collection, bucket) = (collection.as_ref(), bucket.as_ref());
-
-        let store_id = StoreFSTId::from_str(collection, bucket);
+    pub fn acquire(
+        &self,
+        collection: StoreItemPart,
+        bucket: StoreItemPart,
+    ) -> Result<Arc<StoreFST>, ()> {
+        let store_id = StoreFSTId::from_part(collection, bucket);
 
         // Freeze acquire lock, and reference it in context
         // Notice: this prevents two graphs on the same collection to be opened at the same time.
@@ -900,7 +902,11 @@ impl StoreGeneric for StoreFST {
 }
 
 impl StoreFSTPool {
-    pub fn erase<T: AsRef<str>>(&self, collection: T, bucket: Option<T>) -> Result<u32, ()> {
+    pub fn erase(
+        &self,
+        collection: StoreItemPart,
+        bucket: Option<StoreItemPart>,
+    ) -> Result<u32, ()> {
         self.dispatch_erase(collection, bucket)
     }
 }
@@ -930,8 +936,8 @@ impl StoreGenericPool for StoreFSTPool {
         &self.graph_access_lock
     }
 
-    fn proceed_erase_collection(&self, collection_name: &str) -> Result<u32, ()> {
-        let collection_atom = StoreKeyerHasher::to_compact(collection_name);
+    fn proceed_erase_collection(&self, collection_name: StoreItemPart) -> Result<u32, ()> {
+        let collection_atom = collection_name.into_compact();
         let collection_path = self.fst_store_config.collection_path(collection_atom);
 
         // Force a FST graph close (on all contained buckets)
@@ -1002,12 +1008,16 @@ impl StoreGenericPool for StoreFSTPool {
         }
     }
 
-    fn proceed_erase_bucket(&self, collection_name: &str, bucket_name: &str) -> Result<u32, ()> {
+    fn proceed_erase_bucket(
+        &self,
+        collection_name: StoreItemPart,
+        bucket_name: StoreItemPart,
+    ) -> Result<u32, ()> {
         tracing::debug!(
             "Sub-erase on fst bucket {bucket_name:?} for collection {collection_name:?}"
         );
 
-        let store_id = StoreFSTId::from_str(collection_name, bucket_name);
+        let store_id = StoreFSTId::from_part(collection_name, bucket_name);
 
         let bucket_path = self
             .fst_store_config
@@ -1302,12 +1312,12 @@ pub(crate) fn typo_factor(word_len: usize) -> u32 {
 
 impl StoreFSTMisc {
     pub fn count_collection_buckets(
-        collection: impl AsRef<str>,
+        collection: StoreItemPart,
         fst_store_config: &crate::config::ConfigStoreFST,
     ) -> Result<usize, ()> {
         let path_mode = StoreFSTPathMode::Permanent;
 
-        let collection_atom = StoreKeyerHasher::to_compact(collection.as_ref());
+        let collection_atom = collection.into_compact();
         let collection_path = fst_store_config.collection_path(collection_atom);
 
         if !collection_path.exists() {
@@ -1379,10 +1389,10 @@ impl StoreFSTId {
         }
     }
 
-    pub fn from_str(collection_str: &str, bucket_str: &str) -> StoreFSTId {
+    pub fn from_part(collection: StoreItemPart, bucket: StoreItemPart) -> StoreFSTId {
         StoreFSTId {
-            collection_hash: StoreKeyerHasher::to_compact(collection_str),
-            bucket_hash: StoreKeyerHasher::to_compact(bucket_str),
+            collection_hash: collection.into_compact(),
+            bucket_hash: bucket.into_compact(),
         }
     }
 
@@ -1433,7 +1443,11 @@ mod tests {
     fn it_acquires_graph() {
         let fst_pool = test_fst_pool();
 
-        assert!(fst_pool.acquire("c:test:1", "b:test:1").is_ok());
+        assert!(
+            fst_pool
+                .acquire("c:test:1".into(), "b:test:1".into())
+                .is_ok()
+        );
     }
 
     #[test]
@@ -1447,7 +1461,9 @@ mod tests {
     fn it_proceeds_primitives() {
         let fst_pool = test_fst_pool();
 
-        let store = fst_pool.acquire("c:test:2", "b:test:2").unwrap();
+        let store = fst_pool
+            .acquire("c:test:2".into(), "b:test:2".into())
+            .unwrap();
 
         assert!(store.lookup_typos_("valerien", 1).is_ok());
     }

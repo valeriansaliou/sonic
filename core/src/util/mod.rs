@@ -38,9 +38,7 @@ macro_rules! impl_transparent_wrapper_utils {
     };
 
     (Debug for $wrapper:ident$(<$($l1:lifetime),+>)?($(&$l2:lifetime)?$wrapped:ident$(<$($l3:lifetime),+>)?)) => {
-        impl$(<$($l1),+>)? std::fmt::Debug for $wrapper$(<$($l1),+>)?
-        where $(&$l2)?$wrapped$(<$($l3),+>)?: std::fmt::Debug
-        {
+        impl$(<$($l1),+>)? std::fmt::Debug for $wrapper$(<$($l1),+>)? {
             #[inline(always)]
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 std::fmt::Debug::fmt(&self.0, f)
@@ -49,9 +47,7 @@ macro_rules! impl_transparent_wrapper_utils {
     };
 
     (Display for $wrapper:ident$(<$($l1:lifetime),+>)?($(&$l2:lifetime)?$wrapped:ident$(<$($l3:lifetime),+>)?)) => {
-        impl$(<$($l1),+>)? std::fmt::Display for $wrapper$(<$($l1),+>)?
-        where $(&$l2)?$wrapped$(<$($l3),+>)?: std::fmt::Display
-        {
+        impl$(<$($l1),+>)? std::fmt::Display for $wrapper$(<$($l1),+>)? {
             #[inline(always)]
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 std::fmt::Display::fmt(&self.0, f)

@@ -12,6 +12,8 @@ use std::fmt::Display;
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
 use std::time::{Duration, SystemTime};
 
+use crate::store::StoreItemPart;
+
 pub trait StoreGeneric {
     fn ref_last_used(&self) -> &RwLock<SystemTime>;
 }
@@ -29,14 +31,18 @@ pub trait StoreGenericPool:
 
     fn access_lock(&self) -> &RwLock<()>;
 
-    fn proceed_erase_collection(&self, collection_str: &str) -> Result<u32, ()>;
+    fn proceed_erase_collection(&self, collection: StoreItemPart) -> Result<u32, ()>;
 
-    fn proceed_erase_bucket(&self, collection_str: &str, bucket_str: &str) -> Result<u32, ()>;
+    fn proceed_erase_bucket(
+        &self,
+        collection: StoreItemPart,
+        bucket: StoreItemPart,
+    ) -> Result<u32, ()>;
 }
 
 pub(super) trait StoreGenericPoolExt: StoreGenericPool {
     fn proceed_acquire_cache(
-        collection_str: &str,
+        collection: StoreItemPart,
         store_id: Self::StoreId,
         store: &Arc<Self::Store>,
     ) -> Result<Arc<Self::Store>, ()>
@@ -46,9 +52,7 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
         let kind = Self::kind();
 
         tracing::debug!(
-            "{kind} store acquired from pool for collection: {} (id: {})",
-            collection_str,
-            store_id
+            "{kind} store acquired from pool for collection: {collection} (id: {store_id})"
         );
 
         // Bump store last used date (avoids early janitor eviction)
@@ -60,7 +64,7 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
     #[allow(clippy::type_complexity, reason = "We can’t avoid it")]
     fn proceed_acquire_open<'a>(
         &'a self,
-        collection_str: &str,
+        collection: StoreItemPart,
         store_id: Self::StoreId,
         build: impl FnOnce(&'a Self, Self::StoreId) -> Result<Self::Store, ()>,
         write_guard: Option<
@@ -84,14 +88,14 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
                 store_pool_write.insert(store_id, Arc::clone(&store_box));
 
                 tracing::debug!(
-                    "opened and cached {kind} store in pool for collection: {collection_str} (id: {store_id})"
+                    "opened and cached {kind} store in pool for collection: {collection} (id: {store_id})"
                 );
 
                 Ok(store_box)
             }
             Err(_) => {
                 tracing::error!(
-                    "failed opening {kind} store for collection: {collection_str} (id: {store_id})"
+                    "failed opening {kind} store for collection: {collection} (id: {store_id})"
                 );
 
                 Err(())
@@ -173,16 +177,15 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
 
     fn dispatch_erase(
         &self,
-        collection: impl AsRef<str>,
-        bucket: Option<impl AsRef<str>>,
+        collection: StoreItemPart,
+        bucket: Option<StoreItemPart>,
     ) -> Result<u32, ()> {
         let kind = Self::kind();
-        let collection = collection.as_ref();
 
         tracing::info!("{kind} erase requested on collection: {collection}");
 
         if let Some(bucket) = bucket {
-            self.proceed_erase_bucket(collection, bucket.as_ref())
+            self.proceed_erase_bucket(collection, bucket)
         } else {
             self.proceed_erase_collection(collection)
         }

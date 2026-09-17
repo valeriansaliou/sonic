@@ -22,7 +22,7 @@ use crate::util::hash::NoopU32HasherBuilder;
 use super::generic::*;
 use super::identifiers::*;
 use super::item::StoreItemPart;
-use super::keyer::{StoreKVKey, StoreKeyerBuilder, StoreKeyerHasher};
+use super::keyer::{StoreKVKey, StoreKeyerBuilder};
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
@@ -105,12 +105,11 @@ impl StoreKVPool {
     pub fn acquire<'a>(
         &'a self,
         mode: StoreKVAcquireMode,
-        collection: impl AsRef<str>,
+        collection: StoreItemPart,
         write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVId, Arc<StoreKV>>>>,
         override_options: impl FnOnce(&mut rocksdb::Options),
     ) -> Result<Option<Arc<StoreKV>>, ()> {
-        let collection = collection.as_ref();
-        let store_id = StoreKVId::from_str(collection);
+        let store_id = StoreKVId::from_part(collection);
 
         // Freeze acquire lock, and reference it in context
         // Notice: this prevents two databases on the same collection to be opened at the same time.
@@ -174,10 +173,10 @@ impl StoreKVPool {
 
     pub fn close<'a>(
         &'a self,
-        collection_name: &str,
+        collection: StoreItemPart,
         write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVId, Arc<StoreKV>>>>,
     ) -> Result<(), ()> {
-        self.close_(StoreKVId::from_str(collection_name), write_guard);
+        self.close_(StoreKVId::from_part(collection), write_guard);
 
         Ok(())
     }
@@ -297,7 +296,7 @@ impl StoreKVPool {
         );
     }
 
-    pub fn compact(&self, collections_opt: Option<&[&str]>) {
+    pub fn compact(&self, collections_opt: Option<&[StoreItemPart]>) {
         match collections_opt {
             Some(collections) => tracing::debug!("compacting {collections:?}…"),
             None => tracing::debug!("compacting all collections…"),
@@ -306,7 +305,7 @@ impl StoreKVPool {
         let store_ids: Vec<StoreKVId> = match collections_opt {
             Some(collections) => collections
                 .iter()
-                .map(|&s| StoreKVId::from_str(s))
+                .map(|&c| StoreKVId::from_part(c))
                 .collect(),
             None => {
                 let pool_guard = self.pool.read().unwrap();
@@ -689,24 +688,22 @@ impl StoreKV {
 
     /// Reads `IIDIncr` from the cache, fetching from the database if necessary
     /// (beware of slow reads).
-    fn get_iid_incr<'a>(
+    fn get_iid_incr(
         &self,
-        bucket: &StoreItemPart<'a>,
+        bucket: &StoreItemPart,
     ) -> Result<Option<StoreObjectIID>, Box<dyn std::error::Error>> {
         let read_guard = self.iid_incr_per_bucket.read().unwrap();
 
-        read_guard
-            .get(&StoreKeyerHasher::to_compact(bucket))
-            .map_or_else(
-                || {
-                    tracing::debug!(?bucket, "IIDIncr not found in cache, reading database…");
-                    self.fetch_iid_incr(bucket)
-                },
-                |&iid_incr| {
-                    tracing::debug!(?bucket, ?iid_incr, "Read IIDIncr from cache");
-                    Ok(Some(iid_incr))
-                },
-            )
+        read_guard.get(&bucket.into_compact()).map_or_else(
+            || {
+                tracing::debug!(?bucket, "IIDIncr not found in cache, reading database…");
+                self.fetch_iid_incr(bucket)
+            },
+            |&iid_incr| {
+                tracing::debug!(?bucket, ?iid_incr, "Read IIDIncr from cache");
+                Ok(Some(iid_incr))
+            },
+        )
     }
 
     /// Reads `IIDIncr` directly from the database.
@@ -737,11 +734,11 @@ impl StoreKV {
         }
     }
 
-    fn get_new_iid<'a>(&self, bucket: StoreItemPart<'a>, batch: &mut WriteBatch) -> StoreObjectIID {
+    fn get_new_iid(&self, bucket: StoreItemPart, batch: &mut WriteBatch) -> StoreObjectIID {
         let mut write_guard = self.iid_incr_per_bucket.write().unwrap();
 
         let iid = *write_guard
-            .entry(StoreKeyerHasher::to_compact(&bucket))
+            .entry(bucket.into_compact())
             .and_modify(|iid| *iid = iid.saturating_add(1))
             // NOTE: We start with `0` and `needs_write: false` because
             //   `IIDCache::incr` will increment and set `needs_write = true`.
@@ -789,7 +786,11 @@ impl StoreKV {
 }
 
 impl StoreKVPool {
-    pub fn erase<T: AsRef<str>>(&self, collection: T, bucket: Option<T>) -> Result<u32, ()> {
+    pub fn erase(
+        &self,
+        collection: StoreItemPart,
+        bucket: Option<StoreItemPart>,
+    ) -> Result<u32, ()> {
         self.dispatch_erase(collection, bucket)
     }
 }
@@ -819,8 +820,8 @@ impl StoreGenericPool for StoreKVPool {
         &self.store_access_lock
     }
 
-    fn proceed_erase_collection(&self, collection_str: &str) -> Result<u32, ()> {
-        let store_id = StoreKVId::from_str(collection_str);
+    fn proceed_erase_collection(&self, collection: StoreItemPart) -> Result<u32, ()> {
+        let store_id = StoreKVId::from_part(collection);
         let collection_path = self.kv_store_config.store_path(store_id);
 
         // Force a KV store close
@@ -828,14 +829,14 @@ impl StoreGenericPool for StoreKVPool {
 
         if !collection_path.exists() {
             tracing::debug!(
-                "kv collection store does not exist, consider already erased: {collection_str}/* at path: {collection_path:?}"
+                "kv collection store does not exist, consider already erased: {collection}/* at path: {collection_path:?}"
             );
 
             return Ok(0);
         }
 
         tracing::debug!(
-            "kv collection store exists, erasing: {collection_str}/* at path: {collection_path:?}"
+            "kv collection store exists, erasing: {collection}/* at path: {collection_path:?}"
         );
 
         // Remove KV store storage from filesystem
@@ -849,7 +850,11 @@ impl StoreGenericPool for StoreKVPool {
         }
     }
 
-    fn proceed_erase_bucket(&self, _collection: &str, _bucket: &str) -> Result<u32, ()> {
+    fn proceed_erase_bucket(
+        &self,
+        _collection: StoreItemPart,
+        _bucket: StoreItemPart,
+    ) -> Result<u32, ()> {
         // This one is not implemented, as we need to acquire the collection; which would cause \
         //   a party-killer dead-lock.
         Err(())
@@ -1515,10 +1520,9 @@ impl StoreKVId {
         StoreKVId { collection_hash }
     }
 
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(collection_str: &str) -> StoreKVId {
+    pub fn from_part(collection: StoreItemPart) -> StoreKVId {
         StoreKVId {
-            collection_hash: StoreKeyerHasher::to_compact(collection_str),
+            collection_hash: collection.into_compact(),
         }
     }
 
@@ -1553,7 +1557,7 @@ mod tests {
 
         assert!(
             kv_pool
-                .acquire(StoreKVAcquireMode::Any, "c:test:1", None, |_| {})
+                .acquire(StoreKVAcquireMode::Any, "c:test:1".into(), None, |_| {})
                 .is_ok()
         );
     }
@@ -1572,7 +1576,7 @@ mod tests {
         let kv_pool = StoreKVPool::new(kv_store_config);
 
         let store = kv_pool
-            .acquire(StoreKVAcquireMode::Any, "c:test:3", None, |_| {})
+            .acquire(StoreKVAcquireMode::Any, "c:test:3".into(), None, |_| {})
             .unwrap()
             .unwrap();
         let action = store.access_read_write("b:test:3".into());

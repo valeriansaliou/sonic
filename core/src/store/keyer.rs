@@ -34,8 +34,6 @@ impl std::fmt::Debug for StoreKVKey {
     }
 }
 
-pub struct StoreKeyerHasher;
-
 enum StoreKeyerIdx<'a> {
     MetaToValue(&'a StoreMetaKey),
     TermToIIDs(StoreTermHash),
@@ -86,7 +84,7 @@ impl StoreKeyerBuilder {
         // Encode key bucket + key route from u32 to array of u8 (ie. binary)
         let (mut bucket_encoded, mut route_encoded) = ([0; 4], [0; 4]);
 
-        LittleEndian::write_u32(&mut bucket_encoded, StoreKeyerHasher::to_compact(bucket));
+        LittleEndian::write_u32(&mut bucket_encoded, bucket.into_compact());
         LittleEndian::write_u32(&mut route_encoded, Self::route_to_compact(&idx));
 
         // Generate final binary key
@@ -110,7 +108,7 @@ impl StoreKeyerBuilder {
         match idx {
             StoreKeyerIdx::MetaToValue(route) => route.as_u32(),
             StoreKeyerIdx::TermToIIDs(route) => route.into(),
-            StoreKeyerIdx::OIDToIID(route) => StoreKeyerHasher::to_compact(route),
+            StoreKeyerIdx::OIDToIID(route) => route.into_compact(),
             StoreKeyerIdx::IIDToOID(route) => route.into(),
             StoreKeyerIdx::IIDToTerms(route) => route.into(),
         }
@@ -125,19 +123,6 @@ impl StoreKVKey {
     /// Prefix format: `[idx<1B> | bucket<4B>]`
     pub fn into_prefix(self) -> [u8; 5] {
         [self.0[0], self.0[1], self.0[2], self.0[3], self.0[4]]
-    }
-}
-
-impl StoreKeyerHasher {
-    #![allow(clippy::wrong_self_convention)]
-    pub fn to_compact(part: &str) -> u32 {
-        use std::hash::Hasher as _;
-        use twox_hash::XxHash32;
-
-        let mut hasher = XxHash32::with_seed(0);
-
-        hasher.write(part.as_bytes());
-        hasher.finish() as u32
     }
 }
 
@@ -219,8 +204,8 @@ mod tests {
 
     #[test]
     fn it_hashes_compact() {
-        assert_eq!(StoreKeyerHasher::to_compact("key:1"), 3370353088);
-        assert_eq!(StoreKeyerHasher::to_compact("key:2"), 1042559698);
+        assert_eq!(StoreObjectOID::from("key:1").into_compact(), 3370353088);
+        assert_eq!(StoreObjectOID::from("key:2").into_compact(), 1042559698);
     }
 
     #[test]

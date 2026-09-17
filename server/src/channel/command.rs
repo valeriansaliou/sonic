@@ -35,6 +35,8 @@ pub enum ChannelCommandError {
     ShuttingDown,
     PolicyReject(&'static str),
     InvalidFormat(&'static str),
+    #[allow(dead_code)]
+    InvalidArgument(String),
     InvalidMetaKey((String, String)),
     InvalidMetaValue((String, String)),
 }
@@ -990,8 +992,22 @@ impl ChannelCommandControl {
                     }
                     #[cfg(feature = "experimental-api")]
                     "compact" => {
-                        let collections =
-                            data_part.map(|s| s.split_ascii_whitespace().collect::<Vec<_>>());
+                        let collections = if let Some(data_part) = data_part {
+                            let mut collections = Vec::new();
+
+                            for collection_name in data_part.split_ascii_whitespace() {
+                                let part =
+                                    sonic::store::StoreItemBuilder::from_depth_1(collection_name)
+                                        .map_err(|error| {
+                                        ChannelCommandError::InvalidArgument(format!("{error:?}"))
+                                    })?;
+                                collections.push(part);
+                            }
+
+                            Some(collections)
+                        } else {
+                            None
+                        };
 
                         // Force a KV compaction
                         kv_pool.compact(collections.as_deref());
@@ -1075,8 +1091,10 @@ impl ChannelCommandControl {
         let Some(collection) = parts.next() else {
             return Err(ChannelCommandError::InvalidFormat(FORMAT));
         };
+        let collection = sonic::store::StoreItemBuilder::from_depth_1(collection)
+            .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
 
-        tracing::debug!(collection, "dispatching config command");
+        tracing::debug!(?collection, "dispatching config command");
 
         match parts.next() {
             Some("SET") => config_set(parts, ctx, collection),
@@ -1102,7 +1120,7 @@ impl ChannelCommandControl {
 fn config_set(
     parts: SplitWhitespace,
     ctx: &ChannelMessageModeControl,
-    collection: &str,
+    collection: sonic::store::StoreItemPart,
 ) -> ChannelResult {
     use sonic::executor::{DynamicConfig, RocksDbMemtable};
 
@@ -1186,7 +1204,7 @@ fn config_set(
 fn config_reset(
     parts: SplitWhitespace,
     ctx: &ChannelMessageModeControl,
-    collection: &str,
+    collection: sonic::store::StoreItemPart,
 ) -> ChannelResult {
     let mut parts = parts.peekable();
     let new_conf = if parts.peek().is_some() {
@@ -1242,6 +1260,9 @@ impl fmt::Display for ChannelCommandError {
             ChannelCommandError::ShuttingDown => write!(f, "shutting_down"),
             ChannelCommandError::PolicyReject(reason) => write!(f, "policy_reject({})", reason),
             ChannelCommandError::InvalidFormat(format) => write!(f, "invalid_format({})", format),
+            ChannelCommandError::InvalidArgument(reason) => {
+                write!(f, "invalid_argument({})", reason)
+            }
             ChannelCommandError::InvalidMetaKey(data) => {
                 write!(f, "invalid_meta_key({}[{}])", data.0, data.1)
             }
