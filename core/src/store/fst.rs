@@ -367,7 +367,7 @@ impl StoreFSTPool {
             }
 
             let file_name = collection_entry.file_name();
-            let Some(collection_name) = file_name.to_str() else {
+            let Some(collection_hash) = file_name.to_str() else {
                 tracing::warn!(
                     file_name_bytes = ?file_name.as_encoded_bytes(),
                     "Found invalid entry in {read_path:?}, ignoring"
@@ -375,13 +375,13 @@ impl StoreFSTPool {
                 continue 'collections;
             };
 
-            tracing::debug!("fst collection ongoing {action}: {collection_name}");
+            tracing::debug!("fst collection ongoing {action}: {collection_hash}");
 
             // Create write folder for collection.
-            fs::create_dir_all(write_path.join(&collection_name))?;
+            fs::create_dir_all(write_path.join(&collection_hash))?;
 
             // Iterate on FST collection buckets.
-            let buckets_path = read_path.join(&collection_name);
+            let buckets_path = read_path.join(&collection_hash);
             'buckets: for bucket_entry in fs::read_dir(&buckets_path)? {
                 let bucket_entry = bucket_entry?;
 
@@ -404,7 +404,7 @@ impl StoreFSTPool {
                     continue 'buckets;
                 };
 
-                let Some(bucket_name) = bucket_file_name.strip_suffix(fst_extension) else {
+                let Some(bucket_hash) = bucket_file_name.strip_suffix(fst_extension) else {
                     tracing::trace!(
                         file_name_bytes = ?file_name.as_encoded_bytes(),
                         "Ignoring {bucket_file_name:?}: wrong extension (expected: {fst_extension:?})"
@@ -412,14 +412,14 @@ impl StoreFSTPool {
                     continue 'buckets;
                 };
 
-                tracing::debug!("fst bucket ongoing {action}: {collection_name}/{bucket_name}");
+                tracing::debug!("fst bucket ongoing {action}: {collection_hash}/{bucket_hash}");
 
                 fn_item(
                     self,
                     write_path,
                     &bucket_entry.path(),
-                    &collection_name,
-                    bucket_name,
+                    collection_hash,
+                    bucket_hash,
                 )?;
             }
         }
@@ -431,8 +431,8 @@ impl StoreFSTPool {
         &self,
         backup_path: &Path,
         _origin_path: &Path,
-        collection_name: &str,
-        bucket_name: &str,
+        collection_hash: &str,
+        bucket_hash: &str,
     ) -> Result<(), io::Error> {
         use io::Write as _;
 
@@ -445,13 +445,13 @@ impl StoreFSTPool {
             let ext = StoreFSTPathMode::Backup.extension();
             assert!(ext.starts_with("."));
             backup_path
-                .join(collection_name)
-                .join(format!("{bucket_name}{ext}"))
+                .join(collection_hash)
+                .join(format!("{bucket_hash}{ext}"))
         };
 
-        tracing::debug!(
-            "fst bucket {collection_name}/{bucket_name} backing up to path: {fst_backup_path:?}"
-        );
+        let store_id = StoreFSTId::try_from_hex(collection_hash, bucket_hash)?;
+
+        tracing::debug!("fst store {store_id} backing up to path: {fst_backup_path:?}");
 
         // Erase any previously-existing FST backup.
         fs::remove_file(&fst_backup_path).ok();
@@ -459,8 +459,6 @@ impl StoreFSTPool {
         // Stream actual FST data to FST backup.
         let backup_fst_file = File::create(&fst_backup_path)?;
         let mut backup_fst_writer = io::BufWriter::new(backup_fst_file);
-
-        let store_id = StoreFSTId::try_from_str_base16(collection_name, bucket_name)?;
 
         let origin_fst = (self.open(store_id))
             .map_err(|error| io::Error::other(format!("Graph open failure: {error:?}")))?;
@@ -477,7 +475,7 @@ impl StoreFSTPool {
         }
 
         tracing::info!(
-            "fst bucket {collection_name}/{bucket_name} backed up to path: {fst_backup_path:?} ({count_words} words)"
+            "fst store {store_id} backed up to path: {fst_backup_path:?} ({count_words} words)"
         );
 
         Ok(())
@@ -496,11 +494,9 @@ impl StoreFSTPool {
         // being acquired from any context.
         let _access = self.graph_access_lock.write().unwrap();
 
-        tracing::debug!(
-            "fst bucket {collection_name}/{bucket_name} restoring from path: {origin_path:?}"
-        );
+        let store_id = StoreFSTId::try_from_hex(collection_name, bucket_name)?;
 
-        let store_id = StoreFSTId::try_from_str_base16(collection_name, bucket_name)?;
+        tracing::debug!("fst store {store_id} restoring from path: {origin_path:?}");
 
         // Force a FST store close.
         self.close(store_id);
@@ -536,7 +532,7 @@ impl StoreFSTPool {
         })?;
 
         tracing::info!(
-            "fst bucket: {collection_name}/{bucket_name} restored to path: {fst_path:?} from backup: {origin_path:?}"
+            "fst store {store_id} restored to path: {fst_path:?} from backup: {origin_path:?}"
         );
 
         Ok(())
@@ -1396,15 +1392,12 @@ impl StoreFSTId {
         }
     }
 
-    /// Converts names to hashes (as names are hashes encoded as base-16
-    /// strings, but we need them as proper integers).
+    /// Filesystem path components are hex-encoded (via `format!("{:x}")`), we
+    /// must convert it back into proper `u32` otherwise roundtrips will fail.
     #[inline]
-    pub fn try_from_str_base16(
-        collection_name_b16: &str,
-        bucket_name_b16: &str,
-    ) -> Result<StoreFSTId, io::Error> {
-        let collection_hash = u32_from_base16(collection_name_b16)?;
-        let bucket_hash = u32_from_base16(bucket_name_b16)?;
+    pub fn try_from_hex(collection_hash: &str, bucket_hash: &str) -> Result<StoreFSTId, io::Error> {
+        let collection_hash = u32_from_hex(collection_hash)?;
+        let bucket_hash = u32_from_hex(bucket_hash)?;
 
         Ok(Self::from_atom(collection_hash, bucket_hash))
     }

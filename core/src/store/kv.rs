@@ -360,10 +360,10 @@ impl StoreKVPool {
                 continue;
             }
 
-            if let Some(collection_name) = collection.file_name().to_str() {
-                tracing::debug!("kv collection ongoing {action}: {collection_name}");
+            if let Some(collection_hash) = collection.file_name().to_str() {
+                tracing::debug!("kv collection ongoing {action}: {collection_hash}");
 
-                fn_item(self, write_path, &collection.path(), collection_name)?;
+                fn_item(self, write_path, &collection.path(), collection_hash)?;
             }
         }
 
@@ -374,16 +374,18 @@ impl StoreKVPool {
         &self,
         backup_path: &Path,
         _origin_path: &Path,
-        collection_name: &str,
+        collection_hash: &str,
     ) -> Result<(), io::Error> {
         // Acquire access lock (in blocking write mode), and reference it in context
         // Notice: this prevents store to be acquired from any context
         let _access = self.store_access_lock.write().unwrap();
 
         // Generate path to KV backup
-        let kv_backup_path = backup_path.join(collection_name);
+        let kv_backup_path = backup_path.join(collection_hash);
 
-        tracing::debug!("kv collection: {collection_name} backing up to path: {kv_backup_path:?}");
+        let store_id = StoreKVId::try_from_hex(collection_hash)?;
+
+        tracing::debug!("kv store {store_id} backing up to path: {kv_backup_path:?}");
 
         // Erase any previously-existing KV backup
         if kv_backup_path.exists() {
@@ -391,9 +393,7 @@ impl StoreKVPool {
         }
 
         // Create backup folder for collection
-        fs::create_dir_all(backup_path.join(collection_name))?;
-
-        let store_id = StoreKVId::try_from_str_base16(collection_name)?;
+        fs::create_dir_all(backup_path.join(collection_hash))?;
 
         let origin_kv = self
             .open(store_id, |_| {})
@@ -413,7 +413,7 @@ impl StoreKVPool {
             .create_new_backup(&origin_kv)
             .map_err(|_| io::Error::other("database backup failure"))?;
 
-        tracing::info!("kv collection: {collection_name} backed up to path: {kv_backup_path:?}");
+        tracing::info!("kv store {store_id} backed up to path: {kv_backup_path:?}");
 
         Ok(())
     }
@@ -422,15 +422,15 @@ impl StoreKVPool {
         &self,
         _backup_path: &Path,
         origin_path: &Path,
-        collection_name: &str,
+        collection_hash: &str,
     ) -> Result<(), io::Error> {
         // Acquire access lock (in blocking write mode), and reference it in context
         // Notice: this prevents store to be acquired from any context
         let _access = self.store_access_lock.write().unwrap();
 
-        tracing::debug!("kv collection: {collection_name} restoring from path: {origin_path:?}");
+        let store_id = StoreKVId::try_from_hex(collection_hash)?;
 
-        let store_id = StoreKVId::try_from_str_base16(collection_name)?;
+        tracing::debug!("kv store {store_id} restoring from path: {origin_path:?}");
 
         // Force a KV store close
         self.close_(store_id, None);
@@ -460,7 +460,7 @@ impl StoreKVPool {
             .map_err(|_| io::Error::other("database restore failure"))?;
 
         tracing::info!(
-            "kv collection: {collection_name} restored to path: {kv_path:?} from backup: {origin_path:?}"
+            "kv store {store_id} restored to path: {kv_path:?} from backup: {origin_path:?}"
         );
 
         Ok(())
@@ -1523,11 +1523,11 @@ impl StoreKVId {
         }
     }
 
-    /// Converts names to hashes (as names are hashes encoded as base-16
-    /// strings, but we need them as proper integers).
+    /// Filesystem path components are hex-encoded (via `format!("{:x}")`), we
+    /// must convert it back into proper `u32` otherwise roundtrips will fail.
     #[inline]
-    pub fn try_from_str_base16(collection_name_b16: &str) -> Result<StoreKVId, io::Error> {
-        let collection_hash = u32_from_base16(collection_name_b16)?;
+    pub fn try_from_hex(collection_hash: &str) -> Result<StoreKVId, io::Error> {
+        let collection_hash = u32_from_hex(collection_hash)?;
 
         Ok(Self::from_atom(collection_hash))
     }
