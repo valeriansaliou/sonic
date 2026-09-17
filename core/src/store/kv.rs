@@ -22,7 +22,7 @@ use crate::util::hash::NoopU32HasherBuilder;
 use super::generic::*;
 use super::identifiers::*;
 use super::item::StoreItemPart;
-use super::keyer::{StoreKVKey, StoreKeyerBuilder};
+use super::keyer::StoreKVKey;
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
@@ -711,7 +711,7 @@ impl StoreKV {
         &self,
         bucket: &StoreItemPart<'a>,
     ) -> Result<Option<StoreObjectIID>, Box<dyn std::error::Error>> {
-        let store_key = StoreKeyerBuilder::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
+        let store_key = StoreKVKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
         let value = self.database.get(store_key.as_bytes())?;
 
         match value {
@@ -747,7 +747,7 @@ impl StoreKV {
         // Early release lock.
         drop(write_guard);
 
-        let key = StoreKeyerBuilder::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
+        let key = StoreKVKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
         batch.merge(key.as_bytes(), iid.into_bytes());
 
         iid
@@ -866,7 +866,7 @@ impl<'a> StoreKVActionReadOnly<'a> {
     ///
     /// [IDX=0] ((meta)) ~> ((value))
     pub fn get_meta_to_value(&self, meta: StoreMetaKey) -> Result<Option<StoreMetaValue>, ()> {
-        let store_key = StoreKeyerBuilder::meta_to_value(&self.bucket, &meta);
+        let store_key = StoreKVKey::meta_to_value(&self.bucket, &meta);
 
         tracing::debug!("store get meta-to-value: {store_key}");
 
@@ -905,7 +905,7 @@ impl<'a> StoreKVActionReadOnly<'a> {
         &self,
         term_hash: StoreTermHash,
     ) -> Result<Option<Vec<StoreObjectIID>>, ()> {
-        let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hash);
+        let store_key = StoreKVKey::term_to_iids(&self.bucket, term_hash);
 
         tracing::debug!("store get term-to-iids: {store_key}");
 
@@ -938,7 +938,7 @@ impl<'a> StoreKVActionReadOnly<'a> {
     ///
     /// [IDX=2] ((oid)) ~> ((iid))
     pub fn get_oid_to_iid(&self, oid: StoreObjectOID) -> Result<Option<StoreObjectIID>, ()> {
-        let store_key = StoreKeyerBuilder::oid_to_iid(&self.bucket, oid);
+        let store_key = StoreKVKey::oid_to_iid(&self.bucket, oid);
 
         tracing::debug!("store get oid-to-iid: {store_key}");
 
@@ -971,7 +971,7 @@ impl<'a> StoreKVActionReadOnly<'a> {
     ///
     /// [IDX=3] ((iid)) ~> ((oid))
     pub fn get_iid_to_oid(&self, iid: StoreObjectIID) -> Result<Option<String>, ()> {
-        let store_key = StoreKeyerBuilder::iid_to_oid(&self.bucket, iid);
+        let store_key = StoreKVKey::iid_to_oid(&self.bucket, iid);
 
         tracing::debug!("store get iid-to-oid: {store_key}");
 
@@ -998,7 +998,7 @@ impl<'a> StoreKVActionReadOnly<'a> {
     ///
     /// [IDX=4] ((iid)) ~> [((term))]
     pub fn get_iid_to_terms(&self, iid: StoreObjectIID) -> Result<Option<Vec<StoreTermHash>>, ()> {
-        let store_key = StoreKeyerBuilder::iid_to_terms(&self.bucket, iid);
+        let store_key = StoreKVKey::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store get iid-to-terms: {store_key}");
 
@@ -1057,7 +1057,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
         meta: StoreMetaKey,
         value: StoreMetaValue,
     ) {
-        let store_key = StoreKeyerBuilder::meta_to_value(&self.bucket, &meta);
+        let store_key = StoreKVKey::meta_to_value(&self.bucket, &meta);
 
         tracing::debug!("store set meta-to-value: {store_key}");
 
@@ -1094,7 +1094,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
         term_hash: StoreTermHash,
         iids: impl ExactSizeIterator<Item = StoreObjectIID>,
     ) {
-        let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hash);
+        let store_key = StoreKVKey::term_to_iids(&self.bucket, term_hash);
 
         tracing::debug!("store set term-to-iids: {store_key}");
 
@@ -1112,7 +1112,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
         term_hash: StoreTermHash,
         iids: impl Iterator<Item = StoreObjectIID>,
     ) {
-        let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hash);
+        let store_key = StoreKVKey::term_to_iids(&self.bucket, term_hash);
 
         tracing::debug!("store add term-to-iids: {store_key}");
 
@@ -1122,7 +1122,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
     }
 
     pub fn delete_term_to_iids(&self, batch: &mut WriteBatch, term_hash: StoreTermHash) {
-        let store_key = StoreKeyerBuilder::term_to_iids(&self.bucket, term_hash);
+        let store_key = StoreKVKey::term_to_iids(&self.bucket, term_hash);
 
         tracing::debug!("store delete term-to-iids: {store_key}");
 
@@ -1137,7 +1137,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
     }
 
     pub fn set_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOID, iid: StoreObjectIID) {
-        let store_key = StoreKeyerBuilder::oid_to_iid(&self.bucket, oid);
+        let store_key = StoreKVKey::oid_to_iid(&self.bucket, oid);
 
         tracing::debug!("store set oid-to-iid: {store_key}");
 
@@ -1150,7 +1150,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
     }
 
     pub fn delete_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOID) {
-        let store_key = StoreKeyerBuilder::oid_to_iid(&self.bucket, oid);
+        let store_key = StoreKVKey::oid_to_iid(&self.bucket, oid);
 
         tracing::debug!("store delete oid-to-iid: {store_key}");
 
@@ -1165,7 +1165,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
     }
 
     pub fn set_iid_to_oid(&self, batch: &mut WriteBatch, iid: StoreObjectIID, oid: StoreObjectOID) {
-        let store_key = StoreKeyerBuilder::iid_to_oid(&self.bucket, iid);
+        let store_key = StoreKVKey::iid_to_oid(&self.bucket, iid);
 
         tracing::debug!("store set iid-to-oid: {store_key}");
 
@@ -1173,7 +1173,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
     }
 
     pub fn delete_iid_to_oid(&self, batch: &mut WriteBatch, iid: StoreObjectIID) {
-        let store_key = StoreKeyerBuilder::iid_to_oid(&self.bucket, iid);
+        let store_key = StoreKVKey::iid_to_oid(&self.bucket, iid);
 
         tracing::debug!("store delete iid-to-oid: {store_key}");
 
@@ -1193,7 +1193,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
         iid: StoreObjectIID,
         terms_hashes: impl ExactSizeIterator<Item = StoreTermHash>,
     ) {
-        let store_key = StoreKeyerBuilder::iid_to_terms(&self.bucket, iid);
+        let store_key = StoreKVKey::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store set iid-to-terms: {store_key}");
 
@@ -1213,7 +1213,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
         iid: StoreObjectIID,
         terms_hashes: impl Iterator<Item = StoreTermHash>,
     ) {
-        let store_key = StoreKeyerBuilder::iid_to_terms(&self.bucket, iid);
+        let store_key = StoreKVKey::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store add iid-to-terms: {store_key}");
 
@@ -1223,7 +1223,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
     }
 
     pub fn delete_iid_to_terms(&self, batch: &mut WriteBatch, iid: StoreObjectIID) {
-        let store_key = StoreKeyerBuilder::iid_to_terms(&self.bucket, iid);
+        let store_key = StoreKVKey::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store delete iid-to-terms: {store_key}");
 
@@ -1276,11 +1276,11 @@ impl<'a> StoreKVActionReadWrite<'a> {
 
         // Generate all key prefix values (with dummy post-prefix values; we dont care)
         let (k_meta_to_value, k_term_to_iids, k_oid_to_iid, k_iid_to_oid, k_iid_to_terms) = (
-            StoreKeyerBuilder::meta_to_value(&bucket, &StoreMetaKey::IIDIncr),
-            StoreKeyerBuilder::term_to_iids(&bucket, 0),
-            StoreKeyerBuilder::oid_to_iid(&bucket, StoreObjectOID(StoreItemPart(""))),
-            StoreKeyerBuilder::iid_to_oid(&bucket, 0),
-            StoreKeyerBuilder::iid_to_terms(&bucket, 0),
+            StoreKVKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr),
+            StoreKVKey::term_to_iids(&bucket, 0),
+            StoreKVKey::oid_to_iid(&bucket, StoreObjectOID(StoreItemPart(""))),
+            StoreKVKey::iid_to_oid(&bucket, 0),
+            StoreKVKey::iid_to_terms(&bucket, 0),
         );
 
         let key_prefixes = [
