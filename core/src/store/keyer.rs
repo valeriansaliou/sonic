@@ -17,8 +17,28 @@ use super::identifiers::*;
 
 pub struct StoreKeyerBuilder;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct StoreKeyer {
-    key: StoreKeyerKey,
+    key: [u8; 9],
+}
+
+impl From<[u8; 9]> for StoreKeyer {
+    fn from(value: [u8; 9]) -> Self {
+        Self { key: value }
+    }
+}
+
+impl AsRef<[u8]> for StoreKeyer {
+    fn as_ref(&self) -> &[u8] {
+        &self.key
+    }
+}
+
+impl fmt::Debug for StoreKeyer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.key, f)
+    }
 }
 
 pub struct StoreKeyerHasher;
@@ -30,9 +50,6 @@ enum StoreKeyerIdx<'a> {
     IIDToOID(StoreObjectIID),
     IIDToTerms(StoreObjectIID),
 }
-
-pub type StoreKeyerKey = [u8; 9];
-pub type StoreKeyerPrefix = [u8; 5];
 
 impl<'a> StoreKeyerIdx<'a> {
     pub fn to_index(&self) -> u8 {
@@ -70,12 +87,6 @@ impl StoreKeyerBuilder {
     }
 
     fn make<'a>(idx: StoreKeyerIdx<'a>, bucket: &'a str) -> StoreKeyer {
-        StoreKeyer {
-            key: Self::build_key(idx, bucket),
-        }
-    }
-
-    fn build_key<'a>(idx: StoreKeyerIdx<'a>, bucket: &'a str) -> StoreKeyerKey {
         // Key format: [idx<1B> | bucket<4B> | route<4B>]
 
         // Encode key bucket + key route from u32 to array of u8 (ie. binary)
@@ -85,7 +96,7 @@ impl StoreKeyerBuilder {
         LittleEndian::write_u32(&mut route_encoded, Self::route_to_compact(&idx));
 
         // Generate final binary key
-        [
+        StoreKeyer::from([
             // [idx<1B>]
             idx.to_index(),
             // [bucket<4B>]
@@ -98,7 +109,7 @@ impl StoreKeyerBuilder {
             route_encoded[1],
             route_encoded[2],
             route_encoded[3],
-        ]
+        ])
     }
 
     fn route_to_compact(idx: &StoreKeyerIdx) -> u32 {
@@ -113,13 +124,12 @@ impl StoreKeyerBuilder {
 }
 
 impl StoreKeyer {
-    pub fn as_bytes(&self) -> StoreKeyerKey {
-        self.key
+    pub fn as_bytes(&self) -> &[u8; 9] {
+        &self.key
     }
 
-    pub fn as_prefix(&self) -> StoreKeyerPrefix {
-        // Prefix format: [idx<1B> | bucket<4B>]
-
+    /// Prefix format: `[idx<1B> | bucket<4B>]`
+    pub fn into_prefix(self) -> [u8; 5] {
         [
             self.key[0],
             self.key[1],
@@ -168,7 +178,7 @@ mod tests {
     fn it_keys_meta_to_value() {
         assert_eq!(
             StoreKeyerBuilder::meta_to_value("bucket:1", &StoreMetaKey::IIDIncr).as_bytes(),
-            [0, 108, 244, 29, 93, 0, 0, 0, 0]
+            &[0, 108, 244, 29, 93, 0, 0, 0, 0]
         );
     }
 
@@ -176,11 +186,11 @@ mod tests {
     fn it_keys_term_to_iids() {
         assert_eq!(
             StoreKeyerBuilder::term_to_iids("bucket:2", 772137347).as_bytes(),
-            [1, 50, 220, 166, 65, 131, 225, 5, 46]
+            &[1, 50, 220, 166, 65, 131, 225, 5, 46]
         );
         assert_eq!(
             StoreKeyerBuilder::term_to_iids("bucket:2", 3582484684).as_bytes(),
-            [1, 50, 220, 166, 65, 204, 96, 136, 213]
+            &[1, 50, 220, 166, 65, 204, 96, 136, 213]
         );
     }
 
@@ -189,7 +199,7 @@ mod tests {
         assert_eq!(
             StoreKeyerBuilder::oid_to_iid("bucket:3", &"conversation:6501e83a".to_string())
                 .as_bytes(),
-            [2, 171, 194, 213, 57, 31, 156, 118, 213]
+            &[2, 171, 194, 213, 57, 31, 156, 118, 213]
         );
     }
 
@@ -197,7 +207,7 @@ mod tests {
     fn it_keys_iid_to_oid() {
         assert_eq!(
             StoreKeyerBuilder::iid_to_oid("bucket:4", 10292198).as_bytes(),
-            [3, 105, 12, 54, 147, 230, 11, 157, 0]
+            &[3, 105, 12, 54, 147, 230, 11, 157, 0]
         );
     }
 
@@ -205,11 +215,11 @@ mod tests {
     fn it_keys_iid_to_terms() {
         assert_eq!(
             StoreKeyerBuilder::iid_to_terms("bucket:5", 1).as_bytes(),
-            [4, 137, 142, 73, 67, 1, 0, 0, 0]
+            &[4, 137, 142, 73, 67, 1, 0, 0, 0]
         );
         assert_eq!(
             StoreKeyerBuilder::iid_to_terms("bucket:5", 20).as_bytes(),
-            [4, 137, 142, 73, 67, 20, 0, 0, 0]
+            &[4, 137, 142, 73, 67, 20, 0, 0, 0]
         );
     }
 

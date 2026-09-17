@@ -32,7 +32,7 @@ use crate::util::hash::NoopU32HasherBuilder;
 use super::generic::{StoreGeneric, StoreGenericPool, StoreGenericPoolExt as _};
 use super::identifiers::*;
 use super::item::StoreItemPart;
-use super::keyer::{StoreKeyerBuilder, StoreKeyerHasher, StoreKeyerKey, StoreKeyerPrefix};
+use super::keyer::{StoreKeyer, StoreKeyerBuilder, StoreKeyerHasher};
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
@@ -1304,12 +1304,12 @@ impl<'a> StoreKVActionReadWrite<'a> {
             StoreKeyerBuilder::iid_to_terms(bucket, 0),
         );
 
-        let key_prefixes: [StoreKeyerPrefix; 5] = [
-            k_meta_to_value.as_prefix(),
-            k_term_to_iids.as_prefix(),
-            k_oid_to_iid.as_prefix(),
-            k_iid_to_oid.as_prefix(),
-            k_iid_to_terms.as_prefix(),
+        let key_prefixes = [
+            k_meta_to_value.into_prefix(),
+            k_term_to_iids.into_prefix(),
+            k_oid_to_iid.into_prefix(),
+            k_iid_to_oid.into_prefix(),
+            k_iid_to_terms.into_prefix(),
         ];
 
         // Scan all keys per-prefix and nuke them right away
@@ -1318,7 +1318,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
 
             // Generate start and end prefix for batch delete (in other words,
             // the minimum key value possible, and the highest key value possible)
-            let key_prefix_start: StoreKeyerKey = [
+            let key_prefix_start = StoreKeyer::from([
                 key_prefix[0],
                 key_prefix[1],
                 key_prefix[2],
@@ -1328,8 +1328,8 @@ impl<'a> StoreKVActionReadWrite<'a> {
                 0,
                 0,
                 0,
-            ];
-            let key_prefix_end: StoreKeyerKey = [
+            ]);
+            let key_prefix_end = StoreKeyer::from([
                 key_prefix[0],
                 key_prefix[1],
                 key_prefix[2],
@@ -1339,7 +1339,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
                 255,
                 255,
                 255,
-            ];
+            ]);
 
             // TODO: Move the batch outside the for loop?
             let mut batch = WriteBatch::default();
