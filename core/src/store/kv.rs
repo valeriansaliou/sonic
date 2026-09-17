@@ -1358,13 +1358,7 @@ impl StoreObjectIID {
 }
 
 fn encode_u32(decoded: u32) -> [u8; 4] {
-    use byteorder::{ByteOrder, LittleEndian};
-
-    let mut encoded = [0; 4];
-
-    LittleEndian::write_u32(&mut encoded, decoded);
-
-    encoded
+    decoded.to_le_bytes()
 }
 
 #[inline]
@@ -1373,11 +1367,13 @@ fn decode_u32_mapped<T: From<u32>>(encoded: &[u8]) -> Result<T, ()> {
 }
 
 fn decode_u32(encoded: &[u8]) -> Result<u32, ()> {
-    use byteorder::{LittleEndian, ReadBytesExt as _};
-
-    io::Cursor::new(encoded)
-        .read_u32::<LittleEndian>()
-        .or(Err(()))
+    if encoded.len() == 4 {
+        Ok(u32::from_le_bytes([
+            encoded[0], encoded[1], encoded[2], encoded[3],
+        ]))
+    } else {
+        Err(())
+    }
 }
 
 fn encode_u32_list_mapped<T: Into<u32>>(decoded: impl ExactSizeIterator<Item = T>) -> Vec<u8> {

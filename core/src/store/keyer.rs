@@ -48,28 +48,15 @@ impl StoreKVKey {
 
     /// Key format: `[idx<1B> | bucket<4B> | route<4B>]`
     fn make<'a>(idx: u8, bucket: &'a StoreItemPart, route: u32) -> StoreKVKey {
-        use byteorder::{ByteOrder, LittleEndian};
+        // Encode key bucket + key route from u32 to array of u8 (i.e. binary).
+        let [b0, b1, b2, b3] = bucket.into_compact().to_le_bytes();
+        let [r0, r1, r2, r3] = route.to_le_bytes();
 
-        // Encode key bucket + key route from u32 to array of u8 (ie. binary)
-        let (mut bucket_encoded, mut route_encoded) = ([0; 4], [0; 4]);
-
-        LittleEndian::write_u32(&mut bucket_encoded, bucket.into_compact());
-        LittleEndian::write_u32(&mut route_encoded, route);
-
-        // Generate final binary key
+        // Generate final binary key.
         StoreKVKey::from([
-            // [idx<1B>]
-            idx,
-            // [bucket<4B>]
-            bucket_encoded[0],
-            bucket_encoded[1],
-            bucket_encoded[2],
-            bucket_encoded[3],
-            // [route<4B>]
-            route_encoded[0],
-            route_encoded[1],
-            route_encoded[2],
-            route_encoded[3],
+            idx, // [idx<1B>]
+            b0, b1, b2, b3, // [bucket<4B>]
+            r0, r1, r2, r3, // [route<4B>]
         ])
     }
 }
@@ -99,22 +86,11 @@ impl AsRef<[u8]> for StoreKVKey {
 
 impl std::fmt::Display for StoreKVKey {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        use byteorder::{LittleEndian, ReadBytesExt as _};
-        use std::io::Cursor;
-
-        let Self(bytes) = self;
-
-        let key_idx = bytes[0];
+        let Self(bytes @ [key_idx, b1, b2, b3, b4, b5, b6, b7, b8]) = self;
 
         // Convert to number
-        let (key_bucket, key_route) = (
-            Cursor::new(&bytes[1..5])
-                .read_u32::<LittleEndian>()
-                .unwrap_or(0),
-            Cursor::new(&bytes[5..9])
-                .read_u32::<LittleEndian>()
-                .unwrap_or(0),
-        );
+        let key_bucket = u32::from_le_bytes([*b1, *b2, *b3, *b4]);
+        let key_route = u32::from_le_bytes([*b5, *b6, *b7, *b8]);
 
         write!(f, "'{key_idx}:{key_bucket:x}:{key_route:x}' {bytes:?}")
     }

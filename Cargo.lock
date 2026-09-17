@@ -2455,7 +2455,6 @@ dependencies = [
 name = "sonic-core"
 version = "0.3.0"
 dependencies = [
- "byteorder",
  "caseless",
  "config",
  "fst",

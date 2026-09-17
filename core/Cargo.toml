@@ -30,7 +30,6 @@ fst-levenshtein = { version = "0.3", default-features = false }
 fst-regex = { version = "0.3", default-features = false }
 regex-syntax = { version = "0.8", default-features = false, features = ["std", "unicode"] }
 twox-hash = { version = "2", default-features = false, features = ["xxhash32"] }
-byteorder = { version = "1", default-features = false }
 hashbrown = { version = "0.17", default-features = false, features = ["allocator-api2", "default-hasher", "inline-more"] }
 indexmap = { version = "2", default-features = false, features = ["std"] }
 linked_hash_set = { version = "0.1", default-features = false }
