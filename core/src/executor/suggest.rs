@@ -5,7 +5,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use super::types::{QuerySearchID, QuerySearchLimit};
+use super::types::QuerySearchLimit;
 use crate::lexer::preprocessor::PreprocessorOutput;
 use crate::store::StoreItemPart;
 
@@ -14,7 +14,6 @@ impl super::Executor {
         &self,
         collection: StoreItemPart,
         bucket: StoreItemPart,
-        _event_id: QuerySearchID,
         input: PreprocessorOutput,
         limit: QuerySearchLimit,
     ) -> Result<Option<impl ExactSizeIterator<Item = String> + DoubleEndedIterator>, ()> {

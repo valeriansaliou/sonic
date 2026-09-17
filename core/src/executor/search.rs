@@ -7,9 +7,7 @@
 
 use indexmap::IndexMap;
 
-use super::types::{
-    QueryMatchScore, QueryResultScore, QuerySearchID, QuerySearchLimit, QuerySearchOffset,
-};
+use super::types::{QueryMatchScore, QueryResultScore, QuerySearchLimit, QuerySearchOffset};
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::StoreItemPart;
@@ -23,7 +21,6 @@ impl super::Executor {
         &self,
         collection: StoreItemPart,
         bucket: StoreItemPart,
-        _event_id: QuerySearchID,
         input: PreprocessorOutput,
         limit: QuerySearchLimit,
         offset: QuerySearchOffset,

@@ -5,7 +5,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use super::types::{QuerySearchID, QuerySearchLimit, QuerySearchOffset};
+use super::types::{QuerySearchLimit, QuerySearchOffset};
 use crate::store::StoreItemPart;
 
 impl super::Executor {
@@ -13,7 +13,6 @@ impl super::Executor {
         &self,
         collection: StoreItemPart,
         bucket: StoreItemPart,
-        _event_id: QuerySearchID,
         limit: QuerySearchLimit,
         offset: QuerySearchOffset,
     ) -> Result<Vec<String>, ()> {

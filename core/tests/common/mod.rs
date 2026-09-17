@@ -107,7 +107,6 @@ macro_rules! exec {
         $executor
             .search(
                 c, b,
-                "",
                 preprocessor.preprocess($term, exec!(internal_ lang $($lang)?)),
                 exec!(internal_ limit $($limit)?),
                 0,
@@ -121,7 +120,6 @@ macro_rules! exec {
         $executor
             .list(
                 c, b,
-                "",
                 exec!(internal_ limit $($limit)?),
                 0,
             )
