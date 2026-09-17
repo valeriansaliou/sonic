@@ -7,8 +7,7 @@
 
 // TODO(major): Change index structure so bucket comes first.
 
-use super::identifiers::*;
-use super::item::StoreItemPart;
+use crate::store::*;
 
 use self::constants::*;
 

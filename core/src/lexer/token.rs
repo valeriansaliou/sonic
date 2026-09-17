@@ -347,7 +347,7 @@ pub mod preprocessor {
     use crate::config::{ConfigNormalization, ConfigStopwords, ConfigTokenization};
     use crate::lexer::stemming;
     use crate::lexer::stopwords::is_stopword;
-    use crate::store::identifiers::StoreTermHash;
+    use crate::store::StoreTermHash;
 
     pub struct Preprocessor {
         pub tokenization_config: ConfigTokenization,

@@ -5,10 +5,9 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use crate::store::StoreItemPart;
 use crate::store::fst::StoreFSTMisc;
-use crate::store::identifiers::StoreObjectOID;
 use crate::store::kv::StoreKVAcquireMode;
+use crate::store::{StoreItemPart, StoreObjectOID};
 
 impl super::Executor {
     /// Count terms in (collection, bucket, object) from KV.

@@ -7,9 +7,8 @@
 
 use rocksdb::WriteBatch;
 
-use crate::store::StoreItemPart;
-use crate::store::identifiers::StoreObjectOID;
 use crate::store::kv::StoreKVAcquireMode;
+use crate::store::{StoreItemPart, StoreObjectOID};
 
 impl super::Executor {
     pub fn flusho(

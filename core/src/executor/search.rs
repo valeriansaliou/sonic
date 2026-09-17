@@ -12,8 +12,8 @@ use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::StoreItemPart;
 use crate::store::fst::typo_factor;
-use crate::store::identifiers::{StoreObjectIID, StoreTermHash};
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionReadOnly};
+use crate::store::{StoreObjectIID, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {

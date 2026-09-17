@@ -12,8 +12,8 @@ use std::iter::FromIterator;
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::StoreItemPart;
-use crate::store::identifiers::{StoreObjectOID, StoreTermHash};
 use crate::store::kv::StoreKVAcquireMode;
+use crate::store::{StoreObjectOID, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {

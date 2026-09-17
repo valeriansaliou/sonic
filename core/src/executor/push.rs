@@ -9,9 +9,8 @@ use rocksdb::WriteBatch;
 
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
-use crate::store::StoreItemPart;
-use crate::store::identifiers::StoreObjectOID;
 use crate::store::kv::StoreKVAcquireMode;
+use crate::store::{StoreItemPart, StoreObjectOID};
 use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {

@@ -5,24 +5,25 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+mod keys;
+
 use hashbrown::{DefaultHashBuilder, HashMap, HashSet};
 use rocksdb::backup::{
     BackupEngine as DBBackupEngine, BackupEngineOptions as DBBackupEngineOptions,
     RestoreOptions as DBRestoreOptions,
 };
 use rocksdb::{DB, WriteBatch};
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{Duration, SystemTime};
 use std::{fmt, fs, io};
 
+use self::keys::{StoreKVKey, StoreMetaKey};
 use crate::config::ConfigStoreKVDatabase;
+use crate::store::generic::*;
+use crate::store::*;
 use crate::util::hash::NoopU32HasherBuilder;
-
-use super::generic::*;
-use super::identifiers::*;
-use super::item::StoreItemPart;
-use super::keyer::*;
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
@@ -1410,7 +1411,7 @@ fn default_merge_operator(
     existing_val: Option<&[u8]>,
     operands: &rocksdb::MergeOperands,
 ) -> Option<Vec<u8>> {
-    use super::keyer::constants::*;
+    use self::keys::constants::*;
 
     match key[0] {
         META_TO_VALUE if key[5..9] == encode_u32(StoreMetaKey::IIDIncr.as_u32()) => {
