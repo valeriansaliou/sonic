@@ -32,7 +32,7 @@ use crate::util::hash::NoopU32HasherBuilder;
 use super::generic::{StoreGeneric, StoreGenericPool, StoreGenericPoolExt as _};
 use super::identifiers::*;
 use super::item::StoreItemPart;
-use super::keyer::{StoreKeyer, StoreKeyerBuilder, StoreKeyerHasher};
+use super::keyer::{StoreKVKey, StoreKeyerBuilder, StoreKeyerHasher};
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
@@ -1318,7 +1318,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
 
             // Generate start and end prefix for batch delete (in other words,
             // the minimum key value possible, and the highest key value possible)
-            let key_prefix_start = StoreKeyer::from([
+            let key_prefix_start = StoreKVKey::from([
                 key_prefix[0],
                 key_prefix[1],
                 key_prefix[2],
@@ -1329,7 +1329,7 @@ impl<'a> StoreKVActionReadWrite<'a> {
                 0,
                 0,
             ]);
-            let key_prefix_end = StoreKeyer::from([
+            let key_prefix_end = StoreKVKey::from([
                 key_prefix[0],
                 key_prefix[1],
                 key_prefix[2],

@@ -19,25 +19,23 @@ pub struct StoreKeyerBuilder;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct StoreKeyer {
-    key: [u8; 9],
-}
+pub struct StoreKVKey([u8; 9]);
 
-impl From<[u8; 9]> for StoreKeyer {
+impl From<[u8; 9]> for StoreKVKey {
     fn from(value: [u8; 9]) -> Self {
-        Self { key: value }
+        Self(value)
     }
 }
 
-impl AsRef<[u8]> for StoreKeyer {
+impl AsRef<[u8]> for StoreKVKey {
     fn as_ref(&self) -> &[u8] {
-        &self.key
+        &self.0
     }
 }
 
-impl fmt::Debug for StoreKeyer {
+impl fmt::Debug for StoreKVKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.key, f)
+        fmt::Debug::fmt(&self.0, f)
     }
 }
 
@@ -66,27 +64,27 @@ impl<'a> StoreKeyerIdx<'a> {
 }
 
 impl StoreKeyerBuilder {
-    pub fn meta_to_value<'a>(bucket: &'a str, meta: &'a StoreMetaKey) -> StoreKeyer {
+    pub fn meta_to_value<'a>(bucket: &'a str, meta: &'a StoreMetaKey) -> StoreKVKey {
         Self::make(StoreKeyerIdx::MetaToValue(meta), bucket)
     }
 
-    pub fn term_to_iids(bucket: &str, term_hash: impl Into<StoreTermHash>) -> StoreKeyer {
+    pub fn term_to_iids(bucket: &str, term_hash: impl Into<StoreTermHash>) -> StoreKVKey {
         Self::make(StoreKeyerIdx::TermToIIDs(term_hash.into()), bucket)
     }
 
-    pub fn oid_to_iid<'a>(bucket: &'a str, oid: StoreObjectOID<'a>) -> StoreKeyer {
+    pub fn oid_to_iid<'a>(bucket: &'a str, oid: StoreObjectOID<'a>) -> StoreKVKey {
         Self::make(StoreKeyerIdx::OIDToIID(oid), bucket)
     }
 
-    pub fn iid_to_oid(bucket: &str, iid: impl Into<StoreObjectIID>) -> StoreKeyer {
+    pub fn iid_to_oid(bucket: &str, iid: impl Into<StoreObjectIID>) -> StoreKVKey {
         Self::make(StoreKeyerIdx::IIDToOID(iid.into()), bucket)
     }
 
-    pub fn iid_to_terms(bucket: &str, iid: impl Into<StoreObjectIID>) -> StoreKeyer {
+    pub fn iid_to_terms(bucket: &str, iid: impl Into<StoreObjectIID>) -> StoreKVKey {
         Self::make(StoreKeyerIdx::IIDToTerms(iid.into()), bucket)
     }
 
-    fn make<'a>(idx: StoreKeyerIdx<'a>, bucket: &'a str) -> StoreKeyer {
+    fn make<'a>(idx: StoreKeyerIdx<'a>, bucket: &'a str) -> StoreKVKey {
         // Key format: [idx<1B> | bucket<4B> | route<4B>]
 
         // Encode key bucket + key route from u32 to array of u8 (ie. binary)
@@ -96,7 +94,7 @@ impl StoreKeyerBuilder {
         LittleEndian::write_u32(&mut route_encoded, Self::route_to_compact(&idx));
 
         // Generate final binary key
-        StoreKeyer::from([
+        StoreKVKey::from([
             // [idx<1B>]
             idx.to_index(),
             // [bucket<4B>]
@@ -123,20 +121,14 @@ impl StoreKeyerBuilder {
     }
 }
 
-impl StoreKeyer {
+impl StoreKVKey {
     pub fn as_bytes(&self) -> &[u8; 9] {
-        &self.key
+        &self.0
     }
 
     /// Prefix format: `[idx<1B> | bucket<4B>]`
     pub fn into_prefix(self) -> [u8; 5] {
-        [
-            self.key[0],
-            self.key[1],
-            self.key[2],
-            self.key[3],
-            self.key[4],
-        ]
+        [self.0[0], self.0[1], self.0[2], self.0[3], self.0[4]]
     }
 }
 
@@ -150,23 +142,23 @@ impl StoreKeyerHasher {
     }
 }
 
-impl fmt::Display for StoreKeyer {
+impl fmt::Display for StoreKVKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let Self(bytes) = self;
+
+        let key_idx = bytes[0];
+
         // Convert to number
         let (key_bucket, key_route) = (
-            Cursor::new(&self.key[1..5])
+            Cursor::new(&bytes[1..5])
                 .read_u32::<LittleEndian>()
                 .unwrap_or(0),
-            Cursor::new(&self.key[5..9])
+            Cursor::new(&bytes[5..9])
                 .read_u32::<LittleEndian>()
                 .unwrap_or(0),
         );
 
-        write!(
-            f,
-            "'{}:{:x}:{:x}' {:?}",
-            self.key[0], key_bucket, key_route, self.key
-        )
+        write!(f, "'{key_idx}:{key_bucket:x}:{key_route:x}' {bytes:?}")
     }
 }
 
