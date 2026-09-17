@@ -865,7 +865,10 @@ impl<'a> StoreKVActionReadOnly<'a> {
     /// Meta-to-Value mapper
     ///
     /// [IDX=0] ((meta)) ~> ((value))
-    pub fn get_meta_to_value(&self, meta: StoreMetaKey) -> Result<Option<StoreMetaValue>, ()> {
+    pub fn get_meta_to_value<T: std::str::FromStr>(
+        &self,
+        meta: StoreMetaKey,
+    ) -> Result<Option<T>, ()> {
         let store_key = StoreKVKey::meta_to_value(&self.bucket, &meta);
 
         tracing::debug!("store get meta-to-value: {store_key}");
@@ -875,10 +878,7 @@ impl<'a> StoreKVActionReadOnly<'a> {
                 tracing::debug!("got meta-to-value: {store_key}");
 
                 Ok(str::from_utf8(&value).map_or(None, |value| match meta {
-                    StoreMetaKey::IIDIncr => value
-                        .parse::<StoreObjectIID>()
-                        .ok()
-                        .map(StoreMetaValue::IIDIncr),
+                    StoreMetaKey::IIDIncr => value.parse::<T>().ok(),
                 }))
             }
             Ok(None) => {
@@ -1047,7 +1047,10 @@ impl<'a> StoreKVActionReadWrite<'a> {
     /// Meta-to-Value mapper
     ///
     /// [IDX=0] ((meta)) ~> ((value))
-    pub fn get_meta_to_value(&self, meta: StoreMetaKey) -> Result<Option<StoreMetaValue>, ()> {
+    pub fn get_meta_to_value<T: std::str::FromStr>(
+        &self,
+        meta: StoreMetaKey,
+    ) -> Result<Option<T>, ()> {
         self.as_read_only().get_meta_to_value(meta)
     }
 
@@ -1055,17 +1058,13 @@ impl<'a> StoreKVActionReadWrite<'a> {
         &self,
         batch: &mut WriteBatch,
         meta: StoreMetaKey,
-        value: StoreMetaValue,
+        value: impl ToString,
     ) {
         let store_key = StoreKVKey::meta_to_value(&self.bucket, &meta);
 
         tracing::debug!("store set meta-to-value: {store_key}");
 
-        let value_string = match value {
-            StoreMetaValue::IIDIncr(iid_incr) => u32::from(iid_incr).to_string(),
-        };
-
-        batch.put(&store_key.as_bytes(), value_string.as_bytes())
+        batch.put(&store_key.as_bytes(), value.to_string().as_bytes())
     }
 
     pub fn get_iid_incr(&self) -> Result<Option<StoreObjectIID>, Box<dyn std::error::Error>> {
@@ -1583,14 +1582,14 @@ mod tests {
             .unwrap();
         let action = store.access_read_write("b:test:3".into());
 
-        assert!(action.get_meta_to_value(StoreMetaKey::IIDIncr).is_ok());
+        assert!(
+            action
+                .get_meta_to_value::<StoreObjectIID>(StoreMetaKey::IIDIncr)
+                .is_ok()
+        );
         assert!({
             let mut batch = WriteBatch::default();
-            action.set_meta_to_value(
-                &mut batch,
-                StoreMetaKey::IIDIncr,
-                StoreMetaValue::IIDIncr(1.into()),
-            );
+            action.set_meta_to_value(&mut batch, StoreMetaKey::IIDIncr, 1);
             action.write(batch).is_ok()
         });
 

@@ -85,10 +85,6 @@ pub enum StoreMetaKey {
     IIDIncr,
 }
 
-pub enum StoreMetaValue {
-    IIDIncr(StoreObjectIID),
-}
-
 impl StoreMetaKey {
     pub const fn as_u32(&self) -> u32 {
         // WARN: Don’t update values here, it would break the index! Only add new cases.
