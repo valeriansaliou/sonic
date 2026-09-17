@@ -46,7 +46,7 @@ impl StoreKVKey {
     }
 
     /// Key format: `[idx<1B> | bucket<4B> | route<4B>]`
-    fn make<'a>(idx: u8, bucket: &'a StoreItemPart, route: u32) -> StoreKVKey {
+    fn make(idx: u8, bucket: &StoreItemPart, route: u32) -> StoreKVKey {
         // Encode key bucket + key route from u32 to array of u8 (i.e. binary).
         let [b0, b1, b2, b3] = bucket.into_compact().to_le_bytes();
         let [r0, r1, r2, r3] = route.to_le_bytes();
