@@ -14,8 +14,16 @@ pub struct StoreObjectIID(u32);
 impl_u32_wrapper_utils!(StoreObjectIID);
 
 impl StoreObjectIID {
-    pub fn saturating_add(self, rhs: u32) -> Self {
+    #[inline]
+    pub const fn saturating_add(self, rhs: u32) -> Self {
         Self(self.0.saturating_add(rhs))
+    }
+
+    // NOTE: We went for `into_inner` here instead of marking `.0` `pub(super)`
+    //   so it’s easier to identify call sites and keep constuction via `From`.
+    #[inline]
+    pub(super) const fn into_inner(self) -> u32 {
+        self.0
     }
 }
 
@@ -46,6 +54,15 @@ where
 pub struct StoreTermHash(u32);
 
 impl_u32_wrapper_utils!(StoreTermHash);
+
+impl StoreTermHash {
+    // NOTE: We went for `into_inner` here instead of marking `.0` `pub(super)`
+    //   so it’s easier to identify call sites and keep constuction via `From`.
+    #[inline]
+    pub(super) const fn into_inner(self) -> u32 {
+        self.0
+    }
+}
 
 impl From<&str> for StoreTermHash {
     fn from(term: &str) -> Self {
