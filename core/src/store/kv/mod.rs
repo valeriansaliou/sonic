@@ -21,9 +21,9 @@ use crate::store::generic::*;
 use crate::store::*;
 use crate::util::hash::NoopU32HasherBuilder;
 
-use self::keys::{StoreKVKey, StoreMetaKey};
-use self::pool::StoreKVId;
-pub use self::pool::StoreKVPool;
+use self::keys::StoreKVKey;
+pub use self::keys::StoreMetaKey;
+pub use self::pool::{StoreKVId, StoreKVPool};
 use self::util::*;
 
 pub struct StoreKV {

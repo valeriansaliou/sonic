@@ -8,6 +8,7 @@
 #![deny(
     clippy::all,
     dead_code,
+    unnameable_types,
     unstable_features,
     unused_imports,
     unused_qualifications
