@@ -204,7 +204,8 @@ impl StoreKVPool {
         tracing::debug!("opening key-value database for collection: {store_id}");
 
         // Configure database options
-        let mut db_options = self.configure();
+        tracing::debug!("configuring key-value database");
+        let mut db_options = rocksdb::Options::from(&self.kv_store_config.database);
 
         override_options(&mut db_options);
 
@@ -369,11 +370,11 @@ impl StoreKVPool {
     ) -> Result<u32, ()> {
         self.dispatch_erase(collection, bucket)
     }
+}
 
+impl From<&ConfigStoreKVDatabase> for rocksdb::Options {
     #[rustfmt::skip]
-    fn configure(&self) -> rocksdb::Options {
-        tracing::debug!("configuring key-value database");
-
+    fn from(config: &ConfigStoreKVDatabase) -> Self {
         // NOTE: Deconstruct to avoid forgetting configuration keys.
         let ConfigStoreKVDatabase {
             flush_after: _,
@@ -405,7 +406,7 @@ impl StoreKVPool {
             max_background_jobs,
             max_subcompactions,
             stats_dump_period_sec,
-        } = &self.kv_store_config.database;
+        } = config;
 
         // Make database options
         let mut db_options = rocksdb::Options::default();
@@ -505,6 +506,7 @@ impl StoreKVPool {
         db_options.set_env(&env);
 
         db_options
+
     }
 }
 
