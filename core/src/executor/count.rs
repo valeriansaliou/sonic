@@ -5,7 +5,6 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use crate::store::fst::StoreFSTMisc;
 use crate::store::{StoreItemPart, StoreObjectOID};
 
 impl super::Executor {
@@ -67,7 +66,8 @@ impl super::Executor {
 
     /// Count buckets in (collection) from FS.
     pub fn countc(&self, collection: StoreItemPart) -> Result<u32, ()> {
-        StoreFSTMisc::count_collection_buckets(collection, &self.app_conf.store.fst)
+        self.fst_pool
+            .count_collection_buckets(collection)
             .map(|count| count as u32)
     }
 }

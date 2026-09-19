@@ -515,15 +515,6 @@ pub struct StoreKVId {
     collection_hash: StoreKVAtom,
 }
 
-impl crate::config::ConfigStoreKV {
-    #[inline]
-    pub(super) fn store_path(&self, id: StoreKVId) -> PathBuf {
-        let StoreKVId { collection_hash } = id;
-
-        self.path.join(format!("{collection_hash:x}"))
-    }
-}
-
 impl StoreKVId {
     pub fn from_atom(collection_hash: StoreKVAtom) -> StoreKVId {
         StoreKVId { collection_hash }
@@ -551,7 +542,20 @@ impl StoreKVId {
 
 impl fmt::Display for StoreKVId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<{:x}>", self.collection_hash)
+        let Self { collection_hash } = self;
+
+        write!(f, "<{collection_hash:x}>")
+    }
+}
+
+// MARK: - Helpers
+
+impl crate::config::ConfigStoreKV {
+    #[inline]
+    pub(super) fn store_path(&self, id: StoreKVId) -> PathBuf {
+        let StoreKVId { collection_hash } = id;
+
+        self.path.join(format!("{collection_hash:x}"))
     }
 }
 
