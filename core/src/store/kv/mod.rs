@@ -70,12 +70,6 @@ pub struct StoreKVId {
     collection_hash: StoreKVAtom,
 }
 
-#[derive(PartialEq)]
-pub enum StoreKVAcquireMode {
-    Any,
-    OpenOnly,
-}
-
 type StoreKVAtom = u32;
 
 impl StoreKVPool {
@@ -101,11 +95,12 @@ impl StoreKVPool {
         self.store_access_lock.write().unwrap()
     }
 
-    // TODO(refactor): Replace `mode` and `config_overrides` by a struct with
-    //   `create_if_missing: bool` instead of `mode` and `bypass_cache: bool`.
+    // TODO(refactor): Replace `create_if_missing` and `override_options` by a
+    //   struct. I(@RemiBardon) had suggested adding `bypass_cache: bool` before,
+    //   but I don’t remember why.
     pub fn acquire<'a>(
         &'a self,
-        mode: StoreKVAcquireMode,
+        create_if_missing: bool,
         collection: StoreItemPart,
         write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVId, Arc<StoreKV>>>>,
         override_options: impl FnOnce(&mut rocksdb::Options),
@@ -135,11 +130,7 @@ impl StoreKVPool {
         tracing::info!("kv store not in pool for collection: {collection} {store_id}, opening it");
 
         // Check if can open database?
-        let can_open_db = if mode == StoreKVAcquireMode::OpenOnly {
-            self.kv_store_config.store_path(store_id).exists()
-        } else {
-            true
-        };
+        let can_open_db = create_if_missing || self.kv_store_config.store_path(store_id).exists();
 
         // Do not create a new KV database file tree if the database does not
         // exist yet on disk and we are just looking to read data from it.
@@ -1555,7 +1546,7 @@ mod tests {
 
         assert!(
             kv_pool
-                .acquire(StoreKVAcquireMode::Any, "c:test:1".into(), None, |_| {})
+                .acquire(true, "c:test:1".into(), None, |_| {})
                 .is_ok()
         );
     }
@@ -1574,7 +1565,7 @@ mod tests {
         let kv_pool = StoreKVPool::new(kv_store_config);
 
         let store = kv_pool
-            .acquire(StoreKVAcquireMode::Any, "c:test:3".into(), None, |_| {})
+            .acquire(true, "c:test:3".into(), None, |_| {})
             .unwrap()
             .unwrap();
         let action = store.access_read_write("b:test:3".into());

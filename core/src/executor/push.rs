@@ -9,7 +9,6 @@ use rocksdb::WriteBatch;
 
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
-use crate::store::kv::StoreKVAcquireMode;
 use crate::store::{StoreItemPart, StoreObjectOID};
 use crate::util::hash::NoopU32HasherBuilder;
 
@@ -28,8 +27,7 @@ impl super::Executor {
         let _fst_read_guard = self.fst_pool.lock_read_access();
 
         let (Ok(kv_store), Ok(fst_store)) = (
-            self.kv_pool
-                .acquire(StoreKVAcquireMode::Any, collection, None, |_| {}),
+            self.kv_pool.acquire(true, collection, None, |_| {}),
             self.fst_pool.acquire(collection, bucket),
         ) else {
             return Err(());

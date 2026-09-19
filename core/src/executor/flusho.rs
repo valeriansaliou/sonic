@@ -7,7 +7,6 @@
 
 use rocksdb::WriteBatch;
 
-use crate::store::kv::StoreKVAcquireMode;
 use crate::store::{StoreItemPart, StoreObjectOID};
 
 impl super::Executor {
@@ -21,10 +20,7 @@ impl super::Executor {
         //   prevents the database from being erased while using it in this block.
         let _kv_read_guard = self.kv_pool.lock_read_access();
 
-        if let Ok(kv_store) =
-            self.kv_pool
-                .acquire(StoreKVAcquireMode::OpenOnly, collection, None, |_| {})
-        {
+        if let Ok(kv_store) = self.kv_pool.acquire(false, collection, None, |_| {}) {
             let Some(kv_store) = kv_store else {
                 tracing::debug!(
                     "collection store does not exist, consider {bucket:?} from {collection:?} empty"

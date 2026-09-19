@@ -12,7 +12,6 @@ use std::iter::FromIterator;
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::StoreItemPart;
-use crate::store::kv::StoreKVAcquireMode;
 use crate::store::{StoreObjectOID, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
 
@@ -30,8 +29,7 @@ impl super::Executor {
         let _fst_read_guard = self.fst_pool.lock_read_access();
 
         if let (Ok(kv_store), Ok(fst_store)) = (
-            self.kv_pool
-                .acquire(StoreKVAcquireMode::OpenOnly, collection, None, |_| {}),
+            self.kv_pool.acquire(false, collection, None, |_| {}),
             self.fst_pool.acquire(collection, bucket),
         ) {
             let Some(kv_store) = kv_store else {

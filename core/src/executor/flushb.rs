@@ -6,7 +6,6 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::store::StoreItemPart;
-use crate::store::kv::StoreKVAcquireMode;
 
 impl super::Executor {
     pub fn flushb(&self, collection: StoreItemPart, bucket: StoreItemPart) -> Result<u32, ()> {
@@ -16,10 +15,7 @@ impl super::Executor {
         let _kv_read_guard = self.kv_pool.lock_read_access();
         let _fst_write_guard = self.fst_pool.lock_write_access();
 
-        if let Ok(kv_store) =
-            self.kv_pool
-                .acquire(StoreKVAcquireMode::OpenOnly, collection, None, |_| {})
-        {
+        if let Ok(kv_store) = self.kv_pool.acquire(false, collection, None, |_| {}) {
             let Some(kv_store) = kv_store else {
                 tracing::debug!(
                     "collection store does not exist, consider {bucket:?} from {collection:?} already erased"

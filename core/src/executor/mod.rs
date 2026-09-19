@@ -143,7 +143,7 @@ impl Executor {
 
         self.kv_pool
             .acquire(
-                crate::store::kv::StoreKVAcquireMode::Any,
+                true,
                 collection,
                 Some(&mut kv_pool_write_guard),
                 |options| {
