@@ -13,35 +13,41 @@ use self::constants::*;
 
 // WARN: Don’t update values here, it would break the index! Only add new cases.
 pub(super) mod constants {
-    pub const META_TO_VALUE: u8 = 0;
-    pub const TERM_TO_IIDS: u8 = 1;
-    pub const OID_TO_IID: u8 = 2;
-    pub const IID_TO_OID: u8 = 3;
-    pub const IID_TO_TERMS: u8 = 4;
+    pub(in crate::store::kv) const META_TO_VALUE: u8 = 0;
+    pub(in crate::store::kv) const TERM_TO_IIDS: u8 = 1;
+    pub(in crate::store::kv) const OID_TO_IID: u8 = 2;
+    pub(in crate::store::kv) const IID_TO_OID: u8 = 3;
+    pub(in crate::store::kv) const IID_TO_TERMS: u8 = 4;
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct StoreKVKey([u8; 9]);
+pub(super) struct StoreKVKey([u8; 9]);
 
 impl StoreKVKey {
-    pub fn meta_to_value(bucket: &StoreItemPart, meta: &StoreMetaKey) -> StoreKVKey {
+    pub(super) fn meta_to_value(bucket: &StoreItemPart, meta: &StoreMetaKey) -> StoreKVKey {
         Self::make(META_TO_VALUE, bucket, meta.as_u32())
     }
 
-    pub fn term_to_iids(bucket: &StoreItemPart, term_hash: impl Into<StoreTermHash>) -> StoreKVKey {
+    pub(super) fn term_to_iids(
+        bucket: &StoreItemPart,
+        term_hash: impl Into<StoreTermHash>,
+    ) -> StoreKVKey {
         Self::make(TERM_TO_IIDS, bucket, term_hash.into().into())
     }
 
-    pub fn oid_to_iid(bucket: &StoreItemPart, oid: StoreObjectOID) -> StoreKVKey {
+    pub(super) fn oid_to_iid(bucket: &StoreItemPart, oid: StoreObjectOID) -> StoreKVKey {
         Self::make(OID_TO_IID, bucket, oid.into_compact())
     }
 
-    pub fn iid_to_oid(bucket: &StoreItemPart, iid: impl Into<StoreObjectIID>) -> StoreKVKey {
+    pub(super) fn iid_to_oid(bucket: &StoreItemPart, iid: impl Into<StoreObjectIID>) -> StoreKVKey {
         Self::make(IID_TO_OID, bucket, iid.into().into())
     }
 
-    pub fn iid_to_terms(bucket: &StoreItemPart, iid: impl Into<StoreObjectIID>) -> StoreKVKey {
+    pub(super) fn iid_to_terms(
+        bucket: &StoreItemPart,
+        iid: impl Into<StoreObjectIID>,
+    ) -> StoreKVKey {
         Self::make(IID_TO_TERMS, bucket, iid.into().into())
     }
 
@@ -60,7 +66,7 @@ impl StoreKVKey {
     }
 
     /// Prefix format: `[idx<1B> | bucket<4B>]`
-    pub fn into_prefix(self) -> [u8; 5] {
+    pub(super) fn into_prefix(self) -> [u8; 5] {
         [self.0[0], self.0[1], self.0[2], self.0[3], self.0[4]]
     }
 }

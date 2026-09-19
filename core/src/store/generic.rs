@@ -14,11 +14,11 @@ use std::time::{Duration, SystemTime};
 
 use crate::store::StoreItemPart;
 
-pub trait StoreGeneric {
+pub(super) trait StoreGeneric {
     fn ref_last_used(&self) -> &RwLock<SystemTime>;
 }
 
-pub trait StoreGenericPool:
+pub(super) trait StoreGenericPool:
     std::ops::Deref<Target = RwLock<HashMap<Self::StoreId, Arc<Self::Store>, Self::HashBuilder>>>
 {
     type StoreId: Hash + Eq;

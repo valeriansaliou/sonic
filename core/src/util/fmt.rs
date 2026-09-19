@@ -16,7 +16,7 @@ enum PrettyLock<T: fmt::Debug> {
 
 /// A type that formats `RwLock`s as “locked“/“unlocked”.
 #[repr(transparent)]
-pub struct AsPrettyRwLock<'this, T>(pub &'this std::sync::RwLock<T>);
+pub(crate) struct AsPrettyRwLock<'this, T>(pub &'this std::sync::RwLock<T>);
 
 impl<'this, T: fmt::Debug> fmt::Debug for AsPrettyRwLock<'this, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -43,7 +43,7 @@ impl<'this, T: fmt::Debug> fmt::Debug for AsPrettyRwLock<'this, T> {
 
 /// A type that formats `Mutex`es in a more readable fashion.
 #[repr(transparent)]
-pub struct AsPrettyMutex<'this, T>(pub &'this std::sync::Mutex<T>);
+pub(crate) struct AsPrettyMutex<'this, T>(pub &'this std::sync::Mutex<T>);
 
 impl<'this, T: fmt::Debug> fmt::Debug for AsPrettyMutex<'this, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

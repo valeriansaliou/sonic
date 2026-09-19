@@ -6,7 +6,7 @@
 
 use whatlang::Lang;
 
-pub fn snowball_algorithm(locale: &Lang) -> Option<snowball::Algorithm> {
+pub(super) fn snowball_algorithm(locale: &Lang) -> Option<snowball::Algorithm> {
     // NOTE: This is just so we notice when `snowball` adds more algorithms.
     #[cfg(debug_assertions)]
     match snowball::Algorithm::English {

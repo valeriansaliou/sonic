@@ -13,7 +13,7 @@ use whatlang::{Lang, Script};
 use crate::config::ConfigStopwords;
 use crate::stopwords::*;
 
-pub struct LexerStopWord;
+pub(super) struct LexerStopWord;
 
 static STOPWORDS_AFR: LazyLock<HashSet<String>> = LazyLock::new(|| make(afr::STOPWORDS_AFR));
 static STOPWORDS_AKA: LazyLock<HashSet<String>> = LazyLock::new(|| make(aka::STOPWORDS_AKA));
@@ -90,7 +90,7 @@ fn make(words: &[&str]) -> HashSet<String> {
     words.iter().map(|&str| str.nfkd().to_string()).collect()
 }
 
-pub fn is_stopword(word: &str, locale: Option<Lang>, config: &ConfigStopwords) -> bool {
+pub(super) fn is_stopword(word: &str, locale: Option<Lang>, config: &ConfigStopwords) -> bool {
     let word = word.nfkd().to_string();
 
     if config.deny.contains(&word) {
@@ -113,7 +113,7 @@ pub fn is_stopword(word: &str, locale: Option<Lang>, config: &ConfigStopwords) -
 }
 
 impl LexerStopWord {
-    pub fn guess_lang(text: &str, script: Script) -> Option<Lang> {
+    pub(super) fn guess_lang(text: &str, script: Script) -> Option<Lang> {
         tracing::debug!(
             "guessing locale from stopwords for script: {} and text: {}",
             script,

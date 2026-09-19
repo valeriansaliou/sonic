@@ -356,7 +356,7 @@ pub struct ConfigStoreFSTGraph {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    pub fn defaults_toml() -> &'static str {
+    pub(crate) fn defaults_toml() -> &'static str {
         r#"
         [channel]
         inet = "[::1]:1491"

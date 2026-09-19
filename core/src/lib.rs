@@ -9,6 +9,7 @@
     clippy::all,
     dead_code,
     unnameable_types,
+    unreachable_pub,
     unstable_features,
     unused_imports,
     unused_qualifications

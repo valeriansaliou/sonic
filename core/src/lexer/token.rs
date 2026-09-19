@@ -1028,18 +1028,18 @@ mod normalization {
     use super::preprocessor::TokenSpan;
     use crate::config::{ConfigNormalization, UnicodeNormalization};
 
-    pub struct Normalizer {
+    pub(super) struct Normalizer {
         normalization_config: ConfigNormalization,
     }
 
     impl Normalizer {
-        pub fn new(normalization_config: ConfigNormalization) -> Self {
+        pub(super) fn new(normalization_config: ConfigNormalization) -> Self {
             Self {
                 normalization_config,
             }
         }
 
-        pub fn normalize(
+        pub(super) fn normalize(
             &self,
             token: &LexerToken,
             text_normalized: &mut String,
@@ -1121,16 +1121,16 @@ mod normalization {
         }
     }
 
-    pub struct Stemmer {
+    pub(super) struct Stemmer {
         algorithm: snowball::Algorithm,
     }
 
     impl Stemmer {
-        pub fn new(algorithm: snowball::Algorithm) -> Self {
+        pub(super) fn new(algorithm: snowball::Algorithm) -> Self {
             Self { algorithm }
         }
 
-        pub fn stem(&self, span: &mut TokenSpan, text_normalized: &mut String) {
+        pub(super) fn stem(&self, span: &mut TokenSpan, text_normalized: &mut String) {
             match (self.algorithm.stemmer())
                 .stem(&text_normalized[span.start_normalized..span.end_normalized])
             {
@@ -1272,7 +1272,7 @@ mod lang_detection {
     const TEXT_LANG_DETECT_PROCEED_OVER_CHARS: usize = 20;
     const TEXT_LANG_DETECT_NGRAM_UNDER_CHARS: usize = 60;
 
-    pub fn detect_lang(text: &str) -> Option<Lang> {
+    pub(super) fn detect_lang(text: &str) -> Option<Lang> {
         tracing::debug!("detecting locale from lexer text: {}", text);
 
         // Detect only if text is long-enough to allow the text locale detection system to \
