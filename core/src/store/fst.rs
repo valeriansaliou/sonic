@@ -145,20 +145,15 @@ impl StoreFSTPool {
         let graph_pool_read = self.graph_pool.read().unwrap();
 
         if let Some(store_fst) = graph_pool_read.get(&store_id) {
-            Self::proceed_acquire_cache(collection, store_id, store_fst)
+            Self::proceed_acquire_cache(store_id, store_fst)
         } else {
-            tracing::info!(
-                ?store_id,
-                ?collection,
-                ?bucket,
-                "fst store not in pool, opening it"
-            );
+            tracing::debug!("fst store {store_id} not in pool, opening it");
 
             // Important: we need to drop the read reference first, to avoid dead-locking \
             //   when acquiring the RWLock in write mode in this block.
             drop(graph_pool_read);
 
-            self.proceed_acquire_open(collection, store_id, Self::build, None)
+            self.proceed_acquire_open(store_id, Self::build, None)
         }
     }
 

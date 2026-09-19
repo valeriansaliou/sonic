@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use crate::store::StoreItemPart;
+use crate::store::kv::StoreKVId;
 use crate::util::hash::NoopU32HasherBuilder;
 
 #[macro_use]
@@ -130,16 +131,17 @@ impl Executor {
         collection: StoreItemPart,
         new_conf: DynamicConfig,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kv_store_id = StoreKVId::from_part(collection);
+
         tracing::debug!(
             ?new_conf.rocksdb,
-            "Re-opening KV store connection for {collection:?} with new dynamic configuration overrides…"
+            "Re-opening KV store connection for {kv_store_id:?} with new dynamic configuration overrides…"
         );
 
         let mut kv_pool_write_guard = self.kv_pool.write().unwrap();
 
         self.kv_pool
-            .close(collection, Some(&mut kv_pool_write_guard))
-            .map_err(|()| std::io::Error::other("Error closing connection"))?;
+            .close(kv_store_id, Some(&mut kv_pool_write_guard));
 
         self.kv_pool
             .acquire(

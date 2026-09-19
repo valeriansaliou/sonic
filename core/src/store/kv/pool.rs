@@ -80,7 +80,7 @@ impl StoreGenericPool for StoreKVPool {
         let collection_path = self.kv_store_config.store_path(store_id);
 
         // Force a KV store close
-        self.close_(store_id, None);
+        self.close(store_id, None);
 
         if !collection_path.exists() {
             tracing::debug!(
@@ -105,6 +105,7 @@ impl StoreGenericPool for StoreKVPool {
         }
     }
 
+    // FIXME: Implement this, as it does not need a lock like mentioned below.
     fn proceed_erase_bucket(
         &self,
         _collection: StoreItemPart,
@@ -137,19 +138,19 @@ impl StoreKVPool {
         match write_guard {
             Some(ref store_pool_write) => {
                 if let Some(store_kv) = store_pool_write.get(&store_id) {
-                    return Self::proceed_acquire_cache(collection, store_id, store_kv).map(Some);
+                    return Self::proceed_acquire_cache(store_id, store_kv).map(Some);
                 }
             }
             None => {
                 let store_pool_read = self.pool.read().unwrap();
 
                 if let Some(store_kv) = store_pool_read.get(&store_id) {
-                    return Self::proceed_acquire_cache(collection, store_id, store_kv).map(Some);
+                    return Self::proceed_acquire_cache(store_id, store_kv).map(Some);
                 }
             }
         };
 
-        tracing::info!("kv store not in pool for collection: {collection} {store_id}, opening it");
+        tracing::debug!("kv store {store_id} not in pool, opening it");
 
         // Check if can open database?
         let can_open_db = create_if_missing || self.kv_store_config.store_path(store_id).exists();
@@ -162,7 +163,6 @@ impl StoreKVPool {
 
         // Open KV database.
         self.proceed_acquire_open(
-            collection,
             store_id,
             |pool, store_id| pool.build(store_id, override_options),
             write_guard,
@@ -212,7 +212,7 @@ impl StoreKVPool {
         DB::open(&db_options, self.kv_store_config.store_path(store_id))
     }
 
-    pub(super) fn close_<'a>(
+    pub fn close<'a>(
         &'a self,
         store_id: StoreKVId,
         write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVId, Arc<StoreKV>>>>,
@@ -225,17 +225,6 @@ impl StoreKVPool {
         };
 
         store_pool_write.remove(&store_id);
-    }
-
-    // TODO(refactor): Get rid of this useless wrapper.
-    pub fn close<'a>(
-        &'a self,
-        collection: StoreItemPart,
-        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKVId, Arc<StoreKV>>>>,
-    ) -> Result<(), ()> {
-        self.close_(StoreKVId::from_part(collection), write_guard);
-
-        Ok(())
     }
 
     // NOTE: This wrapper makes `janitor` public, while `proceed_janitor` comes

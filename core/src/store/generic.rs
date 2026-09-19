@@ -42,7 +42,6 @@ pub(super) trait StoreGenericPool:
 
 pub(super) trait StoreGenericPoolExt: StoreGenericPool {
     fn proceed_acquire_cache(
-        collection: StoreItemPart,
         store_id: Self::StoreId,
         store: &Arc<Self::Store>,
     ) -> Result<Arc<Self::Store>, ()>
@@ -51,9 +50,7 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
     {
         let kind = Self::kind();
 
-        tracing::debug!(
-            "{kind} store acquired from pool for collection: {collection} (id: {store_id})"
-        );
+        tracing::debug!("{kind} store {store_id} acquired from pool");
 
         // Bump store last used date (avoids early janitor eviction)
         *store.ref_last_used().write().unwrap() = SystemTime::now();
@@ -64,7 +61,6 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
     #[allow(clippy::type_complexity, reason = "We can’t avoid it")]
     fn proceed_acquire_open<'a>(
         &'a self,
-        collection: StoreItemPart,
         store_id: Self::StoreId,
         build: impl FnOnce(&'a Self, Self::StoreId) -> Result<Self::Store, ()>,
         write_guard: Option<
@@ -87,16 +83,12 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
 
                 store_pool_write.insert(store_id, Arc::clone(&store_box));
 
-                tracing::debug!(
-                    "opened and cached {kind} store in pool for collection: {collection} (id: {store_id})"
-                );
+                tracing::debug!("opened and cached {kind} store {store_id}");
 
                 Ok(store_box)
             }
-            Err(_) => {
-                tracing::error!(
-                    "failed opening {kind} store for collection: {collection} (id: {store_id})"
-                );
+            Err(error) => {
+                tracing::error!("failed opening {kind} store {store_id}: {error:?}");
 
                 Err(())
             }

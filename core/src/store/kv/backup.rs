@@ -135,7 +135,7 @@ impl StoreKVPool {
         tracing::debug!("kv store {store_id} restoring from path: {origin_path:?}");
 
         // Force a KV store close
-        self.close_(store_id, None);
+        self.close(store_id, None);
 
         // Generate path to KV
         let kv_path = self.kv_store_config.store_path(store_id);
