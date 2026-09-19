@@ -29,26 +29,20 @@ impl StoreKVKey {
         Self::make(META_TO_VALUE, bucket, meta.as_u32())
     }
 
-    pub(super) fn term_to_iids(
-        bucket: &StoreItemPart,
-        term_hash: impl Into<StoreTermHash>,
-    ) -> StoreKVKey {
-        Self::make(TERM_TO_IIDS, bucket, term_hash.into().into())
+    pub(super) fn term_to_iids(bucket: &StoreItemPart, term_hash: StoreTermHash) -> StoreKVKey {
+        Self::make(TERM_TO_IIDS, bucket, term_hash.into())
     }
 
     pub(super) fn oid_to_iid(bucket: &StoreItemPart, oid: StoreObjectOID) -> StoreKVKey {
         Self::make(OID_TO_IID, bucket, oid.into_compact())
     }
 
-    pub(super) fn iid_to_oid(bucket: &StoreItemPart, iid: impl Into<StoreObjectIID>) -> StoreKVKey {
-        Self::make(IID_TO_OID, bucket, iid.into().into())
+    pub(super) fn iid_to_oid(bucket: &StoreItemPart, iid: StoreObjectIID) -> StoreKVKey {
+        Self::make(IID_TO_OID, bucket, iid.into())
     }
 
-    pub(super) fn iid_to_terms(
-        bucket: &StoreItemPart,
-        iid: impl Into<StoreObjectIID>,
-    ) -> StoreKVKey {
-        Self::make(IID_TO_TERMS, bucket, iid.into().into())
+    pub(super) fn iid_to_terms(bucket: &StoreItemPart, iid: StoreObjectIID) -> StoreKVKey {
+        Self::make(IID_TO_TERMS, bucket, iid.into())
     }
 
     /// Key format: `[idx<1B> | bucket<4B> | route<4B>]`
@@ -129,11 +123,11 @@ mod tests {
     #[test]
     fn it_keys_term_to_iids() {
         assert_eq!(
-            StoreKVKey::term_to_iids(&"bucket:2".into(), 772137347).0,
+            StoreKVKey::term_to_iids(&"bucket:2".into(), 772137347.into()).0,
             [1, 50, 220, 166, 65, 131, 225, 5, 46]
         );
         assert_eq!(
-            StoreKVKey::term_to_iids(&"bucket:2".into(), 3582484684).0,
+            StoreKVKey::term_to_iids(&"bucket:2".into(), 3582484684.into()).0,
             [1, 50, 220, 166, 65, 204, 96, 136, 213]
         );
     }
@@ -149,7 +143,7 @@ mod tests {
     #[test]
     fn it_keys_iid_to_oid() {
         assert_eq!(
-            StoreKVKey::iid_to_oid(&"bucket:4".into(), 10292198).0,
+            StoreKVKey::iid_to_oid(&"bucket:4".into(), 10292198.into()).0,
             [3, 105, 12, 54, 147, 230, 11, 157, 0]
         );
     }
@@ -157,11 +151,11 @@ mod tests {
     #[test]
     fn it_keys_iid_to_terms() {
         assert_eq!(
-            StoreKVKey::iid_to_terms(&"bucket:5".into(), 1).0,
+            StoreKVKey::iid_to_terms(&"bucket:5".into(), 1.into()).0,
             [4, 137, 142, 73, 67, 1, 0, 0, 0]
         );
         assert_eq!(
-            StoreKVKey::iid_to_terms(&"bucket:5".into(), 20).0,
+            StoreKVKey::iid_to_terms(&"bucket:5".into(), 20.into()).0,
             [4, 137, 142, 73, 67, 20, 0, 0, 0]
         );
     }
@@ -175,7 +169,10 @@ mod tests {
     #[test]
     fn it_formats_key() {
         assert_eq!(
-            &format!("{}", StoreKVKey::term_to_iids(&"bucket:6".into(), 72137347)),
+            &format!(
+                "{}",
+                StoreKVKey::term_to_iids(&"bucket:6".into(), 72137347.into())
+            ),
             "'1:71198b49:44cba83' [1, 73, 139, 25, 113, 131, 186, 76, 4]"
         );
         assert_eq!(

@@ -601,10 +601,10 @@ impl<'a> StoreKVActionReadWrite<'a> {
         // Generate all key prefix values (with dummy post-prefix values; we dont care)
         let (k_meta_to_value, k_term_to_iids, k_oid_to_iid, k_iid_to_oid, k_iid_to_terms) = (
             StoreKVKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr),
-            StoreKVKey::term_to_iids(&bucket, 0),
+            StoreKVKey::term_to_iids(&bucket, 0.into()),
             StoreKVKey::oid_to_iid(&bucket, StoreObjectOID(StoreItemPart(""))),
-            StoreKVKey::iid_to_oid(&bucket, 0),
-            StoreKVKey::iid_to_terms(&bucket, 0),
+            StoreKVKey::iid_to_oid(&bucket, 0.into()),
+            StoreKVKey::iid_to_terms(&bucket, 0.into()),
         );
 
         let key_prefixes = [
