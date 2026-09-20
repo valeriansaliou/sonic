@@ -10,7 +10,7 @@ use std::str::{self, SplitWhitespace};
 use std::time::Instant;
 
 use sonic::Executor;
-use sonic::config::{ConfigNormalization, ConfigSearch, ConfigStopwords, ConfigTokenization};
+use sonic::config::{NormalizationConfig, SearchConfig, StopwordsConfig, TokenizationConfig};
 
 use super::command::{
     COMMANDS_MODE_CONTROL, COMMANDS_MODE_INGEST, COMMANDS_MODE_SEARCH, ChannelCommandBase,
@@ -25,16 +25,16 @@ pub struct ChannelMessage;
 
 pub struct ChannelMessageModeSearch<'this> {
     pub executor: &'this Executor,
-    pub search_config: &'this ConfigSearch,
-    pub normalization_config: &'this ConfigNormalization,
-    pub tokenization_config: &'this ConfigTokenization,
-    pub stopwords_config: &'this ConfigStopwords,
+    pub search_config: &'this SearchConfig,
+    pub normalization_config: &'this NormalizationConfig,
+    pub tokenization_config: &'this TokenizationConfig,
+    pub stopwords_config: &'this StopwordsConfig,
 }
 pub struct ChannelMessageModeIngest<'this> {
     pub executor: &'this Executor,
-    pub normalization_config: &'this ConfigNormalization,
-    pub tokenization_config: &'this ConfigTokenization,
-    pub stopwords_config: &'this ConfigStopwords,
+    pub normalization_config: &'this NormalizationConfig,
+    pub tokenization_config: &'this TokenizationConfig,
+    pub stopwords_config: &'this StopwordsConfig,
 }
 pub struct ChannelMessageModeControl<'this> {
     pub executor: &'this Executor,

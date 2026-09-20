@@ -344,24 +344,24 @@ pub mod preprocessor {
     use super::lang_detection::detect_lang;
     use super::lexing::{Lexer, TokenKind};
     use super::normalization::{Normalizer, Stemmer};
-    use crate::config::{ConfigNormalization, ConfigStopwords, ConfigTokenization};
+    use crate::config::{NormalizationConfig, StopwordsConfig, TokenizationConfig};
     use crate::lexer::stemming;
     use crate::lexer::stopwords::is_stopword;
     use crate::store::StoreTermHash;
 
     pub struct Preprocessor {
-        pub tokenization_config: ConfigTokenization,
-        pub normalization_config: ConfigNormalization,
-        pub stopwords_config: ConfigStopwords,
+        pub tokenization_config: TokenizationConfig,
+        pub normalization_config: NormalizationConfig,
+        pub stopwords_config: StopwordsConfig,
         pub detect_stopwords: bool,
         pub filter_stopwords: bool,
     }
 
     impl Preprocessor {
         pub fn new(
-            tokenization_config: ConfigTokenization,
-            normalization_config: ConfigNormalization,
-            stopwords_config: ConfigStopwords,
+            tokenization_config: TokenizationConfig,
+            normalization_config: NormalizationConfig,
+            stopwords_config: StopwordsConfig,
             detect_stopwords: bool,
             filter_stopwords: bool,
         ) -> Self {
@@ -491,16 +491,16 @@ pub mod preprocessor {
     impl Default for Preprocessor {
         fn default() -> Self {
             Self {
-                tokenization_config: ConfigTokenization {
+                tokenization_config: TokenizationConfig {
                     detect_special_patterns: true,
                     compat_split_special_patterns: true,
                 },
-                normalization_config: ConfigNormalization {
+                normalization_config: NormalizationConfig {
                     unicode_normalization: None,
                     diacritic_folding_enabled: false,
                     stemming_enabled: false,
                 },
-                stopwords_config: ConfigStopwords::default(),
+                stopwords_config: StopwordsConfig::default(),
                 detect_stopwords: true,
                 filter_stopwords: true,
             }
@@ -666,7 +666,7 @@ pub mod lexing {
     use regex::Regex;
     use whatlang::Lang;
 
-    use crate::config::ConfigTokenization;
+    use crate::config::TokenizationConfig;
 
     #[cfg(feature = "tokenizer-chinese")]
     static TOKENIZER_JIEBA: LazyLock<jieba_rs::Jieba> = LazyLock::new(jieba_rs::Jieba::new);
@@ -786,11 +786,11 @@ pub mod lexing {
     ///
     /// Uses [`Tokenizer`] internally.
     pub struct Lexer {
-        config: ConfigTokenization,
+        config: TokenizationConfig,
     }
 
     impl Lexer {
-        pub fn new(config: ConfigTokenization) -> Self {
+        pub fn new(config: TokenizationConfig) -> Self {
             Self { config }
         }
 
@@ -1026,14 +1026,14 @@ pub mod lexing {
 mod normalization {
     use super::lexing::{LexerToken, SpecialTokenKind, TokenKind};
     use super::preprocessor::TokenSpan;
-    use crate::config::{ConfigNormalization, UnicodeNormalization};
+    use crate::config::{NormalizationConfig, UnicodeNormalization};
 
     pub(super) struct Normalizer {
-        normalization_config: ConfigNormalization,
+        normalization_config: NormalizationConfig,
     }
 
     impl Normalizer {
-        pub(super) fn new(normalization_config: ConfigNormalization) -> Self {
+        pub(super) fn new(normalization_config: NormalizationConfig) -> Self {
             Self {
                 normalization_config,
             }

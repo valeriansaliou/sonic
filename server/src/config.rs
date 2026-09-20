@@ -91,8 +91,8 @@ impl Config {
         // all non-string fields (in the core!).
         #[derive(serde::Deserialize)]
         pub struct ServerConfigTemp {
-            pub channel: ConfigChannel,
-            pub server: ConfigServer,
+            pub channel: ChannelConfig,
+            pub server: ServerConfig,
         }
 
         // Parse configuration.
@@ -147,16 +147,16 @@ pub fn read_config(custom_path: Option<&str>) -> Config {
 }
 
 pub struct Config {
-    pub channel: ConfigChannel,
+    pub channel: ChannelConfig,
 
-    pub server: ConfigServer,
+    pub server: ServerConfig,
 
     pub sonic: Arc<sonic::Config>,
 }
 
 #[allow(deprecated)]
 #[derive(serde::Deserialize)]
-pub struct ConfigChannel {
+pub struct ChannelConfig {
     #[serde(deserialize_with = "sonic::util::serde::env_var::socket_addr")]
     pub inet: std::net::SocketAddr,
 
@@ -167,11 +167,11 @@ pub struct ConfigChannel {
 
     #[deprecated(since = "1.6.0", note = "Use `search` instead of `channel.search`")]
     #[serde(default)]
-    pub search: Option<back_compat::ConfigChannelSearch>,
+    pub search: Option<back_compat::ChannelSearchConfig>,
 }
 
 #[derive(serde::Deserialize)]
-pub struct ConfigServer {
+pub struct ServerConfig {
     #[serde(deserialize_with = "sonic::util::serde::env_var::str")]
     pub log_level: String,
 }
@@ -180,7 +180,7 @@ pub struct ConfigServer {
 mod back_compat {
     #[deprecated(since = "1.6.0", note = "Use `search` instead of `channel.search`")]
     #[derive(serde::Deserialize)]
-    pub struct ConfigChannelSearch {
+    pub struct ChannelSearchConfig {
         #[serde(default)]
         pub query_limit_default: Option<u16>,
 
@@ -206,7 +206,7 @@ mod back_compat {
     // This is dirty, but AFAIK (@RemiBardon) the `config` crate doesn’t
     // provide a better API and hopefully we won’t have to do this again.
     pub fn migrate_channel_search(
-        channel: &mut crate::config::ConfigChannel,
+        channel: &mut crate::config::ChannelConfig,
         sonic: &mut sonic::Config,
     ) {
         if let Some(search) = channel.search.take() {
@@ -216,7 +216,7 @@ mod back_compat {
                 For this run, we will override `search` with `channel.search`."
             );
 
-            let ConfigChannelSearch {
+            let ChannelSearchConfig {
                 query_limit_default,
                 query_limit_maximum,
                 query_alternates_try,

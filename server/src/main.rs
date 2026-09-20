@@ -46,7 +46,7 @@ use tasker::shutdown::ShutdownSignal;
 use tracing::level_filters::LevelFilter;
 
 use crate::config::{Config, read_config};
-use crate::logger::ConfigLogger;
+use crate::logger::LoggerConfig;
 
 struct AppArgs {
     config: Option<String>,
@@ -95,7 +95,7 @@ fn make_app_args() -> AppArgs {
 }
 
 fn main() {
-    ConfigLogger::init(
+    LoggerConfig::init(
         std::env::var("SONIC_SERVER__LOG_LEVEL")
             .map(|level| LevelFilter::from_str(&level).expect("invalid log level"))
             .unwrap_or(LevelFilter::DEBUG),
@@ -105,7 +105,7 @@ fn main() {
 
     let app_conf = read_config(app_args.config.as_deref());
 
-    ConfigLogger::update(
+    LoggerConfig::update(
         LevelFilter::from_str(&app_conf.server.log_level).expect("invalid log level"),
     );
 

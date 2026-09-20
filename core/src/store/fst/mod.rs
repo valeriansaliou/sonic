@@ -42,7 +42,7 @@ pub struct StoreFSTPending {
 }
 
 pub struct StoreFSTActionBuilder<'build> {
-    pub fst_store_config: &'build crate::config::ConfigStoreFST,
+    pub fst_store_config: &'build crate::config::StoreFSTConfig,
 }
 
 type StoreFSTAtom = u32;
@@ -166,7 +166,7 @@ impl StoreGeneric for StoreFST {
 }
 
 impl StoreFST {
-    pub fn push_word(&self, word: &str, fst_store_config: &crate::config::ConfigStoreFST) -> bool {
+    pub fn push_word(&self, word: &str, fst_store_config: &crate::config::StoreFSTConfig) -> bool {
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(word) {
             return false;
@@ -443,7 +443,7 @@ mod tests {
         StoreFSTPool::new(fst_store_config, Default::default())
     }
 
-    pub(in crate::store::fst) fn test_fst_store_config() -> Arc<crate::config::ConfigStoreFST> {
+    pub(in crate::store::fst) fn test_fst_store_config() -> Arc<crate::config::StoreFSTConfig> {
         Arc::new(
             config::Config::builder()
                 .add_source(config::File::from_str(
@@ -452,7 +452,7 @@ mod tests {
                 ))
                 .build()
                 .unwrap()
-                .get::<crate::config::ConfigStoreFST>("store.fst")
+                .get::<crate::config::StoreFSTConfig>("store.fst")
                 .unwrap(),
         )
     }

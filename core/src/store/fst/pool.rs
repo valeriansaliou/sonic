@@ -27,7 +27,7 @@ use super::{StoreFST, StoreFSTActionConfig, StoreFSTAtom, StoreFSTPathMode};
 //   force it to be `'static`.
 #[derive(Clone)]
 pub struct StoreFSTPool {
-    pub(super) fst_store_config: Arc<crate::config::ConfigStoreFST>,
+    pub(super) fst_store_config: Arc<crate::config::StoreFSTConfig>,
     // NOTE: This shouldn’t be here, but until a big rewrite let’s not care.
     pub fst_action_config: StoreFSTActionConfig,
     graph_pool: Arc<RwLock<HashMap<StoreFSTId, Arc<StoreFST>>>>,
@@ -39,7 +39,7 @@ pub struct StoreFSTPool {
 
 impl StoreFSTPool {
     pub fn new(
-        fst_store_config: Arc<crate::config::ConfigStoreFST>,
+        fst_store_config: Arc<crate::config::StoreFSTConfig>,
         fst_action_config: StoreFSTActionConfig,
     ) -> Self {
         Self {
@@ -736,7 +736,7 @@ impl fmt::Display for StoreFSTId {
 
 // MARK: - Helpers
 
-impl crate::config::ConfigStoreFST {
+impl crate::config::StoreFSTConfig {
     #[inline]
     pub(super) fn collection_path(&self, collection_hash: StoreFSTAtom) -> PathBuf {
         self.path.join(format!("{collection_hash:x}"))

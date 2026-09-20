@@ -261,7 +261,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
                 let sonic = start_sonic_prepopulated(
                     &multiplexer,
-                    ConfigNormalization {
+                    NormalizationConfig {
                         diacritic_folding_enabled: Some(true),
                     },
                     |command| command.env("SONIC_SEARCH__QUERY_LIMIT_DEFAULT", limit.to_string()),

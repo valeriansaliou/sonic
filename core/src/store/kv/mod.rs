@@ -31,7 +31,7 @@ pub struct StoreKV {
     last_used: RwLock<SystemTime>,
     last_flushed: RwLock<SystemTime>,
     pub lock: RwLock<()>,
-    kv_store_config: Arc<crate::config::ConfigStoreKV>,
+    kv_store_config: Arc<crate::config::StoreKVConfig>,
 
     /// Cache of `IIDIncr` per bucket, removing the need for coutless reads
     /// while ingesting new data.
@@ -755,7 +755,7 @@ mod tests {
 
     // MARK: Helpers
 
-    pub(in crate::store::kv) fn test_kv_store_config() -> Arc<crate::config::ConfigStoreKV> {
+    pub(in crate::store::kv) fn test_kv_store_config() -> Arc<crate::config::StoreKVConfig> {
         Arc::new(
             config::Config::builder()
                 .add_source(config::File::from_str(
@@ -764,7 +764,7 @@ mod tests {
                 ))
                 .build()
                 .unwrap()
-                .get::<crate::config::ConfigStoreKV>("store.kv")
+                .get::<crate::config::StoreKVConfig>("store.kv")
                 .unwrap(),
         )
     }

@@ -10,7 +10,7 @@ use hashbrown::HashSet;
 use unicode_normalization::UnicodeNormalization;
 use whatlang::{Lang, Script};
 
-use crate::config::ConfigStopwords;
+use crate::config::StopwordsConfig;
 use crate::stopwords::*;
 
 pub(super) struct LexerStopWord;
@@ -90,7 +90,7 @@ fn make(words: &[&str]) -> HashSet<String> {
     words.iter().map(|&str| str.nfkd().to_string()).collect()
 }
 
-pub(super) fn is_stopword(word: &str, locale: Option<Lang>, config: &ConfigStopwords) -> bool {
+pub(super) fn is_stopword(word: &str, locale: Option<Lang>, config: &StopwordsConfig) -> bool {
     let word = word.nfkd().to_string();
 
     if config.deny.contains(&word) {
@@ -327,7 +327,7 @@ mod tests {
 
     #[test]
     fn it_detects_stopwords() {
-        let conf = ConfigStopwords::default();
+        let conf = StopwordsConfig::default();
 
         assert!(!is_stopword("the", None, &conf));
         assert!(is_stopword("the", Some(Lang::Eng), &conf));

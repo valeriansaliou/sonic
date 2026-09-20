@@ -13,7 +13,7 @@ use std::{fmt, fs, io};
 use hashbrown::{DefaultHashBuilder, HashMap};
 use rocksdb::DB;
 
-use crate::config::ConfigStoreKVDatabase;
+use crate::config::StoreKVDatabaseConfig;
 use crate::store::generic::*;
 use crate::store::*;
 use crate::util::hash::NoopU32HasherBuilder;
@@ -28,14 +28,14 @@ use super::{StoreKV, StoreKVAtom};
 #[derive(Clone)]
 pub struct StoreKVPool {
     pool: Arc<RwLock<HashMap<StoreKVId, Arc<StoreKV>>>>,
-    pub(super) kv_store_config: Arc<crate::config::ConfigStoreKV>,
+    pub(super) kv_store_config: Arc<crate::config::StoreKVConfig>,
     pub(super) store_access_lock: Arc<RwLock<()>>,
     store_acquire_lock: Arc<Mutex<()>>,
     store_flush_lock: Arc<Mutex<()>>,
 }
 
 impl StoreKVPool {
-    pub fn new(kv_store_config: Arc<crate::config::ConfigStoreKV>) -> Self {
+    pub fn new(kv_store_config: Arc<crate::config::StoreKVConfig>) -> Self {
         Self {
             pool: Arc::default(),
             kv_store_config,
@@ -372,11 +372,11 @@ impl StoreKVPool {
     }
 }
 
-impl From<&ConfigStoreKVDatabase> for rocksdb::Options {
+impl From<&StoreKVDatabaseConfig> for rocksdb::Options {
     #[rustfmt::skip]
-    fn from(config: &ConfigStoreKVDatabase) -> Self {
+    fn from(config: &StoreKVDatabaseConfig) -> Self {
         // NOTE: Deconstruct to avoid forgetting configuration keys.
-        let ConfigStoreKVDatabase {
+        let StoreKVDatabaseConfig {
             flush_after: _,
             compress,
             parallelism,
@@ -552,7 +552,7 @@ impl fmt::Display for StoreKVId {
 
 // MARK: - Helpers
 
-impl crate::config::ConfigStoreKV {
+impl crate::config::StoreKVConfig {
     #[inline]
     pub(super) fn store_path(&self, id: StoreKVId) -> PathBuf {
         let StoreKVId { collection_hash } = id;
