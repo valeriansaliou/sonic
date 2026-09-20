@@ -19,28 +19,28 @@ use crate::store::StoreItemPart;
 use crate::store::generic::*;
 
 use super::util::*;
-use super::{StoreFST, StoreFSTActionConfig, StoreFSTAtom, StoreFSTPathMode};
+use super::{StoreFst, StoreFstActionConfig, StoreFstAtom, StoreFstPathMode};
 
 // MARK: - Store pool
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
 #[derive(Clone)]
-pub struct StoreFSTPool {
-    pub(super) fst_store_config: Arc<crate::config::StoreFSTConfig>,
+pub struct StoreFstPool {
+    pub(super) fst_store_config: Arc<crate::config::StoreFstConfig>,
     // NOTE: This shouldn’t be here, but until a big rewrite let’s not care.
-    pub fst_action_config: StoreFSTActionConfig,
-    graph_pool: Arc<RwLock<HashMap<StoreFSTId, Arc<StoreFST>>>>,
+    pub fst_action_config: StoreFstActionConfig,
+    graph_pool: Arc<RwLock<HashMap<StoreFstId, Arc<StoreFst>>>>,
     graph_acquire_lock: Arc<Mutex<()>>,
     graph_rebuild_lock: Arc<Mutex<()>>,
     pub(super) graph_access_lock: Arc<RwLock<()>>,
-    graph_consolidate: Arc<RwLock<HashSet<StoreFSTId>>>,
+    graph_consolidate: Arc<RwLock<HashSet<StoreFstId>>>,
 }
 
-impl StoreFSTPool {
+impl StoreFstPool {
     pub fn new(
-        fst_store_config: Arc<crate::config::StoreFSTConfig>,
-        fst_action_config: StoreFSTActionConfig,
+        fst_store_config: Arc<crate::config::StoreFstConfig>,
+        fst_action_config: StoreFstActionConfig,
     ) -> Self {
         Self {
             fst_store_config,
@@ -69,9 +69,9 @@ impl StoreFSTPool {
     }
 }
 
-impl StoreGenericPool for StoreFSTPool {
-    type StoreId = StoreFSTId;
-    type Store = StoreFST;
+impl StoreGenericPool for StoreFstPool {
+    type StoreId = StoreFstId;
+    type Store = StoreFst;
     type HashBuilder = DefaultHashBuilder;
 
     fn kind() -> &'static str {
@@ -95,7 +95,7 @@ impl StoreGenericPool for StoreFSTPool {
         //   committed to disk; thus some FST stores that exist in-memory may not exist on-disk.
         // TODO(perf): Instead of collection into a `Vec` just to check `is_empty` and
         //   lock only if necessary, use a `LazyCell` to do the same in a single step.
-        let mut bucket_atoms: Vec<StoreFSTAtom> = Vec::new();
+        let mut bucket_atoms: Vec<StoreFstAtom> = Vec::new();
 
         {
             let graph_pool_read = self.graph_pool.read().unwrap();
@@ -121,7 +121,7 @@ impl StoreGenericPool for StoreFSTPool {
                     "fst bucket graph force close for bucket: {collection_name}/<{bucket_atom:x}>"
                 );
 
-                let bucket_target = StoreFSTId::from_atoms(collection_atom, bucket_atom);
+                let bucket_target = StoreFstId::from_atoms(collection_atom, bucket_atom);
 
                 graph_pool_write.remove(&bucket_target);
                 graph_consolidate_write.remove(&bucket_target);
@@ -167,11 +167,11 @@ impl StoreGenericPool for StoreFSTPool {
             "Sub-erase on fst bucket {bucket_name:?} for collection {collection_name:?}"
         );
 
-        let store_id = StoreFSTId::from_parts(collection_name, bucket_name);
+        let store_id = StoreFstId::from_parts(collection_name, bucket_name);
 
         let bucket_path = self
             .fst_store_config
-            .store_path(store_id, StoreFSTPathMode::Permanent);
+            .store_path(store_id, StoreFstPathMode::Permanent);
 
         // Force a FST graph close.
         self.close(store_id);
@@ -209,13 +209,13 @@ impl StoreGenericPool for StoreFSTPool {
     }
 }
 
-impl StoreFSTPool {
+impl StoreFstPool {
     pub fn acquire(
         &self,
         collection: StoreItemPart,
         bucket: StoreItemPart,
-    ) -> Result<Arc<StoreFST>, ()> {
-        let store_id = StoreFSTId::from_parts(collection, bucket);
+    ) -> Result<Arc<StoreFst>, ()> {
+        let store_id = StoreFstId::from_parts(collection, bucket);
 
         // Freeze acquire lock, and reference it in context
         // Notice: this prevents two graphs on the same collection to be opened at the same time.
@@ -237,13 +237,13 @@ impl StoreFSTPool {
         }
     }
 
-    fn build(&self, store_id: StoreFSTId) -> Result<StoreFST, ()> {
+    fn build(&self, store_id: StoreFstId) -> Result<StoreFst, ()> {
         let graph = (self.open(store_id))
             .map_err(|error| tracing::error!("Failed opening fst: {error:?}"))?;
 
         let now = SystemTime::now();
 
-        Ok(StoreFST {
+        Ok(StoreFst {
             graph,
             target: store_id,
             pending: Default::default(),
@@ -254,12 +254,12 @@ impl StoreFSTPool {
         })
     }
 
-    pub(super) fn open(&self, id: StoreFSTId) -> Result<fst::Set, fst::Error> {
+    pub(super) fn open(&self, id: StoreFstId) -> Result<fst::Set, fst::Error> {
         tracing::debug!("Opening fst graph for {id}");
 
         let collection_bucket_path = self
             .fst_store_config
-            .store_path(id, StoreFSTPathMode::Permanent);
+            .store_path(id, StoreFstPathMode::Permanent);
 
         if collection_bucket_path.exists() {
             // Open graph at path for collection
@@ -274,18 +274,18 @@ impl StoreFSTPool {
         }
     }
 
-    pub(super) fn close(&self, id: StoreFSTId) {
+    pub(super) fn close(&self, id: StoreFstId) {
         tracing::debug!("Closing fst graph {id}");
 
         self.graph_pool.write().unwrap().remove(&id);
         self.graph_consolidate.write().unwrap().remove(&id);
     }
 
-    pub fn janitor(&self, filter: impl Fn(&StoreFSTId) -> bool) {
+    pub fn janitor(&self, filter: impl Fn(&StoreFstId) -> bool) {
         self.proceed_janitor(filter)
     }
 
-    pub fn consolidate(&self, force: bool, filter: impl Fn(&StoreFSTId) -> bool) {
+    pub fn consolidate(&self, force: bool, filter: impl Fn(&StoreFstId) -> bool) {
         tracing::debug!("scanning for fst store pool items to consolidate");
 
         // Notice: we do not consolidate all items at each tick, we try to even out multiple \
@@ -305,7 +305,7 @@ impl StoreFSTPool {
         }
 
         // Step 1: List keys to be consolidated
-        let mut keys_consolidate: Vec<StoreFSTId> = Vec::new();
+        let mut keys_consolidate: Vec<StoreFstId> = Vec::new();
 
         {
             // Acquire access lock (in blocking write mode), and reference it in context
@@ -439,8 +439,8 @@ struct ConsolidateStats {
     count_popped: usize,
 }
 
-impl StoreFSTPool {
-    fn consolidate_item(&self, store: &StoreFST, stats: &mut ConsolidateStats) -> Result<bool, ()> {
+impl StoreFstPool {
+    fn consolidate_item(&self, store: &StoreFst, stats: &mut ConsolidateStats) -> Result<bool, ()> {
         // Acquire write references to pending sets.
         let mut pending_push_write = store.pending.push.write().unwrap();
         let mut pending_pop_write = store.pending.pop.write().unwrap();
@@ -459,7 +459,7 @@ impl StoreFSTPool {
         // Initialize the new FST (temporary).
         let bucket_tmp_path = self
             .fst_store_config
-            .store_path(store.target, StoreFSTPathMode::Temporary);
+            .store_path(store.target, StoreFstPathMode::Temporary);
 
         let bucket_tmp_path_parent = bucket_tmp_path.parent().unwrap();
 
@@ -609,7 +609,7 @@ impl StoreFSTPool {
                 //   automatically opened on its next access.
                 let bucket_final_path = self
                     .fst_store_config
-                    .store_path(store.target, StoreFSTPathMode::Permanent);
+                    .store_path(store.target, StoreFstPathMode::Permanent);
 
                 // Proceed temporary FST to final FST path rename?
                 match fs::rename(&bucket_tmp_path, &bucket_final_path) {
@@ -648,7 +648,7 @@ impl StoreFSTPool {
 
     /// Counts buckets by reading the filesystem.
     pub fn count_collection_buckets(&self, collection: StoreItemPart) -> Result<usize, ()> {
-        let path_mode = StoreFSTPathMode::Permanent;
+        let path_mode = StoreFstPathMode::Permanent;
 
         let collection_atom = collection.into_compact();
         let collection_path = self.fst_store_config.collection_path(collection_atom);
@@ -688,21 +688,21 @@ impl StoreFSTPool {
 // MARK: - Store ID
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
-pub struct StoreFSTId {
-    collection_hash: StoreFSTAtom,
-    bucket_hash: StoreFSTAtom,
+pub struct StoreFstId {
+    collection_hash: StoreFstAtom,
+    bucket_hash: StoreFstAtom,
 }
 
-impl StoreFSTId {
-    pub fn from_atoms(collection_hash: StoreFSTAtom, bucket_hash: StoreFSTAtom) -> StoreFSTId {
-        StoreFSTId {
+impl StoreFstId {
+    pub fn from_atoms(collection_hash: StoreFstAtom, bucket_hash: StoreFstAtom) -> StoreFstId {
+        StoreFstId {
             collection_hash,
             bucket_hash,
         }
     }
 
-    pub fn from_parts(collection: StoreItemPart, bucket: StoreItemPart) -> StoreFSTId {
-        StoreFSTId {
+    pub fn from_parts(collection: StoreItemPart, bucket: StoreItemPart) -> StoreFstId {
+        StoreFstId {
             collection_hash: collection.into_compact(),
             bucket_hash: bucket.into_compact(),
         }
@@ -711,19 +711,19 @@ impl StoreFSTId {
     /// Filesystem path components are hex-encoded (via `format!("{:x}")`), we
     /// must convert it back into proper `u32` otherwise roundtrips will fail.
     #[inline]
-    pub fn try_from_hex(collection_hash: &str, bucket_hash: &str) -> Result<StoreFSTId, io::Error> {
+    pub fn try_from_hex(collection_hash: &str, bucket_hash: &str) -> Result<StoreFstId, io::Error> {
         let collection_hash = u32_from_hex(collection_hash)?;
         let bucket_hash = u32_from_hex(bucket_hash)?;
 
         Ok(Self::from_atoms(collection_hash, bucket_hash))
     }
 
-    pub fn as_collection_hash(&self) -> &StoreFSTAtom {
+    pub fn as_collection_hash(&self) -> &StoreFstAtom {
         &self.collection_hash
     }
 }
 
-impl fmt::Display for StoreFSTId {
+impl fmt::Display for StoreFstId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let Self {
             collection_hash,
@@ -736,15 +736,15 @@ impl fmt::Display for StoreFSTId {
 
 // MARK: - Helpers
 
-impl crate::config::StoreFSTConfig {
+impl crate::config::StoreFstConfig {
     #[inline]
-    pub(super) fn collection_path(&self, collection_hash: StoreFSTAtom) -> PathBuf {
+    pub(super) fn collection_path(&self, collection_hash: StoreFstAtom) -> PathBuf {
         self.path.join(format!("{collection_hash:x}"))
     }
 
     #[inline]
-    pub(super) fn store_path(&self, id: StoreFSTId, mode: StoreFSTPathMode) -> PathBuf {
-        let StoreFSTId {
+    pub(super) fn store_path(&self, id: StoreFstId, mode: StoreFstPathMode) -> PathBuf {
+        let StoreFstId {
             collection_hash,
             bucket_hash,
         } = id;
@@ -795,15 +795,15 @@ mod tests {
 
 // MARK: - Boilerplate
 
-impl std::ops::Deref for StoreFSTPool {
-    type Target = RwLock<HashMap<StoreFSTId, Arc<StoreFST>>>;
+impl std::ops::Deref for StoreFstPool {
+    type Target = RwLock<HashMap<StoreFstId, Arc<StoreFst>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.graph_pool
     }
 }
 
-impl fmt::Debug for StoreFSTPool {
+impl fmt::Debug for StoreFstPool {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use crate::util::fmt::{AsPrettyMutex, AsPrettyRwLock};
 
@@ -820,7 +820,7 @@ impl fmt::Debug for StoreFSTPool {
             fst_store_config: _fst_store_config,
         } = self;
 
-        f.debug_struct("StoreFSTPool")
+        f.debug_struct("StoreFstPool")
             .field("fst_action_config", fst_action_config)
             .field("graph_pool", &AsPrettyRwLock(graph_pool))
             .field("graph_acquire_lock", &AsPrettyMutex(graph_acquire_lock))
@@ -831,7 +831,7 @@ impl fmt::Debug for StoreFSTPool {
     }
 }
 
-impl fmt::Debug for StoreFSTId {
+impl fmt::Debug for StoreFstId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self, f)
     }

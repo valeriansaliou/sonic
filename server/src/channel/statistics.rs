@@ -8,8 +8,8 @@ use std::ops::Deref;
 use std::sync::{LazyLock, RwLock};
 use std::time::Instant;
 
-use sonic::store::fst::StoreFSTPool;
-use sonic::store::kv::StoreKVPool;
+use sonic::store::fst::StoreFstPool;
+use sonic::store::kv::StoreKvPool;
 
 static START_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
 
@@ -36,7 +36,7 @@ pub fn ensure_states() {
 }
 
 impl ChannelStatistics {
-    pub fn gather(kv_pool: &StoreKVPool, fst_pool: &StoreFSTPool) -> ChannelStatistics {
+    pub fn gather(kv_pool: &StoreKvPool, fst_pool: &StoreFstPool) -> ChannelStatistics {
         let (kv_count, fst_count) = (kv_pool.count(), fst_pool.count());
 
         ChannelStatistics {

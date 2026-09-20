@@ -11,9 +11,9 @@ use std::{fs, io};
 
 use fst::Streamer as _;
 
-use super::{StoreFSTId, StoreFSTPathMode, StoreFSTPool};
+use super::{StoreFstId, StoreFstPathMode, StoreFstPool};
 
-impl StoreFSTPool {
+impl StoreFstPool {
     pub fn backup(&self, path: &Path) -> Result<(), io::Error> {
         tracing::debug!("backing up all fst stores to path: {path:?}");
 
@@ -23,7 +23,7 @@ impl StoreFSTPool {
         // Proceed dump action (backup)
         self.dump_action(
             "backup",
-            StoreFSTPathMode::Permanent,
+            StoreFstPathMode::Permanent,
             &self.fst_store_config.path,
             path,
             &Self::backup_item,
@@ -36,7 +36,7 @@ impl StoreFSTPool {
         // Proceed dump action (restore)
         self.dump_action(
             "restore",
-            StoreFSTPathMode::Backup,
+            StoreFstPathMode::Backup,
             path,
             &self.fst_store_config.path,
             &Self::restore_item,
@@ -47,7 +47,7 @@ impl StoreFSTPool {
     fn dump_action(
         &self,
         action: &str,
-        path_mode: StoreFSTPathMode,
+        path_mode: StoreFstPathMode,
         read_path: &Path,
         write_path: &Path,
         fn_item: &dyn Fn(&Self, &Path, &Path, &str, &str) -> Result<(), io::Error>,
@@ -144,14 +144,14 @@ impl StoreFSTPool {
 
         // Generate path to FST backup.
         let fst_backup_path = {
-            let ext = StoreFSTPathMode::Backup.extension();
+            let ext = StoreFstPathMode::Backup.extension();
             assert!(ext.starts_with("."));
             backup_path
                 .join(collection_hash)
                 .join(format!("{bucket_hash}{ext}"))
         };
 
-        let store_id = StoreFSTId::try_from_hex(collection_hash, bucket_hash)?;
+        let store_id = StoreFstId::try_from_hex(collection_hash, bucket_hash)?;
 
         tracing::debug!("fst store {store_id} backing up to path: {fst_backup_path:?}");
 
@@ -196,7 +196,7 @@ impl StoreFSTPool {
         // being acquired from any context.
         let _access = self.graph_access_lock.write().unwrap();
 
-        let store_id = StoreFSTId::try_from_hex(collection_name, bucket_name)?;
+        let store_id = StoreFstId::try_from_hex(collection_name, bucket_name)?;
 
         tracing::debug!("fst store {store_id} restoring from path: {origin_path:?}");
 
@@ -206,7 +206,7 @@ impl StoreFSTPool {
         // Generate path to FST.
         let fst_path = self
             .fst_store_config
-            .store_path(store_id, StoreFSTPathMode::Permanent);
+            .store_path(store_id, StoreFstPathMode::Permanent);
 
         // Remove existing FST data?
         if fst_path.exists() {

@@ -12,8 +12,8 @@ use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::StoreItemPart;
 use crate::store::fst::typo_factor;
-use crate::store::kv::StoreKVActionReadOnly;
-use crate::store::{StoreObjectIID, StoreTermHash};
+use crate::store::kv::StoreKvActionReadOnly;
+use crate::store::{StoreObjectIid, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
@@ -97,7 +97,7 @@ impl super::Executor {
         //   insertion order, which correlates to reverse data ingestion
         //   order.
         // NOTE: `capacity = 24` to reduce initial grows.
-        let mut scoring_matrix: IndexMap<StoreObjectIID, Vec<Option<QueryMatchScore>>> =
+        let mut scoring_matrix: IndexMap<StoreObjectIid, Vec<Option<QueryMatchScore>>> =
             IndexMap::with_capacity(24usize.min(usize::from(limit)));
 
         // Look for exact matches.
@@ -260,7 +260,7 @@ impl super::Executor {
         //   is negligible.
         let one_term_is_special = tokens.iter().any(Token::is_special);
         if one_term_is_special {
-            let mut to_remove = Vec::<StoreObjectIID>::new();
+            let mut to_remove = Vec::<StoreObjectIid>::new();
 
             for (&iid, scores) in scoring_matrix.iter() {
                 if scores.iter().any(Option::is_none) {
@@ -488,7 +488,7 @@ fn test_overall_score() {
     ); // 2/3
 }
 
-fn document_frequency(term_hash: StoreTermHash, kv_action: &StoreKVActionReadOnly<'_>) -> u64 {
+fn document_frequency(term_hash: StoreTermHash, kv_action: &StoreKvActionReadOnly<'_>) -> u64 {
     kv_action
         .get_term_to_iids(term_hash)
         .inspect_err(|err| tracing::error!("{err:?}"))
@@ -511,11 +511,11 @@ fn bm25_lite_idf(document_count: u64, document_frequency: u64) -> f32 {
 #[allow(clippy::too_many_arguments)] // We’ll refactor this someday, and it’ not public anyway.
 fn merge_suggestions(
     suggestions: impl Iterator<Item = (String, QueryMatchScore)>,
-    scoring_matrix: &mut IndexMap<StoreObjectIID, Vec<Option<QueryMatchScore>>>,
+    scoring_matrix: &mut IndexMap<StoreObjectIid, Vec<Option<QueryMatchScore>>>,
     term: &str,
     term_idx: usize,
     term_count: usize,
-    kv_action: &StoreKVActionReadOnly<'_>,
+    kv_action: &StoreKvActionReadOnly<'_>,
     alternates_try: &mut usize,
     higher_limit: usize,
     document_count: u64,
@@ -586,8 +586,8 @@ fn merge_suggestions(
 }
 
 fn update_score(
-    scoring_matrix: &mut IndexMap<StoreObjectIID, Vec<Option<QueryMatchScore>>>,
-    iid: StoreObjectIID,
+    scoring_matrix: &mut IndexMap<StoreObjectIid, Vec<Option<QueryMatchScore>>>,
+    iid: StoreObjectIid,
     score: QueryMatchScore,
     term_idx: usize,
     term_count: usize,

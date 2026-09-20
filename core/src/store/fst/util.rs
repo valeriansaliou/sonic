@@ -8,7 +8,7 @@
 pub(super) fn check_over_limits(
     bytes_count: usize,
     words_count: usize,
-    fst_graph_config: &crate::config::StoreFSTGraphConfig,
+    fst_graph_config: &crate::config::StoreFstGraphConfig,
 ) -> bool {
     // Over bytes limit?
     let max_size = fst_graph_config.max_size * 1024;

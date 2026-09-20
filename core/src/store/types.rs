@@ -9,11 +9,11 @@
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct StoreObjectIID(u32);
+pub struct StoreObjectIid(u32);
 
-impl_u32_wrapper_utils!(StoreObjectIID);
+impl_u32_wrapper_utils!(StoreObjectIid);
 
-impl StoreObjectIID {
+impl StoreObjectIid {
     #[inline]
     pub const fn saturating_add(self, rhs: u32) -> Self {
         Self(self.0.saturating_add(rhs))
@@ -30,13 +30,13 @@ impl StoreObjectIID {
 // MARK: OID
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct StoreObjectOID<'a>(pub(super) StoreItemPart<'a>);
+pub struct StoreObjectOid<'a>(pub(super) StoreItemPart<'a>);
 
-crate::util::impl_transparent_wrapper_utils!(base for StoreObjectOID<'a>(StoreItemPart<'a>));
-crate::util::impl_transparent_wrapper_utils!(Debug for StoreObjectOID<'a>(StoreItemPart<'a>));
-crate::util::impl_transparent_wrapper_utils!(Display for StoreObjectOID<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(base for StoreObjectOid<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(Debug for StoreObjectOid<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(Display for StoreObjectOid<'a>(StoreItemPart<'a>));
 
-impl<'a, T> From<T> for StoreObjectOID<'a>
+impl<'a, T> From<T> for StoreObjectOid<'a>
 where
     StoreItemPart<'a>: From<T>,
 {
@@ -181,7 +181,7 @@ impl StoreItemBuilder {
         collection: &'a str,
         bucket: &'a str,
         object: &'a str,
-    ) -> Result<(StoreItemPart<'a>, StoreItemPart<'a>, StoreObjectOID<'a>), StoreItemError> {
+    ) -> Result<(StoreItemPart<'a>, StoreItemPart<'a>, StoreObjectOid<'a>), StoreItemError> {
         // Validate & box collection + bucket + object
         match (
             StoreItemPart::from_str(collection),
@@ -191,7 +191,7 @@ impl StoreItemBuilder {
             (Ok(collection_item), Ok(bucket_item), Ok(object_item)) => Ok((
                 collection_item,
                 bucket_item,
-                StoreObjectOID::from(object_item),
+                StoreObjectOid::from(object_item),
             )),
             (Err(_), _, _) => Err(StoreItemError::InvalidCollection),
             (_, Err(_), _) => Err(StoreItemError::InvalidBucket),

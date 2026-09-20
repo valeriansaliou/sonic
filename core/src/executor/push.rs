@@ -9,7 +9,7 @@ use rocksdb::WriteBatch;
 
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
-use crate::store::{StoreItemPart, StoreObjectOID};
+use crate::store::{StoreItemPart, StoreObjectOid};
 use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
@@ -17,7 +17,7 @@ impl super::Executor {
         &self,
         collection: StoreItemPart,
         bucket: StoreItemPart,
-        oid: StoreObjectOID,
+        oid: StoreObjectOid,
         input: PreprocessorOutput,
         assume_new: bool,
     ) -> Result<(), ()> {

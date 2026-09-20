@@ -12,7 +12,7 @@ use std::iter::FromIterator;
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::StoreItemPart;
-use crate::store::{StoreObjectOID, StoreTermHash};
+use crate::store::{StoreObjectOid, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
@@ -20,7 +20,7 @@ impl super::Executor {
         &self,
         collection: StoreItemPart,
         bucket: StoreItemPart,
-        oid: StoreObjectOID,
+        oid: StoreObjectOid,
         input: PreprocessorOutput,
     ) -> Result<u32, ()> {
         // Important: acquire database access read lock, and reference it in context. This \

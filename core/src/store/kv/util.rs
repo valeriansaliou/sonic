@@ -11,7 +11,7 @@ use crate::store::*;
 
 use super::keys::StoreMetaKey;
 
-impl StoreObjectIID {
+impl StoreObjectIid {
     #[inline]
     pub(super) const fn into_bytes(self) -> [u8; 4] {
         encode_u32(self.into_inner())

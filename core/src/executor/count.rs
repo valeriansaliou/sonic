@@ -5,7 +5,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use crate::store::{StoreItemPart, StoreObjectOID};
+use crate::store::{StoreItemPart, StoreObjectOid};
 
 impl super::Executor {
     /// Count terms in (collection, bucket, object) from KV.
@@ -13,7 +13,7 @@ impl super::Executor {
         &self,
         collection: StoreItemPart,
         bucket: StoreItemPart,
-        oid: StoreObjectOID,
+        oid: StoreObjectOid,
     ) -> Result<u32, ()> {
         // Important: acquire database access read lock, and reference it in context. This \
         //   prevents the database from being erased while using it in this block.
