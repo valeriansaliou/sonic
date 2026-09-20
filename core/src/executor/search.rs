@@ -7,7 +7,8 @@
 
 use indexmap::IndexMap;
 
-use crate::lexer::{NormalizedToken, TokenLexer};
+use crate::lexer::itertools::UniqueBy;
+use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::query::{
     QueryMatchScore, QueryResultScore, QuerySearchID, QuerySearchLimit, QuerySearchOffset,
 };
@@ -15,13 +16,14 @@ use crate::store::StoreItem;
 use crate::store::fst::{StoreFSTActionBuilder, typo_factor};
 use crate::store::identifiers::{StoreObjectIID, StoreTermHash, StoreTermHashed};
 use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVActionReadOnly};
+use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
     pub fn search(
         &self,
         item: StoreItem,
         _event_id: QuerySearchID,
-        lexer: TokenLexer,
+        input: PreprocessorOutput,
         limit: QuerySearchLimit,
         offset: QuerySearchOffset,
     ) -> Result<Vec<String>, ()> {
@@ -90,7 +92,9 @@ impl super::Executor {
 
             // Collect all terms so we know the count right ahead.
             // PERF: This helps allocating the correct amounts of memory.
-            let tokens: Vec<(NormalizedToken, StoreTermHashed, usize)> = lexer.collect();
+            let tokens: Vec<Token> =
+                UniqueBy::new_with_hasher(input.tokens(), Token::hash, NoopU32HasherBuilder)
+                    .collect();
             let term_count = tokens.len();
 
             // Store scores for each found IID. Results will then be sorted by
@@ -105,9 +109,12 @@ impl super::Executor {
                 IndexMap::with_capacity(24usize.min(usize::from(limit)));
 
             // Look for exact matches.
-            'matches: for (idx, (token, term_hash, _)) in tokens.iter().enumerate() {
+            'matches: for (idx, token) in tokens.iter().enumerate() {
+                let term_hash = token.hash();
+                let term = token.as_normalized();
+
                 let mut iids = kv_action
-                    .get_term_to_iids(*term_hash)
+                    .get_term_to_iids(term_hash)
                     .unwrap_or(None)
                     .unwrap_or_default();
 
@@ -119,25 +126,21 @@ impl super::Executor {
                     use unicode_normalization::UnicodeNormalization as _;
 
                     let mut nfc = kv_action
-                        .get_term_to_iids(StoreTermHash::from(
-                            token.as_str().nfc().to_string().as_str(),
-                        ))
+                        .get_term_to_iids(StoreTermHash::from(term.nfc().to_string().as_str()))
                         .unwrap_or(None)
                         .unwrap_or_default();
                     iids.append(&mut nfc);
 
                     let mut nfd = kv_action
-                        .get_term_to_iids(StoreTermHash::from(
-                            token.as_str().nfd().to_string().as_str(),
-                        ))
+                        .get_term_to_iids(StoreTermHash::from(term.nfd().to_string().as_str()))
                         .unwrap_or(None)
                         .unwrap_or_default();
                     iids.append(&mut nfd);
                 };
 
-                tracing::debug!("got exact search executor iids: {iids:?} for term: {token:?}");
+                tracing::debug!("got exact search executor iids: {iids:?} for term: {term:?}");
 
-                let document_frequency = document_frequency(*term_hash, &kv_action);
+                let document_frequency = document_frequency(term_hash, &kv_action);
 
                 // Filter out minimum IDF.
                 // PERF: Filtering `minimum_idf > 0` to save some computation.
@@ -145,7 +148,7 @@ impl super::Executor {
                     let idf = (document_count as f32 / document_frequency as f32).ln();
                     if idf < minimum_idf {
                         tracing::debug!(
-                            "skipping term {token:?} because idf too low ({idf}<{minimum_idf})"
+                            "skipping term {term:?} because idf too low ({idf}<{minimum_idf})"
                         );
                         continue;
                     }
@@ -162,7 +165,7 @@ impl super::Executor {
                         // Higher limit now reached?
                         // Stop acquiring new suggested IIDs now.
                         if scoring_matrix.len() >= higher_limit {
-                            tracing::trace!(?token, "got enough completed results for term");
+                            tracing::trace!(?term, "got enough completed results for term");
 
                             break 'matches;
                         }
@@ -181,16 +184,19 @@ impl super::Executor {
                     scoring_matrix.len(),
                 );
 
-                'terms: for (idx, (token, _, original_len)) in tokens.iter().enumerate() {
-                    let Some(suggestions) = fst_action.lookup_begins(token, *original_len) else {
-                        tracing::trace!("did not get any completed word for term {token:?}");
+                'terms: for (idx, token) in tokens.iter().enumerate() {
+                    let original_len = token.as_original().len();
+                    let term = token.as_normalized();
+
+                    let Some(suggestions) = fst_action.lookup_begins(term, original_len) else {
+                        tracing::trace!("did not get any completed word for term {term:?}");
                         continue 'terms;
                     };
 
                     merge_suggestions(
-                        suggestions.map(|(w, distance)| (w, prefix_score(distance, *original_len))),
+                        suggestions.map(|(w, distance)| (w, prefix_score(distance, original_len))),
                         &mut scoring_matrix,
-                        token,
+                        term,
                         idx,
                         term_count,
                         &kv_action,
@@ -212,17 +218,17 @@ impl super::Executor {
                     scoring_matrix.len(),
                 );
 
-                'terms: for (idx, (token, _, original_word_len)) in tokens.iter().enumerate() {
-                    let term = match token {
-                        NormalizedToken::Word(term) => term,
-                        // Skip term if it’s special (we want exact matches only).
-                        NormalizedToken::Special(term) => {
-                            tracing::debug!("skipping fuzzy search for {term:?}: term is special");
-                            continue 'terms;
-                        }
-                    };
+                'terms: for (idx, token) in tokens.iter().enumerate() {
+                    let original_word_len = token.as_original().len();
+                    let term = token.as_normalized();
 
-                    let max_typo_factor = typo_factor(*original_word_len);
+                    // Skip term if it’s special (we’d want exact matches only).
+                    if token.is_special() {
+                        tracing::debug!("skipping fuzzy search for {term:?}: term is special");
+                        continue 'terms;
+                    }
+
+                    let max_typo_factor = typo_factor(original_word_len);
                     let mut typo_factor = 1u32;
 
                     // TODO: Rework the Levenshtein query feature to avoid repeating
@@ -236,7 +242,7 @@ impl super::Executor {
 
                         merge_suggestions(
                             suggestions
-                                .map(|(w, distance)| (w, typo_score(distance, *original_word_len))),
+                                .map(|(w, distance)| (w, typo_score(distance, original_word_len))),
                             &mut scoring_matrix,
                             term,
                             idx,
@@ -263,7 +269,7 @@ impl super::Executor {
             //   term. It’s not the most efficient (compared to not storing the
             //   result in the first place) but it’s an edge case and the cost
             //   is negligible.
-            let one_term_is_special = tokens.iter().any(|(token, _, _)| token.is_special());
+            let one_term_is_special = tokens.iter().any(Token::is_special);
             if one_term_is_special {
                 let mut to_remove = Vec::<StoreObjectIID>::new();
 
@@ -520,7 +526,7 @@ fn bm25_lite_idf(document_count: u64, document_frequency: u64) -> f32 {
 fn merge_suggestions(
     suggestions: impl Iterator<Item = (String, QueryMatchScore)>,
     scoring_matrix: &mut IndexMap<StoreObjectIID, Vec<Option<QueryMatchScore>>>,
-    term: &String,
+    term: &str,
     term_idx: usize,
     term_count: usize,
     kv_action: &StoreKVActionReadOnly<'_>,

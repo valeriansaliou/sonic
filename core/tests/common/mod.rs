@@ -50,18 +50,17 @@ macro_rules! exec {
             "PUSH {:?} {:?} {:?} {:?}{}",
             $collection, $bucket, $oid, $text, exec!(internal_ lang_txt $($lang)?)
         ));
+        let preprocessor = sonic::lexer::preprocessor::Preprocessor::new(
+            $executor.app_conf.tokenization,
+            $executor.app_conf.normalization,
+            $executor.app_conf.stopwords.clone(),
+            true,
+            true,
+        );
         $executor
             .push(
                 crate::common::object_ref!($collection, $bucket, $oid),
-                sonic::lexer::TokenLexerBuilder::from(
-                    sonic::lexer::TokenLexerMode::NormalizeAndCleanup,
-                    exec!(internal_ lang $($lang)?),
-                    $text,
-                    $executor.app_conf.normalization,
-                    $executor.app_conf.tokenization,
-                    &$executor.app_conf.stopwords,
-                )
-                .unwrap(),
+                preprocessor.preprocess($text, exec!(internal_ lang $($lang)?)),
                 false,
             )
             .unwrap()
@@ -93,19 +92,18 @@ macro_rules! exec {
             "QUERY {:?} {:?} {:?}{}{}",
             $collection, $bucket, $term, exec!(internal_ lang_txt $($lang)?), exec!(internal_ limit_txt $($limit)?)
         ));
+        let preprocessor = sonic::lexer::preprocessor::Preprocessor::new(
+            $executor.app_conf.tokenization,
+            $executor.app_conf.normalization,
+            $executor.app_conf.stopwords.clone(),
+            true,
+            true,
+        );
         $executor
             .search(
                 crate::common::bucket_ref!($collection, $bucket),
                 "",
-                sonic::lexer::TokenLexerBuilder::from(
-                    sonic::lexer::TokenLexerMode::NormalizeAndCleanup,
-                    exec!(internal_ lang $($lang)?),
-                    $term,
-                    $executor.app_conf.normalization,
-                    $executor.app_conf.tokenization,
-                    &$executor.app_conf.stopwords,
-                )
-                .unwrap(),
+                preprocessor.preprocess($term, exec!(internal_ lang $($lang)?)),
                 exec!(internal_ limit $($limit)?),
                 0,
             )

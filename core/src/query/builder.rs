@@ -8,7 +8,8 @@
 use super::Query;
 use super::types::{QueryGenericLang, QuerySearchLimit, QuerySearchOffset};
 use crate::config::{ConfigNormalization, ConfigStopwords, ConfigTokenization};
-use crate::lexer::{TokenLexerBuilder, TokenLexerMode};
+use crate::lexer::preprocessor::Preprocessor;
+use crate::lexer::to_rework::TokenLexerMode;
 use crate::store::StoreItemBuilder;
 
 impl<'a> Query<'a> {
@@ -25,21 +26,22 @@ impl<'a> Query<'a> {
         tokenization_config: ConfigTokenization,
         stopwords_config: &'a ConfigStopwords,
     ) -> Result<Self, ()> {
-        match (
-            StoreItemBuilder::from_depth_2(collection, bucket),
-            TokenLexerBuilder::from(
-                TokenLexerMode::from_query_lang(&lang),
-                lang.and_then(QueryGenericLang::into_lang_opt),
-                terms,
-                normalization_config,
-                tokenization_config,
-                stopwords_config,
-            ),
-        ) {
-            (Ok(store), Ok(text_lexed)) => {
+        let should_cleanup = TokenLexerMode::from_query_lang(&lang).should_cleanup();
+        let preprocessor = Preprocessor::new(
+            tokenization_config,
+            normalization_config,
+            stopwords_config.clone(),
+            should_cleanup,
+            should_cleanup,
+        );
+
+        match StoreItemBuilder::from_depth_2(collection, bucket) {
+            Ok(store) => {
+                let text_lexed =
+                    preprocessor.preprocess(terms, lang.and_then(QueryGenericLang::into_lang_opt));
                 Ok(Query::Search(store, query_id, text_lexed, limit, offset))
             }
-            _ => Err(()),
+            Err(_err) => Err(()),
         }
     }
 
@@ -54,19 +56,20 @@ impl<'a> Query<'a> {
         tokenization_config: ConfigTokenization,
         stopwords_config: &'a ConfigStopwords,
     ) -> Result<Self, ()> {
-        match (
-            StoreItemBuilder::from_depth_2(collection, bucket),
-            TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeOnly,
-                None,
-                terms,
-                normalization_config,
-                tokenization_config,
-                stopwords_config,
-            ),
-        ) {
-            (Ok(store), Ok(text_lexed)) => Ok(Query::Suggest(store, query_id, text_lexed, limit)),
-            _ => Err(()),
+        let preprocessor = Preprocessor::new(
+            tokenization_config,
+            normalization_config,
+            stopwords_config.clone(),
+            false,
+            false,
+        );
+
+        match StoreItemBuilder::from_depth_2(collection, bucket) {
+            Ok(store) => {
+                let text_lexed = preprocessor.preprocess(terms, None);
+                Ok(Query::Suggest(store, query_id, text_lexed, limit))
+            }
+            Err(_err) => Err(()),
         }
     }
 
@@ -95,19 +98,22 @@ impl<'a> Query<'a> {
         tokenization_config: ConfigTokenization,
         stopwords_config: &'a ConfigStopwords,
     ) -> Result<Self, ()> {
-        match (
-            StoreItemBuilder::from_depth_3(collection, bucket, object),
-            TokenLexerBuilder::from(
-                TokenLexerMode::from_query_lang(&lang),
-                lang.and_then(QueryGenericLang::into_lang_opt),
-                text,
-                normalization_config,
-                tokenization_config,
-                stopwords_config,
-            ),
-        ) {
-            (Ok(store), Ok(text_lexed)) => Ok(Query::Push(store, text_lexed, assume_new)),
-            _ => Err(()),
+        let should_cleanup = TokenLexerMode::from_query_lang(&lang).should_cleanup();
+        let preprocessor = Preprocessor::new(
+            tokenization_config,
+            normalization_config,
+            stopwords_config.clone(),
+            should_cleanup,
+            should_cleanup,
+        );
+
+        match StoreItemBuilder::from_depth_3(collection, bucket, object) {
+            Ok(store) => {
+                let text_lexed =
+                    preprocessor.preprocess(text, lang.and_then(QueryGenericLang::into_lang_opt));
+                Ok(Query::Push(store, text_lexed, assume_new))
+            }
+            Err(_err) => Err(()),
         }
     }
 
@@ -120,19 +126,20 @@ impl<'a> Query<'a> {
         tokenization_config: ConfigTokenization,
         stopwords_config: &'a ConfigStopwords,
     ) -> Result<Self, ()> {
-        match (
-            StoreItemBuilder::from_depth_3(collection, bucket, object),
-            TokenLexerBuilder::from(
-                TokenLexerMode::NormalizeOnly,
-                None,
-                text,
-                normalization_config,
-                tokenization_config,
-                stopwords_config,
-            ),
-        ) {
-            (Ok(store), Ok(text_lexed)) => Ok(Query::Pop(store, text_lexed)),
-            _ => Err(()),
+        let preprocessor = Preprocessor::new(
+            tokenization_config,
+            normalization_config,
+            stopwords_config.clone(),
+            false,
+            false,
+        );
+
+        match StoreItemBuilder::from_depth_3(collection, bucket, object) {
+            Ok(store) => {
+                let text_lexed = preprocessor.preprocess(text, None);
+                Ok(Query::Pop(store, text_lexed))
+            }
+            Err(_err) => Err(()),
         }
     }
 

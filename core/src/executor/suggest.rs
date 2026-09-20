@@ -5,7 +5,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use crate::lexer::TokenLexer;
+use crate::lexer::preprocessor::PreprocessorOutput;
 use crate::query::{QuerySearchID, QuerySearchLimit};
 use crate::store::StoreItem;
 use crate::store::fst::StoreFSTActionBuilder;
@@ -15,7 +15,7 @@ impl super::Executor {
         &self,
         item: StoreItem,
         _event_id: QuerySearchID,
-        mut lexer: TokenLexer,
+        input: PreprocessorOutput,
         limit: QuerySearchLimit,
     ) -> Result<Option<impl ExactSizeIterator<Item = String> + DoubleEndedIterator>, ()> {
         if let StoreItem(collection, Some(bucket), None) = item {
@@ -26,10 +26,15 @@ impl super::Executor {
             if let Ok(fst_store) = self.fst_pool.acquire(collection, bucket) {
                 let fst_action = StoreFSTActionBuilder::access(fst_store);
 
-                if let (Some((token, _hash, len)), None) = (lexer.next(), lexer.next()) {
-                    tracing::debug!("running suggest on word: {token:?}");
+                let mut tokens = input.tokens();
 
-                    return match fst_action.suggest_words(&token, len, limit as usize, None) {
+                if let (Some(token), None) = (tokens.next(), tokens.next()) {
+                    let len = token.as_original().len();
+                    let term = token.into_normalized();
+
+                    tracing::debug!("running suggest on word: {term:?}");
+
+                    return match fst_action.suggest_words(term, len, limit as usize, None) {
                         Some(words) => Ok(Some(words.map(|(k, _)| k))),
                         None => Ok(None),
                     };

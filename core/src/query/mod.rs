@@ -8,7 +8,7 @@
 mod builder;
 mod types;
 
-use crate::lexer::TokenLexer;
+use crate::lexer::preprocessor::PreprocessorOutput;
 use crate::store::StoreItem;
 
 pub use self::types::*;
@@ -17,14 +17,14 @@ pub enum Query<'a> {
     Search(
         StoreItem<'a>,
         QuerySearchID<'a>,
-        TokenLexer<'a>,
+        PreprocessorOutput<'a>,
         QuerySearchLimit,
         QuerySearchOffset,
     ),
     Suggest(
         StoreItem<'a>,
         QuerySearchID<'a>,
-        TokenLexer<'a>,
+        PreprocessorOutput<'a>,
         QuerySearchLimit,
     ),
     List(
@@ -33,8 +33,8 @@ pub enum Query<'a> {
         QuerySearchLimit,
         QuerySearchOffset,
     ),
-    Push(StoreItem<'a>, TokenLexer<'a>, PushAssumeNew),
-    Pop(StoreItem<'a>, TokenLexer<'a>),
+    Push(StoreItem<'a>, PreprocessorOutput<'a>, PushAssumeNew),
+    Pop(StoreItem<'a>, PreprocessorOutput<'a>),
     Count(StoreItem<'a>),
     FlushC(StoreItem<'a>),
     FlushB(StoreItem<'a>),
