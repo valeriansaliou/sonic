@@ -127,13 +127,14 @@ impl_fns!(
     }
 );
 
-// MARK: COUNT
+// MARK: COUNT*
 
 impl_fns!(
-    #[doc = "Time complexity: O(1)."]
+    #[doc = "Count buckets in collection."]
+    #[doc = "\n\nTime complexity: O(1)."]
     fn countc(&self, collection: impl AsRef<str>) -> std::io::Result<usize> {
         self.inner.send(
-            make_command!("COUNT {}", collection),
+            make_command!("COUNTC {}", collection),
             Discriminant::Result,
             |data| data.parse().map_err(io_error_invalid_data),
         )
@@ -141,14 +142,15 @@ impl_fns!(
 );
 
 impl_fns!(
-    #[doc = "Time complexity: O(1)."]
+    #[doc = "Count objects in bucket."]
+    #[doc = "\n\nTime complexity: O(1)."]
     fn countb(
         &self,
         collection: impl AsRef<str>,
         bucket: impl AsRef<str>,
     ) -> std::io::Result<usize> {
         self.inner.send(
-            make_command!("COUNT {} {}", collection, bucket),
+            make_command!("COUNTB {} {}", collection, bucket),
             Discriminant::Result,
             |data| data.parse().map_err(io_error_invalid_data),
         )
@@ -156,7 +158,8 @@ impl_fns!(
 );
 
 impl_fns!(
-    #[doc = "Time complexity: O(1)."]
+    #[doc = "Count terms in object."]
+    #[doc = "\n\nTime complexity: O(1)."]
     fn counto(
         &self,
         collection: impl AsRef<str>,
@@ -164,7 +167,23 @@ impl_fns!(
         object: impl AsRef<str>,
     ) -> std::io::Result<usize> {
         self.inner.send(
-            make_command!("COUNT {} {} {}", collection, bucket, object),
+            make_command!("COUNTO {} {} {}", collection, bucket, object),
+            Discriminant::Result,
+            |data| data.parse().map_err(io_error_invalid_data),
+        )
+    }
+);
+
+impl_fns!(
+    #[doc = "Count terms in bucket."]
+    #[doc = "\n\nTime complexity: O(1)."]
+    fn legacy_countb(
+        &self,
+        collection: impl AsRef<str>,
+        bucket: impl AsRef<str>,
+    ) -> std::io::Result<usize> {
+        self.inner.send(
+            make_command!("COUNT {} {}", collection, bucket),
             Discriminant::Result,
             |data| data.parse().map_err(io_error_invalid_data),
         )
