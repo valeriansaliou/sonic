@@ -8,11 +8,13 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
-use crate::store::keyer::StoreKeyerHasher;
+use crate::store::StoreItemPart;
+use crate::store::kv::KvStoreId;
 use crate::util::hash::NoopU32HasherBuilder;
 
 #[macro_use]
 mod macros;
+mod types;
 
 mod count;
 mod flushb;
@@ -24,10 +26,12 @@ mod push;
 mod search;
 mod suggest;
 
+pub use types::*;
+
 pub struct Executor {
     pub app_conf: Arc<crate::Config>,
-    pub kv_pool: crate::store::kv::StoreKVPool,
-    pub fst_pool: crate::store::fst::StoreFSTPool,
+    pub kv_pool: crate::store::kv::KvStorePool,
+    pub fst_pool: crate::store::fst::FstStorePool,
     pub dynamic_conf_store: Arc<DynamicConfigStore>,
 }
 
@@ -56,13 +60,13 @@ impl std::fmt::Debug for Executor {
 pub struct DynamicConfigStore(RwLock<HashMap<u32, DynamicConfig, NoopU32HasherBuilder>>);
 
 impl DynamicConfigStore {
-    pub fn insert(&self, collection: &str, config: DynamicConfig) {
-        (self.0.write().unwrap()).insert(StoreKeyerHasher::to_compact(collection), config);
+    pub fn insert(&self, collection: StoreItemPart, config: DynamicConfig) {
+        (self.0.write().unwrap()).insert(collection.into_compact(), config);
     }
 
-    pub fn get(&self, collection: &str) -> Option<DynamicConfig> {
+    pub fn get(&self, collection: StoreItemPart) -> Option<DynamicConfig> {
         (self.0.read().unwrap())
-            .get(&StoreKeyerHasher::to_compact(collection))
+            .get(&collection.into_compact())
             .copied()
     }
 
@@ -124,23 +128,24 @@ pub enum RocksDbMemtable {
 impl Executor {
     pub fn set_dynamic_conf(
         &self,
-        collection: &str,
+        collection: StoreItemPart,
         new_conf: DynamicConfig,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        let kv_store_id = KvStoreId::from_part(collection);
+
         tracing::debug!(
             ?new_conf.rocksdb,
-            "Re-opening KV store connection for {collection:?} with new dynamic configuration overrides…"
+            "Re-opening KV store connection for {kv_store_id:?} with new dynamic configuration overrides…"
         );
 
-        let mut kv_pool_write_guard = self.kv_pool.pool_write_guard();
+        let mut kv_pool_write_guard = self.kv_pool.write().unwrap();
 
         self.kv_pool
-            .close(collection, Some(&mut kv_pool_write_guard))
-            .map_err(|()| std::io::Error::other("Error closing connection"))?;
+            .close(kv_store_id, Some(&mut kv_pool_write_guard));
 
         self.kv_pool
             .acquire(
-                crate::store::kv::StoreKVAcquireMode::Any,
+                true,
                 collection,
                 Some(&mut kv_pool_write_guard),
                 |options| {

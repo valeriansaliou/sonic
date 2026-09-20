@@ -7,194 +7,231 @@
 
 use indexmap::IndexMap;
 
+use super::types::{QueryMatchScore, QueryResultScore, QuerySearchLimit, QuerySearchOffset};
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
-use crate::query::{
-    QueryMatchScore, QueryResultScore, QuerySearchID, QuerySearchLimit, QuerySearchOffset,
-};
-use crate::store::StoreItem;
-use crate::store::fst::{StoreFSTActionBuilder, typo_factor};
-use crate::store::identifiers::{StoreObjectIID, StoreTermHash, StoreTermHashed};
-use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder, StoreKVActionReadOnly};
+use crate::store::StoreItemPart;
+use crate::store::fst::typo_factor;
+use crate::store::kv::KvStoreActionReadOnly;
+use crate::store::{StoreObjectIid, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
     pub fn search(
         &self,
-        item: StoreItem,
-        _event_id: QuerySearchID,
+        collection: StoreItemPart,
+        bucket: StoreItemPart,
         input: PreprocessorOutput,
         limit: QuerySearchLimit,
         offset: QuerySearchOffset,
     ) -> Result<Vec<String>, ()> {
-        if let StoreItem(collection, Some(bucket), None) = item {
-            // Important: acquire database access read lock, and reference it in context. This \
-            //   prevents the database from being erased while using it in this block.
-            let _kv_read_guard = self.kv_pool.lock_read_access();
-            let _fst_read_guard = self.fst_pool.lock_read_access();
+        // Important: acquire database access read lock, and reference it in context. This \
+        //   prevents the database from being erased while using it in this block.
+        let _kv_read_guard = self.kv_pool.lock_read_access();
+        let _fst_read_guard = self.fst_pool.lock_read_access();
 
-            let (Ok(kv_store), Ok(fst_store)) = (
-                self.kv_pool
-                    .acquire(StoreKVAcquireMode::OpenOnly, collection, None, |_| {}),
-                self.fst_pool.acquire(collection, bucket),
-            ) else {
-                return Err(());
-            };
+        let (Ok(kv_store), Ok(fst_store)) = (
+            self.kv_pool.acquire(false, collection, None, |_| {}),
+            self.fst_pool.acquire(collection, bucket),
+        ) else {
+            return Err(());
+        };
 
-            let Some(kv_store) = kv_store else {
-                tracing::debug!(
-                    "collection store does not exist, consider {bucket:?} from {collection:?} empty"
-                );
-                return Ok(vec![]);
-            };
-
-            let (higher_limit, mut alternates_try) = (
-                self.app_conf.store.kv.retain_word_objects,
-                self.app_conf.search.query_alternates_try,
+        let Some(kv_store) = kv_store else {
+            tracing::debug!(
+                "collection store does not exist, consider {bucket:?} from {collection:?} empty"
             );
+            return Ok(vec![]);
+        };
 
-            let (mut minimum_idf, idf_min_doc_count) = (
-                self.app_conf.search.query_minimum_term_idf_default,
-                (self.app_conf.search).query_minimum_term_idf_minimum_object_count,
+        let (higher_limit, mut alternates_try) = (
+            self.app_conf.store.kv.retain_word_objects,
+            self.app_conf.search.query_alternates_try,
+        );
+
+        let (mut minimum_idf, idf_min_doc_count) = (
+            self.app_conf.search.query_minimum_term_idf_default,
+            (self.app_conf.search).query_minimum_term_idf_minimum_object_count,
+        );
+
+        let (prefix_matching_enabled, fuzzy_matching_enabled) = (
+            self.fst_pool.fst_action_config.prefix_matching_enabled,
+            self.fst_pool.fst_action_config.fuzzy_matching_enabled,
+        );
+
+        // Important: acquire bucket store read lock
+        executor_kv_lock_read!(kv_store);
+
+        let kv_action = kv_store.access_read_only(bucket);
+
+        // FIXME: `IIDIncr` will get out-of-sync after a `FLUSHO`
+        //   (see https://github.com/valeriansaliou/sonic/issues/392).
+        //   It’s not a big deal though, no one should notice and we’ll fix
+        //   it someday after reworking the index.
+        let document_count = match kv_action
+            .get_iid_incr()
+            .map_err(|err| tracing::warn!("{err:?}"))?
+        {
+            Some(last_iid) => (u32::from(last_iid) + 1) as u64,
+            None => 0u64,
+        };
+
+        if document_count < idf_min_doc_count {
+            tracing::debug!(
+                "ignoring minimum_term_idf ({minimum_idf}) as document_count is too low ({document_count}<{idf_min_doc_count})"
             );
+            minimum_idf = 0.;
+        }
 
-            let (prefix_matching_enabled, fuzzy_matching_enabled) = (
-                self.fst_pool.fst_action_config.prefix_matching_enabled,
-                self.fst_pool.fst_action_config.fuzzy_matching_enabled,
-            );
+        // Collect all terms so we know the count right ahead.
+        // PERF: This helps allocating the correct amounts of memory.
+        let tokens: Vec<Token> =
+            UniqueBy::new_with_hasher(input.tokens(), Token::hash, NoopU32HasherBuilder).collect();
+        let term_count = tokens.len();
 
-            // Important: acquire bucket store read lock
-            executor_kv_lock_read!(kv_store);
+        // Store scores for each found IID. Results will then be sorted by
+        // score before being returned. Scores are basically the sum of
+        // Levenshtein distances for each term in the query. Lower score
+        // means better result.
+        // NOTE: We use `IndexMap` instead of `HashMap` to preserve
+        //   insertion order, which correlates to reverse data ingestion
+        //   order.
+        // NOTE: `capacity = 24` to reduce initial grows.
+        let mut scoring_matrix: IndexMap<StoreObjectIid, Vec<Option<QueryMatchScore>>> =
+            IndexMap::with_capacity(24usize.min(usize::from(limit)));
 
-            let (kv_action, fst_action) = (
-                StoreKVActionBuilder::access_read_only(bucket, kv_store),
-                StoreFSTActionBuilder::access(fst_store),
-            );
+        // Look for exact matches.
+        'matches: for (idx, token) in tokens.iter().enumerate() {
+            let term_hash = token.hash();
+            let term = token.as_normalized();
 
-            // FIXME: `IIDIncr` will get out-of-sync after a `FLUSHO`
-            //   (see https://github.com/valeriansaliou/sonic/issues/392).
-            //   It’s not a big deal though, no one should notice and we’ll fix
-            //   it someday after reworking the index.
-            let document_count = match kv_action
-                .get_iid_incr()
-                .map_err(|err| tracing::warn!("{err:?}"))?
-            {
-                Some(last_iid) => u64::from(last_iid) + 1,
-                None => 0,
-            };
+            let mut iids = kv_action
+                .get_term_to_iids(term_hash)
+                .unwrap_or(None)
+                .unwrap_or_default();
 
-            if document_count < idf_min_doc_count {
-                tracing::debug!(
-                    "ignoring minimum_term_idf ({minimum_idf}) as document_count is too low ({document_count}<{idf_min_doc_count})"
-                );
-                minimum_idf = 0.;
-            }
+            // Look for exact matches normalized differently if the Sonic
+            // index isn’t normalized.
+            if !token.is_special() && self.app_conf.normalization.unicode_normalization.is_none() {
+                use unicode_normalization::UnicodeNormalization as _;
 
-            // Collect all terms so we know the count right ahead.
-            // PERF: This helps allocating the correct amounts of memory.
-            let tokens: Vec<Token> =
-                UniqueBy::new_with_hasher(input.tokens(), Token::hash, NoopU32HasherBuilder)
-                    .collect();
-            let term_count = tokens.len();
-
-            // Store scores for each found IID. Results will then be sorted by
-            // score before being returned. Scores are basically the sum of
-            // Levenshtein distances for each term in the query. Lower score
-            // means better result.
-            // NOTE: We use `IndexMap` instead of `HashMap` to preserve
-            //   insertion order, which correlates to reverse data ingestion
-            //   order.
-            // NOTE: `capacity = 24` to reduce initial grows.
-            let mut scoring_matrix: IndexMap<StoreObjectIID, Vec<Option<QueryMatchScore>>> =
-                IndexMap::with_capacity(24usize.min(usize::from(limit)));
-
-            // Look for exact matches.
-            'matches: for (idx, token) in tokens.iter().enumerate() {
-                let term_hash = token.hash();
-                let term = token.as_normalized();
-
-                let mut iids = kv_action
-                    .get_term_to_iids(term_hash)
+                let mut nfc = kv_action
+                    .get_term_to_iids(StoreTermHash::from(term.nfc().to_string().as_str()))
                     .unwrap_or(None)
                     .unwrap_or_default();
+                iids.append(&mut nfc);
 
-                // Look for exact matches normalized differently if the Sonic
-                // index isn’t normalized.
-                if !token.is_special()
-                    && self.app_conf.normalization.unicode_normalization.is_none()
-                {
-                    use unicode_normalization::UnicodeNormalization as _;
+                let mut nfd = kv_action
+                    .get_term_to_iids(StoreTermHash::from(term.nfd().to_string().as_str()))
+                    .unwrap_or(None)
+                    .unwrap_or_default();
+                iids.append(&mut nfd);
+            };
 
-                    let mut nfc = kv_action
-                        .get_term_to_iids(StoreTermHash::from(term.nfc().to_string().as_str()))
-                        .unwrap_or(None)
-                        .unwrap_or_default();
-                    iids.append(&mut nfc);
+            tracing::debug!("got exact search executor iids: {iids:?} for term: {term:?}");
 
-                    let mut nfd = kv_action
-                        .get_term_to_iids(StoreTermHash::from(term.nfd().to_string().as_str()))
-                        .unwrap_or(None)
-                        .unwrap_or_default();
-                    iids.append(&mut nfd);
-                };
+            let document_frequency = document_frequency(term_hash, &kv_action);
 
-                tracing::debug!("got exact search executor iids: {iids:?} for term: {term:?}");
-
-                let document_frequency = document_frequency(term_hash, &kv_action);
-
-                // Filter out minimum IDF.
-                // PERF: Filtering `minimum_idf > 0` to save some computation.
-                if minimum_idf > 0. {
-                    let idf = (document_count as f32 / document_frequency as f32).ln();
-                    if idf < minimum_idf {
-                        tracing::debug!(
-                            "skipping term {term:?} because idf too low ({idf}<{minimum_idf})"
-                        );
-                        continue;
-                    }
-                }
-
-                let bm25_score = bm25_lite_idf(document_count, document_frequency);
-
-                for iid in iids.into_iter() {
-                    // Assign a base score of `1` as those are exact matches.
-                    let inserted =
-                        update_score(&mut scoring_matrix, iid, 1. * bm25_score, idx, term_count);
-
-                    if inserted {
-                        // Higher limit now reached?
-                        // Stop acquiring new suggested IIDs now.
-                        if scoring_matrix.len() >= higher_limit {
-                            tracing::trace!(?term, "got enough completed results for term");
-
-                            break 'matches;
-                        }
-                    }
+            // Filter out minimum IDF.
+            // PERF: Filtering `minimum_idf > 0` to save some computation.
+            if minimum_idf > 0. {
+                let idf = (document_count as f32 / document_frequency as f32).ln();
+                if idf < minimum_idf {
+                    tracing::debug!(
+                        "skipping term {term:?} because idf too low ({idf}<{minimum_idf})"
+                    );
+                    continue;
                 }
             }
 
-            #[cfg(debug_assertions)]
-            tracing::debug!(?scoring_matrix);
+            let bm25_score = bm25_lite_idf(document_count, document_frequency);
 
-            // Look for words containing `term` as prefix.
-            if scoring_matrix.len() < higher_limit && alternates_try > 0 && prefix_matching_enabled
-            {
-                tracing::debug!(
-                    "not enough iids were found ({}/{higher_limit}), looking for prefixes",
-                    scoring_matrix.len(),
+            for iid in iids.into_iter() {
+                // Assign a base score of `1` as those are exact matches.
+                let inserted =
+                    update_score(&mut scoring_matrix, iid, 1. * bm25_score, idx, term_count);
+
+                if inserted {
+                    // Higher limit now reached?
+                    // Stop acquiring new suggested IIDs now.
+                    if scoring_matrix.len() >= higher_limit {
+                        tracing::trace!(?term, "got enough completed results for term");
+
+                        break 'matches;
+                    }
+                }
+            }
+        }
+
+        #[cfg(debug_assertions)]
+        tracing::debug!(?scoring_matrix);
+
+        // Look for words containing `term` as prefix.
+        if scoring_matrix.len() < higher_limit && alternates_try > 0 && prefix_matching_enabled {
+            tracing::debug!(
+                "not enough iids were found ({}/{higher_limit}), looking for prefixes",
+                scoring_matrix.len(),
+            );
+
+            'terms: for (idx, token) in tokens.iter().enumerate() {
+                let original_len = token.as_original().len();
+                let term = token.as_normalized();
+
+                let Some(suggestions) = fst_store.lookup_begins(term, original_len) else {
+                    tracing::trace!("did not get any completed word for term {term:?}");
+                    continue 'terms;
+                };
+
+                merge_suggestions(
+                    suggestions.map(|(w, distance)| (w, prefix_score(distance, original_len))),
+                    &mut scoring_matrix,
+                    term,
+                    idx,
+                    term_count,
+                    &kv_action,
+                    &mut alternates_try,
+                    higher_limit,
+                    document_count,
+                    minimum_idf,
                 );
+            }
+        }
 
-                'terms: for (idx, token) in tokens.iter().enumerate() {
-                    let original_len = token.as_original().len();
-                    let term = token.as_normalized();
+        #[cfg(debug_assertions)]
+        tracing::debug!(?scoring_matrix);
 
-                    let Some(suggestions) = fst_action.lookup_begins(term, original_len) else {
+        // Look for words like `term` (fuzzy matching).
+        if scoring_matrix.len() < higher_limit && alternates_try > 0 && fuzzy_matching_enabled {
+            tracing::debug!(
+                "not enough iids were found ({}/{higher_limit}), looking for fuzzy matches",
+                scoring_matrix.len(),
+            );
+
+            'terms: for (idx, token) in tokens.iter().enumerate() {
+                let original_word_len = token.as_original().len();
+                let term = token.as_normalized();
+
+                // Skip term if it’s special (we’d want exact matches only).
+                if token.is_special() {
+                    tracing::debug!("skipping fuzzy search for {term:?}: term is special");
+                    continue 'terms;
+                }
+
+                let max_typo_factor = typo_factor(original_word_len);
+                let mut typo_factor = 1u32;
+
+                // TODO: Rework the Levenshtein query feature to avoid repeating
+                //   the same query over and over again. Maybe try to see if
+                //   `fst_levenshtein` can return distances in its response.
+                while alternates_try > 0 && typo_factor <= max_typo_factor {
+                    let Some(suggestions) = fst_store.lookup_typos(term, typo_factor) else {
                         tracing::trace!("did not get any completed word for term {term:?}");
                         continue 'terms;
                     };
 
                     merge_suggestions(
-                        suggestions.map(|(w, distance)| (w, prefix_score(distance, original_len))),
+                        suggestions
+                            .map(|(w, distance)| (w, typo_score(distance, original_word_len))),
                         &mut scoring_matrix,
                         term,
                         idx,
@@ -205,123 +242,72 @@ impl super::Executor {
                         document_count,
                         minimum_idf,
                     );
+
+                    typo_factor += 1;
                 }
             }
-
-            #[cfg(debug_assertions)]
-            tracing::debug!(?scoring_matrix);
-
-            // Look for words like `term` (fuzzy matching).
-            if scoring_matrix.len() < higher_limit && alternates_try > 0 && fuzzy_matching_enabled {
-                tracing::debug!(
-                    "not enough iids were found ({}/{higher_limit}), looking for fuzzy matches",
-                    scoring_matrix.len(),
-                );
-
-                'terms: for (idx, token) in tokens.iter().enumerate() {
-                    let original_word_len = token.as_original().len();
-                    let term = token.as_normalized();
-
-                    // Skip term if it’s special (we’d want exact matches only).
-                    if token.is_special() {
-                        tracing::debug!("skipping fuzzy search for {term:?}: term is special");
-                        continue 'terms;
-                    }
-
-                    let max_typo_factor = typo_factor(original_word_len);
-                    let mut typo_factor = 1u32;
-
-                    // TODO: Rework the Levenshtein query feature to avoid repeating
-                    //   the same query over and over again. Maybe try to see if
-                    //   `fst_levenshtein` can return distances in its response.
-                    while alternates_try > 0 && typo_factor <= max_typo_factor {
-                        let Some(suggestions) = fst_action.lookup_typos(term, typo_factor) else {
-                            tracing::trace!("did not get any completed word for term {term:?}");
-                            continue 'terms;
-                        };
-
-                        merge_suggestions(
-                            suggestions
-                                .map(|(w, distance)| (w, typo_score(distance, original_word_len))),
-                            &mut scoring_matrix,
-                            term,
-                            idx,
-                            term_count,
-                            &kv_action,
-                            &mut alternates_try,
-                            higher_limit,
-                            document_count,
-                            minimum_idf,
-                        );
-
-                        typo_factor += 1;
-                    }
-                }
-            }
-
-            #[cfg(debug_assertions)]
-            tracing::debug!(?scoring_matrix);
-
-            // Switch to implicit `AND` if query contains a special token.
-            // NOTE: When a user queries for a special token (e.g. UUID),
-            //   they expect only exact matches to be returned. If one term is
-            //   considered special, we drop all results missing at least one
-            //   term. It’s not the most efficient (compared to not storing the
-            //   result in the first place) but it’s an edge case and the cost
-            //   is negligible.
-            let one_term_is_special = tokens.iter().any(Token::is_special);
-            if one_term_is_special {
-                let mut to_remove = Vec::<StoreObjectIID>::new();
-
-                for (&iid, scores) in scoring_matrix.iter() {
-                    if scores.iter().any(Option::is_none) {
-                        to_remove.push(iid);
-                    }
-                }
-
-                for iid in to_remove {
-                    scoring_matrix.swap_remove(&iid);
-                }
-            }
-
-            // Flatten scores, taking into account missing matches (thanks to
-            // `None`).
-            let found_iids = scoring_matrix
-                .into_iter()
-                .map(|(iid, scores)| (iid, overall_score(&scores)));
-
-            // Sort found IIDs.
-            let all_iids = {
-                let mut all_iids = found_iids.collect::<Vec<_>>();
-                all_iids.sort_by(|a, b| a.1.total_cmp(&b.1).reverse());
-                all_iids.into_iter().map(|(iid, _score)| iid)
-            };
-
-            // Resolve OIDs from IIDs
-            // Notice: we also proceed paging from there
-            let (limit_usize, offset_usize) = (limit as usize, offset as usize);
-            let mut result_oids = Vec::with_capacity(limit_usize);
-
-            'paging: for (index, found_iid) in all_iids.skip(offset_usize).enumerate() {
-                // Stop there?
-                if index >= limit_usize {
-                    break 'paging;
-                }
-
-                // Read IID-to-OID for this found IID
-                if let Ok(Some(oid)) = kv_action.get_iid_to_oid(found_iid) {
-                    result_oids.push(oid);
-                } else {
-                    tracing::error!("failed getting search executor iid-to-oid");
-                }
-            }
-
-            tracing::info!("got search executor final oids: {:?}", result_oids);
-
-            return Ok(result_oids);
         }
 
-        Err(())
+        #[cfg(debug_assertions)]
+        tracing::debug!(?scoring_matrix);
+
+        // Switch to implicit `AND` if query contains a special token.
+        // NOTE: When a user queries for a special token (e.g. UUID),
+        //   they expect only exact matches to be returned. If one term is
+        //   considered special, we drop all results missing at least one
+        //   term. It’s not the most efficient (compared to not storing the
+        //   result in the first place) but it’s an edge case and the cost
+        //   is negligible.
+        let one_term_is_special = tokens.iter().any(Token::is_special);
+        if one_term_is_special {
+            let mut to_remove = Vec::<StoreObjectIid>::new();
+
+            for (&iid, scores) in scoring_matrix.iter() {
+                if scores.iter().any(Option::is_none) {
+                    to_remove.push(iid);
+                }
+            }
+
+            for iid in to_remove {
+                scoring_matrix.swap_remove(&iid);
+            }
+        }
+
+        // Flatten scores, taking into account missing matches (thanks to
+        // `None`).
+        let found_iids = scoring_matrix
+            .into_iter()
+            .map(|(iid, scores)| (iid, overall_score(&scores)));
+
+        // Sort found IIDs.
+        let all_iids = {
+            let mut all_iids = found_iids.collect::<Vec<_>>();
+            all_iids.sort_by(|a, b| a.1.total_cmp(&b.1).reverse());
+            all_iids.into_iter().map(|(iid, _score)| iid)
+        };
+
+        // Resolve OIDs from IIDs
+        // Notice: we also proceed paging from there
+        let (limit_usize, offset_usize) = (limit as usize, offset as usize);
+        let mut result_oids = Vec::with_capacity(limit_usize);
+
+        'paging: for (index, found_iid) in all_iids.skip(offset_usize).enumerate() {
+            // Stop there?
+            if index >= limit_usize {
+                break 'paging;
+            }
+
+            // Read IID-to-OID for this found IID
+            if let Ok(Some(oid)) = kv_action.get_iid_to_oid(found_iid) {
+                result_oids.push(oid);
+            } else {
+                tracing::error!("failed getting search executor iid-to-oid");
+            }
+        }
+
+        tracing::info!("got search executor final oids: {:?}", result_oids);
+
+        Ok(result_oids)
     }
 }
 
@@ -502,7 +488,7 @@ fn test_overall_score() {
     ); // 2/3
 }
 
-fn document_frequency(term_hash: StoreTermHashed, kv_action: &StoreKVActionReadOnly<'_>) -> u64 {
+fn document_frequency(term_hash: StoreTermHash, kv_action: &KvStoreActionReadOnly<'_>) -> u64 {
     kv_action
         .get_term_to_iids(term_hash)
         .inspect_err(|err| tracing::error!("{err:?}"))
@@ -525,11 +511,11 @@ fn bm25_lite_idf(document_count: u64, document_frequency: u64) -> f32 {
 #[allow(clippy::too_many_arguments)] // We’ll refactor this someday, and it’ not public anyway.
 fn merge_suggestions(
     suggestions: impl Iterator<Item = (String, QueryMatchScore)>,
-    scoring_matrix: &mut IndexMap<StoreObjectIID, Vec<Option<QueryMatchScore>>>,
+    scoring_matrix: &mut IndexMap<StoreObjectIid, Vec<Option<QueryMatchScore>>>,
     term: &str,
     term_idx: usize,
     term_count: usize,
-    kv_action: &StoreKVActionReadOnly<'_>,
+    kv_action: &KvStoreActionReadOnly<'_>,
     alternates_try: &mut usize,
     higher_limit: usize,
     document_count: u64,
@@ -543,7 +529,7 @@ fn merge_suggestions(
 
         tracing::trace!(?term, ?suggested_word, "got completed word for term");
 
-        let suggested_term_hash = StoreTermHash::from(&suggested_word);
+        let suggested_term_hash = StoreTermHash::from(suggested_word.as_str());
         let suggested_iids = match kv_action.get_term_to_iids(suggested_term_hash) {
             Ok(Some(suggested_iids)) => suggested_iids,
             Ok(None) => continue,
@@ -600,8 +586,8 @@ fn merge_suggestions(
 }
 
 fn update_score(
-    scoring_matrix: &mut IndexMap<StoreObjectIID, Vec<Option<QueryMatchScore>>>,
-    iid: StoreObjectIID,
+    scoring_matrix: &mut IndexMap<StoreObjectIid, Vec<Option<QueryMatchScore>>>,
+    iid: StoreObjectIid,
     score: QueryMatchScore,
     term_idx: usize,
     term_count: usize,

@@ -50,6 +50,7 @@ macro_rules! exec {
             "PUSH {:?} {:?} {:?} {:?}{}",
             $collection, $bucket, $oid, $text, exec!(internal_ lang_txt $($lang)?)
         ));
+        let (c, b, o) = crate::common::object_ref!($collection, $bucket, $oid);
         let preprocessor = sonic::lexer::preprocessor::Preprocessor::new(
             $executor.app_conf.tokenization,
             $executor.app_conf.normalization,
@@ -59,7 +60,7 @@ macro_rules! exec {
         );
         $executor
             .push(
-                crate::common::object_ref!($collection, $bucket, $oid),
+                c, b, o,
                 preprocessor.preprocess($text, exec!(internal_ lang $($lang)?)),
                 false,
             )
@@ -73,17 +74,20 @@ macro_rules! exec {
 
     ($executor:ident -> COUNT $collection:tt) => {{
         $executor.log(format!("COUNT {:?}", $collection));
-        $executor.count(collection_ref!($collection))
+        let c = collection_ref!($collection);
+        $executor.countc(c)
     }};
 
     ($executor:ident -> COUNT $collection:tt $bucket:tt) => {{
         $executor.log(format!("COUNT {:?} {:?}", $collection, $bucket));
-        $executor.count(bucket_ref!($collection, $bucket))
+        let (c, b) = bucket_ref!($collection, $bucket);
+        $executor.countb(c, b)
     }};
 
     ($executor:ident -> COUNT $collection:tt $bucket:tt $oid:tt) => {{
         $executor.log(format!("COUNT {:?} {:?} {:?}", $collection, $bucket, $oid));
-        $executor.count(object_ref!($collection, $bucket, $oid))
+        let (c, b, o) = object_ref!($collection, $bucket, $oid);
+        $executor.counto(c, b, o)
     }};
 
     ($executor:ident -> QUERY $collection:tt $bucket:tt $term:tt $(LANG($lang:expr))? $(LIMIT($limit:expr))?) => {{
@@ -92,6 +96,7 @@ macro_rules! exec {
             "QUERY {:?} {:?} {:?}{}{}",
             $collection, $bucket, $term, exec!(internal_ lang_txt $($lang)?), exec!(internal_ limit_txt $($limit)?)
         ));
+        let (c, b) = crate::common::bucket_ref!($collection, $bucket);
         let preprocessor = sonic::lexer::preprocessor::Preprocessor::new(
             $executor.app_conf.tokenization,
             $executor.app_conf.normalization,
@@ -101,8 +106,7 @@ macro_rules! exec {
         );
         $executor
             .search(
-                crate::common::bucket_ref!($collection, $bucket),
-                "",
+                c, b,
                 preprocessor.preprocess($term, exec!(internal_ lang $($lang)?)),
                 exec!(internal_ limit $($limit)?),
                 0,
@@ -112,10 +116,10 @@ macro_rules! exec {
 
     ($executor:ident -> LIST $collection:tt $bucket:tt $(LIMIT($limit:expr))?) => {{
         $executor.log(format!("LIST {:?} {:?}", $collection, $bucket));
+        let (c, b) = crate::common::bucket_ref!($collection, $bucket);
         $executor
             .list(
-                crate::common::bucket_ref!($collection, $bucket),
-                "",
+                c, b,
                 exec!(internal_ limit $($limit)?),
                 0,
             )
@@ -124,23 +128,20 @@ macro_rules! exec {
 
     ($executor:ident -> FLUSHC $collection:tt) => {{
         $executor.log(format!("FLUSHC {:?}", $collection));
-        $executor
-            .flushc(crate::common::collection_ref!($collection))
-            .unwrap()
+        let c = crate::common::collection_ref!($collection);
+        $executor.flushc(c).unwrap()
     }};
 
     ($executor:ident -> FLUSHB $collection:tt $bucket:tt) => {{
         $executor.log(format!("FLUSHB {:?} {:?}", $collection, $bucket));
-        $executor
-            .flushb(crate::common::bucket_ref!($collection, $bucket))
-            .unwrap()
+        let (c, b) = crate::common::bucket_ref!($collection, $bucket);
+        $executor.flushb(c, b).unwrap()
     }};
 
     ($executor:ident -> FLUSHO $collection:tt $bucket:tt $oid:tt) => {{
         $executor.log(format!("FLUSHO {:?} {:?} {:?}", $collection, $bucket, $oid));
-        $executor
-            .flusho(crate::common::object_ref!($collection, $bucket, $oid))
-            .unwrap()
+        let (c, b, o) = crate::common::object_ref!($collection, $bucket, $oid);
+        $executor.flusho(c, b, o).unwrap()
     }};
 
     (internal_ lang) => { None };
@@ -149,7 +150,7 @@ macro_rules! exec {
     (internal_ lang_txt) => { "" };
     (internal_ lang_txt $lang:expr) => { format!(" LANG({})", $lang) };
 
-    (internal_ limit) => { sonic::query::QuerySearchLimit::MAX };
+    (internal_ limit) => { sonic::executor::QuerySearchLimit::MAX };
     (internal_ limit $limit:expr) => { $limit };
 
     (internal_ limit_txt) => { "" };

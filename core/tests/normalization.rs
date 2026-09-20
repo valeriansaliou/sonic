@@ -19,7 +19,7 @@ fn test_unicode_normalization_ingest() {
     fn test(unicode_normalization: Option<UnicodeNormalization>, ingest: &str, expected: &str) {
         init_logging();
         let executor = make_test_executor(|app_conf| {
-            app_conf.normalization = sonic::config::ConfigNormalization {
+            app_conf.normalization = sonic::config::NormalizationConfig {
                 unicode_normalization,
                 diacritic_folding_enabled: false,
                 stemming_enabled: false,

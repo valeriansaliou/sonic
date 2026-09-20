@@ -2087,12 +2087,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
-name = "radix"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03723fcd5a7afa7e69f16e0310ac6bd5a2bc2d91b89bd8e1f6bacf9eb197ee29"
-
-[[package]]
 name = "rand"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2455,7 +2449,6 @@ dependencies = [
 name = "sonic-core"
 version = "0.3.0"
 dependencies = [
- "byteorder",
  "caseless",
  "config",
  "fst",
@@ -2468,7 +2461,6 @@ dependencies = [
  "lindera-dictionary",
  "lindera-tokenizer",
  "linked_hash_set",
- "radix",
  "regex",
  "regex-syntax 0.8.11",
  "rocksdb",

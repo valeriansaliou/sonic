@@ -8,7 +8,7 @@
 pub(crate) mod none_string_as_none {
     use serde::{Deserialize, Deserializer};
 
-    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+    pub(crate) fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
     where
         D: Deserializer<'de>,
         T: Deserialize<'de>,

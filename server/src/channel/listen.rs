@@ -11,8 +11,8 @@ use std::sync::{Arc, RwLock};
 use std::thread;
 
 use sonic::executor::DynamicConfigStore;
-use sonic::store::fst::StoreFSTPool;
-use sonic::store::kv::StoreKVPool;
+use sonic::store::fst::FstStorePool;
+use sonic::store::kv::KvStorePool;
 
 use super::handle::ChannelHandle;
 use crate::THREAD_NAME_CHANNEL_CLIENT;
@@ -20,15 +20,15 @@ use crate::THREAD_NAME_CHANNEL_CLIENT;
 #[derive(Clone)]
 pub struct ChannelListenBuilder {
     pub app_conf: Arc<crate::Config>,
-    pub kv_pool: StoreKVPool,
-    pub fst_pool: StoreFSTPool,
+    pub kv_pool: KvStorePool,
+    pub fst_pool: FstStorePool,
     pub dynamic_conf_store: Arc<DynamicConfigStore>,
 }
 
 pub struct ChannelListen {
     app_conf: Arc<crate::Config>,
-    kv_pool: StoreKVPool,
-    fst_pool: StoreFSTPool,
+    kv_pool: KvStorePool,
+    fst_pool: FstStorePool,
     dynamic_conf_store: Arc<DynamicConfigStore>,
 }
 

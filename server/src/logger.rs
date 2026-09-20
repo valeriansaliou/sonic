@@ -12,9 +12,9 @@ use tracing_subscriber::{Registry, prelude::*, reload};
 
 static LOG_LEVEL_RELOAD_HANDLE: OnceLock<reload::Handle<LevelFilter, Registry>> = OnceLock::new();
 
-pub struct ConfigLogger;
+pub struct LoggerConfig;
 
-impl ConfigLogger {
+impl LoggerConfig {
     /// Initialize the global tracing subscriber (usually with a more verbose
     /// level until the config is loaded).
     pub fn init(level: LevelFilter) {

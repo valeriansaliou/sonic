@@ -20,15 +20,15 @@ use crate::util::serde::env_var;
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    pub normalization: ConfigNormalization,
+    pub normalization: NormalizationConfig,
 
-    pub tokenization: ConfigTokenization,
+    pub tokenization: TokenizationConfig,
 
-    pub stopwords: ConfigStopwords,
+    pub stopwords: StopwordsConfig,
 
-    pub search: ConfigSearch,
+    pub search: SearchConfig,
 
-    pub store: ConfigStore,
+    pub store: StoreConfig,
 }
 
 impl Config {
@@ -53,7 +53,7 @@ impl Config {
 /// Configuration group for normalization options (Unicode normalization,
 /// stemming, lemmatization…).
 #[derive(Debug, Deserialize, Clone, Copy)]
-pub struct ConfigNormalization {
+pub struct NormalizationConfig {
     #[serde(with = "crate::util::serde::none_string_as_none")]
     pub unicode_normalization: Option<UnicodeNormalization>,
 
@@ -73,7 +73,7 @@ pub enum UnicodeNormalization {
 
 /// Configuration group for tokenization options.
 #[derive(Debug, Deserialize, Clone, Copy)]
-pub struct ConfigTokenization {
+pub struct TokenizationConfig {
     pub detect_special_patterns: bool,
 
     #[serde(alias = "split_special_patterns")]
@@ -81,7 +81,7 @@ pub struct ConfigTokenization {
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
-pub struct ConfigStopwords {
+pub struct StopwordsConfig {
     #[serde(deserialize_with = "to_stopwords")]
     pub allow: HashSet<String>,
 
@@ -101,7 +101,7 @@ where
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ConfigSearch {
+pub struct SearchConfig {
     pub query_limit_default: u16,
 
     pub query_limit_maximum: u16,
@@ -122,32 +122,32 @@ pub struct ConfigSearch {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ConfigStore {
-    pub kv: Arc<ConfigStoreKV>,
+pub struct StoreConfig {
+    pub kv: Arc<KvStoreConfig>,
 
-    pub fst: Arc<ConfigStoreFST>,
+    pub fst: Arc<FstStoreConfig>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ConfigStoreKV {
+pub struct KvStoreConfig {
     #[serde(deserialize_with = "env_var::path_buf")]
     pub path: PathBuf,
 
     pub retain_word_objects: usize,
 
-    pub pool: ConfigStoreKVPool,
+    pub pool: KvStorePoolConfig,
 
-    pub database: ConfigStoreKVDatabase,
+    pub database: KvStoreDatabaseConfig,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ConfigStoreKVPool {
+pub struct KvStorePoolConfig {
     pub inactive_after: u64,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ConfigStoreKVDatabase {
+pub struct KvStoreDatabaseConfig {
     pub flush_after: u64,
 
     pub write_ahead_log: bool,
@@ -331,22 +331,22 @@ where
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ConfigStoreFST {
+pub struct FstStoreConfig {
     #[serde(deserialize_with = "env_var::path_buf")]
     pub path: PathBuf,
 
-    pub pool: ConfigStoreFSTPool,
+    pub pool: FstStorePoolConfig,
 
-    pub graph: ConfigStoreFSTGraph,
+    pub graph: FstStoreGraphConfig,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ConfigStoreFSTPool {
+pub struct FstStorePoolConfig {
     pub inactive_after: u64,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ConfigStoreFSTGraph {
+pub struct FstStoreGraphConfig {
     pub consolidate_after: u64,
 
     pub max_size: usize,
@@ -356,7 +356,7 @@ pub struct ConfigStoreFSTGraph {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    pub fn defaults_toml() -> &'static str {
+    pub(crate) fn defaults_toml() -> &'static str {
         r#"
         [channel]
         inet = "[::1]:1491"

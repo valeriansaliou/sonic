@@ -4,6 +4,11 @@
 // Copyright: 2019, Valerian Saliou <valerian@valeriansaliou.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+#![allow(
+    unreachable_pub,
+    reason = "It will disappear soon anyway, let’s just ignore having to change all `pub` for `pub(crate)`"
+)]
+
 // All stopwords are sourced from: https://github.com/stopwords-iso
 // Last update: 7th March 2019
 

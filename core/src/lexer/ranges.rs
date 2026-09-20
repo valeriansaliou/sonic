@@ -44,7 +44,7 @@ const RANGE_SINHALA: &[(char, char)] = &[('\u{0D80}', '\u{0DFF}')];
 const RANGE_KHMER: &[(char, char)] = &[('\u{1780}', '\u{17FF}'), ('\u{19E0}', '\u{19FF}')];
 
 impl LexerRange {
-    pub fn from(text: &str) -> Option<&'static [(char, char)]> {
+    pub(super) fn from(text: &str) -> Option<&'static [(char, char)]> {
         detect_script(text).map(|script| match script {
             Script::Latin => RANGE_LATIN,
             Script::Cyrillic => RANGE_CYRILLIC,

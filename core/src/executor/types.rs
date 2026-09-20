@@ -12,7 +12,6 @@ pub enum QueryGenericLang {
     Disabled,
 }
 
-pub type QuerySearchID<'a> = &'a str;
 pub type QuerySearchLimit = u16;
 pub type QuerySearchOffset = u32;
 

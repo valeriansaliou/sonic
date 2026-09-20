@@ -6,38 +6,28 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use rocksdb::WriteBatch;
-use std::sync::Arc;
 
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
-use crate::store::StoreItem;
-use crate::store::fst::StoreFSTActionBuilder;
-use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
+use crate::store::{StoreItemPart, StoreObjectOid};
 use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
     pub fn push(
         &self,
-        item: StoreItem,
+        collection: StoreItemPart,
+        bucket: StoreItemPart,
+        oid: StoreObjectOid,
         input: PreprocessorOutput,
         assume_new: bool,
     ) -> Result<(), ()> {
-        let StoreItem(collection, Some(bucket), Some(object)) = item else {
-            return Err(());
-        };
-
         // Important: acquire database access read lock, and reference it in context. This \
         //   prevents the database from being erased while using it in this block.
         let _kv_read_guard = self.kv_pool.lock_read_access();
         let _fst_read_guard = self.fst_pool.lock_read_access();
 
-        let (Ok(kv_store), Ok(fst_store)) = (
-            self.kv_pool
-                .acquire(StoreKVAcquireMode::Any, collection, None, |_| {}),
-            self.fst_pool.acquire(collection, bucket),
-        ) else {
-            return Err(());
-        };
+        let kv_store = self.kv_pool.acquire(true, collection, None, |_| {})?;
+        let fst_store = self.fst_pool.acquire(collection, bucket)?;
 
         debug_assert!(kv_store.is_some());
         let Some(kv_store) = kv_store else {
@@ -47,16 +37,12 @@ impl super::Executor {
             return Err(());
         };
 
-        let (kv_action, fst_action) = (
-            StoreKVActionBuilder::access_read_write(bucket, Arc::clone(&kv_store)),
-            StoreFSTActionBuilder::access(fst_store),
-        );
+        let kv_action = kv_store.access_read_write(bucket);
 
         let mut batch = WriteBatch::default();
 
         // Try to resolve existing OID to IID, otherwise initialize IID (store the \
         //   bi-directional relationship)
-        let oid = object.as_str();
         let mut assign_new_iid = || {
             tracing::trace!("must initialize push executor oid-to-iid and iid-to-oid");
 
@@ -85,15 +71,15 @@ impl super::Executor {
 
         for token in &mut tokens {
             let term = token.as_normalized();
-            let term_hashed = token.hash();
+            let term_hash = token.hash();
 
             // Push to FST graph? (this consumes the term; to avoid sub-clones)
-            if fst_action.push_word(&term, &self.app_conf.store.fst) {
+            if fst_store.push_word(&term, &self.app_conf.store.fst) {
                 tracing::trace!("push term committed to graph: {}", term);
             }
 
             // Link IID to term
-            kv_action.add_term_to_iids(&mut batch, term_hashed, std::iter::once(iid));
+            kv_action.add_term_to_iids(&mut batch, term_hash, std::iter::once(iid));
         }
 
         // Link terms to IID

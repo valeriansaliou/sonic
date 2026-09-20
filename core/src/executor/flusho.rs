@@ -7,70 +7,65 @@
 
 use rocksdb::WriteBatch;
 
-use crate::store::StoreItem;
-use crate::store::kv::{StoreKVAcquireMode, StoreKVActionBuilder};
+use crate::store::{StoreItemPart, StoreObjectOid};
 
 impl super::Executor {
-    pub fn flusho(&self, item: StoreItem) -> Result<u32, ()> {
-        if let StoreItem(collection, Some(bucket), Some(object)) = item {
-            // Important: acquire database access read lock, and reference it in context. This \
-            //   prevents the database from being erased while using it in this block.
-            let _kv_read_guard = self.kv_pool.lock_read_access();
+    pub fn flusho(
+        &self,
+        collection: StoreItemPart,
+        bucket: StoreItemPart,
+        oid: StoreObjectOid,
+    ) -> Result<u32, ()> {
+        // Important: acquire database access read lock, and reference it in context. This \
+        //   prevents the database from being erased while using it in this block.
+        let _kv_read_guard = self.kv_pool.lock_read_access();
 
-            if let Ok(kv_store) =
-                self.kv_pool
-                    .acquire(StoreKVAcquireMode::OpenOnly, collection, None, |_| {})
-            {
-                let Some(kv_store) = kv_store else {
-                    tracing::debug!(
-                        "collection store does not exist, consider {bucket:?} from {collection:?} empty"
-                    );
-                    return Ok(0);
-                };
+        if let Ok(kv_store) = self.kv_pool.acquire(false, collection, None, |_| {}) {
+            let Some(kv_store) = kv_store else {
+                tracing::debug!(
+                    "collection store does not exist, consider {bucket:?} from {collection:?} empty"
+                );
+                return Ok(0);
+            };
 
-                // Important: acquire bucket store write lock
-                executor_kv_lock_write!(kv_store);
+            // Important: acquire bucket store write lock
+            executor_kv_lock_write!(kv_store);
 
-                let kv_action = StoreKVActionBuilder::access_read_write(bucket, kv_store);
+            let kv_action = kv_store.access_read_write(bucket);
 
-                // Try to resolve existing OID to IID (if it does not exist, there is nothing to \
-                //   be flushed)
-                let oid = object.as_str();
+            // Try to resolve existing OID to IID (if it does not exist, there is nothing to \
+            //   be flushed)
+            if let Ok(iid_value) = kv_action.get_oid_to_iid(oid) {
+                let mut count_flushed = 0;
 
-                if let Ok(iid_value) = kv_action.get_oid_to_iid(oid) {
-                    let mut count_flushed = 0;
-
-                    if let Some(iid) = iid_value {
-                        // Resolve terms associated to IID
-                        let iid_terms = {
-                            if let Ok(iid_terms_value) = kv_action.get_iid_to_terms(iid) {
-                                iid_terms_value.unwrap_or_default()
-                            } else {
-                                tracing::error!("failed getting flusho executor iid-to-terms");
-
-                                Vec::new()
-                            }
-                        };
-
-                        let mut batch = WriteBatch::default();
-
-                        // Flush bucket (batch operation, as it is shared w/ other executors)
-                        let batch_count =
-                            kv_action.batch_flush_bucket(&mut batch, iid, oid, &iid_terms);
-
-                        if kv_action.write(batch).is_ok() {
-                            count_flushed += batch_count;
+                if let Some(iid) = iid_value {
+                    // Resolve terms associated to IID
+                    let iid_terms = {
+                        if let Ok(iid_terms_value) = kv_action.get_iid_to_terms(iid) {
+                            iid_terms_value.unwrap_or_default()
                         } else {
-                            tracing::error!(
-                                "failed executing batch-flush-bucket in flusho executor"
-                            );
-                        }
-                    }
+                            tracing::error!("failed getting flusho executor iid-to-terms");
 
-                    return Ok(count_flushed);
-                } else {
-                    tracing::error!("failed getting flusho executor oid-to-iid");
+                            Vec::new()
+                        }
+                    };
+
+                    let mut batch = WriteBatch::default();
+
+                    // Flush bucket (batch operation, as it is shared w/ other executors)
+                    let batch_count =
+                        kv_action.batch_flush_bucket(&mut batch, iid, oid, &iid_terms);
+
+                    if kv_action.write(batch).is_ok() {
+                        count_flushed += batch_count;
+                    } else {
+                        tracing::error!("failed executing batch-flush-bucket in flusho executor");
+                    }
                 }
+
+                return Ok(count_flushed);
+            } else {
+                tracing::error!("failed getting flusho executor oid-to-iid");
             }
         }
 

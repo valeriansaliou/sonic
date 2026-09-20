@@ -344,24 +344,24 @@ pub mod preprocessor {
     use super::lang_detection::detect_lang;
     use super::lexing::{Lexer, TokenKind};
     use super::normalization::{Normalizer, Stemmer};
-    use crate::config::{ConfigNormalization, ConfigStopwords, ConfigTokenization};
+    use crate::config::{NormalizationConfig, StopwordsConfig, TokenizationConfig};
     use crate::lexer::stemming;
     use crate::lexer::stopwords::is_stopword;
-    use crate::store::identifiers::{StoreTermHash, StoreTermHashed};
+    use crate::store::StoreTermHash;
 
     pub struct Preprocessor {
-        pub tokenization_config: ConfigTokenization,
-        pub normalization_config: ConfigNormalization,
-        pub stopwords_config: ConfigStopwords,
+        pub tokenization_config: TokenizationConfig,
+        pub normalization_config: NormalizationConfig,
+        pub stopwords_config: StopwordsConfig,
         pub detect_stopwords: bool,
         pub filter_stopwords: bool,
     }
 
     impl Preprocessor {
         pub fn new(
-            tokenization_config: ConfigTokenization,
-            normalization_config: ConfigNormalization,
-            stopwords_config: ConfigStopwords,
+            tokenization_config: TokenizationConfig,
+            normalization_config: NormalizationConfig,
+            stopwords_config: StopwordsConfig,
             detect_stopwords: bool,
             filter_stopwords: bool,
         ) -> Self {
@@ -491,16 +491,16 @@ pub mod preprocessor {
     impl Default for Preprocessor {
         fn default() -> Self {
             Self {
-                tokenization_config: ConfigTokenization {
+                tokenization_config: TokenizationConfig {
                     detect_special_patterns: true,
                     compat_split_special_patterns: true,
                 },
-                normalization_config: ConfigNormalization {
+                normalization_config: NormalizationConfig {
                     unicode_normalization: None,
                     diacritic_folding_enabled: false,
                     stemming_enabled: false,
                 },
-                stopwords_config: ConfigStopwords::default(),
+                stopwords_config: StopwordsConfig::default(),
                 detect_stopwords: true,
                 filter_stopwords: true,
             }
@@ -542,7 +542,7 @@ pub mod preprocessor {
         pub end_normalized: usize,
         kind: TokenKind,
         index: usize,
-        hash: Rc<OnceCell<StoreTermHashed>>,
+        hash: Rc<OnceCell<StoreTermHash>>,
     }
 
     /// Iterator over [`Tokens`].
@@ -601,7 +601,7 @@ pub mod preprocessor {
         /// [`core::iter::Iterator::enumerate`].
         pub(super) index_in_tokenized_text: usize,
 
-        hash: Rc<OnceCell<StoreTermHashed>>,
+        hash: Rc<OnceCell<StoreTermHash>>,
     }
 
     impl<'s> Token<'s> {
@@ -649,12 +649,12 @@ pub mod preprocessor {
         }
 
         /// Hash of the **normalized** version of the token.
-        pub fn hash(&self) -> StoreTermHashed {
+        pub fn hash(&self) -> StoreTermHash {
             *(self.hash).get_or_init(|| StoreTermHash::from(self.normalized))
         }
 
         /// Hash of the **normalized** version of the token.
-        pub fn into_hash(self) -> StoreTermHashed {
+        pub fn into_hash(self) -> StoreTermHash {
             *(self.hash).get_or_init(|| StoreTermHash::from(self.normalized))
         }
     }
@@ -666,7 +666,7 @@ pub mod lexing {
     use regex::Regex;
     use whatlang::Lang;
 
-    use crate::config::ConfigTokenization;
+    use crate::config::TokenizationConfig;
 
     #[cfg(feature = "tokenizer-chinese")]
     static TOKENIZER_JIEBA: LazyLock<jieba_rs::Jieba> = LazyLock::new(jieba_rs::Jieba::new);
@@ -786,11 +786,11 @@ pub mod lexing {
     ///
     /// Uses [`Tokenizer`] internally.
     pub struct Lexer {
-        config: ConfigTokenization,
+        config: TokenizationConfig,
     }
 
     impl Lexer {
-        pub fn new(config: ConfigTokenization) -> Self {
+        pub fn new(config: TokenizationConfig) -> Self {
             Self { config }
         }
 
@@ -1026,20 +1026,20 @@ pub mod lexing {
 mod normalization {
     use super::lexing::{LexerToken, SpecialTokenKind, TokenKind};
     use super::preprocessor::TokenSpan;
-    use crate::config::{ConfigNormalization, UnicodeNormalization};
+    use crate::config::{NormalizationConfig, UnicodeNormalization};
 
-    pub struct Normalizer {
-        normalization_config: ConfigNormalization,
+    pub(super) struct Normalizer {
+        normalization_config: NormalizationConfig,
     }
 
     impl Normalizer {
-        pub fn new(normalization_config: ConfigNormalization) -> Self {
+        pub(super) fn new(normalization_config: NormalizationConfig) -> Self {
             Self {
                 normalization_config,
             }
         }
 
-        pub fn normalize(
+        pub(super) fn normalize(
             &self,
             token: &LexerToken,
             text_normalized: &mut String,
@@ -1121,16 +1121,16 @@ mod normalization {
         }
     }
 
-    pub struct Stemmer {
+    pub(super) struct Stemmer {
         algorithm: snowball::Algorithm,
     }
 
     impl Stemmer {
-        pub fn new(algorithm: snowball::Algorithm) -> Self {
+        pub(super) fn new(algorithm: snowball::Algorithm) -> Self {
             Self { algorithm }
         }
 
-        pub fn stem(&self, span: &mut TokenSpan, text_normalized: &mut String) {
+        pub(super) fn stem(&self, span: &mut TokenSpan, text_normalized: &mut String) {
             match (self.algorithm.stemmer())
                 .stem(&text_normalized[span.start_normalized..span.end_normalized])
             {
@@ -1223,7 +1223,7 @@ pub mod itertools {
 }
 
 pub mod to_rework {
-    use crate::query::QueryGenericLang;
+    use crate::executor::QueryGenericLang;
 
     #[derive(PartialEq)]
     pub enum TokenLexerMode {
@@ -1272,7 +1272,7 @@ mod lang_detection {
     const TEXT_LANG_DETECT_PROCEED_OVER_CHARS: usize = 20;
     const TEXT_LANG_DETECT_NGRAM_UNDER_CHARS: usize = 60;
 
-    pub fn detect_lang(text: &str) -> Option<Lang> {
+    pub(super) fn detect_lang(text: &str) -> Option<Lang> {
         tracing::debug!("detecting locale from lexer text: {}", text);
 
         // Detect only if text is long-enough to allow the text locale detection system to \

@@ -71,21 +71,21 @@ pub struct ParallelBenchmarkConfig {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ConfigNormalization {
+pub struct NormalizationConfig {
     pub diacritic_folding_enabled: Option<bool>,
 }
 
 pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
     multiplexer: &SonicMultiplexer,
-    normalization_config: ConfigNormalization,
+    normalization_config: NormalizationConfig,
     update_command: impl for<'a> FnOnce(&'a mut Command) -> &'a mut Command,
     articles: fn() -> Articles,
 ) -> SpawnGuard {
     fn apply_normalization(
-        normalization_config: ConfigNormalization,
+        normalization_config: NormalizationConfig,
         command: &mut Command,
     ) -> &mut Command {
-        let ConfigNormalization {
+        let NormalizationConfig {
             diacritic_folding_enabled,
         } = normalization_config;
 
@@ -99,7 +99,7 @@ pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
         command
     }
 
-    static PATHS: LazyLock<RwLock<HashMap<ConfigNormalization, PathBuf>>> =
+    static PATHS: LazyLock<RwLock<HashMap<NormalizationConfig, PathBuf>>> =
         LazyLock::new(|| RwLock::new(HashMap::with_capacity(1)));
     let show_progress = *SHOW_PROGRESS;
 

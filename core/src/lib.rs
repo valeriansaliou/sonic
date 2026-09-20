@@ -8,6 +8,8 @@
 #![deny(
     clippy::all,
     dead_code,
+    unnameable_types,
+    unreachable_pub,
     unstable_features,
     unused_imports,
     unused_qualifications
@@ -27,7 +29,6 @@
 pub mod config;
 pub mod executor;
 pub mod lexer;
-pub mod query;
 mod stopwords;
 pub mod store;
 pub mod util;
@@ -38,4 +39,3 @@ pub use rocksdb;
 pub use self::config::Config;
 pub use self::executor::DynamicConfig;
 pub use self::executor::Executor;
-pub use self::query::Query;

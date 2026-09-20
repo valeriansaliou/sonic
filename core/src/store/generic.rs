@@ -12,107 +12,111 @@ use std::fmt::Display;
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
 use std::time::{Duration, SystemTime};
 
-pub trait StoreGeneric {
+use crate::store::StoreItemPart;
+
+pub(super) trait StoreGeneric {
     fn ref_last_used(&self) -> &RwLock<SystemTime>;
 }
 
-pub trait StoreGenericPool<
-    K: Hash + Eq + Copy + Display,
-    S: StoreGeneric,
-    B: StoreGenericBuilder<K, S>,
->
+pub(super) trait StoreGenericPool:
+    std::ops::Deref<Target = RwLock<HashMap<Self::StoreId, Arc<Self::Store>, Self::HashBuilder>>>
 {
+    type StoreId: Hash + Eq;
+    type Store: StoreGeneric;
+    type HashBuilder: std::hash::BuildHasher;
+
+    fn kind() -> &'static str;
+
+    fn consider_inactive_after_secs(&self) -> u64;
+
+    fn access_lock(&self) -> &RwLock<()>;
+
+    fn proceed_erase_collection(&self, collection: StoreItemPart) -> Result<u32, ()>;
+
+    fn proceed_erase_bucket(
+        &self,
+        collection: StoreItemPart,
+        bucket: StoreItemPart,
+    ) -> Result<u32, ()>;
+}
+
+pub(super) trait StoreGenericPoolExt: StoreGenericPool {
     fn proceed_acquire_cache(
-        kind: &str,
-        collection_str: &str,
-        pool_key: K,
-        store: &Arc<S>,
-    ) -> Result<Arc<S>, ()> {
-        tracing::debug!(
-            "{} store acquired from pool for collection: {} (pool key: {})",
-            kind,
-            collection_str,
-            pool_key
-        );
+        store_id: Self::StoreId,
+        store: &Arc<Self::Store>,
+    ) -> Result<Arc<Self::Store>, ()>
+    where
+        Self::StoreId: Display,
+    {
+        let kind = Self::kind();
+
+        tracing::debug!("{kind} store {store_id} acquired from pool");
 
         // Bump store last used date (avoids early janitor eviction)
-        let mut last_used_value = store.ref_last_used().write().unwrap();
+        *store.ref_last_used().write().unwrap() = SystemTime::now();
 
-        *last_used_value = SystemTime::now();
-
-        // Perform an early drop of the lock (frees up write lock early)
-        drop(last_used_value);
-
-        Ok(store.clone())
+        Ok(Arc::clone(store))
     }
 
+    #[allow(clippy::type_complexity, reason = "We can’t avoid it")]
     fn proceed_acquire_open<'a>(
-        kind: &str,
-        collection_str: &str,
-        pool_key: K,
-        pool: &'a Arc<RwLock<HashMap<K, Arc<S>>>>,
-        builder: &B,
-        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<K, Arc<S>>>>,
-        override_options: impl FnOnce(&mut B::Options),
-    ) -> Result<Arc<S>, ()> {
-        match builder.build(pool_key, override_options) {
+        &'a self,
+        store_id: Self::StoreId,
+        build: impl FnOnce(&'a Self, Self::StoreId) -> Result<Self::Store, ()>,
+        write_guard: Option<
+            &mut RwLockWriteGuard<'a, HashMap<Self::StoreId, Arc<Self::Store>, Self::HashBuilder>>,
+        >,
+    ) -> Result<Arc<Self::Store>, ()>
+    where
+        Self::StoreId: Display + Copy,
+    {
+        let kind = Self::kind();
+
+        match build(self, store_id) {
             Ok(store) => {
                 // Acquire a thread-safe store pool reference in write mode
                 let store_pool_write = match write_guard {
                     Some(x) => x,
-                    None => &mut pool.write().unwrap(),
+                    None => &mut self.write().unwrap(),
                 };
                 let store_box = Arc::new(store);
 
-                store_pool_write.insert(pool_key, store_box.clone());
+                store_pool_write.insert(store_id, Arc::clone(&store_box));
 
-                tracing::debug!(
-                    "opened and cached {} store in pool for collection: {} (pool key: {})",
-                    kind,
-                    collection_str,
-                    pool_key
-                );
+                tracing::debug!("opened and cached {kind} store {store_id}");
 
                 Ok(store_box)
             }
-            Err(_) => {
-                tracing::error!(
-                    "failed opening {} store for collection: {} (pool key: {})",
-                    kind,
-                    collection_str,
-                    pool_key
-                );
+            Err(error) => {
+                tracing::error!("failed opening {kind} store {store_id}: {error:?}");
 
                 Err(())
             }
         }
     }
 
-    fn proceed_janitor(
-        kind: &str,
-        pool: &Arc<RwLock<HashMap<K, Arc<S>>>>,
-        inactive_after: u64,
-        access_lock: &Arc<RwLock<()>>,
-        filter: impl Fn(&K) -> bool,
-    ) {
-        tracing::debug!("scanning for {} store pool items to janitor", kind);
+    fn proceed_janitor(&self, filter: impl Fn(&Self::StoreId) -> bool)
+    where
+        Self::StoreId: Display + Copy,
+    {
+        let kind = Self::kind();
+
+        tracing::debug!("scanning for {kind} store pool items to janitor");
 
         // Acquire access lock (in blocking write mode), and reference it in context
         // Notice: this prevents store to be acquired from any context
-        let _access = access_lock.write().unwrap();
+        let _access = self.access_lock().write().unwrap();
 
-        let mut removal_register: Vec<K> = Vec::new();
+        let mut removal_register: Vec<Self::StoreId> = Vec::new();
 
-        for (collection_bucket, store) in pool.read().unwrap().iter().filter(|(key, _)| filter(key))
-        {
+        let store_pool_read = self.read().unwrap();
+
+        for (collection_bucket, store) in store_pool_read.iter().filter(|(key, _)| filter(key)) {
             // Important: be lenient with system clock going back to a past duration, since \
             //   we may be running in a virtualized environment where clock is not guaranteed \
             //   to be monotonic. This is done to avoid poisoning associated mutexes by \
             //   crashing on unwrap().
-            let last_used_elapsed = store
-                .ref_last_used()
-                .read()
-                .unwrap()
+            let last_used_elapsed = (store.ref_last_used().read().unwrap())
                 .elapsed()
                 .unwrap_or_else(|err| {
                     tracing::error!(
@@ -122,16 +126,13 @@ pub trait StoreGenericPool<
                     );
 
                     // Assuming a zero seconds fallback duration
-                    Duration::from_secs(0)
-                })
-                .as_secs();
+                    Duration::ZERO
+                });
 
-            if last_used_elapsed >= inactive_after {
+            if last_used_elapsed.as_secs() >= self.consider_inactive_after_secs() {
                 tracing::debug!(
-                    "found expired {} store pool item: {}; elapsed time: {}s",
-                    kind,
-                    collection_bucket,
-                    last_used_elapsed
+                    "found expired {kind} store pool item: {}; elapsed time: {last_used_elapsed:.1?}",
+                    collection_bucket
                 );
 
                 // Notice: the bucket value needs to be cloned, as we cannot reference as value \
@@ -139,60 +140,53 @@ pub trait StoreGenericPool<
                 removal_register.push(*collection_bucket);
             } else {
                 tracing::debug!(
-                    "found non-expired {} store pool item: {}; elapsed time: {}s",
-                    kind,
-                    collection_bucket,
-                    last_used_elapsed
+                    "found non-expired {kind} store pool item: {}; elapsed time: {last_used_elapsed:.1?}",
+                    collection_bucket
                 );
             }
         }
 
-        if !removal_register.is_empty() {
-            let mut store_pool_write = pool.write().unwrap();
+        let store_pool_read = if removal_register.is_empty() {
+            store_pool_read
+        } else {
+            drop(store_pool_read);
 
-            for collection_bucket in &removal_register {
+            let mut store_pool_write = self.write().unwrap();
+
+            for collection_bucket in removal_register.iter() {
                 store_pool_write.remove(collection_bucket);
             }
-        }
+
+            RwLockWriteGuard::downgrade(store_pool_write)
+        };
 
         tracing::info!(
-            "done scanning for {} store pool items to janitor, expired {} items, now has {} items",
-            kind,
+            "done scanning for {kind} store pool items to janitor, expired {} items, now has {} items",
             removal_register.len(),
-            pool.read().unwrap().len()
+            store_pool_read.len(),
         );
     }
-}
 
-pub trait StoreGenericBuilder<K, S> {
-    type Options;
-
-    fn build(
+    fn dispatch_erase(
         &self,
-        pool_key: K,
-        override_options: impl FnOnce(&mut Self::Options),
-    ) -> Result<S, ()>;
-}
-
-pub trait StoreGenericActionBuilder {
-    fn proceed_erase_collection(&self, collection_str: &str) -> Result<u32, ()>;
-
-    fn proceed_erase_bucket(&self, collection_str: &str, bucket_str: &str) -> Result<u32, ()>;
-
-    fn dispatch_erase<T: AsRef<str>>(
-        &self,
-        kind: &str,
-        collection: T,
-        bucket: Option<T>,
+        collection: StoreItemPart,
+        bucket: Option<StoreItemPart>,
     ) -> Result<u32, ()> {
-        let collection = collection.as_ref();
+        let kind = Self::kind();
 
-        tracing::info!("{} erase requested on collection: {}", kind, collection);
+        tracing::info!("{kind} erase requested on collection: {collection}");
 
         if let Some(bucket) = bucket {
-            self.proceed_erase_bucket(collection, bucket.as_ref())
+            self.proceed_erase_bucket(collection, bucket)
         } else {
             self.proceed_erase_collection(collection)
         }
     }
+}
+
+impl<Pool: StoreGenericPool> StoreGenericPoolExt for Pool {}
+
+#[inline]
+pub(super) fn u32_from_hex(hex: &str) -> Result<u32, std::io::Error> {
+    u32::from_str_radix(hex, 16).map_err(std::io::Error::other)
 }

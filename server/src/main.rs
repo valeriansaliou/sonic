@@ -27,6 +27,7 @@ mod channel;
 mod config;
 mod logger;
 mod tasker;
+mod util;
 
 use std::str::FromStr;
 use std::sync::Arc;
@@ -38,14 +39,14 @@ use clap::{Arg, Command};
 use channel::listen::{ChannelListen, ChannelListenBuilder};
 use channel::statistics::ensure_states as ensure_states_channel_statistics;
 use sonic::executor::DynamicConfigStore;
-use sonic::store::fst::StoreFSTPool;
-use sonic::store::kv::StoreKVPool;
+use sonic::store::fst::FstStorePool;
+use sonic::store::kv::KvStorePool;
 use tasker::runtime::TaskerBuilder;
 use tasker::shutdown::ShutdownSignal;
 use tracing::level_filters::LevelFilter;
 
 use crate::config::{Config, read_config};
-use crate::logger::ConfigLogger;
+use crate::logger::LoggerConfig;
 
 struct AppArgs {
     config: Option<String>,
@@ -94,7 +95,7 @@ fn make_app_args() -> AppArgs {
 }
 
 fn main() {
-    ConfigLogger::init(
+    LoggerConfig::init(
         std::env::var("SONIC_SERVER__LOG_LEVEL")
             .map(|level| LevelFilter::from_str(&level).expect("invalid log level"))
             .unwrap_or(LevelFilter::DEBUG),
@@ -104,7 +105,7 @@ fn main() {
 
     let app_conf = read_config(app_args.config.as_deref());
 
-    ConfigLogger::update(
+    LoggerConfig::update(
         LevelFilter::from_str(&app_conf.server.log_level).expect("invalid log level"),
     );
 
@@ -127,8 +128,8 @@ fn main() {
     ensure_states();
 
     // Create connection pools (does not open any connection yet)
-    let kv_pool = StoreKVPool::new(Arc::clone(&app_conf.sonic.store.kv));
-    let fst_pool = StoreFSTPool::new(Arc::clone(&app_conf.sonic.store.fst), Default::default());
+    let kv_pool = KvStorePool::new(Arc::clone(&app_conf.sonic.store.kv));
+    let fst_pool = FstStorePool::new(Arc::clone(&app_conf.sonic.store.fst), Default::default());
 
     let dynamic_config = Arc::default();
 
@@ -201,8 +202,8 @@ where
 }
 
 fn spawn_channel(
-    kv_pool: StoreKVPool,
-    fst_pool: StoreFSTPool,
+    kv_pool: KvStorePool,
+    fst_pool: FstStorePool,
     app_conf: Arc<Config>,
     dynamic_conf_store: Arc<DynamicConfigStore>,
 ) -> impl FnOnce() {
@@ -221,8 +222,8 @@ fn spawn_channel(
 }
 
 fn spawn_tasker(
-    kv_pool: StoreKVPool,
-    fst_pool: StoreFSTPool,
+    kv_pool: KvStorePool,
+    fst_pool: FstStorePool,
     dynamic_conf_store: Arc<DynamicConfigStore>,
 ) -> impl FnOnce() {
     let builder = TaskerBuilder {

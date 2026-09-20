@@ -8,23 +8,26 @@
 use hashbrown::HashMap;
 use rand::RngExt;
 use rand::distr::Alphanumeric;
+use sonic::lexer::preprocessor::Preprocessor;
+use sonic::lexer::to_rework::TokenLexerMode;
+use sonic::store::StoreItemBuilder;
 use std::fmt;
 use std::path::Path;
 use std::str::{self, SplitWhitespace};
 use std::sync::LazyLock;
 use std::vec::Vec;
 
-use sonic::query::{
+use sonic::Executor;
+use sonic::executor::{
     ListMetaData, QueryGenericLang, QueryMetaData, QuerySearchLimit, QuerySearchOffset,
 };
-use sonic::store::operation::StoreOperationDispatch;
-use sonic::{Executor, Query};
 
 use super::format::unescape;
 use super::message::{
     ChannelMessageModeControl, ChannelMessageModeIngest, ChannelMessageModeSearch,
 };
 use super::statistics::ChannelStatistics;
+use crate::util::itertools::Itertools as _;
 
 #[derive(PartialEq)]
 pub enum ChannelCommandError {
@@ -35,6 +38,7 @@ pub enum ChannelCommandError {
     ShuttingDown,
     PolicyReject(&'static str),
     InvalidFormat(&'static str),
+    InvalidArgument(String),
     InvalidMetaKey((String, String)),
     InvalidMetaValue((String, String)),
 }
@@ -304,15 +308,17 @@ impl ChannelCommandBase {
         ChannelCommandError::InvalidMetaValue((meta_key.to_owned(), meta_value.to_owned()))
     }
 
-    pub fn commit_ok_operation(query: Query, executor: &Executor) -> ChannelResult {
-        match StoreOperationDispatch::dispatch(query, executor) {
-            Ok(_) => Ok(vec![ChannelCommandResponse::Ok]),
+    pub fn commit_ok_operation(operation: impl FnOnce() -> Result<(), ()>) -> ChannelResult {
+        match operation() {
+            Ok(()) => Ok(vec![ChannelCommandResponse::Ok]),
             Err(()) => Err(ChannelCommandError::QueryError),
         }
     }
 
-    pub fn commit_result_operation(query: Query, executor: &Executor) -> ChannelResult {
-        match StoreOperationDispatch::dispatch(query, executor) {
+    pub fn commit_result_operation(
+        operation: impl FnOnce() -> Result<Option<String>, ()>,
+    ) -> ChannelResult {
+        match operation() {
             Ok(Some(result_inner)) => Ok(vec![ChannelCommandResponse::Result(result_inner)]),
             Ok(None) => Err(ChannelCommandError::InternalError),
             Err(()) => Err(ChannelCommandError::QueryError),
@@ -322,8 +328,7 @@ impl ChannelCommandBase {
     pub fn commit_pending_operation(
         query_type: &'static str,
         query_id: &str,
-        query: Query,
-        executor: &Executor,
+        operation: impl FnOnce() -> Result<Option<String>, ()>,
     ) -> ChannelResult {
         // Idea: this could be made asynchronous in the future, if there are some latency issues \
         //   on large Sonic deployments. The idea would be to have a number of worker threads for \
@@ -334,7 +339,7 @@ impl ChannelCommandBase {
         //   prevent scaling Sonic vertically, but could be made simpler for the Sonic Channel \
         //   consumer via a worker thread pool.
 
-        match StoreOperationDispatch::dispatch(query, executor) {
+        match operation() {
             Ok(results) => Ok(vec![
                 ChannelCommandResponse::Pending(query_id.to_string()),
                 ChannelCommandResponse::Event(
@@ -417,27 +422,37 @@ impl ChannelCommandSearch {
                         query_lang
                     );
 
-                    let query = Query::search(
-                        &event_id,
-                        collection,
-                        bucket,
-                        &text,
-                        query_limit,
-                        query_offset,
-                        query_lang,
-                        *ctx.normalization_config,
-                        *ctx.tokenization_config,
-                        ctx.stopwords_config,
-                    )
-                    .map_err(|()| ChannelCommandError::QueryError)?;
+                    let (collection, bucket) = StoreItemBuilder::from_depth_2(collection, bucket)
+                        .map_err(|error| {
+                        ChannelCommandError::InvalidArgument(format!("{error:?}"))
+                    })?;
 
                     // Commit 'search' query
-                    ChannelCommandBase::commit_pending_operation(
-                        "QUERY",
-                        &event_id,
-                        query,
-                        ctx.executor,
-                    )
+                    ChannelCommandBase::commit_pending_operation("QUERY", &event_id, move || {
+                        let should_cleanup =
+                            TokenLexerMode::from_query_lang(&query_lang).should_cleanup();
+                        let preprocessor = Preprocessor::new(
+                            *ctx.tokenization_config,
+                            *ctx.normalization_config,
+                            ctx.stopwords_config.clone(),
+                            should_cleanup,
+                            should_cleanup,
+                        );
+                        let text_lexed = preprocessor.preprocess(
+                            &text,
+                            query_lang.and_then(QueryGenericLang::into_lang_opt),
+                        );
+
+                        ctx.executor
+                            .search(collection, bucket, text_lexed, query_limit, query_offset)
+                            .map(|results| {
+                                if results.is_empty() {
+                                    None
+                                } else {
+                                    Some(results.join(" "))
+                                }
+                            })
+                    })
                 }
             }
             _ => Err(ChannelCommandError::InvalidFormat(
@@ -498,22 +513,26 @@ impl ChannelCommandSearch {
                         suggest_limit
                     );
 
-                    #[rustfmt::skip]
-                    let query = Query::suggest(
-                        &event_id, collection, bucket, &text, suggest_limit,
-                        *ctx.normalization_config,
-                        *ctx.tokenization_config,
-                        ctx.stopwords_config,
-                    )
-                    .map_err(|()| ChannelCommandError::QueryError)?;
+                    let (collection, bucket) = StoreItemBuilder::from_depth_2(collection, bucket)
+                        .map_err(|error| {
+                        ChannelCommandError::InvalidArgument(format!("{error:?}"))
+                    })?;
 
                     // Commit 'suggest' query
-                    ChannelCommandBase::commit_pending_operation(
-                        "SUGGEST",
-                        &event_id,
-                        query,
-                        ctx.executor,
-                    )
+                    ChannelCommandBase::commit_pending_operation("SUGGEST", &event_id, move || {
+                        let preprocessor = Preprocessor::new(
+                            *ctx.tokenization_config,
+                            *ctx.normalization_config,
+                            ctx.stopwords_config.clone(),
+                            false,
+                            false,
+                        );
+                        let text_lexed = preprocessor.preprocess(&text, None);
+
+                        ctx.executor
+                            .suggest(collection, bucket, text_lexed, suggest_limit)
+                            .map(|results| results.map(|mut results| results.join(" ")))
+                    })
                 }
             }
             _ => Err(ChannelCommandError::InvalidFormat(
@@ -563,16 +582,18 @@ impl ChannelCommandSearch {
                         "LIMIT out of minimum/maximum bounds",
                     ))
                 } else {
-                    let query = Query::list(&event_id, collection, bucket, list_limit, list_offset)
-                        .map_err(|()| ChannelCommandError::QueryError)?;
+                    let (collection, bucket) = StoreItemBuilder::from_depth_2(collection, bucket)
+                        .map_err(|error| {
+                        ChannelCommandError::InvalidArgument(format!("{error:?}"))
+                    })?;
 
                     // Commit 'list' query
-                    ChannelCommandBase::commit_pending_operation(
-                        "LIST",
-                        &event_id,
-                        query,
-                        ctx.executor,
-                    )
+                    ChannelCommandBase::commit_pending_operation("LIST", &event_id, move || {
+                        ctx.executor
+                            .list(collection, bucket, list_limit, list_offset)
+                            .map(|results| results.join(" "))
+                            .map(Some)
+                    })
                 }
             }
             _ => Err(ChannelCommandError::InvalidFormat(
@@ -747,17 +768,28 @@ impl ChannelCommandIngest {
                         push_lang
                     );
 
-                    #[rustfmt::skip]
-                    let query = Query::push(
-                        collection, bucket, object, &text, push_lang, push_assume_new,
-                        *ctx.normalization_config,
-                        *ctx.tokenization_config,
-                        ctx.stopwords_config,
+                    let (collection, bucket, oid) = StoreItemBuilder::from_depth_3(
+                        collection, bucket, object,
                     )
-                    .map_err(|()| ChannelCommandError::QueryError)?;
+                    .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
 
                     // Commit 'push' query
-                    ChannelCommandBase::commit_ok_operation(query, ctx.executor)
+                    ChannelCommandBase::commit_ok_operation(move || {
+                        let should_cleanup =
+                            TokenLexerMode::from_query_lang(&push_lang).should_cleanup();
+                        let preprocessor = Preprocessor::new(
+                            *ctx.tokenization_config,
+                            *ctx.normalization_config,
+                            ctx.stopwords_config.clone(),
+                            should_cleanup,
+                            should_cleanup,
+                        );
+                        let text_lexed = preprocessor
+                            .preprocess(&text, push_lang.and_then(QueryGenericLang::into_lang_opt));
+
+                        ctx.executor
+                            .push(collection, bucket, oid, text_lexed, push_assume_new)
+                    })
                 }
             }
             #[cfg(feature = "experimental-api")]
@@ -791,19 +823,26 @@ impl ChannelCommandIngest {
                 );
                 tracing::debug!("ingest pop has text: {}", text);
 
-                let query = Query::pop(
-                    collection,
-                    bucket,
-                    object,
-                    &text,
-                    *ctx.normalization_config,
-                    *ctx.tokenization_config,
-                    ctx.stopwords_config,
+                let (collection, bucket, oid) = StoreItemBuilder::from_depth_3(
+                    collection, bucket, object,
                 )
-                .map_err(|()| ChannelCommandError::QueryError)?;
+                .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
 
                 // Make 'pop' query
-                ChannelCommandBase::commit_result_operation(query, ctx.executor)
+                ChannelCommandBase::commit_result_operation(move || {
+                    let preprocessor = Preprocessor::new(
+                        *ctx.tokenization_config,
+                        *ctx.normalization_config,
+                        ctx.stopwords_config.clone(),
+                        false,
+                        false,
+                    );
+                    let text_lexed = preprocessor.preprocess(&text, None);
+
+                    ctx.executor
+                        .pop(collection, bucket, oid, text_lexed)
+                        .map(|count| Some(count.to_string()))
+                })
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "POP <collection> <bucket> <object> \"<text>\"",
@@ -816,14 +855,51 @@ impl ChannelCommandIngest {
         ctx: &ChannelMessageModeIngest,
     ) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next(), parts.next()) {
-            (Some(collection), bucket_part, object_part, None) => {
-                tracing::debug!("dispatching ingest count in collection: {}", collection);
+            (Some(collection), Some(bucket), Some(object), None) => {
+                tracing::debug!(
+                    collection,
+                    bucket,
+                    object,
+                    "dispatching ingest count in object"
+                );
 
-                let query = Query::count(collection, bucket_part, object_part)
-                    .map_err(|()| ChannelCommandError::QueryError)?;
+                let (collection, bucket, oid) = StoreItemBuilder::from_depth_3(
+                    collection, bucket, object,
+                )
+                .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
 
                 // Make 'count' query
-                ChannelCommandBase::commit_result_operation(query, ctx.executor)
+                ChannelCommandBase::commit_result_operation(move || {
+                    ctx.executor
+                        .counto(collection, bucket, oid)
+                        .map(|count| Some(count.to_string()))
+                })
+            }
+            (Some(collection), Some(bucket), None, None) => {
+                tracing::debug!(collection, bucket, "dispatching ingest count in bucket");
+
+                let (collection, bucket) = StoreItemBuilder::from_depth_2(collection, bucket)
+                    .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
+
+                // Make 'count' query
+                ChannelCommandBase::commit_result_operation(move || {
+                    ctx.executor
+                        .countb(collection, bucket)
+                        .map(|count| Some(count.to_string()))
+                })
+            }
+            (Some(collection), None, None, None) => {
+                tracing::debug!(collection, "dispatching ingest count in collection");
+
+                let collection = StoreItemBuilder::from_depth_1(collection)
+                    .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
+
+                // Make 'count' query
+                ChannelCommandBase::commit_result_operation(move || {
+                    ctx.executor
+                        .countc(collection)
+                        .map(|count| Some(count.to_string()))
+                })
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "COUNT <collection> [<bucket> [<object>]?]?",
@@ -837,16 +913,17 @@ impl ChannelCommandIngest {
     ) -> ChannelResult {
         match (parts.next(), parts.next()) {
             (Some(collection), None) => {
-                tracing::debug!(
-                    "dispatching ingest flush collection in collection: {}",
-                    collection
-                );
+                tracing::debug!(collection, "dispatching ingest flush collection");
 
-                let query =
-                    Query::flushc(collection).map_err(|()| ChannelCommandError::QueryError)?;
+                let collection = StoreItemBuilder::from_depth_1(collection)
+                    .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
 
                 // Make 'flushc' query
-                ChannelCommandBase::commit_result_operation(query, ctx.executor)
+                ChannelCommandBase::commit_result_operation(move || {
+                    ctx.executor
+                        .flushc(collection)
+                        .map(|count| Some(count.to_string()))
+                })
             }
             _ => Err(ChannelCommandError::InvalidFormat("FLUSHC <collection>")),
         }
@@ -858,17 +935,17 @@ impl ChannelCommandIngest {
     ) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next()) {
             (Some(collection), Some(bucket), None) => {
-                tracing::debug!(
-                    "dispatching ingest flush bucket in collection: {}, bucket: {}",
-                    collection,
-                    bucket
-                );
+                tracing::debug!(collection, bucket, "dispatching ingest flush bucket");
 
-                let query = Query::flushb(collection, bucket)
-                    .map_err(|()| ChannelCommandError::QueryError)?;
+                let (collection, bucket) = StoreItemBuilder::from_depth_2(collection, bucket)
+                    .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
 
                 // Make 'flushb' query
-                ChannelCommandBase::commit_result_operation(query, ctx.executor)
+                ChannelCommandBase::commit_result_operation(move || {
+                    ctx.executor
+                        .flushb(collection, bucket)
+                        .map(|count| Some(count.to_string()))
+                })
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "FLUSHB <collection> <bucket>",
@@ -883,17 +960,23 @@ impl ChannelCommandIngest {
         match (parts.next(), parts.next(), parts.next(), parts.next()) {
             (Some(collection), Some(bucket), Some(object), None) => {
                 tracing::debug!(
-                    "dispatching ingest flush object in collection: {}, bucket: {}, object: {}",
                     collection,
                     bucket,
-                    object
+                    object,
+                    "dispatching ingest flush object"
                 );
 
-                let query = Query::flusho(collection, bucket, object)
-                    .map_err(|()| ChannelCommandError::QueryError)?;
+                let (collection, bucket, oid) = StoreItemBuilder::from_depth_3(
+                    collection, bucket, object,
+                )
+                .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
 
                 // Make 'flusho' query
-                ChannelCommandBase::commit_result_operation(query, ctx.executor)
+                ChannelCommandBase::commit_result_operation(move || {
+                    ctx.executor
+                        .flusho(collection, bucket, oid)
+                        .map(|count| Some(count.to_string()))
+                })
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "FLUSHO <collection> <bucket> <object>",
@@ -990,8 +1073,21 @@ impl ChannelCommandControl {
                     }
                     #[cfg(feature = "experimental-api")]
                     "compact" => {
-                        let collections =
-                            data_part.map(|s| s.split_ascii_whitespace().collect::<Vec<_>>());
+                        let collections = if let Some(data_part) = data_part {
+                            let mut collections = Vec::new();
+
+                            for collection_name in data_part.split_ascii_whitespace() {
+                                let part = StoreItemBuilder::from_depth_1(collection_name)
+                                    .map_err(|error| {
+                                        ChannelCommandError::InvalidArgument(format!("{error:?}"))
+                                    })?;
+                                collections.push(part);
+                            }
+
+                            Some(collections)
+                        } else {
+                            None
+                        };
 
                         // Force a KV compaction
                         kv_pool.compact(collections.as_deref());
@@ -1075,8 +1171,10 @@ impl ChannelCommandControl {
         let Some(collection) = parts.next() else {
             return Err(ChannelCommandError::InvalidFormat(FORMAT));
         };
+        let collection = StoreItemBuilder::from_depth_1(collection)
+            .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
 
-        tracing::debug!(collection, "dispatching config command");
+        tracing::debug!(?collection, "dispatching config command");
 
         match parts.next() {
             Some("SET") => config_set(parts, ctx, collection),
@@ -1102,7 +1200,7 @@ impl ChannelCommandControl {
 fn config_set(
     parts: SplitWhitespace,
     ctx: &ChannelMessageModeControl,
-    collection: &str,
+    collection: sonic::store::StoreItemPart,
 ) -> ChannelResult {
     use sonic::executor::{DynamicConfig, RocksDbMemtable};
 
@@ -1186,7 +1284,7 @@ fn config_set(
 fn config_reset(
     parts: SplitWhitespace,
     ctx: &ChannelMessageModeControl,
-    collection: &str,
+    collection: sonic::store::StoreItemPart,
 ) -> ChannelResult {
     let mut parts = parts.peekable();
     let new_conf = if parts.peek().is_some() {
@@ -1242,6 +1340,9 @@ impl fmt::Display for ChannelCommandError {
             ChannelCommandError::ShuttingDown => write!(f, "shutting_down"),
             ChannelCommandError::PolicyReject(reason) => write!(f, "policy_reject({})", reason),
             ChannelCommandError::InvalidFormat(format) => write!(f, "invalid_format({})", format),
+            ChannelCommandError::InvalidArgument(reason) => {
+                write!(f, "invalid_argument({})", reason)
+            }
             ChannelCommandError::InvalidMetaKey(data) => {
                 write!(f, "invalid_meta_key({}[{}])", data.0, data.1)
             }
