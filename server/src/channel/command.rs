@@ -77,7 +77,8 @@ static BACKUP_FST_PATH: &str = "fst";
 
 pub static COMMANDS_MODE_SEARCH: &[&str] = &["QUERY", "SUGGEST", "LIST", "PING", "HELP", "QUIT"];
 pub static COMMANDS_MODE_INGEST: &[&str] = &[
-    "PUSH", "POP", "COUNT", "FLUSHC", "FLUSHB", "FLUSHO", "PING", "HELP", "QUIT",
+    "PUSH", "POP", "COUNT", "COUNTC", "COUNTB", "COUNTO", "FLUSHC", "FLUSHB", "FLUSHO", "PING",
+    "HELP", "QUIT",
 ];
 #[rustfmt::skip]
 pub static COMMANDS_MODE_CONTROL: &[&str] = &[
@@ -884,7 +885,7 @@ impl ChannelCommandIngest {
                 // Make 'count' query
                 ChannelCommandBase::commit_result_operation(move || {
                     ctx.executor
-                        .countb(collection, bucket)
+                        .legacy_countb(collection, bucket)
                         .map(|count| Some(count.to_string()))
                 })
             }
@@ -903,6 +904,83 @@ impl ChannelCommandIngest {
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "COUNT <collection> [<bucket> [<object>]?]?",
+            )),
+        }
+    }
+
+    pub fn dispatch_countc(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeIngest,
+    ) -> ChannelResult {
+        match (parts.next(), parts.next()) {
+            (Some(collection), None) => {
+                tracing::debug!(collection, "dispatching ingest count in collection");
+
+                let collection = StoreItemBuilder::from_depth_1(collection)
+                    .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
+
+                // Make 'count' query
+                ChannelCommandBase::commit_result_operation(move || {
+                    ctx.executor
+                        .countc(collection)
+                        .map(|count| Some(count.to_string()))
+                })
+            }
+            _ => Err(ChannelCommandError::InvalidFormat("COUNTC <collection>")),
+        }
+    }
+
+    pub fn dispatch_countb(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeIngest,
+    ) -> ChannelResult {
+        match (parts.next(), parts.next(), parts.next()) {
+            (Some(collection), Some(bucket), None) => {
+                tracing::debug!(collection, bucket, "dispatching ingest count in bucket");
+
+                let (collection, bucket) = StoreItemBuilder::from_depth_2(collection, bucket)
+                    .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
+
+                // Make 'count' query
+                ChannelCommandBase::commit_result_operation(move || {
+                    ctx.executor
+                        .countb(collection, bucket)
+                        .map(|count| Some(count.to_string()))
+                })
+            }
+            _ => Err(ChannelCommandError::InvalidFormat(
+                "COUNTB <collection> <bucket>",
+            )),
+        }
+    }
+
+    pub fn dispatch_counto(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeIngest,
+    ) -> ChannelResult {
+        match (parts.next(), parts.next(), parts.next(), parts.next()) {
+            (Some(collection), Some(bucket), Some(object), None) => {
+                tracing::debug!(
+                    collection,
+                    bucket,
+                    object,
+                    "dispatching ingest count in object"
+                );
+
+                let (collection, bucket, oid) = StoreItemBuilder::from_depth_3(
+                    collection, bucket, object,
+                )
+                .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
+
+                // Make 'count' query
+                ChannelCommandBase::commit_result_operation(move || {
+                    ctx.executor
+                        .counto(collection, bucket, oid)
+                        .map(|count| Some(count.to_string()))
+                })
+            }
+            _ => Err(ChannelCommandError::InvalidFormat(
+                "COUNTO <collection> <bucket> <object>",
             )),
         }
     }

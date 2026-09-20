@@ -25,12 +25,12 @@ fn flushb() {
 
     control.trigger_consolidate().unwrap();
 
-    let res = ingest.countb("collection", "bucket").unwrap();
+    let res = ingest.legacy_countb("collection", "bucket").unwrap();
     assert_eq!(res, 3);
 
     let res = ingest.flushb("collection", "bucket").unwrap();
     assert_eq!(res, 1);
 
-    let res = ingest.countb("collection", "bucket").unwrap();
+    let res = ingest.legacy_countb("collection", "bucket").unwrap();
     assert_eq!(res, 0);
 }

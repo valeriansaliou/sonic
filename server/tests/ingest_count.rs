@@ -50,8 +50,7 @@ fn countb() {
     control.trigger_consolidate().unwrap();
 
     let res = ingest.countb("collection", "bucket").unwrap();
-    // Counterintuitively, this returns the number of terms.
-    assert_eq!(res, 4);
+    assert_eq!(res, 2);
 }
 
 #[test]

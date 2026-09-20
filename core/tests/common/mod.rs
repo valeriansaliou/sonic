@@ -81,6 +81,12 @@ macro_rules! exec {
     ($executor:ident -> COUNT $collection:tt $bucket:tt) => {{
         $executor.log(format!("COUNT {:?} {:?}", $collection, $bucket));
         let (c, b) = bucket_ref!($collection, $bucket);
+        $executor.legacy_countb(c, b)
+    }};
+
+    ($executor:ident -> COUNTB $collection:tt $bucket:tt) => {{
+        $executor.log(format!("COUNTB {:?} {:?}", $collection, $bucket));
+        let (c, b) = bucket_ref!($collection, $bucket);
         $executor.countb(c, b)
     }};
 

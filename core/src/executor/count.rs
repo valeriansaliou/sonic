@@ -8,7 +8,7 @@
 use crate::store::{StoreItemPart, StoreObjectOid};
 
 impl super::Executor {
-    /// Count terms in (collection, bucket, object) from KV.
+    /// Count terms in object (from KV store).
     pub fn counto(
         &self,
         collection: StoreItemPart,
@@ -51,8 +51,46 @@ impl super::Executor {
         }
     }
 
-    /// Count terms in (collection, bucket) from FST.
+    // FIXME: This is incorrect after a `FLUSHO`, see https://github.com/valeriansaliou/sonic/issues/392.
+    /// Count objects in bucket (from KV store).
     pub fn countb(&self, collection: StoreItemPart, bucket: StoreItemPart) -> Result<u32, ()> {
+        let kv_store = self.kv_pool.acquire(false, collection, None, |_| {})?;
+
+        let Some(kv_store) = kv_store else {
+            tracing::debug!(
+                "collection store does not exist, consider {bucket:?} from {collection:?} empty"
+            );
+            return Ok(0);
+        };
+
+        let kv_action = kv_store.access_read_only(bucket);
+
+        let iid_incr = kv_action
+            .get_iid_incr()
+            .map_err(|err| tracing::warn!("{err:?}"))?;
+
+        let count = iid_incr.map_or(0, |last_iid| u32::from(last_iid) + 1);
+
+        Ok(count)
+    }
+
+    /// Count buckets in collection (from FST filesystem).
+    pub fn countc(&self, collection: StoreItemPart) -> Result<u32, ()> {
+        self.fst_pool
+            .count_collection_buckets(collection)
+            .map(|count| count as u32)
+    }
+}
+
+// MARK: - Deprecated
+
+impl super::Executor {
+    /// Count terms in (collection, bucket) from FST.
+    pub fn legacy_countb(
+        &self,
+        collection: StoreItemPart,
+        bucket: StoreItemPart,
+    ) -> Result<u32, ()> {
         // Important: acquire graph access read lock, and reference it in context. This \
         //   prevents the graph from being erased while using it in this block.
         let _fst_read_guard = self.fst_pool.lock_read_access();
@@ -62,12 +100,5 @@ impl super::Executor {
         } else {
             Err(())
         }
-    }
-
-    /// Count buckets in (collection) from FS.
-    pub fn countc(&self, collection: StoreItemPart) -> Result<u32, ()> {
-        self.fst_pool
-            .count_collection_buckets(collection)
-            .map(|count| count as u32)
     }
 }
