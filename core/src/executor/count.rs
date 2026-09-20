@@ -51,7 +51,6 @@ impl super::Executor {
         }
     }
 
-    // FIXME: This is incorrect after a `FLUSHO`, see https://github.com/valeriansaliou/sonic/issues/392.
     /// Count objects in bucket (from KV store).
     pub fn countb(&self, collection: StoreItemPart, bucket: StoreItemPart) -> Result<u32, ()> {
         let kv_store = self.kv_pool.acquire(false, collection, None, |_| {})?;
@@ -65,11 +64,9 @@ impl super::Executor {
 
         let kv_action = kv_store.access_read_only(bucket);
 
-        let iid_incr = kv_action
-            .get_iid_incr()
-            .map_err(|err| tracing::warn!("{err:?}"))?;
-
-        let count = iid_incr.map_or(0, |last_iid| u32::from(last_iid) + 1);
+        let count = kv_action
+            .get_object_count()
+            .map_err(|error| tracing::warn!("{error:?}"))?;
 
         Ok(count)
     }

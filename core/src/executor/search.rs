@@ -64,17 +64,9 @@ impl super::Executor {
 
         let kv_action = kv_store.access_read_only(bucket);
 
-        // FIXME: `IIDIncr` will get out-of-sync after a `FLUSHO`
-        //   (see https://github.com/valeriansaliou/sonic/issues/392).
-        //   It’s not a big deal though, no one should notice and we’ll fix
-        //   it someday after reworking the index.
-        let document_count = match kv_action
-            .get_iid_incr()
-            .map_err(|err| tracing::warn!("{err:?}"))?
-        {
-            Some(last_iid) => (u32::from(last_iid) + 1) as u64,
-            None => 0u64,
-        };
+        let document_count = kv_action
+            .get_object_count()
+            .map_err(|error| tracing::warn!("{error:?}"))? as u64;
 
         if document_count < idf_min_doc_count {
             tracing::debug!(

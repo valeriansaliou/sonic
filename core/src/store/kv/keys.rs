@@ -97,6 +97,7 @@ impl std::fmt::Debug for KvStoreKey {
 
 pub enum StoreMetaKey {
     IIDIncr,
+    ObjectCount,
 }
 
 impl StoreMetaKey {
@@ -104,6 +105,7 @@ impl StoreMetaKey {
         // WARN: Don’t update values here, it would break the index! Only add new cases.
         match self {
             StoreMetaKey::IIDIncr => 0,
+            StoreMetaKey::ObjectCount => 1,
         }
     }
 }

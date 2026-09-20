@@ -150,6 +150,24 @@ fn issue_264() {
     );
 }
 
+/// See <https://github.com/valeriansaliou/sonic/issues/392>.
+#[test]
+fn issue_392() {
+    let executor = make_test_executor(|_| {});
+
+    for n in 0..3 {
+        let id = &format!("doc:{n}");
+        let text = &format!("foobar {n}");
+        exec!(executor -> PUSH "docs" "default" id text LANG("none"));
+    }
+
+    assert_eq!(exec!(executor -> COUNTB "docs" "default").unwrap(), 3);
+
+    exec!(executor -> FLUSHO "docs" "default" "doc:1");
+
+    assert_eq!(exec!(executor -> COUNTB "docs" "default").unwrap(), 2);
+}
+
 /// See <https://github.com/valeriansaliou/sonic/issues/408>.
 #[test]
 fn issue_408() {

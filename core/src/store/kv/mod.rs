@@ -149,9 +149,33 @@ impl KvStore {
                 new_iid
             }
             None => {
-                let new_iid = self
-                    .get_iid_incr(&bucket, &write_guard)?
-                    .map_or(StoreObjectIid::from(0), |iid| iid.saturating_add(1));
+                let new_iid = match self.get_iid_incr(&bucket, &write_guard)? {
+                    Some(iid_incr) => {
+                        // COMPAT: Backfill `ObjectCount` from `IIDIncr` for
+                        //   users migrating from an older version.
+                        // TODO(major): Remove compat backfill.
+                        {
+                            let object_count_key =
+                                KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::ObjectCount);
+
+                            if (self.database)
+                                .get_pinned(object_count_key)
+                                .is_ok_and(|opt| opt.is_none())
+                            {
+                                self.database
+                                    .put(object_count_key, iid_incr.into_bytes())
+                                    .unwrap_or_else(|error| {
+                                        tracing::error!(
+                                            "Could not backfill ObjectCount from IIDIncr: {error:?}"
+                                        )
+                                    });
+                            }
+                        }
+
+                        iid_incr.saturating_add(1)
+                    }
+                    None => StoreObjectIid::from(0),
+                };
 
                 write_guard.insert(cache_key, new_iid);
 
@@ -216,9 +240,7 @@ impl<'a> KvStoreActionReadOnly<'a> {
             Ok(Some(value)) => {
                 tracing::debug!("got meta-to-value: {store_key}");
 
-                Ok(str::from_utf8(&value).map_or(None, |value| match meta {
-                    StoreMetaKey::IIDIncr => value.parse::<T>().ok(),
-                }))
+                Ok(str::from_utf8(&value).map_or(None, |value| value.parse::<T>().ok()))
             }
             Ok(None) => {
                 tracing::debug!("no meta-to-value found: {store_key}");
@@ -233,11 +255,38 @@ impl<'a> KvStoreActionReadOnly<'a> {
         }
     }
 
-    pub fn get_iid_incr(&self) -> Result<Option<StoreObjectIid>, Box<dyn std::error::Error>> {
-        self.store.get_iid_incr(
-            &self.bucket,
-            &self.store.iid_incr_per_bucket.read().unwrap(),
-        )
+    pub fn get_object_count(&self) -> Result<u32, Box<dyn std::error::Error>> {
+        let bucket = self.bucket;
+
+        let store_key = KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::ObjectCount);
+        let value = self.store.database.get(store_key)?;
+
+        match value {
+            Some(bytes) => match decode_u32_mapped(&bytes) {
+                Ok(count) => {
+                    tracing::debug!(?bucket, ?count, "Read ObjectCount from database");
+                    Ok(count)
+                }
+                Err(()) => {
+                    tracing::error!(?bucket, "Invalid ObjectCount in database");
+                    Err(Box::new(io::Error::other(
+                        "Invalid ObjectCount value in bucket {bucket:?}",
+                    )))
+                }
+            },
+            None => {
+                tracing::debug!(
+                    ?bucket,
+                    "ObjectCount not found in database, falling back to IIDIncr"
+                );
+
+                // COMPAT: Fallback to `IIDIncr` for users migrating from an older version.
+                // TODO(major): Remove compat fallback.
+                self.store
+                    .get_iid_incr(&bucket, &self.store.iid_incr_per_bucket.read().unwrap())
+                    .map(|opt| opt.map_or(0, u32::from))
+            }
+        }
     }
 
     /// Term-to-IIDs mapper
@@ -409,14 +458,31 @@ impl<'a> KvStoreActionReadWrite<'a> {
         batch.put(store_key, value.to_string().as_bytes())
     }
 
-    pub fn get_iid_incr(&self) -> Result<Option<StoreObjectIid>, Box<dyn std::error::Error>> {
-        self.as_read_only().get_iid_incr()
+    #[inline]
+    pub fn get_object_count(&self) -> Result<u32, Box<dyn std::error::Error>> {
+        self.as_read_only().get_object_count()
+    }
+
+    #[inline]
+    fn add_object_count(&self, batch: &mut WriteBatch, diff: i32) {
+        let store_key = KvStoreKey::meta_to_value(&self.bucket, &StoreMetaKey::ObjectCount);
+
+        tracing::trace!(
+            ?store_key,
+            "increasing {} object count by {diff}",
+            &self.bucket
+        );
+
+        batch.merge(store_key, diff.to_ne_bytes());
     }
 
     pub fn get_new_iid(
         &self,
         batch: &mut WriteBatch,
     ) -> Result<StoreObjectIid, Box<dyn std::error::Error>> {
+        // Increment object count
+        self.add_object_count(batch, 1);
+
         self.store.get_new_iid(self.bucket, batch)
     }
 
@@ -611,6 +677,9 @@ impl<'a> KvStoreActionReadWrite<'a> {
                 self.set_term_to_iids(batch, *term_hash, term_iids.into_iter())
             };
         }
+
+        // Decrement object count
+        self.add_object_count(batch, -1);
 
         count
     }

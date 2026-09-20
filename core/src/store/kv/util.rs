@@ -84,9 +84,13 @@ pub(super) fn default_merge_operator(
     use super::keys::constants::*;
 
     match key[0] {
-        META_TO_VALUE if key[5..9] == encode_u32(StoreMetaKey::IIDIncr.as_u32()) => {
-            u32_max(existing_val, operands)
-        }
+        META_TO_VALUE => match &key[5..9] {
+            v if v == encode_u32(StoreMetaKey::IIDIncr.as_u32()) => u32_max(existing_val, operands),
+            v if v == encode_u32(StoreMetaKey::ObjectCount.as_u32()) => {
+                u32_counter_signed(existing_val, operands)
+            }
+            _ => None,
+        },
         TERM_TO_IIDS | IID_TO_TERMS => {
             // eprintln!(
             //     "prepend_u32_list({}): {}/{}",
@@ -176,6 +180,44 @@ fn u32_max(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -> Op
 
             if new_val > res {
                 res = new_val;
+            }
+        }
+    }
+
+    Some(encode_u32(res).to_vec())
+}
+
+/// This implements a counter.
+///
+/// It’s used for `ObjectCount`, where we have to add **and remove** `1`.
+///
+/// The accumulator is a `u32`, but because we want the counter to go both ways
+/// we have to pass signed values. By having this mix of types, we do not create
+/// a discrepancy between `ObjectCount`’s maximum value and that of `IIDIncr`.
+fn u32_counter_signed(
+    existing_val: Option<&[u8]>,
+    operands: &rocksdb::MergeOperands,
+) -> Option<Vec<u8>> {
+    let mut res = match existing_val {
+        Some(bytes) if bytes.len() == 4 => {
+            // SAFETY: `bytes` is guaranteed to be 4 bytes long.
+            decode_u32(bytes).unwrap()
+        }
+        Some(_) => panic!("u32_counter_signed: initial value isn’t a u32"),
+        None if operands.is_empty() => return None,
+        None => 0,
+    };
+
+    for op in operands {
+        for chunk in op.chunks(4) {
+            // SAFETY: `chunk` is guaranteed to be 4 bytes long.
+            let diff = i32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+
+            if diff > 0 {
+                res = res.saturating_add(diff as u32);
+            } else if diff < 0 {
+                debug_assert_ne!(res, 0);
+                res = res.saturating_sub(diff.unsigned_abs());
             }
         }
     }
