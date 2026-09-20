@@ -83,7 +83,11 @@ impl super::Executor {
         }
 
         // Link terms to IID
-        kv_action.add_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());
+        if assume_new {
+            kv_action.set_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());
+        } else {
+            kv_action.add_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());
+        }
 
         executor_ensure_op!(kv_action.write(batch));
 
