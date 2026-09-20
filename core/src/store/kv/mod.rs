@@ -33,7 +33,7 @@ pub struct KvStore {
     pub lock: RwLock<()>,
     kv_store_config: Arc<crate::config::KvStoreConfig>,
 
-    /// Cache of `IIDIncr` per bucket, removing the need for coutless reads
+    /// Cache of `IIDIncr` per bucket, removing the need for countless reads
     /// while ingesting new data.
     ///
     /// This cache is particularly effective with large memtables, which often
@@ -92,10 +92,9 @@ impl KvStore {
     fn get_iid_incr(
         &self,
         bucket: &StoreItemPart,
+        iid_incr_per_bucket: &HashMap<u32, StoreObjectIid, NoopU32HasherBuilder>,
     ) -> Result<Option<StoreObjectIid>, Box<dyn std::error::Error>> {
-        let read_guard = self.iid_incr_per_bucket.read().unwrap();
-
-        read_guard.get(&bucket.into_compact()).map_or_else(
+        iid_incr_per_bucket.get(&bucket.into_compact()).map_or_else(
             || {
                 tracing::debug!(?bucket, "IIDIncr not found in cache, reading database…");
                 self.fetch_iid_incr(bucket)
@@ -135,23 +134,38 @@ impl KvStore {
         }
     }
 
-    fn get_new_iid(&self, bucket: StoreItemPart, batch: &mut WriteBatch) -> StoreObjectIid {
+    fn get_new_iid(
+        &self,
+        bucket: StoreItemPart,
+        batch: &mut WriteBatch,
+    ) -> Result<StoreObjectIid, Box<dyn std::error::Error>> {
         let mut write_guard = self.iid_incr_per_bucket.write().unwrap();
 
-        let iid = *write_guard
-            .entry(bucket.into_compact())
-            .and_modify(|iid| *iid = iid.saturating_add(1))
-            // NOTE: We start with `0` and `needs_write: false` because
-            //   `IIDCache::incr` will increment and set `needs_write = true`.
-            .or_insert(StoreObjectIid::from(0));
+        let cache_key = bucket.into_compact();
+        let iid = match write_guard.get_mut(&cache_key) {
+            Some(iid) => {
+                let new_iid = iid.saturating_add(1);
+                *iid = new_iid;
+                new_iid
+            }
+            None => {
+                let new_iid = self
+                    .get_iid_incr(&bucket, &write_guard)?
+                    .map_or(StoreObjectIid::from(0), |iid| iid.saturating_add(1));
+
+                write_guard.insert(cache_key, new_iid);
+
+                new_iid
+            }
+        };
 
         // Early release lock.
         drop(write_guard);
 
-        let key = KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
-        batch.merge(key, iid.into_bytes());
+        let store_key = KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
+        batch.merge(store_key, iid.into_bytes());
 
-        iid
+        Ok(iid)
     }
 }
 
@@ -220,7 +234,10 @@ impl<'a> KvStoreActionReadOnly<'a> {
     }
 
     pub fn get_iid_incr(&self) -> Result<Option<StoreObjectIid>, Box<dyn std::error::Error>> {
-        self.store.get_iid_incr(&self.bucket)
+        self.store.get_iid_incr(
+            &self.bucket,
+            &self.store.iid_incr_per_bucket.read().unwrap(),
+        )
     }
 
     /// Term-to-IIDs mapper
@@ -396,7 +413,10 @@ impl<'a> KvStoreActionReadWrite<'a> {
         self.as_read_only().get_iid_incr()
     }
 
-    pub fn get_new_iid(&self, batch: &mut WriteBatch) -> StoreObjectIid {
+    pub fn get_new_iid(
+        &self,
+        batch: &mut WriteBatch,
+    ) -> Result<StoreObjectIid, Box<dyn std::error::Error>> {
         self.store.get_new_iid(self.bucket, batch)
     }
 

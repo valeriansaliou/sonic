@@ -149,3 +149,60 @@ fn issue_264() {
         "response={response:?}"
     );
 }
+
+/// See <https://github.com/valeriansaliou/sonic/issues/408>.
+#[test]
+fn issue_408() {
+    use sonic::store::StoreItemBuilder;
+    use sonic::store::kv::KvStoreId;
+
+    let executor = make_test_executor(|_| {});
+
+    assert_eq!(exec!(executor -> COUNTB "docs" "default").unwrap(), 0);
+    println!("COUNT = 0");
+
+    for n in 0..3 {
+        let id = &format!("doc:{n}");
+        let text = &format!("foobar {n}");
+        exec!(executor -> PUSH "docs" "default" id text LANG("none"));
+    }
+    exec!(executor -> TRIGGER consolidate);
+
+    assert_eq!(exec!(executor -> COUNTB "docs" "default").unwrap(), 3);
+    println!("COUNT = 3");
+
+    executor.kv_pool.close(
+        KvStoreId::from_part(StoreItemBuilder::from_depth_1("docs").unwrap()),
+        None,
+    );
+    println!("Closed {:?} KV store", "docs");
+
+    let query = "foobar 2";
+    let response = exec!(executor -> QUERY "docs" "default" query);
+    assert_eq!(
+        response.iter().map(String::as_str).collect::<Vec<_>>(),
+        &["doc:2"],
+        "response={response:?}"
+    );
+
+    assert_eq!(exec!(executor -> COUNTB "docs" "default").unwrap(), 3);
+    println!("COUNT = 3");
+
+    for n in 3..6 {
+        let id = &format!("doc:{n}");
+        let text = &format!("foobar {n}");
+        exec!(executor -> PUSH "docs" "default" id text LANG("none"));
+    }
+    exec!(executor -> TRIGGER consolidate);
+
+    assert_eq!(exec!(executor -> COUNTB "docs" "default").unwrap(), 6);
+    println!("COUNT = 6");
+
+    let query = "foobar 5";
+    let response = exec!(executor -> QUERY "docs" "default" query);
+    assert_eq!(
+        response.iter().map(String::as_str).collect::<Vec<_>>(),
+        &["doc:5"],
+        "response={response:?}"
+    );
+}

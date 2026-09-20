@@ -47,23 +47,26 @@ impl super::Executor {
             tracing::trace!("must initialize push executor oid-to-iid and iid-to-oid");
 
             // Bump last stored increment
-            let iid = kv_action.get_new_iid(&mut batch);
+            let iid = (kv_action.get_new_iid(&mut batch))
+                .map_err(|error| tracing::error!("Error getting new IID: {error:?}"))?;
 
             // Associate OID <> IID (bidirectional)
             kv_action.set_oid_to_iid(&mut batch, oid, iid);
             kv_action.set_iid_to_oid(&mut batch, iid, oid);
 
-            iid
+            Ok(iid)
         };
         let iid = if assume_new {
-            assign_new_iid()
+            assign_new_iid()?
         } else {
-            (kv_action.get_oid_to_iid(oid))
-                .unwrap_or_else(|()| {
-                    tracing::error!("Error getting OID-To-IID");
-                    None
-                })
-                .unwrap_or_else(assign_new_iid)
+            match kv_action.get_oid_to_iid(oid) {
+                Ok(Some(iid)) => iid,
+                Ok(None) => assign_new_iid()?,
+                Err(error) => {
+                    tracing::error!("Error getting OID-To-IID: {error:?}");
+                    assign_new_iid()?
+                }
+            }
         };
 
         let mut tokens =
