@@ -174,7 +174,7 @@ fn u32_max(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -> Op
             // SAFETY: `chunk` is guaranteed to be 4 bytes long.
             let new_val = decode_u32(chunk).unwrap();
 
-            if res > new_val {
+            if new_val > res {
                 res = new_val;
             }
         }
