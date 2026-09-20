@@ -123,31 +123,31 @@ pub struct SearchConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct StoreConfig {
-    pub kv: Arc<StoreKvConfig>,
+    pub kv: Arc<KvStoreConfig>,
 
-    pub fst: Arc<StoreFstConfig>,
+    pub fst: Arc<FstStoreConfig>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct StoreKvConfig {
+pub struct KvStoreConfig {
     #[serde(deserialize_with = "env_var::path_buf")]
     pub path: PathBuf,
 
     pub retain_word_objects: usize,
 
-    pub pool: StoreKvPoolConfig,
+    pub pool: KvStorePoolConfig,
 
-    pub database: StoreKvDatabaseConfig,
+    pub database: KvStoreDatabaseConfig,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct StoreKvPoolConfig {
+pub struct KvStorePoolConfig {
     pub inactive_after: u64,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct StoreKvDatabaseConfig {
+pub struct KvStoreDatabaseConfig {
     pub flush_after: u64,
 
     pub write_ahead_log: bool,
@@ -331,22 +331,22 @@ where
 }
 
 #[derive(Debug, Deserialize)]
-pub struct StoreFstConfig {
+pub struct FstStoreConfig {
     #[serde(deserialize_with = "env_var::path_buf")]
     pub path: PathBuf,
 
-    pub pool: StoreFstPoolConfig,
+    pub pool: FstStorePoolConfig,
 
-    pub graph: StoreFstGraphConfig,
+    pub graph: FstStoreGraphConfig,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct StoreFstPoolConfig {
+pub struct FstStorePoolConfig {
     pub inactive_after: u64,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct StoreFstGraphConfig {
+pub struct FstStoreGraphConfig {
     pub consolidate_after: u64,
 
     pub max_size: usize,

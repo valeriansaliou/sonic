@@ -12,7 +12,7 @@ use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::StoreItemPart;
 use crate::store::fst::typo_factor;
-use crate::store::kv::StoreKvActionReadOnly;
+use crate::store::kv::KvStoreActionReadOnly;
 use crate::store::{StoreObjectIid, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
 
@@ -488,7 +488,7 @@ fn test_overall_score() {
     ); // 2/3
 }
 
-fn document_frequency(term_hash: StoreTermHash, kv_action: &StoreKvActionReadOnly<'_>) -> u64 {
+fn document_frequency(term_hash: StoreTermHash, kv_action: &KvStoreActionReadOnly<'_>) -> u64 {
     kv_action
         .get_term_to_iids(term_hash)
         .inspect_err(|err| tracing::error!("{err:?}"))
@@ -515,7 +515,7 @@ fn merge_suggestions(
     term: &str,
     term_idx: usize,
     term_count: usize,
-    kv_action: &StoreKvActionReadOnly<'_>,
+    kv_action: &KvStoreActionReadOnly<'_>,
     alternates_try: &mut usize,
     higher_limit: usize,
     document_count: u64,

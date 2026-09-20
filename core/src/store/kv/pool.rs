@@ -13,29 +13,29 @@ use std::{fmt, fs, io};
 use hashbrown::{DefaultHashBuilder, HashMap};
 use rocksdb::DB;
 
-use crate::config::StoreKvDatabaseConfig;
+use crate::config::KvStoreDatabaseConfig;
 use crate::store::generic::*;
 use crate::store::*;
 use crate::util::hash::NoopU32HasherBuilder;
 
 use super::util::default_merge_operator;
-use super::{StoreKv, StoreKvAtom};
+use super::{KvStore, KvStoreAtom};
 
 // MARK: - Store pool
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
 #[derive(Clone)]
-pub struct StoreKvPool {
-    pool: Arc<RwLock<HashMap<StoreKvId, Arc<StoreKv>>>>,
-    pub(super) kv_store_config: Arc<crate::config::StoreKvConfig>,
+pub struct KvStorePool {
+    pool: Arc<RwLock<HashMap<KvStoreId, Arc<KvStore>>>>,
+    pub(super) kv_store_config: Arc<crate::config::KvStoreConfig>,
     pub(super) store_access_lock: Arc<RwLock<()>>,
     store_acquire_lock: Arc<Mutex<()>>,
     store_flush_lock: Arc<Mutex<()>>,
 }
 
-impl StoreKvPool {
-    pub fn new(kv_store_config: Arc<crate::config::StoreKvConfig>) -> Self {
+impl KvStorePool {
+    pub fn new(kv_store_config: Arc<crate::config::KvStoreConfig>) -> Self {
         Self {
             pool: Arc::default(),
             kv_store_config,
@@ -58,9 +58,9 @@ impl StoreKvPool {
     }
 }
 
-impl StoreGenericPool for StoreKvPool {
-    type StoreId = StoreKvId;
-    type Store = StoreKv;
+impl StoreGenericPool for KvStorePool {
+    type StoreId = KvStoreId;
+    type Store = KvStore;
     type HashBuilder = DefaultHashBuilder;
 
     fn kind() -> &'static str {
@@ -76,7 +76,7 @@ impl StoreGenericPool for StoreKvPool {
     }
 
     fn proceed_erase_collection(&self, collection: StoreItemPart) -> Result<u32, ()> {
-        let store_id = StoreKvId::from_part(collection);
+        let store_id = KvStoreId::from_part(collection);
         let collection_path = self.kv_store_config.store_path(store_id);
 
         // Force a KV store close
@@ -117,7 +117,7 @@ impl StoreGenericPool for StoreKvPool {
     }
 }
 
-impl StoreKvPool {
+impl KvStorePool {
     // TODO(refactor): Replace `create_if_missing` and `override_options` by a
     //   struct. I(@RemiBardon) had suggested adding `bypass_cache: bool` before,
     //   but I don’t remember why.
@@ -125,10 +125,10 @@ impl StoreKvPool {
         &'a self,
         create_if_missing: bool,
         collection: StoreItemPart,
-        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKvId, Arc<StoreKv>>>>,
+        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<KvStoreId, Arc<KvStore>>>>,
         override_options: impl FnOnce(&mut rocksdb::Options),
-    ) -> Result<Option<Arc<StoreKv>>, ()> {
-        let store_id = StoreKvId::from_part(collection);
+    ) -> Result<Option<Arc<KvStore>>, ()> {
+        let store_id = KvStoreId::from_part(collection);
 
         // Freeze acquire lock, and reference it in context
         // Notice: this prevents two databases on the same collection to be opened at the same time.
@@ -172,14 +172,14 @@ impl StoreKvPool {
 
     fn build(
         &self,
-        store_id: StoreKvId,
+        store_id: KvStoreId,
         override_options: impl FnOnce(&mut rocksdb::Options),
-    ) -> Result<StoreKv, ()> {
+    ) -> Result<KvStore, ()> {
         match self.open(store_id, override_options) {
             Ok(db) => {
                 let now = SystemTime::now();
 
-                Ok(StoreKv {
+                Ok(KvStore {
                     database: db,
                     last_used: RwLock::new(now),
                     last_flushed: RwLock::new(now),
@@ -198,7 +198,7 @@ impl StoreKvPool {
 
     pub(super) fn open(
         &self,
-        store_id: StoreKvId,
+        store_id: KvStoreId,
         override_options: impl FnOnce(&mut rocksdb::Options),
     ) -> Result<DB, rocksdb::Error> {
         tracing::debug!("opening key-value database for collection: {store_id}");
@@ -215,8 +215,8 @@ impl StoreKvPool {
 
     pub fn close<'a>(
         &'a self,
-        store_id: StoreKvId,
-        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<StoreKvId, Arc<StoreKv>>>>,
+        store_id: KvStoreId,
+        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<KvStoreId, Arc<KvStore>>>>,
     ) {
         tracing::debug!("closing key-value database for collection: {store_id}");
 
@@ -230,11 +230,11 @@ impl StoreKvPool {
 
     // NOTE: This wrapper makes `janitor` public, while `proceed_janitor` comes
     //   from a private trait.
-    pub fn janitor(&self, filter: impl Fn(&StoreKvId) -> bool) {
+    pub fn janitor(&self, filter: impl Fn(&KvStoreId) -> bool) {
         self.proceed_janitor(filter)
     }
 
-    pub fn flush(&self, force: bool, filter: impl Fn(&StoreKvId) -> bool) {
+    pub fn flush(&self, force: bool, filter: impl Fn(&KvStoreId) -> bool) {
         tracing::debug!("scanning for kv store pool items to flush to disk");
 
         // Acquire flush lock, and reference it in context
@@ -242,7 +242,7 @@ impl StoreKvPool {
         let _flush = self.store_flush_lock.lock().unwrap();
 
         // Step 1: List keys to be flushed
-        let mut keys_flush: Vec<StoreKvId> = Vec::new();
+        let mut keys_flush: Vec<KvStoreId> = Vec::new();
 
         let store_pool_read = self.pool.read().unwrap();
 
@@ -324,15 +324,15 @@ impl StoreKvPool {
             None => tracing::debug!("compacting all collections…"),
         }
 
-        let store_ids: Vec<StoreKvId> = match collections_opt {
+        let store_ids: Vec<KvStoreId> = match collections_opt {
             Some(collections) => collections
                 .iter()
-                .map(|&c| StoreKvId::from_part(c))
+                .map(|&c| KvStoreId::from_part(c))
                 .collect(),
             None => {
                 let pool_guard = self.pool.read().unwrap();
 
-                let store_ids = pool_guard.keys().map(StoreKvId::to_owned).collect();
+                let store_ids = pool_guard.keys().map(KvStoreId::to_owned).collect();
 
                 drop(pool_guard);
 
@@ -372,11 +372,11 @@ impl StoreKvPool {
     }
 }
 
-impl From<&StoreKvDatabaseConfig> for rocksdb::Options {
+impl From<&KvStoreDatabaseConfig> for rocksdb::Options {
     #[rustfmt::skip]
-    fn from(config: &StoreKvDatabaseConfig) -> Self {
+    fn from(config: &KvStoreDatabaseConfig) -> Self {
         // NOTE: Deconstruct to avoid forgetting configuration keys.
-        let StoreKvDatabaseConfig {
+        let KvStoreDatabaseConfig {
             flush_after: _,
             compress,
             parallelism,
@@ -513,17 +513,17 @@ impl From<&StoreKvDatabaseConfig> for rocksdb::Options {
 // MARK: - Store ID
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
-pub struct StoreKvId {
-    collection_hash: StoreKvAtom,
+pub struct KvStoreId {
+    collection_hash: KvStoreAtom,
 }
 
-impl StoreKvId {
-    pub fn from_atom(collection_hash: StoreKvAtom) -> StoreKvId {
-        StoreKvId { collection_hash }
+impl KvStoreId {
+    pub fn from_atom(collection_hash: KvStoreAtom) -> KvStoreId {
+        KvStoreId { collection_hash }
     }
 
-    pub fn from_part(collection: StoreItemPart) -> StoreKvId {
-        StoreKvId {
+    pub fn from_part(collection: StoreItemPart) -> KvStoreId {
+        KvStoreId {
             collection_hash: collection.into_compact(),
         }
     }
@@ -531,18 +531,18 @@ impl StoreKvId {
     /// Filesystem path components are hex-encoded (via `format!("{:x}")`), we
     /// must convert it back into proper `u32` otherwise roundtrips will fail.
     #[inline]
-    pub fn try_from_hex(collection_hash: &str) -> Result<StoreKvId, io::Error> {
+    pub fn try_from_hex(collection_hash: &str) -> Result<KvStoreId, io::Error> {
         let collection_hash = u32_from_hex(collection_hash)?;
 
         Ok(Self::from_atom(collection_hash))
     }
 
-    pub fn as_collection_hash(&self) -> &StoreKvAtom {
+    pub fn as_collection_hash(&self) -> &KvStoreAtom {
         &self.collection_hash
     }
 }
 
-impl fmt::Display for StoreKvId {
+impl fmt::Display for KvStoreId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let Self { collection_hash } = self;
 
@@ -552,10 +552,10 @@ impl fmt::Display for StoreKvId {
 
 // MARK: - Helpers
 
-impl crate::config::StoreKvConfig {
+impl crate::config::KvStoreConfig {
     #[inline]
-    pub(super) fn store_path(&self, id: StoreKvId) -> PathBuf {
-        let StoreKvId { collection_hash } = id;
+    pub(super) fn store_path(&self, id: KvStoreId) -> PathBuf {
+        let KvStoreId { collection_hash } = id;
 
         self.path.join(format!("{collection_hash:x}"))
     }
@@ -572,7 +572,7 @@ mod tests {
     #[test]
     fn it_acquires_database() {
         let kv_store_config = test_kv_store_config();
-        let kv_pool = StoreKvPool::new(kv_store_config);
+        let kv_pool = KvStorePool::new(kv_store_config);
 
         assert!(
             kv_pool
@@ -584,7 +584,7 @@ mod tests {
     #[test]
     fn it_janitors_database() {
         let kv_store_config = test_kv_store_config();
-        let kv_pool = StoreKvPool::new(kv_store_config);
+        let kv_pool = KvStorePool::new(kv_store_config);
 
         kv_pool.janitor(|_| true);
     }
@@ -592,15 +592,15 @@ mod tests {
 
 // MARK: - Boilerplate
 
-impl std::ops::Deref for StoreKvPool {
-    type Target = RwLock<HashMap<StoreKvId, Arc<StoreKv>>>;
+impl std::ops::Deref for KvStorePool {
+    type Target = RwLock<HashMap<KvStoreId, Arc<KvStore>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.pool
     }
 }
 
-impl fmt::Debug for StoreKvPool {
+impl fmt::Debug for KvStorePool {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use crate::util::fmt::{AsPrettyMutex, AsPrettyRwLock};
 
@@ -615,7 +615,7 @@ impl fmt::Debug for StoreKvPool {
             kv_store_config: _kv_store_config,
         } = self;
 
-        f.debug_struct("StoreKvPool")
+        f.debug_struct("KvStorePool")
             .field("pool", &AsPrettyRwLock(pool))
             .field("store_access_lock", &AsPrettyRwLock(store_access_lock))
             .field("store_acquire_lock", &AsPrettyMutex(store_acquire_lock))
@@ -624,7 +624,7 @@ impl fmt::Debug for StoreKvPool {
     }
 }
 
-impl fmt::Debug for StoreKvId {
+impl fmt::Debug for KvStoreId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self, f)
     }

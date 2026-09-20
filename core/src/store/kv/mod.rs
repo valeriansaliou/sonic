@@ -21,17 +21,17 @@ use crate::store::generic::*;
 use crate::store::*;
 use crate::util::hash::NoopU32HasherBuilder;
 
-use self::keys::StoreKvKey;
+use self::keys::KvStoreKey;
 pub use self::keys::StoreMetaKey;
-pub use self::pool::{StoreKvId, StoreKvPool};
+pub use self::pool::{KvStoreId, KvStorePool};
 use self::util::*;
 
-pub struct StoreKv {
+pub struct KvStore {
     database: DB,
     last_used: RwLock<SystemTime>,
     last_flushed: RwLock<SystemTime>,
     pub lock: RwLock<()>,
-    kv_store_config: Arc<crate::config::StoreKvConfig>,
+    kv_store_config: Arc<crate::config::KvStoreConfig>,
 
     /// Cache of `IIDIncr` per bucket, removing the need for coutless reads
     /// while ingesting new data.
@@ -45,19 +45,19 @@ pub struct StoreKv {
     iid_incr_per_bucket: RwLock<HashMap<u32, StoreObjectIid, NoopU32HasherBuilder>>,
 }
 
-pub struct StoreKvActionReadOnly<'a> {
+pub struct KvStoreActionReadOnly<'a> {
     bucket: StoreItemPart<'a>,
-    store: &'a StoreKv,
+    store: &'a KvStore,
 }
 
-pub struct StoreKvActionReadWrite<'a> {
+pub struct KvStoreActionReadWrite<'a> {
     bucket: StoreItemPart<'a>,
-    store: &'a StoreKv,
+    store: &'a KvStore,
 }
 
-type StoreKvAtom = u32;
+type KvStoreAtom = u32;
 
-impl StoreKv {
+impl KvStore {
     fn flush(&self) -> Result<(), rocksdb::Error> {
         // Generate flush options
         let mut flush_options = rocksdb::FlushOptions::default();
@@ -112,7 +112,7 @@ impl StoreKv {
         &self,
         bucket: &StoreItemPart<'a>,
     ) -> Result<Option<StoreObjectIid>, Box<dyn std::error::Error>> {
-        let store_key = StoreKvKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
+        let store_key = KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
         let value = self.database.get(store_key)?;
 
         match value {
@@ -148,28 +148,28 @@ impl StoreKv {
         // Early release lock.
         drop(write_guard);
 
-        let key = StoreKvKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
+        let key = KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
         batch.merge(key, iid.into_bytes());
 
         iid
     }
 }
 
-impl<'a> StoreKvActionReadWrite<'a> {
+impl<'a> KvStoreActionReadWrite<'a> {
     pub fn write(&self, batch: WriteBatch) -> Result<(), rocksdb::Error> {
         self.store.do_write(batch)
     }
 }
 
-impl StoreGeneric for StoreKv {
+impl StoreGeneric for KvStore {
     fn ref_last_used(&self) -> &RwLock<SystemTime> {
         &self.last_used
     }
 }
 
-impl StoreKv {
-    pub fn access_read_only<'a>(&'a self, bucket: StoreItemPart<'a>) -> StoreKvActionReadOnly<'a> {
-        StoreKvActionReadOnly {
+impl KvStore {
+    pub fn access_read_only<'a>(&'a self, bucket: StoreItemPart<'a>) -> KvStoreActionReadOnly<'a> {
+        KvStoreActionReadOnly {
             bucket,
             store: self,
         }
@@ -178,15 +178,15 @@ impl StoreKv {
     pub fn access_read_write<'a>(
         &'a self,
         bucket: StoreItemPart<'a>,
-    ) -> StoreKvActionReadWrite<'a> {
-        StoreKvActionReadWrite {
+    ) -> KvStoreActionReadWrite<'a> {
+        KvStoreActionReadWrite {
             bucket,
             store: self,
         }
     }
 }
 
-impl<'a> StoreKvActionReadOnly<'a> {
+impl<'a> KvStoreActionReadOnly<'a> {
     /// Meta-to-Value mapper
     ///
     /// [IDX=0] ((meta)) ~> ((value))
@@ -194,7 +194,7 @@ impl<'a> StoreKvActionReadOnly<'a> {
         &self,
         meta: StoreMetaKey,
     ) -> Result<Option<T>, ()> {
-        let store_key = StoreKvKey::meta_to_value(&self.bucket, &meta);
+        let store_key = KvStoreKey::meta_to_value(&self.bucket, &meta);
 
         tracing::debug!("store get meta-to-value: {store_key}");
 
@@ -230,7 +230,7 @@ impl<'a> StoreKvActionReadOnly<'a> {
         &self,
         term_hash: StoreTermHash,
     ) -> Result<Option<Vec<StoreObjectIid>>, ()> {
-        let store_key = StoreKvKey::term_to_iids(&self.bucket, term_hash);
+        let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
 
         tracing::debug!("store get term-to-iids: {store_key}");
 
@@ -263,7 +263,7 @@ impl<'a> StoreKvActionReadOnly<'a> {
     ///
     /// [IDX=2] ((oid)) ~> ((iid))
     pub fn get_oid_to_iid(&self, oid: StoreObjectOid) -> Result<Option<StoreObjectIid>, ()> {
-        let store_key = StoreKvKey::oid_to_iid(&self.bucket, oid);
+        let store_key = KvStoreKey::oid_to_iid(&self.bucket, oid);
 
         tracing::debug!("store get oid-to-iid: {store_key}");
 
@@ -296,7 +296,7 @@ impl<'a> StoreKvActionReadOnly<'a> {
     ///
     /// [IDX=3] ((iid)) ~> ((oid))
     pub fn get_iid_to_oid(&self, iid: StoreObjectIid) -> Result<Option<String>, ()> {
-        let store_key = StoreKvKey::iid_to_oid(&self.bucket, iid);
+        let store_key = KvStoreKey::iid_to_oid(&self.bucket, iid);
 
         tracing::debug!("store get iid-to-oid: {store_key}");
 
@@ -323,7 +323,7 @@ impl<'a> StoreKvActionReadOnly<'a> {
     ///
     /// [IDX=4] ((iid)) ~> [((term))]
     pub fn get_iid_to_terms(&self, iid: StoreObjectIid) -> Result<Option<Vec<StoreTermHash>>, ()> {
-        let store_key = StoreKvKey::iid_to_terms(&self.bucket, iid);
+        let store_key = KvStoreKey::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store get iid-to-terms: {store_key}");
 
@@ -360,10 +360,10 @@ impl<'a> StoreKvActionReadOnly<'a> {
     }
 }
 
-impl<'a> StoreKvActionReadWrite<'a> {
+impl<'a> KvStoreActionReadWrite<'a> {
     /// This is `O(1)`, nothing meaningful happens.
-    fn as_read_only<'b>(&'b self) -> StoreKvActionReadOnly<'b> {
-        StoreKvActionReadOnly {
+    fn as_read_only<'b>(&'b self) -> KvStoreActionReadOnly<'b> {
+        KvStoreActionReadOnly {
             bucket: self.bucket,
             store: self.store,
         }
@@ -385,7 +385,7 @@ impl<'a> StoreKvActionReadWrite<'a> {
         meta: StoreMetaKey,
         value: impl ToString,
     ) {
-        let store_key = StoreKvKey::meta_to_value(&self.bucket, &meta);
+        let store_key = KvStoreKey::meta_to_value(&self.bucket, &meta);
 
         tracing::debug!("store set meta-to-value: {store_key}");
 
@@ -418,7 +418,7 @@ impl<'a> StoreKvActionReadWrite<'a> {
         term_hash: StoreTermHash,
         iids: impl ExactSizeIterator<Item = StoreObjectIid>,
     ) {
-        let store_key = StoreKvKey::term_to_iids(&self.bucket, term_hash);
+        let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
 
         tracing::debug!("store set term-to-iids: {store_key}");
 
@@ -436,7 +436,7 @@ impl<'a> StoreKvActionReadWrite<'a> {
         term_hash: StoreTermHash,
         iids: impl Iterator<Item = StoreObjectIid>,
     ) {
-        let store_key = StoreKvKey::term_to_iids(&self.bucket, term_hash);
+        let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
 
         tracing::debug!("store add term-to-iids: {store_key}");
 
@@ -446,7 +446,7 @@ impl<'a> StoreKvActionReadWrite<'a> {
     }
 
     pub fn delete_term_to_iids(&self, batch: &mut WriteBatch, term_hash: StoreTermHash) {
-        let store_key = StoreKvKey::term_to_iids(&self.bucket, term_hash);
+        let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
 
         tracing::debug!("store delete term-to-iids: {store_key}");
 
@@ -461,7 +461,7 @@ impl<'a> StoreKvActionReadWrite<'a> {
     }
 
     pub fn set_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOid, iid: StoreObjectIid) {
-        let store_key = StoreKvKey::oid_to_iid(&self.bucket, oid);
+        let store_key = KvStoreKey::oid_to_iid(&self.bucket, oid);
 
         tracing::debug!("store set oid-to-iid: {store_key}");
 
@@ -474,7 +474,7 @@ impl<'a> StoreKvActionReadWrite<'a> {
     }
 
     pub fn delete_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOid) {
-        let store_key = StoreKvKey::oid_to_iid(&self.bucket, oid);
+        let store_key = KvStoreKey::oid_to_iid(&self.bucket, oid);
 
         tracing::debug!("store delete oid-to-iid: {store_key}");
 
@@ -489,7 +489,7 @@ impl<'a> StoreKvActionReadWrite<'a> {
     }
 
     pub fn set_iid_to_oid(&self, batch: &mut WriteBatch, iid: StoreObjectIid, oid: StoreObjectOid) {
-        let store_key = StoreKvKey::iid_to_oid(&self.bucket, iid);
+        let store_key = KvStoreKey::iid_to_oid(&self.bucket, iid);
 
         tracing::debug!("store set iid-to-oid: {store_key}");
 
@@ -497,7 +497,7 @@ impl<'a> StoreKvActionReadWrite<'a> {
     }
 
     pub fn delete_iid_to_oid(&self, batch: &mut WriteBatch, iid: StoreObjectIid) {
-        let store_key = StoreKvKey::iid_to_oid(&self.bucket, iid);
+        let store_key = KvStoreKey::iid_to_oid(&self.bucket, iid);
 
         tracing::debug!("store delete iid-to-oid: {store_key}");
 
@@ -517,7 +517,7 @@ impl<'a> StoreKvActionReadWrite<'a> {
         iid: StoreObjectIid,
         terms_hashes: impl ExactSizeIterator<Item = StoreTermHash>,
     ) {
-        let store_key = StoreKvKey::iid_to_terms(&self.bucket, iid);
+        let store_key = KvStoreKey::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store set iid-to-terms: {store_key}");
 
@@ -537,7 +537,7 @@ impl<'a> StoreKvActionReadWrite<'a> {
         iid: StoreObjectIid,
         terms_hashes: impl Iterator<Item = StoreTermHash>,
     ) {
-        let store_key = StoreKvKey::iid_to_terms(&self.bucket, iid);
+        let store_key = KvStoreKey::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store add iid-to-terms: {store_key}");
 
@@ -547,7 +547,7 @@ impl<'a> StoreKvActionReadWrite<'a> {
     }
 
     pub fn delete_iid_to_terms(&self, batch: &mut WriteBatch, iid: StoreObjectIid) {
-        let store_key = StoreKvKey::iid_to_terms(&self.bucket, iid);
+        let store_key = KvStoreKey::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store delete iid-to-terms: {store_key}");
 
@@ -600,11 +600,11 @@ impl<'a> StoreKvActionReadWrite<'a> {
 
         // Generate all key prefix values (with dummy post-prefix values; we dont care)
         let (k_meta_to_value, k_term_to_iids, k_oid_to_iid, k_iid_to_oid, k_iid_to_terms) = (
-            StoreKvKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr),
-            StoreKvKey::term_to_iids(&bucket, 0.into()),
-            StoreKvKey::oid_to_iid(&bucket, StoreObjectOid(StoreItemPart(""))),
-            StoreKvKey::iid_to_oid(&bucket, 0.into()),
-            StoreKvKey::iid_to_terms(&bucket, 0.into()),
+            KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr),
+            KvStoreKey::term_to_iids(&bucket, 0.into()),
+            KvStoreKey::oid_to_iid(&bucket, StoreObjectOid(StoreItemPart(""))),
+            KvStoreKey::iid_to_oid(&bucket, 0.into()),
+            KvStoreKey::iid_to_terms(&bucket, 0.into()),
         );
 
         let key_prefixes = [
@@ -621,7 +621,7 @@ impl<'a> StoreKvActionReadWrite<'a> {
 
             // Generate start and end prefix for batch delete (in other words,
             // the minimum key value possible, and the highest key value possible)
-            let key_prefix_start = StoreKvKey::from([
+            let key_prefix_start = KvStoreKey::from([
                 key_prefix[0],
                 key_prefix[1],
                 key_prefix[2],
@@ -632,7 +632,7 @@ impl<'a> StoreKvActionReadWrite<'a> {
                 0,
                 0,
             ]);
-            let key_prefix_end = StoreKvKey::from([
+            let key_prefix_end = KvStoreKey::from([
                 key_prefix[0],
                 key_prefix[1],
                 key_prefix[2],
@@ -677,7 +677,7 @@ mod tests {
     #[test]
     fn it_proceeds_actions() {
         let kv_store_config = test_kv_store_config();
-        let kv_pool = StoreKvPool::new(kv_store_config);
+        let kv_pool = KvStorePool::new(kv_store_config);
 
         let store = kv_pool
             .acquire(true, "c:test:3".into(), None, |_| {})
@@ -755,7 +755,7 @@ mod tests {
 
     // MARK: Helpers
 
-    pub(in crate::store::kv) fn test_kv_store_config() -> Arc<crate::config::StoreKvConfig> {
+    pub(in crate::store::kv) fn test_kv_store_config() -> Arc<crate::config::KvStoreConfig> {
         Arc::new(
             config::Config::builder()
                 .add_source(config::File::from_str(
@@ -764,7 +764,7 @@ mod tests {
                 ))
                 .build()
                 .unwrap()
-                .get::<crate::config::StoreKvConfig>("store.kv")
+                .get::<crate::config::KvStoreConfig>("store.kv")
                 .unwrap(),
         )
     }
@@ -772,7 +772,7 @@ mod tests {
 
 // MARK: - Boilerplate
 
-impl fmt::Debug for StoreKv {
+impl fmt::Debug for KvStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use crate::util::fmt::AsPrettyRwLock;
 
@@ -788,7 +788,7 @@ impl fmt::Debug for StoreKv {
             iid_incr_per_bucket,
         } = self;
 
-        f.debug_struct("StoreKv")
+        f.debug_struct("KvStore")
             .field("database", database)
             .field("last_used", &AsPrettyRwLock(last_used))
             .field("last_flushed", &AsPrettyRwLock(last_flushed))

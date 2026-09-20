@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 use crate::store::StoreItemPart;
-use crate::store::kv::StoreKvId;
+use crate::store::kv::KvStoreId;
 use crate::util::hash::NoopU32HasherBuilder;
 
 #[macro_use]
@@ -30,8 +30,8 @@ pub use types::*;
 
 pub struct Executor {
     pub app_conf: Arc<crate::Config>,
-    pub kv_pool: crate::store::kv::StoreKvPool,
-    pub fst_pool: crate::store::fst::StoreFstPool,
+    pub kv_pool: crate::store::kv::KvStorePool,
+    pub fst_pool: crate::store::fst::FstStorePool,
     pub dynamic_conf_store: Arc<DynamicConfigStore>,
 }
 
@@ -131,7 +131,7 @@ impl Executor {
         collection: StoreItemPart,
         new_conf: DynamicConfig,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let kv_store_id = StoreKvId::from_part(collection);
+        let kv_store_id = KvStoreId::from_part(collection);
 
         tracing::debug!(
             ?new_conf.rocksdb,

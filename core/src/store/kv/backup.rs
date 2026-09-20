@@ -13,9 +13,9 @@ use rocksdb::backup::{
     RestoreOptions as DBRestoreOptions,
 };
 
-use super::{StoreKvId, StoreKvPool};
+use super::{KvStoreId, KvStorePool};
 
-impl StoreKvPool {
+impl KvStorePool {
     pub fn backup(&self, path: &Path) -> Result<(), io::Error> {
         tracing::debug!("backing up all kv stores to path: {path:?}");
 
@@ -85,7 +85,7 @@ impl StoreKvPool {
         // Generate path to KV backup
         let kv_backup_path = backup_path.join(collection_hash);
 
-        let store_id = StoreKvId::try_from_hex(collection_hash)?;
+        let store_id = KvStoreId::try_from_hex(collection_hash)?;
 
         tracing::debug!("kv store {store_id} backing up to path: {kv_backup_path:?}");
 
@@ -130,7 +130,7 @@ impl StoreKvPool {
         // Notice: this prevents store to be acquired from any context
         let _access = self.store_access_lock.write().unwrap();
 
-        let store_id = StoreKvId::try_from_hex(collection_hash)?;
+        let store_id = KvStoreId::try_from_hex(collection_hash)?;
 
         tracing::debug!("kv store {store_id} restoring from path: {origin_path:?}");
 

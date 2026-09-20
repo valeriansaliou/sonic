@@ -10,19 +10,19 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use sonic::executor::DynamicConfigStore;
-use sonic::store::fst::StoreFstPool;
-use sonic::store::kv::StoreKvPool;
+use sonic::store::fst::FstStorePool;
+use sonic::store::kv::KvStorePool;
 
 #[derive(Clone)]
 pub struct TaskerBuilder {
-    pub kv_pool: StoreKvPool,
-    pub fst_pool: StoreFstPool,
+    pub kv_pool: KvStorePool,
+    pub fst_pool: FstStorePool,
     pub dynamic_conf_store: Arc<DynamicConfigStore>,
 }
 
 pub struct Tasker {
-    kv_pool: StoreKvPool,
-    fst_pool: StoreFstPool,
+    kv_pool: KvStorePool,
+    fst_pool: FstStorePool,
     dynamic_conf_store: Arc<DynamicConfigStore>,
 }
 

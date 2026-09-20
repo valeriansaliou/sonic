@@ -21,58 +21,58 @@ use crate::lexer::ranges::LexerRegexRange;
 
 use super::generic::*;
 
-pub use self::pool::{StoreFstId, StoreFstPool};
+pub use self::pool::{FstStoreId, FstStorePool};
 use self::util::*;
 
-pub struct StoreFst {
+pub struct FstStore {
     graph: fst::Set,
-    target: StoreFstId,
-    pending: StoreFstPending,
+    target: FstStoreId,
+    pending: FstStorePending,
     last_used: Arc<RwLock<SystemTime>>,
     last_consolidated: Arc<RwLock<SystemTime>>,
-    graph_consolidate: Arc<RwLock<HashSet<StoreFstId>>>,
+    graph_consolidate: Arc<RwLock<HashSet<FstStoreId>>>,
     // NOTE: This shouldn’t be here, but until a big rewrite let’s not care.
-    action_config: StoreFstActionConfig,
+    action_config: FstStoreActionConfig,
 }
 
 #[derive(Default)]
-pub struct StoreFstPending {
+pub struct FstStorePending {
     pop: Arc<RwLock<HashSet<Vec<u8>>>>,
     push: Arc<RwLock<HashSet<Vec<u8>>>>,
 }
 
-pub struct StoreFstActionBuilder<'build> {
-    pub fst_store_config: &'build crate::config::StoreFstConfig,
+pub struct FstStoreActionBuilder<'build> {
+    pub fst_store_config: &'build crate::config::FstStoreConfig,
 }
 
-type StoreFstAtom = u32;
+type FstStoreAtom = u32;
 
-pub struct StoreFstMisc;
+pub struct FstStoreMisc;
 
 #[derive(Copy, Clone)]
-enum StoreFstPathMode {
+enum FstStorePathMode {
     Permanent,
     Temporary,
     Backup,
 }
 
-impl StoreFstPathMode {
+impl FstStorePathMode {
     fn extension(&self) -> &'static str {
         match self {
-            StoreFstPathMode::Permanent => ".fst",
-            StoreFstPathMode::Temporary => ".fst.tmp",
-            StoreFstPathMode::Backup => ".fst.bck",
+            FstStorePathMode::Permanent => ".fst",
+            FstStorePathMode::Temporary => ".fst.tmp",
+            FstStorePathMode::Backup => ".fst.bck",
         }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct StoreFstActionConfig {
+pub struct FstStoreActionConfig {
     pub prefix_matching_enabled: bool,
     pub fuzzy_matching_enabled: bool,
 }
 
-impl Default for StoreFstActionConfig {
+impl Default for FstStoreActionConfig {
     fn default() -> Self {
         Self {
             prefix_matching_enabled: true,
@@ -83,7 +83,7 @@ impl Default for StoreFstActionConfig {
 
 const WORD_LIMIT_LENGTH: usize = 40;
 
-impl StoreFst {
+impl FstStore {
     pub fn cardinality(&self) -> usize {
         self.graph.len()
     }
@@ -159,14 +159,14 @@ impl StoreFst {
     }
 }
 
-impl StoreGeneric for StoreFst {
+impl StoreGeneric for FstStore {
     fn ref_last_used(&self) -> &RwLock<SystemTime> {
         &self.last_used
     }
 }
 
-impl StoreFst {
-    pub fn push_word(&self, word: &str, fst_store_config: &crate::config::StoreFstConfig) -> bool {
+impl FstStore {
+    pub fn push_word(&self, word: &str, fst_store_config: &crate::config::FstStoreConfig) -> bool {
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(word) {
             return false;
@@ -437,13 +437,13 @@ impl<'a, A: fst::Automaton> Iterator for FstStreamIterator<'a, A> {
 mod tests {
     use super::*;
 
-    pub(in crate::store::fst) fn test_fst_pool() -> StoreFstPool {
+    pub(in crate::store::fst) fn test_fst_pool() -> FstStorePool {
         let fst_store_config = test_fst_store_config();
 
-        StoreFstPool::new(fst_store_config, Default::default())
+        FstStorePool::new(fst_store_config, Default::default())
     }
 
-    pub(in crate::store::fst) fn test_fst_store_config() -> Arc<crate::config::StoreFstConfig> {
+    pub(in crate::store::fst) fn test_fst_store_config() -> Arc<crate::config::FstStoreConfig> {
         Arc::new(
             config::Config::builder()
                 .add_source(config::File::from_str(
@@ -452,7 +452,7 @@ mod tests {
                 ))
                 .build()
                 .unwrap()
-                .get::<crate::config::StoreFstConfig>("store.fst")
+                .get::<crate::config::FstStoreConfig>("store.fst")
                 .unwrap(),
         )
     }
@@ -460,7 +460,7 @@ mod tests {
 
 // MARK: - Boilerplate
 
-impl fmt::Debug for StoreFst {
+impl fmt::Debug for FstStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use crate::util::fmt::AsPrettyRwLock;
 
@@ -475,7 +475,7 @@ impl fmt::Debug for StoreFst {
             action_config,
         } = self;
 
-        f.debug_struct("StoreFst")
+        f.debug_struct("FstStore")
             .field("graph", graph)
             .field("target", target)
             .field("pending", pending)
@@ -487,14 +487,14 @@ impl fmt::Debug for StoreFst {
     }
 }
 
-impl fmt::Debug for StoreFstPending {
+impl fmt::Debug for FstStorePending {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use crate::util::fmt::AsPrettyRwLock;
 
         // NOTE: Deconstructing to future-proof this function.
         let Self { pop, push } = self;
 
-        f.debug_struct("StoreFstPending")
+        f.debug_struct("FstStorePending")
             .field("pop", &AsPrettyRwLock(pop))
             .field("push", &AsPrettyRwLock(push))
             .finish()
