@@ -289,8 +289,8 @@ update_all_versions() {
     replace_version '^(VERSION = ).+$' "${DEBIAN_RULES_FILE:?}"
 
     log_info "Copying packaged config for compatibility tests…"
-    cp "${REPOSITORY_ROOT:?}"/config.cfg "${SERVER_DIR:?}"/tests/packaged-configs/"${NEW_VERSION:?}"
-    UPDATED_FILES+=("${SERVER_DIR:?}"/tests/packaged-configs/"${NEW_VERSION:?}")
+    cp "${REPOSITORY_ROOT:?}"/config.cfg "${SERVER_DIR:?}"/tests/packaged-configs/"$(to_tag "${NEW_VERSION:?}")"
+    UPDATED_FILES+=("${SERVER_DIR:?}"/tests/packaged-configs/"$(to_tag "${NEW_VERSION:?}")")
   fi
 
   log_info "Updating '$(basename "${CARGO_LOCK_FILE:?}")'…"
