@@ -14,8 +14,7 @@
 
 ### Changes
 
-* packaging(docker): Bump Docker base image from `rust:slim-bullseye` to `rust:1-slim-trixie` (in `2d6cd53`)
-* Deprecate `COUNT` in favor of new `COUNTC`/`COUNTB`/`COUNTO` commands
+* feat(server): Deprecate `COUNT` in favor of new `COUNTC`/`COUNTB`/`COUNTO` commands
 
 Dependency updates:
 
@@ -24,7 +23,7 @@ Dependency updates:
 
 ### New Features
 
-* Add new `COUNTC`/`COUNTB`/`COUNTO` commands (in `5bc6082`)
+* feat(server): Add new `COUNTC`/`COUNTB`/`COUNTO` commands (in `5bc6082`)
 
 ### Bug Fixes
 
