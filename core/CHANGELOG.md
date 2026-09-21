@@ -8,6 +8,23 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/core-v0.3.0...HEAD
 
+### Changes
+
+* packaging(docker): Bump Docker base image from `rust:slim-bullseye` to `rust:1-slim-trixie` (in `2d6cd53`)
+* feat!: Rework the tokenizer to make its API more flexible (in `c264253`)
+* Make `countb` return the number of objects in the bucket, instead of term count (in `5bc6082`)
+
+Dependency updates:
+
+* Remove dependency to `byteorder` (in `b79c329`)
+* Remove dependency to `radix` (in `2fd3ecf`)
+
+### Bug Fixes
+
+* Fix `u32_max` merge operator really being `u32_min`… (in `ec6a9b9`)
+* Fix `get_new_iid` not initializing from database (in `a60b3af`)
+* Fix document count after a `FLUSHO` (in `060a899`)
+
 ## [0.3.0] (2026-09-15)
 
 [0.3.0]: https://github.com/valeriansaliou/sonic/compare/core-v0.2.1...core-v0.3.0
