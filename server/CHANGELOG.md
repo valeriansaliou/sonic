@@ -8,6 +8,26 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/v1.9.1...HEAD
 
+### Changes
+
+* packaging(docker): Bump Docker base image from `rust:slim-bullseye` to `rust:1-slim-trixie` (in `2d6cd53`)
+* Deprecate `COUNT` in favor of new `COUNTC`/`COUNTB`/`COUNTO` commands
+
+Dependency updates:
+
+* deps(core): Remove dependency to `byteorder` (in `b79c329`)
+* deps(core): Remove dependency to `radix` (in `2fd3ecf`)
+
+### New Features
+
+* Add new `COUNTC`/`COUNTB`/`COUNTO` commands (in `5bc6082`)
+
+### Bug Fixes
+
+* fix(core): Fix `u32_max` merge operator really being `u32_min`… (in `ec6a9b9`)
+* fix(core): Fix `get_new_iid` not initializing from database (in `a60b3af`)
+* fix(core): Fix document count after a `FLUSHO` (in `060a899`)
+
 ## [1.9.1] (2026-09-15)
 
 [1.9.1]: https://github.com/valeriansaliou/sonic/compare/v1.9.0...v1.9.1
