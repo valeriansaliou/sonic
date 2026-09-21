@@ -14,7 +14,6 @@
 
 ### Changes
 
-* packaging(docker): Bump Docker base image from `rust:slim-bullseye` to `rust:1-slim-trixie` (in `2d6cd53`)
 * feat!: Rework the tokenizer to make its API more flexible (in `c264253`)
 * Make `countb` return the number of objects in the bucket, instead of term count (in `5bc6082`)
 
