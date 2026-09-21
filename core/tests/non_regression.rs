@@ -168,6 +168,17 @@ fn issue_392() {
     assert_eq!(exec!(executor -> COUNTB "docs" "default").unwrap(), 2);
 }
 
+/// See <https://github.com/valeriansaliou/sonic/issues/405>.
+#[test]
+fn issue_405() {
+    let executor = make_test_executor(|_| {});
+
+    exec!(executor -> PUSH "docs" "default" "doc:1" "very very long text" LANG("none") NEW);
+    exec!(executor -> PUSH "docs" "default" "doc:1" "then the rest" LANG("none") NEW);
+
+    assert_eq!(exec!(executor -> COUNTB "docs" "default").unwrap(), 1);
+}
+
 /// See <https://github.com/valeriansaliou/sonic/issues/408>.
 #[test]
 fn issue_408() {

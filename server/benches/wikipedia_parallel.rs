@@ -100,8 +100,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.measurement_time(Duration::from_secs(30));
 
     let total_bytes = articles().map(|article| article.text.len() as u64).sum();
+    let articles_count = articles().count();
     group.throughput(Throughput::ElementsAndBytes {
-        elements: articles().count() as u64,
+        elements: articles_count as u64,
         bytes: total_bytes,
     });
 
@@ -200,6 +201,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                         const BUCKET: &str = "default";
 
                         let control = LazyCell::new(|| SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap());
+                        let ingest = LazyCell::new(|| SonicChannelIngestBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap());
 
                         {
                             tracing::info!("Setting dynamic configuration…");
@@ -348,7 +350,19 @@ fn criterion_benchmark(c: &mut Criterion) {
                             control.config_reset_all(COLLECTION).unwrap();
                         }
 
+                        {
+                            tracing::info!("Ensuring documents have 1:1 matching IIDs…");
+
+                            let count = ingest.countb(COLLECTION, BUCKET).unwrap();
+                            if count != articles_count {
+                                // NOTE: Do not `panic` as some versions of Sonic had this bug and it
+                                //   would render benchmark comparison impossible for no good reason.
+                                tracing::error!("Data was indexed as more IIDs than there are articles (actual: {count}, expected: {articles_count})")
+                            }
+                        }
+
                         drop(control);
+                        drop(ingest);
                         drop(sonic);
 
                         writeln!(

@@ -56,12 +56,12 @@ impl ChannelListen {
                         Ok(stream) => {
                             let handle = ChannelHandle {
                                 app_conf: Arc::clone(&self.app_conf),
-                                executor: sonic::Executor {
-                                    app_conf: Arc::clone(&self.app_conf.sonic),
-                                    kv_pool: self.kv_pool.clone(),
-                                    fst_pool: self.fst_pool.clone(),
-                                    dynamic_conf_store: Arc::clone(&self.dynamic_conf_store),
-                                },
+                                executor: sonic::Executor::new(
+                                    Arc::clone(&self.app_conf.sonic),
+                                    self.kv_pool.clone(),
+                                    self.fst_pool.clone(),
+                                    Arc::clone(&self.dynamic_conf_store),
+                                ),
                             };
 
                             thread::Builder::new()
