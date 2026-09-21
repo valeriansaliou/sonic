@@ -8,6 +8,10 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/client-v0.5.0...HEAD
 
+### Changes
+
+* Use new `COUNTC`/`COUNTB`/`COUNTO` commands (in `82f3b7e`)
+
 ## [0.5.0] (2026-09-15)
 
 [0.5.0]: https://github.com/valeriansaliou/sonic/compare/client-v0.4.0...client-v0.5.0
