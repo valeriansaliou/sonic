@@ -15,7 +15,7 @@
 ### Changes
 
 * feat!: Rework the tokenizer to make its API more flexible (in `c264253`)
-* Make `countb` return the number of objects in the bucket, instead of term count (in `5bc6082`)
+* feat!: Make `countb` return the number of objects in the bucket, instead of term count (in `5bc6082`)
 
 Dependency updates:
 
