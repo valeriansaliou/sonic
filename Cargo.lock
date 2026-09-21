@@ -2500,7 +2500,7 @@ dependencies = [
 
 [[package]]
 name = "sonic_client"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "bytes",
  "crossbeam-channel",
