@@ -2476,7 +2476,7 @@ dependencies = [
 
 [[package]]
 name = "sonic-server"
-version = "1.9.1"
+version = "1.10.0"
 dependencies = [
  "arrow-array",
  "bus",
