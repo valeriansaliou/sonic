@@ -79,19 +79,20 @@ impl AsRef<[u8]> for KvStoreKey {
 
 impl std::fmt::Display for KvStoreKey {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let Self(bytes @ [key_idx, b1, b2, b3, b4, b5, b6, b7, b8]) = self;
+        let Self([key_idx, b1, b2, b3, b4, b5, b6, b7, b8]) = self;
 
         // Convert to number
         let key_bucket = u32::from_le_bytes([*b1, *b2, *b3, *b4]);
         let key_route = u32::from_le_bytes([*b5, *b6, *b7, *b8]);
 
-        write!(f, "'{key_idx}:{key_bucket:x}:{key_route:x}' {bytes:?}")
+        write!(f, "{key_idx}:{key_bucket:x}:{key_route:x}")
     }
 }
 
 impl std::fmt::Debug for KvStoreKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self.0, f)
+        let bytes = &self.0;
+        write!(f, "'{self}' {bytes:?}")
     }
 }
 
@@ -175,14 +176,14 @@ mod tests {
                 "{}",
                 KvStoreKey::term_to_iids(&"bucket:6".into(), 72137347.into())
             ),
-            "'1:71198b49:44cba83' [1, 73, 139, 25, 113, 131, 186, 76, 4]"
+            "1:71198b49:44cba83"
         );
         assert_eq!(
             &format!(
                 "{}",
                 KvStoreKey::meta_to_value(&"bucket:6".into(), &StoreMetaKey::IIDIncr)
             ),
-            "'0:71198b49:0' [0, 73, 139, 25, 113, 0, 0, 0, 0]"
+            "0:71198b49:0"
         );
     }
 }
