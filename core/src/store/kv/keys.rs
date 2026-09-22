@@ -62,24 +62,18 @@ impl KvStoreKey {
         KvStoreKey::from(key_bytes)
     }
 
-    /// Prefix format: `[bucket<?B>]`
-    pub(super) fn as_prefix(&self) -> &[u8] {
-        self.0.split(|b| *b == KEY_SEPARATOR).next().unwrap()
-    }
+    pub(super) fn prefix_range(bucket: &Bucket) -> std::ops::Range<Vec<u8>> {
+        let bucket_bytes = bucket.as_bytes();
 
-    pub(super) fn to_prefix_range_start(&self) -> Vec<u8> {
-        let mut res = self.0.clone();
-        res.splice((res.len() - 5).., [u8::MIN; 5]);
-        res
-    }
+        let mut start = Vec::with_capacity(bucket_bytes.len() + 1);
+        start.extend_from_slice(bucket_bytes);
+        start.push(KEY_SEPARATOR);
 
-    // TODO: Return start of next range, so we can return a proper `Range` that
-    //   RocksDB interprets correctly (avoids having to manually delete end and
-    //   avoids keys >[u8::MAX; 5] not being deleted).
-    pub(super) fn to_prefix_range_end(&self) -> Vec<u8> {
-        let mut res = self.0.clone();
-        res.splice((res.len() - 5).., [u8::MAX; 5]);
-        res
+        let mut end = Vec::with_capacity(bucket_bytes.len() + 1);
+        end.extend_from_slice(bucket_bytes);
+        end.push(KEY_SEPARATOR + 1);
+
+        start..end
     }
 }
 
@@ -224,18 +218,9 @@ mod tests {
 
     #[test]
     fn it_computes_key_ranges() {
-        let key = KvStoreKey::make(1, &Bucket::from("ABC"), 9);
-        // Soundness check.
-        assert_eq!(key.0, &[b'A', b'B', b'C', KEY_SEPARATOR, 1, 9, 0, 0, 0]);
-
-        assert_eq!(
-            key.to_prefix_range_start(),
-            &[b'A', b'B', b'C', KEY_SEPARATOR, 0, 0, 0, 0, 0]
-        );
-        assert_eq!(
-            key.to_prefix_range_end(),
-            &[b'A', b'B', b'C', KEY_SEPARATOR, 255, 255, 255, 255, 255]
-        );
+        let range = KvStoreKey::prefix_range(&Bucket::from("ABC"));
+        assert_eq!(range.start, &[b'A', b'B', b'C', KEY_SEPARATOR]);
+        assert_eq!(range.end, &[b'A', b'B', b'C', KEY_SEPARATOR + 1]);
     }
 }
 

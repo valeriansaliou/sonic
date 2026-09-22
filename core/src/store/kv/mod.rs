@@ -681,50 +681,34 @@ impl<'a> KvStoreActionReadWrite<'a> {
     pub fn batch_erase_bucket(&self) -> Result<u32, ()> {
         let bucket = self.bucket;
 
-        // Generate all key prefix values (with dummy post-prefix values; we dont care)
-        let key_ranges_dummies = [
-            KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr),
-            KvStoreKey::term_to_iids(&bucket, 0.into()),
-            KvStoreKey::oid_to_iid(&bucket, StoreObjectOid(StoreItemPart(""))),
-            KvStoreKey::iid_to_oid(&bucket, 0.into()),
-            KvStoreKey::iid_to_terms(&bucket, 0.into()),
-        ];
+        tracing::debug!("store batch erase bucket: {bucket}");
 
-        // Scan all keys per-prefix and nuke them right away
-        for key_range_dummy in key_ranges_dummies.into_iter() {
-            tracing::debug!(
-                "store batch erase bucket: {bucket} for prefix: {key_prefix:?}",
-                key_prefix = key_range_dummy.as_prefix()
-            );
+        // Generate start and end prefix for batch delete (in other words,
+        // the minimum key value possible, and the highest key value possible).
+        let key_range = KvStoreKey::prefix_range(&bucket);
 
-            // Generate start and end prefix for batch delete (in other words,
-            // the minimum key value possible, and the highest key value possible)
-            let key_prefix_start = key_range_dummy.to_prefix_range_start();
-            let key_prefix_end = key_range_dummy.to_prefix_range_end();
+        // TODO: Move the batch outside the for loop?
+        let mut batch = WriteBatch::default();
 
-            // TODO: Move the batch outside the for loop?
-            let mut batch = WriteBatch::default();
+        // Batch-delete keys matching range.
+        // NOTE: RocksDB excludes end key, but Rust ranges are exclusive too
+        //   ([as they should](https://devblog.remibardon.name/til/dijkstra-ranges/))
+        //   so all keys will be deleted.
+        batch.delete_range(&key_range.start, &key_range.end);
 
-            // Batch-delete keys matching range
-            batch.delete_range(&key_prefix_start, &key_prefix_end);
-
-            // Ensure last key is deleted (as RocksDB end key is exclusive;
-            // while start key is inclusive, we need to ensure the end-of-range
-            // key is deleted)
-            batch.delete(&key_prefix_end);
-
-            // Commit operation to database
-            if let Err(err) = self.write(batch) {
-                tracing::error!("failed in store batch erase bucket: {bucket} with error: {err}");
-                continue;
+        // Commit operation to database.
+        match self.write(batch) {
+            Ok(()) => {
+                tracing::debug!("succeeded in store batch erase bucket: {bucket}");
+                Ok(1)
             }
-
-            tracing::debug!("succeeded in store batch erase bucket: {bucket}");
+            Err(error) => {
+                tracing::error!(
+                    "failed in store batch erase bucket: {bucket} with error: {error:?}"
+                );
+                Err(())
+            }
         }
-
-        tracing::info!("done processing store batch erase bucket: {bucket}");
-
-        Ok(1)
     }
 }
 
