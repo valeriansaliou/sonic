@@ -177,11 +177,13 @@ impl Drop for RunContext {
             LazyLock::new(|| std::env::var("SHOW_STORE_SIZE").is_ok());
 
         if *SHOW_STORE_SIZE {
+            println!("Index size:");
+
             // Print size of all store files at the end of each benchmark.
             Command::new("du")
                 // Show files, make it human-readable and show grand total.
                 .arg("-ahc")
-                .arg(&self.data_guard.0)
+                .current_dir(&self.data_guard.0)
                 .status()
                 .unwrap();
         }
