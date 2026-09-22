@@ -48,6 +48,20 @@ static PUSH_USE_NEW: LazyLock<bool> = LazyLock::new(|| {
         |s| matches!(s.as_str(), "1" | "true"),
     )
 });
+static BENCH_CONF: LazyLock<String> = LazyLock::new(|| {
+    std::env::var("BENCH_CONF").unwrap_or_else(|_err| {
+        let default = "defer_compact-unordered_write";
+        tracing::info!("`BENCH_CONF` not configured, using {default:?} as default.");
+        default.to_owned()
+    })
+});
+static SONIC_CONF: LazyLock<String> = LazyLock::new(|| {
+    std::env::var("SONIC_CONF").unwrap_or_else(|_err| {
+        let default = "buf_16m-l0_64m";
+        tracing::info!("`SONIC_CONF` not configured, using {default:?} as default.");
+        default.to_owned()
+    })
+});
 
 fn articles_iter(limit: usize) -> impl Iterator<Item = WikipediaArticle> {
     SHARD_PATHS
@@ -86,8 +100,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.measurement_time(Duration::from_secs(30));
 
     let total_bytes = articles().map(|article| article.text.len() as u64).sum();
+    let articles_count = articles().count();
     group.throughput(Throughput::ElementsAndBytes {
-        elements: articles().count() as u64,
+        elements: articles_count as u64,
         bytes: total_bytes,
     });
 
@@ -116,10 +131,8 @@ fn criterion_benchmark(c: &mut Criterion) {
             4
         }
     }, |s| s.parse().unwrap());
-    let bench_conf: String = std::env::var("BENCH_CONF").unwrap();
-    let sonic_conf: String = std::env::var("SONIC_CONF").unwrap();
 
-    let bench_confs = bench_conf.split(",").map(|name| {
+    let bench_confs = BENCH_CONF.split(",").map(|name| {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("benches/configs/bench")
             .join(name)
@@ -129,7 +142,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         };
         (name, path)
     });
-    let sonic_confs = sonic_conf
+    let sonic_confs = SONIC_CONF
         .split(",")
         .map(|name| {
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -188,6 +201,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                         const BUCKET: &str = "default";
 
                         let control = LazyCell::new(|| SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap());
+                        let ingest = LazyCell::new(|| SonicChannelIngestBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap());
 
                         {
                             tracing::info!("Setting dynamic configuration…");
@@ -336,7 +350,19 @@ fn criterion_benchmark(c: &mut Criterion) {
                             control.config_reset_all(COLLECTION).unwrap();
                         }
 
+                        {
+                            tracing::info!("Ensuring documents have 1:1 matching IIDs…");
+
+                            let count = ingest.countb(COLLECTION, BUCKET).unwrap();
+                            if count != articles_count {
+                                // NOTE: Do not `panic` as some versions of Sonic had this bug and it
+                                //   would render benchmark comparison impossible for no good reason.
+                                tracing::error!("Data was indexed as more IIDs than there are articles (actual: {count}, expected: {articles_count})")
+                            }
+                        }
+
                         drop(control);
+                        drop(ingest);
                         drop(sonic);
 
                         writeln!(

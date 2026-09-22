@@ -65,12 +65,7 @@ pub fn make_test_executor_with_id(
 
     ExecutorGuard {
         id: id.to_string(),
-        executor: sonic::Executor {
-            app_conf: Arc::new(app_conf),
-            kv_pool,
-            fst_pool,
-            dynamic_conf_store: Default::default(),
-        },
+        executor: sonic::Executor::new(Arc::new(app_conf), kv_pool, fst_pool, Arc::default()),
     }
 }
 

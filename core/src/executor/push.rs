@@ -56,11 +56,26 @@ impl super::Executor {
 
             Ok(iid)
         };
+        let mut is_new = true;
         let iid = if assume_new {
-            assign_new_iid()?
+            if let Some((last_oid, iid)) = self.last_assumed_new_oid.read().unwrap().as_ref()
+                && **oid == *last_oid.as_str()
+            {
+                is_new = false;
+                *iid
+            } else {
+                let iid = assign_new_iid()?;
+
+                *self.last_assumed_new_oid.write().unwrap() = Some((oid.to_string(), iid));
+
+                iid
+            }
         } else {
             match kv_action.get_oid_to_iid(oid) {
-                Ok(Some(iid)) => iid,
+                Ok(Some(iid)) => {
+                    is_new = false;
+                    iid
+                }
                 Ok(None) => assign_new_iid()?,
                 Err(error) => {
                     tracing::error!("Error getting OID-To-IID: {error:?}");
@@ -86,7 +101,7 @@ impl super::Executor {
         }
 
         // Link terms to IID
-        if assume_new {
+        if assume_new && is_new {
             kv_action.set_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());
         } else {
             kv_action.add_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());

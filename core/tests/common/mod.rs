@@ -44,11 +44,17 @@ pub(crate) mod item_ref {
 }
 
 macro_rules! exec {
-    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $(LANG($lang:expr))?) => {{
+    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $(LANG($lang:expr))? NEW) => {
+        exec!(internal_ $executor -> PUSH $collection $bucket $oid $text true $(LANG($lang))?)
+    };
+    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $(LANG($lang:expr))?) => {
+        exec!(internal_ $executor -> PUSH $collection $bucket $oid $text false $(LANG($lang))?)
+    };
+    (internal_ $executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $assume_new:ident $(LANG($lang:expr))?) => {{
         #[rustfmt::skip]
         $executor.log(format!(
-            "PUSH {:?} {:?} {:?} {:?}{}",
-            $collection, $bucket, $oid, $text, exec!(internal_ lang_txt $($lang)?)
+            "PUSH {:?} {:?} {:?} {:?}{}{}",
+            $collection, $bucket, $oid, $text, exec!(internal_ lang_txt $($lang)?), if $assume_new { " NEW" } else { "" }
         ));
         let (c, b, o) = crate::common::object_ref!($collection, $bucket, $oid);
         let preprocessor = sonic::lexer::preprocessor::Preprocessor::new(
@@ -62,7 +68,7 @@ macro_rules! exec {
             .push(
                 c, b, o,
                 preprocessor.preprocess($text, exec!(internal_ lang $($lang)?)),
-                false,
+                $assume_new,
             )
             .unwrap()
     }};
