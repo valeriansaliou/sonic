@@ -16,7 +16,6 @@ use rocksdb::DB;
 use crate::config::KvStoreDatabaseConfig;
 use crate::store::generic::*;
 use crate::store::*;
-use crate::util::hash::NoopU32HasherBuilder;
 
 use super::util::default_merge_operator;
 use super::{KvStore, KvStoreAtom};
@@ -181,7 +180,7 @@ impl KvStorePool {
                     last_flushed: RwLock::new(now),
                     lock: RwLock::new(()),
                     kv_store_config: Arc::clone(&self.kv_store_config),
-                    iid_incr_per_bucket: RwLock::new(HashMap::with_hasher(NoopU32HasherBuilder)),
+                    iid_incr_per_bucket: RwLock::new(HashMap::new()),
                 })
             }
             Err(err) => {

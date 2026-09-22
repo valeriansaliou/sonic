@@ -42,6 +42,12 @@ crate::util::impl_transparent_wrapper_utils!(Display for StoreObjectOid<'a>(Stor
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Bucket<'a>(pub(super) StoreItemPart<'a>);
 
+impl<'a> Bucket<'a> {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.as_bytes().to_vec()
+    }
+}
+
 crate::util::impl_transparent_wrapper_utils!(Deref for Bucket<'a>(StoreItemPart<'a>));
 crate::util::impl_transparent_wrapper_utils!(From for Bucket<'a>(StoreItemPart<'a>));
 crate::util::impl_transparent_wrapper_utils!(Debug for Bucket<'a>(StoreItemPart<'a>));

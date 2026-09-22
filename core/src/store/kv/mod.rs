@@ -19,7 +19,6 @@ use rocksdb::{DB, WriteBatch};
 
 use crate::store::generic::*;
 use crate::store::*;
-use crate::util::hash::NoopU32HasherBuilder;
 
 use self::keys::KvStoreKey;
 pub use self::keys::StoreMetaKey;
@@ -40,9 +39,7 @@ pub struct KvStore {
     /// have bad read performance.
     ///
     /// In benchmarks, we saw a `~23%` throughput increase after this change.
-    // PERF: We use a no-op hasher since u32 keys come from xxhash and are
-    //   already well distributed. No need to perform another hash computation.
-    iid_incr_per_bucket: RwLock<HashMap<u32, StoreObjectIid, NoopU32HasherBuilder>>,
+    iid_incr_per_bucket: RwLock<HashMap<Vec<u8>, StoreObjectIid>>,
 }
 
 pub struct KvStoreActionReadOnly<'a> {
@@ -92,9 +89,9 @@ impl KvStore {
     fn get_iid_incr(
         &self,
         bucket: &Bucket,
-        iid_incr_per_bucket: &HashMap<u32, StoreObjectIid, NoopU32HasherBuilder>,
+        iid_incr_per_bucket: &HashMap<Vec<u8>, StoreObjectIid>,
     ) -> Result<Option<StoreObjectIid>, Box<dyn std::error::Error>> {
-        iid_incr_per_bucket.get(&bucket.into_compact()).map_or_else(
+        iid_incr_per_bucket.get(&bucket.to_bytes()).map_or_else(
             || {
                 tracing::debug!(?bucket, "IIDIncr not found in cache, reading database…");
                 self.fetch_iid_incr(bucket)
@@ -141,7 +138,7 @@ impl KvStore {
     ) -> Result<StoreObjectIid, Box<dyn std::error::Error>> {
         let mut write_guard = self.iid_incr_per_bucket.write().unwrap();
 
-        let cache_key = bucket.into_compact();
+        let cache_key = bucket.to_bytes();
         let iid = match write_guard.get_mut(&cache_key) {
             Some(iid) => {
                 let new_iid = iid.saturating_add(1);
@@ -697,7 +694,7 @@ impl<'a> KvStoreActionReadWrite<'a> {
         for key_range_dummy in key_ranges_dummies.into_iter() {
             tracing::debug!(
                 "store batch erase bucket: {bucket} for prefix: {key_prefix:?}",
-                key_prefix = key_range_dummy.to_prefix()
+                key_prefix = key_range_dummy.as_prefix()
             );
 
             // Generate start and end prefix for batch delete (in other words,
