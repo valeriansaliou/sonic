@@ -104,11 +104,32 @@ impl StoreGenericPool for KvStorePool {
         }
     }
 
-    // FIXME: Implement this, as it does not need a lock like mentioned below.
-    fn proceed_erase_bucket(&self, _collection: StoreItemPart, _bucket: Bucket) -> Result<u32, ()> {
-        // This one is not implemented, as we need to acquire the collection; which would cause \
-        //   a party-killer dead-lock.
-        Err(())
+    fn proceed_erase_bucket(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u32, ()> {
+        let kv_store = self
+            .acquire(false, collection, None, |_| {})
+            .map_err(|()| tracing::error!("failed erasing KV buckets"))?;
+
+        let Some(kv_store) = kv_store else {
+            tracing::debug!(
+                "collection store does not exist, consider {bucket:?} from {collection:?} already erased"
+            );
+            return Ok(0);
+        };
+
+        // Important: acquire bucket store write lock
+        let _write_guard = kv_store.lock.write().unwrap();
+
+        // Store exists, proceed erasure.
+        tracing::debug!("collection store exists, erasing: {bucket} from {collection}");
+
+        let kv_action = kv_store.access_read_write(bucket);
+
+        // Notice: we cannot use the provided KV bucket erasure helper there, as \
+        //   erasing a bucket requires a database lock, which would incur a dead-lock, \
+        //   thus we need to perform the erasure from there.
+        kv_action
+            .batch_erase_bucket()
+            .inspect(|_n| tracing::debug!("done with bucket erasure"))
     }
 }
 

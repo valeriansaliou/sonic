@@ -678,7 +678,7 @@ impl<'a> KvStoreActionReadWrite<'a> {
         count
     }
 
-    pub fn batch_erase_bucket(&self) -> Result<u32, ()> {
+    pub(super) fn batch_erase_bucket(&self) -> Result<u32, ()> {
         let bucket = self.bucket;
 
         tracing::debug!("store batch erase bucket: {bucket}");
