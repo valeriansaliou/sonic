@@ -47,38 +47,38 @@ impl KvStoreKey {
         Self::make(IID_TO_TERMS, bucket, iid.into())
     }
 
-    /// Key format: `[idx<1B> | bucket<?B> | separator<1B> | route<4B>]`
+    /// Key format: `[bucket<?B> | separator<1B> | idx<1B> | route<4B>]`
     fn make(idx: u8, bucket: &Bucket, route: u32) -> KvStoreKey {
         // Encode key bucket + key route from u32 to array of u8 (i.e. binary).
         let bucket_bytes = bucket.to_bytes();
 
         let mut key_bytes = Vec::with_capacity(bucket_bytes.len() + 6);
 
-        key_bytes.push(idx); // [idx<1B>]
         key_bytes.extend_from_slice(&bucket_bytes); // [bucket<?B>]
         key_bytes.push(KEY_SEPARATOR); // [separator<1B>]
+        key_bytes.push(idx); // [idx<1B>]
         key_bytes.extend_from_slice(&route.to_le_bytes()); // [route<4B>]
 
         KvStoreKey::from(key_bytes)
     }
 
-    /// Prefix format: `[idx<1B> | bucket<?B>]`
+    /// Prefix format: `[bucket<?B>]`
     pub(super) fn as_prefix(&self) -> &[u8] {
         self.0.split(|b| *b == KEY_SEPARATOR).next().unwrap()
     }
 
     pub(super) fn to_prefix_range_start(&self) -> Vec<u8> {
         let mut res = self.0.clone();
-        res.splice((res.len() - 4).., [u8::MIN; 4]);
+        res.splice((res.len() - 5).., [u8::MIN; 5]);
         res
     }
 
     // TODO: Return start of next range, so we can return a proper `Range` that
     //   RocksDB interprets correctly (avoids having to manually delete end and
-    //   avoids keys >[u8::MAX; 4] not being deleted).
+    //   avoids keys >[u8::MAX; 5] not being deleted).
     pub(super) fn to_prefix_range_end(&self) -> Vec<u8> {
         let mut res = self.0.clone();
-        res.splice((res.len() - 4).., [u8::MAX; 4]);
+        res.splice((res.len() - 5).., [u8::MAX; 5]);
         res
     }
 }
@@ -100,15 +100,19 @@ impl std::fmt::Display for KvStoreKey {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let Self(bytes) = self;
 
-        let key_idx = bytes[0];
+        // WARN: `splitn` is important as `KEY_SEPARATOR` might appear later as a normal byte.
+        let mut splits = bytes.splitn(2, |c| *c == KEY_SEPARATOR);
 
-        let mut rest = bytes[1..].splitn(2, |c| *c == KEY_SEPARATOR);
-
-        let bucket_bytes = rest.next().unwrap();
+        let bucket_bytes = splits.next().unwrap();
         let key_bucket = str::from_utf8(bucket_bytes).unwrap();
 
-        let route_bytes = rest.next().unwrap();
-        debug_assert_eq!(route_bytes.len(), 4);
+        let rest = splits.next().unwrap();
+        debug_assert_eq!(rest.len(), 5);
+        debug_assert!(splits.next().is_none());
+
+        let key_idx = rest[0];
+
+        let route_bytes = &rest[1..];
         let key_route = u32::from_le_bytes([
             route_bytes[0],
             route_bytes[1],
@@ -116,7 +120,7 @@ impl std::fmt::Display for KvStoreKey {
             route_bytes[3],
         ]);
 
-        write!(f, "{key_idx}:{key_bucket:?}:{key_route:x}")
+        write!(f, "{key_bucket:?}:{key_idx}:{key_route:x}")
     }
 }
 
@@ -150,7 +154,7 @@ mod tests {
     fn it_keys_meta_to_value() {
         assert_eq!(
             KvStoreKey::meta_to_value(&"b:1".into(), &StoreMetaKey::IIDIncr).0,
-            [0, b'b', b':', b'1', KEY_SEPARATOR, 0, 0, 0, 0]
+            [b'b', b':', b'1', KEY_SEPARATOR, 0, 0, 0, 0, 0]
         );
     }
 
@@ -158,11 +162,11 @@ mod tests {
     fn it_keys_term_to_iids() {
         assert_eq!(
             KvStoreKey::term_to_iids(&"b:2".into(), 772137347.into()).0,
-            [1, b'b', b':', b'2', KEY_SEPARATOR, 131, 225, 5, 46]
+            [b'b', b':', b'2', KEY_SEPARATOR, 1, 131, 225, 5, 46]
         );
         assert_eq!(
             KvStoreKey::term_to_iids(&"b:2".into(), 3582484684.into()).0,
-            [1, b'b', b':', b'2', KEY_SEPARATOR, 204, 96, 136, 213]
+            [b'b', b':', b'2', KEY_SEPARATOR, 1, 204, 96, 136, 213]
         );
     }
 
@@ -170,7 +174,7 @@ mod tests {
     fn it_keys_oid_to_iid() {
         assert_eq!(
             KvStoreKey::oid_to_iid(&"b:3".into(), "conversation:6501e83a".into()).0,
-            [2, b'b', b':', b'3', KEY_SEPARATOR, 31, 156, 118, 213]
+            [b'b', b':', b'3', KEY_SEPARATOR, 2, 31, 156, 118, 213]
         );
     }
 
@@ -178,7 +182,7 @@ mod tests {
     fn it_keys_iid_to_oid() {
         assert_eq!(
             KvStoreKey::iid_to_oid(&"b:4".into(), 10292198.into()).0,
-            [3, b'b', b':', b'4', KEY_SEPARATOR, 230, 11, 157, 0]
+            [b'b', b':', b'4', KEY_SEPARATOR, 3, 230, 11, 157, 0]
         );
     }
 
@@ -186,11 +190,11 @@ mod tests {
     fn it_keys_iid_to_terms() {
         assert_eq!(
             KvStoreKey::iid_to_terms(&"b:5".into(), 1.into()).0,
-            [4, b'b', b':', b'5', KEY_SEPARATOR, 1, 0, 0, 0]
+            [b'b', b':', b'5', KEY_SEPARATOR, 4, 1, 0, 0, 0]
         );
         assert_eq!(
             KvStoreKey::iid_to_terms(&"b:5".into(), 20.into()).0,
-            [4, b'b', b':', b'5', KEY_SEPARATOR, 20, 0, 0, 0]
+            [b'b', b':', b'5', KEY_SEPARATOR, 4, 20, 0, 0, 0]
         );
     }
 
@@ -207,14 +211,14 @@ mod tests {
                 "{}",
                 KvStoreKey::term_to_iids(&"b:6".into(), 72137347.into())
             ),
-            r#"1:"b:6":44cba83"#
+            r#""b:6":1:44cba83"#
         );
         assert_eq!(
             &format!(
                 "{}",
                 KvStoreKey::meta_to_value(&"b:6".into(), &StoreMetaKey::IIDIncr)
             ),
-            r#"0:"b:6":0"#
+            r#""b:6":0:0"#
         );
     }
 
@@ -222,15 +226,15 @@ mod tests {
     fn it_computes_key_ranges() {
         let key = KvStoreKey::make(1, &Bucket::from("ABC"), 9);
         // Soundness check.
-        assert_eq!(key.0, &[1, b'A', b'B', b'C', KEY_SEPARATOR, 9, 0, 0, 0]);
+        assert_eq!(key.0, &[b'A', b'B', b'C', KEY_SEPARATOR, 1, 9, 0, 0, 0]);
 
         assert_eq!(
             key.to_prefix_range_start(),
-            &[1, b'A', b'B', b'C', KEY_SEPARATOR, 0, 0, 0, 0]
+            &[b'A', b'B', b'C', KEY_SEPARATOR, 0, 0, 0, 0, 0]
         );
         assert_eq!(
             key.to_prefix_range_end(),
-            &[1, b'A', b'B', b'C', KEY_SEPARATOR, 255, 255, 255, 255]
+            &[b'A', b'B', b'C', KEY_SEPARATOR, 255, 255, 255, 255, 255]
         );
     }
 }

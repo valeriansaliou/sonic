@@ -83,7 +83,7 @@ pub(super) fn default_merge_operator(
 ) -> Option<Vec<u8>> {
     use super::keys::constants::*;
 
-    match key[0] {
+    match key[key.len() - 5] {
         META_TO_VALUE => match &key[(key.len() - 4)..] {
             v if v == encode_u32(StoreMetaKey::IIDIncr.as_u32()) => u32_max(existing_val, operands),
             v if v == encode_u32(StoreMetaKey::ObjectCount.as_u32()) => {
