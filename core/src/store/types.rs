@@ -32,48 +32,27 @@ impl StoreObjectIid {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct StoreObjectOid<'a>(pub(super) StoreItemPart<'a>);
 
-crate::util::impl_transparent_wrapper_utils!(base for StoreObjectOid<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(Deref for StoreObjectOid<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(From for StoreObjectOid<'a>(StoreItemPart<'a>));
 crate::util::impl_transparent_wrapper_utils!(Debug for StoreObjectOid<'a>(StoreItemPart<'a>));
 crate::util::impl_transparent_wrapper_utils!(Display for StoreObjectOid<'a>(StoreItemPart<'a>));
-
-impl<'a, T> From<T> for StoreObjectOid<'a>
-where
-    StoreItemPart<'a>: From<T>,
-{
-    fn from(value: T) -> Self {
-        Self(value.into())
-    }
-}
 
 // MARK: Bucket
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Bucket<'a>(pub(super) StoreItemPart<'a>);
 
-crate::util::impl_transparent_wrapper_utils!(base for Bucket<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(Deref for Bucket<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(From for Bucket<'a>(StoreItemPart<'a>));
 crate::util::impl_transparent_wrapper_utils!(Debug for Bucket<'a>(StoreItemPart<'a>));
 crate::util::impl_transparent_wrapper_utils!(Display for Bucket<'a>(StoreItemPart<'a>));
-
-impl<'a, T> From<T> for Bucket<'a>
-where
-    StoreItemPart<'a>: From<T>,
-{
-    fn from(value: T) -> Self {
-        Self(value.into())
-    }
-}
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct BucketOwned(String);
 
+crate::util::impl_transparent_wrapper_utils!(Deref for BucketOwned(String));
 crate::util::impl_transparent_wrapper_utils!(Debug for BucketOwned(String));
 crate::util::impl_transparent_wrapper_utils!(Display for BucketOwned(String));
-
-impl BucketOwned {
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
-    }
-}
 
 impl<'a> From<Bucket<'a>> for BucketOwned {
     fn from(value: Bucket<'a>) -> Self {
@@ -142,7 +121,7 @@ mod tests_store_term_hash {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StoreItemPart<'a>(pub(super) &'a str);
 
-crate::util::impl_transparent_wrapper_utils!(base for StoreItemPart<'a>(&'a str));
+crate::util::impl_transparent_wrapper_utils!(Deref for StoreItemPart<'a>(&'a str));
 crate::util::impl_transparent_wrapper_utils!(Debug for StoreItemPart<'a>(&'a str));
 crate::util::impl_transparent_wrapper_utils!(Display for StoreItemPart<'a>(&'a str));
 
@@ -181,12 +160,6 @@ impl From<&'static str> for StoreItemPart<'static> {
 
 pub fn bucket(str: &'static str) -> StoreItemPart<'static> {
     StoreItemPart::from_str(str).unwrap()
-}
-
-impl<'a> AsRef<str> for StoreItemPart<'a> {
-    fn as_ref(&self) -> &str {
-        self.0
-    }
 }
 
 pub enum StoreItemBuilder {}
@@ -328,8 +301,9 @@ macro_rules! impl_u32_wrapper_utils {
             }
         }
 
-        crate::util::impl_transparent_wrapper_utils!(base for $t(u32));
+        crate::util::impl_transparent_wrapper_utils!(Deref for $t(u32));
         crate::util::impl_transparent_wrapper_utils!(Debug for $t(u32));
+        crate::util::impl_transparent_wrapper_utils!(FromStr for $t(u32));
     };
 }
 use impl_u32_wrapper_utils;
