@@ -685,50 +685,25 @@ impl<'a> KvStoreActionReadWrite<'a> {
         let bucket = self.bucket;
 
         // Generate all key prefix values (with dummy post-prefix values; we dont care)
-        let (k_meta_to_value, k_term_to_iids, k_oid_to_iid, k_iid_to_oid, k_iid_to_terms) = (
+        let key_ranges_dummies = [
             KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr),
             KvStoreKey::term_to_iids(&bucket, 0.into()),
             KvStoreKey::oid_to_iid(&bucket, StoreObjectOid(StoreItemPart(""))),
             KvStoreKey::iid_to_oid(&bucket, 0.into()),
             KvStoreKey::iid_to_terms(&bucket, 0.into()),
-        );
-
-        let key_prefixes = [
-            k_meta_to_value.to_prefix(),
-            k_term_to_iids.to_prefix(),
-            k_oid_to_iid.to_prefix(),
-            k_iid_to_oid.to_prefix(),
-            k_iid_to_terms.to_prefix(),
         ];
 
         // Scan all keys per-prefix and nuke them right away
-        for key_prefix in &key_prefixes {
-            tracing::debug!("store batch erase bucket: {bucket} for prefix: {key_prefix:?}");
+        for key_range_dummy in key_ranges_dummies.into_iter() {
+            tracing::debug!(
+                "store batch erase bucket: {bucket} for prefix: {key_prefix:?}",
+                key_prefix = key_range_dummy.to_prefix()
+            );
 
             // Generate start and end prefix for batch delete (in other words,
             // the minimum key value possible, and the highest key value possible)
-            let key_prefix_start = KvStoreKey::from([
-                key_prefix[0],
-                key_prefix[1],
-                key_prefix[2],
-                key_prefix[3],
-                key_prefix[4],
-                0,
-                0,
-                0,
-                0,
-            ]);
-            let key_prefix_end = KvStoreKey::from([
-                key_prefix[0],
-                key_prefix[1],
-                key_prefix[2],
-                key_prefix[3],
-                key_prefix[4],
-                255,
-                255,
-                255,
-                255,
-            ]);
+            let key_prefix_start = key_range_dummy.to_prefix_range_start();
+            let key_prefix_end = key_range_dummy.to_prefix_range_end();
 
             // TODO: Move the batch outside the for loop?
             let mut batch = WriteBatch::default();

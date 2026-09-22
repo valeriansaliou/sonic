@@ -63,6 +63,19 @@ impl KvStoreKey {
     pub(super) fn to_prefix(&self) -> [u8; 5] {
         [self.0[0], self.0[1], self.0[2], self.0[3], self.0[4]]
     }
+
+    pub(super) fn to_prefix_range_start(&self) -> [u8; 9] {
+        let Self([b0, b1, b2, b3, b4, _, _, _, _]) = self;
+        [*b0, *b1, *b2, *b3, *b4, u8::MIN, u8::MIN, u8::MIN, u8::MIN]
+    }
+
+    // TODO: Return start of next range, so we can return a proper `Range` that
+    //   RocksDB interprets correctly (avoids having to manually delete end and
+    //   avoids keys >[u8::MAX; 4] not being deleted).
+    pub(super) fn to_prefix_range_end(&self) -> [u8; 9] {
+        let Self([b0, b1, b2, b3, b4, _, _, _, _]) = self;
+        [*b0, *b1, *b2, *b3, *b4, u8::MAX, u8::MAX, u8::MAX, u8::MAX]
+    }
 }
 
 impl From<[u8; 9]> for KvStoreKey {
