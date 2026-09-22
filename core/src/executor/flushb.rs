@@ -5,10 +5,10 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use crate::store::StoreItemPart;
+use crate::store::{Bucket, StoreItemPart};
 
 impl super::Executor {
-    pub fn flushb(&self, collection: StoreItemPart, bucket: StoreItemPart) -> Result<u32, ()> {
+    pub fn flushb(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u32, ()> {
         // Important: acquire database access read lock, and reference it in context. This \
         //   prevents the database from being erased while using it in this block.
         // Notice: acquire FST lock in write mode, as we will erase it.

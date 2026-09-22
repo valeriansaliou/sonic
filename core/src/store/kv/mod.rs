@@ -46,12 +46,12 @@ pub struct KvStore {
 }
 
 pub struct KvStoreActionReadOnly<'a> {
-    bucket: StoreItemPart<'a>,
+    bucket: Bucket<'a>,
     store: &'a KvStore,
 }
 
 pub struct KvStoreActionReadWrite<'a> {
-    bucket: StoreItemPart<'a>,
+    bucket: Bucket<'a>,
     store: &'a KvStore,
 }
 
@@ -91,7 +91,7 @@ impl KvStore {
     /// (beware of slow reads).
     fn get_iid_incr(
         &self,
-        bucket: &StoreItemPart,
+        bucket: &Bucket,
         iid_incr_per_bucket: &HashMap<u32, StoreObjectIid, NoopU32HasherBuilder>,
     ) -> Result<Option<StoreObjectIid>, Box<dyn std::error::Error>> {
         iid_incr_per_bucket.get(&bucket.into_compact()).map_or_else(
@@ -109,7 +109,7 @@ impl KvStore {
     /// Reads `IIDIncr` directly from the database.
     fn fetch_iid_incr<'a>(
         &self,
-        bucket: &StoreItemPart<'a>,
+        bucket: &Bucket<'a>,
     ) -> Result<Option<StoreObjectIid>, Box<dyn std::error::Error>> {
         let store_key = KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
         let value = self.database.get(store_key)?;
@@ -136,7 +136,7 @@ impl KvStore {
 
     fn get_new_iid(
         &self,
-        bucket: StoreItemPart,
+        bucket: Bucket,
         batch: &mut WriteBatch,
     ) -> Result<StoreObjectIid, Box<dyn std::error::Error>> {
         let mut write_guard = self.iid_incr_per_bucket.write().unwrap();
@@ -159,11 +159,11 @@ impl KvStore {
                                 KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::ObjectCount);
 
                             if (self.database)
-                                .get_pinned(object_count_key)
+                                .get_pinned(&object_count_key)
                                 .is_ok_and(|opt| opt.is_none())
                             {
                                 self.database
-                                    .put(object_count_key, iid_incr.into_bytes())
+                                    .put(&object_count_key, iid_incr.into_bytes())
                                     .unwrap_or_else(|error| {
                                         tracing::error!(
                                             "Could not backfill ObjectCount from IIDIncr: {error:?}"
@@ -206,17 +206,14 @@ impl StoreGeneric for KvStore {
 }
 
 impl KvStore {
-    pub fn access_read_only<'a>(&'a self, bucket: StoreItemPart<'a>) -> KvStoreActionReadOnly<'a> {
+    pub fn access_read_only<'a>(&'a self, bucket: Bucket<'a>) -> KvStoreActionReadOnly<'a> {
         KvStoreActionReadOnly {
             bucket,
             store: self,
         }
     }
 
-    pub fn access_read_write<'a>(
-        &'a self,
-        bucket: StoreItemPart<'a>,
-    ) -> KvStoreActionReadWrite<'a> {
+    pub fn access_read_write<'a>(&'a self, bucket: Bucket<'a>) -> KvStoreActionReadWrite<'a> {
         KvStoreActionReadWrite {
             bucket,
             store: self,
@@ -236,7 +233,7 @@ impl<'a> KvStoreActionReadOnly<'a> {
 
         tracing::debug!("store get meta-to-value: {store_key}");
 
-        match self.store.database.get(store_key) {
+        match self.store.database.get(&store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got meta-to-value: {store_key}");
 
@@ -300,7 +297,7 @@ impl<'a> KvStoreActionReadOnly<'a> {
 
         tracing::debug!("store get term-to-iids: {store_key}");
 
-        match self.store.database.get(store_key) {
+        match self.store.database.get(&store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got term-to-iids: {store_key} with encoded value: {value:?}");
 
@@ -333,7 +330,7 @@ impl<'a> KvStoreActionReadOnly<'a> {
 
         tracing::debug!("store get oid-to-iid: {store_key}");
 
-        match self.store.database.get(store_key) {
+        match self.store.database.get(&store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got oid-to-iid: {store_key} with encoded value: {value:?}");
 
@@ -366,7 +363,7 @@ impl<'a> KvStoreActionReadOnly<'a> {
 
         tracing::debug!("store get iid-to-oid: {store_key}");
 
-        match self.store.database.get(store_key) {
+        match self.store.database.get(&store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got iid-to-oid: {store_key}");
 
@@ -393,7 +390,7 @@ impl<'a> KvStoreActionReadOnly<'a> {
 
         tracing::debug!("store get iid-to-terms: {store_key}");
 
-        match self.store.database.get(store_key) {
+        match self.store.database.get(&store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got iid-to-terms: {store_key} with encoded value: {value:?}");
 
@@ -527,7 +524,7 @@ impl<'a> KvStoreActionReadWrite<'a> {
         tracing::debug!("store add term-to-iids: {store_key}");
 
         for iid in iids {
-            batch.merge(store_key, iid.into_bytes());
+            batch.merge(&store_key, iid.into_bytes());
         }
     }
 
@@ -628,7 +625,7 @@ impl<'a> KvStoreActionReadWrite<'a> {
         tracing::debug!("store add iid-to-terms: {store_key}");
 
         for term_hash in terms_hashes {
-            batch.merge(store_key, term_hash.into_bytes());
+            batch.merge(&store_key, term_hash.into_bytes());
         }
     }
 
@@ -697,11 +694,11 @@ impl<'a> KvStoreActionReadWrite<'a> {
         );
 
         let key_prefixes = [
-            k_meta_to_value.into_prefix(),
-            k_term_to_iids.into_prefix(),
-            k_oid_to_iid.into_prefix(),
-            k_iid_to_oid.into_prefix(),
-            k_iid_to_terms.into_prefix(),
+            k_meta_to_value.to_prefix(),
+            k_term_to_iids.to_prefix(),
+            k_oid_to_iid.to_prefix(),
+            k_iid_to_oid.to_prefix(),
+            k_iid_to_terms.to_prefix(),
         ];
 
         // Scan all keys per-prefix and nuke them right away

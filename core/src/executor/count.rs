@@ -5,14 +5,14 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use crate::store::{StoreItemPart, StoreObjectOid};
+use crate::store::{Bucket, StoreItemPart, StoreObjectOid};
 
 impl super::Executor {
     /// Count terms in object (from KV store).
     pub fn counto(
         &self,
         collection: StoreItemPart,
-        bucket: StoreItemPart,
+        bucket: Bucket,
         oid: StoreObjectOid,
     ) -> Result<u32, ()> {
         // Important: acquire database access read lock, and reference it in context. This \
@@ -52,7 +52,7 @@ impl super::Executor {
     }
 
     /// Count objects in bucket (from KV store).
-    pub fn countb(&self, collection: StoreItemPart, bucket: StoreItemPart) -> Result<u32, ()> {
+    pub fn countb(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u32, ()> {
         let kv_store = self.kv_pool.acquire(false, collection, None, |_| {})?;
 
         let Some(kv_store) = kv_store else {
@@ -83,11 +83,7 @@ impl super::Executor {
 
 impl super::Executor {
     /// Count terms in (collection, bucket) from FST.
-    pub fn legacy_countb(
-        &self,
-        collection: StoreItemPart,
-        bucket: StoreItemPart,
-    ) -> Result<u32, ()> {
+    pub fn legacy_countb(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u32, ()> {
         // Important: acquire graph access read lock, and reference it in context. This \
         //   prevents the graph from being erased while using it in this block.
         let _fst_read_guard = self.fst_pool.lock_read_access();

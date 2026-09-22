@@ -6,13 +6,13 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use super::types::{QuerySearchLimit, QuerySearchOffset};
-use crate::store::StoreItemPart;
+use crate::store::{Bucket, StoreItemPart};
 
 impl super::Executor {
     pub fn list(
         &self,
         collection: StoreItemPart,
-        bucket: StoreItemPart,
+        bucket: Bucket,
         limit: QuerySearchLimit,
         offset: QuerySearchOffset,
     ) -> Result<Vec<String>, ()> {

@@ -20,33 +20,33 @@ pub(super) mod constants {
     pub(in crate::store::kv) const IID_TO_TERMS: u8 = 4;
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 #[repr(transparent)]
 pub(super) struct KvStoreKey([u8; 9]);
 
 impl KvStoreKey {
-    pub(super) fn meta_to_value(bucket: &StoreItemPart, meta: &StoreMetaKey) -> KvStoreKey {
+    pub(super) fn meta_to_value(bucket: &Bucket, meta: &StoreMetaKey) -> KvStoreKey {
         Self::make(META_TO_VALUE, bucket, meta.as_u32())
     }
 
-    pub(super) fn term_to_iids(bucket: &StoreItemPart, term_hash: StoreTermHash) -> KvStoreKey {
+    pub(super) fn term_to_iids(bucket: &Bucket, term_hash: StoreTermHash) -> KvStoreKey {
         Self::make(TERM_TO_IIDS, bucket, term_hash.into())
     }
 
-    pub(super) fn oid_to_iid(bucket: &StoreItemPart, oid: StoreObjectOid) -> KvStoreKey {
+    pub(super) fn oid_to_iid(bucket: &Bucket, oid: StoreObjectOid) -> KvStoreKey {
         Self::make(OID_TO_IID, bucket, oid.into_compact())
     }
 
-    pub(super) fn iid_to_oid(bucket: &StoreItemPart, iid: StoreObjectIid) -> KvStoreKey {
+    pub(super) fn iid_to_oid(bucket: &Bucket, iid: StoreObjectIid) -> KvStoreKey {
         Self::make(IID_TO_OID, bucket, iid.into())
     }
 
-    pub(super) fn iid_to_terms(bucket: &StoreItemPart, iid: StoreObjectIid) -> KvStoreKey {
+    pub(super) fn iid_to_terms(bucket: &Bucket, iid: StoreObjectIid) -> KvStoreKey {
         Self::make(IID_TO_TERMS, bucket, iid.into())
     }
 
     /// Key format: `[idx<1B> | bucket<4B> | route<4B>]`
-    fn make(idx: u8, bucket: &StoreItemPart, route: u32) -> KvStoreKey {
+    fn make(idx: u8, bucket: &Bucket, route: u32) -> KvStoreKey {
         // Encode key bucket + key route from u32 to array of u8 (i.e. binary).
         let [b0, b1, b2, b3] = bucket.into_compact().to_le_bytes();
         let [r0, r1, r2, r3] = route.to_le_bytes();
@@ -60,7 +60,7 @@ impl KvStoreKey {
     }
 
     /// Prefix format: `[idx<1B> | bucket<4B>]`
-    pub(super) fn into_prefix(self) -> [u8; 5] {
+    pub(super) fn to_prefix(&self) -> [u8; 5] {
         [self.0[0], self.0[1], self.0[2], self.0[3], self.0[4]]
     }
 }

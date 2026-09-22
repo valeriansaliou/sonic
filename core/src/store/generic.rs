@@ -12,7 +12,7 @@ use std::fmt::Display;
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
 use std::time::{Duration, SystemTime};
 
-use crate::store::StoreItemPart;
+use crate::store::{Bucket, StoreItemPart};
 
 pub(super) trait StoreGeneric {
     fn ref_last_used(&self) -> &RwLock<SystemTime>;
@@ -33,11 +33,7 @@ pub(super) trait StoreGenericPool:
 
     fn proceed_erase_collection(&self, collection: StoreItemPart) -> Result<u32, ()>;
 
-    fn proceed_erase_bucket(
-        &self,
-        collection: StoreItemPart,
-        bucket: StoreItemPart,
-    ) -> Result<u32, ()>;
+    fn proceed_erase_bucket(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u32, ()>;
 }
 
 pub(super) trait StoreGenericPoolExt: StoreGenericPool {
@@ -62,17 +58,17 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
     fn proceed_acquire_open<'a>(
         &'a self,
         store_id: Self::StoreId,
-        build: impl FnOnce(&'a Self, Self::StoreId) -> Result<Self::Store, ()>,
+        build: impl FnOnce(&'a Self, &Self::StoreId) -> Result<Self::Store, ()>,
         write_guard: Option<
             &mut RwLockWriteGuard<'a, HashMap<Self::StoreId, Arc<Self::Store>, Self::HashBuilder>>,
         >,
     ) -> Result<Arc<Self::Store>, ()>
     where
-        Self::StoreId: Display + Copy,
+        Self::StoreId: Display + Clone,
     {
         let kind = Self::kind();
 
-        match build(self, store_id) {
+        match build(self, &store_id) {
             Ok(store) => {
                 // Acquire a thread-safe store pool reference in write mode
                 let store_pool_write = match write_guard {
@@ -81,9 +77,9 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
                 };
                 let store_box = Arc::new(store);
 
-                store_pool_write.insert(store_id, Arc::clone(&store_box));
-
                 tracing::debug!("opened and cached {kind} store {store_id}");
+
+                store_pool_write.insert(store_id, Arc::clone(&store_box));
 
                 Ok(store_box)
             }
@@ -97,7 +93,7 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
 
     fn proceed_janitor(&self, filter: impl Fn(&Self::StoreId) -> bool)
     where
-        Self::StoreId: Display + Copy,
+        Self::StoreId: Display + Clone,
     {
         let kind = Self::kind();
 
@@ -137,7 +133,7 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
 
                 // Notice: the bucket value needs to be cloned, as we cannot reference as value \
                 //   that will outlive referenced value once we remove it from its owner set.
-                removal_register.push(*collection_bucket);
+                removal_register.push(collection_bucket.clone());
             } else {
                 tracing::debug!(
                     "found non-expired {kind} store pool item: {}; elapsed time: {last_used_elapsed:.1?}",
@@ -167,11 +163,7 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
         );
     }
 
-    fn dispatch_erase(
-        &self,
-        collection: StoreItemPart,
-        bucket: Option<StoreItemPart>,
-    ) -> Result<u32, ()> {
+    fn dispatch_erase(&self, collection: StoreItemPart, bucket: Option<Bucket>) -> Result<u32, ()> {
         let kind = Self::kind();
 
         tracing::info!("{kind} erase requested on collection: {collection}");

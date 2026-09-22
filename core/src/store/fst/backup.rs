@@ -162,7 +162,7 @@ impl FstStorePool {
         let backup_fst_file = File::create(&fst_backup_path)?;
         let mut backup_fst_writer = io::BufWriter::new(backup_fst_file);
 
-        let origin_fst = (self.open(store_id))
+        let origin_fst = (self.open(&store_id))
             .map_err(|error| io::Error::other(format!("Graph open failure: {error:?}")))?;
 
         let mut origin_fst_stream = origin_fst.stream();
@@ -201,12 +201,12 @@ impl FstStorePool {
         tracing::debug!("fst store {store_id} restoring from path: {origin_path:?}");
 
         // Force a FST store close.
-        self.close(store_id);
+        self.close(&store_id);
 
         // Generate path to FST.
         let fst_path = self
             .fst_store_config
-            .store_path(store_id, FstStorePathMode::Permanent);
+            .store_path(&store_id, FstStorePathMode::Permanent);
 
         // Remove existing FST data?
         if fst_path.exists() {

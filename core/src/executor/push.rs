@@ -9,14 +9,14 @@ use rocksdb::WriteBatch;
 
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
-use crate::store::{StoreItemPart, StoreObjectOid};
+use crate::store::{Bucket, StoreItemPart, StoreObjectOid};
 use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
     pub fn push(
         &self,
         collection: StoreItemPart,
-        bucket: StoreItemPart,
+        bucket: Bucket,
         oid: StoreObjectOid,
         input: PreprocessorOutput,
         assume_new: bool,

@@ -45,6 +45,53 @@ where
     }
 }
 
+// MARK: Bucket
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Bucket<'a>(pub(super) StoreItemPart<'a>);
+
+crate::util::impl_transparent_wrapper_utils!(base for Bucket<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(Debug for Bucket<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(Display for Bucket<'a>(StoreItemPart<'a>));
+
+impl<'a, T> From<T> for Bucket<'a>
+where
+    StoreItemPart<'a>: From<T>,
+{
+    fn from(value: T) -> Self {
+        Self(value.into())
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct BucketOwned(String);
+
+crate::util::impl_transparent_wrapper_utils!(Debug for BucketOwned(String));
+crate::util::impl_transparent_wrapper_utils!(Display for BucketOwned(String));
+
+impl BucketOwned {
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl<'a> From<Bucket<'a>> for BucketOwned {
+    fn from(value: Bucket<'a>) -> Self {
+        Self(value.0.0.to_owned())
+    }
+}
+
+impl std::str::FromStr for BucketOwned {
+    type Err = std::io::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match StoreItemPart::from_str(s) {
+            Ok(part) => Ok(Self(part.0.to_owned())),
+            Err(()) => Err(std::io::Error::other("Invalid bucket")),
+        }
+    }
+}
+
 // MARK: Term hash
 
 /// Remember to use [`crate::util::hash::NoopU32HasherBuilder`], as
@@ -165,13 +212,15 @@ impl StoreItemBuilder {
     pub fn from_depth_2<'a>(
         collection: &'a str,
         bucket: &'a str,
-    ) -> Result<(StoreItemPart<'a>, StoreItemPart<'a>), StoreItemError> {
+    ) -> Result<(StoreItemPart<'a>, Bucket<'a>), StoreItemError> {
         // Validate & box collection + bucket
         match (
             StoreItemPart::from_str(collection),
             StoreItemPart::from_str(bucket),
         ) {
-            (Ok(collection_item), Ok(bucket_item)) => Ok((collection_item, bucket_item)),
+            (Ok(collection_item), Ok(bucket_item)) => {
+                Ok((collection_item, Bucket::from(bucket_item)))
+            }
             (Err(_), _) => Err(StoreItemError::InvalidCollection),
             (_, Err(_)) => Err(StoreItemError::InvalidBucket),
         }
@@ -181,7 +230,7 @@ impl StoreItemBuilder {
         collection: &'a str,
         bucket: &'a str,
         object: &'a str,
-    ) -> Result<(StoreItemPart<'a>, StoreItemPart<'a>, StoreObjectOid<'a>), StoreItemError> {
+    ) -> Result<(StoreItemPart<'a>, Bucket<'a>, StoreObjectOid<'a>), StoreItemError> {
         // Validate & box collection + bucket + object
         match (
             StoreItemPart::from_str(collection),
@@ -190,7 +239,7 @@ impl StoreItemBuilder {
         ) {
             (Ok(collection_item), Ok(bucket_item), Ok(object_item)) => Ok((
                 collection_item,
-                bucket_item,
+                Bucket::from(bucket_item),
                 StoreObjectOid::from(object_item),
             )),
             (Err(_), _, _) => Err(StoreItemError::InvalidCollection),
@@ -220,7 +269,7 @@ mod tests_store_item_builder {
     fn it_builds_store_item_depth_2() {
         assert_eq!(
             StoreItemBuilder::from_depth_2("c:test:2", "b:test:2"),
-            Ok((StoreItemPart("c:test:2"), StoreItemPart("b:test:2")))
+            Ok((StoreItemPart("c:test:2"), StoreItemPart("b:test:2").into()))
         );
         assert_eq!(
             StoreItemBuilder::from_depth_2("", "b:test:2"),
@@ -238,7 +287,7 @@ mod tests_store_item_builder {
             StoreItemBuilder::from_depth_3("c:test:3", "b:test:3", "o:test:3"),
             Ok((
                 StoreItemPart("c:test:3"),
-                StoreItemPart("b:test:3"),
+                StoreItemPart("b:test:3").into(),
                 StoreItemPart("o:test:3").into()
             ))
         );
