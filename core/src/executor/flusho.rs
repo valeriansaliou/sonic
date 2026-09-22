@@ -7,13 +7,13 @@
 
 use rocksdb::WriteBatch;
 
-use crate::store::{StoreItemPart, StoreObjectOid};
+use crate::store::{Bucket, StoreItemPart, StoreObjectOid};
 
 impl super::Executor {
     pub fn flusho(
         &self,
         collection: StoreItemPart,
-        bucket: StoreItemPart,
+        bucket: Bucket,
         oid: StoreObjectOid,
     ) -> Result<u32, ()> {
         // Important: acquire database access read lock, and reference it in context. This \

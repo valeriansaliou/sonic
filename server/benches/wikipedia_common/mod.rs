@@ -12,11 +12,27 @@ use std::process::Command;
 use std::sync::{LazyLock, RwLock};
 use std::time::Instant;
 
-use crate::common::prelude::*;
 use crate::common::spawn_guard::SpawnGuard;
+use crate::common::{Ingestable, prelude::*};
 use crate::huggingface_wikipedia::WikipediaArticle;
 
-pub static SHOW_PROGRESS: LazyLock<bool> = LazyLock::new(|| std::env::var("SHOW_PROGRESS").is_ok());
+impl Ingestable for WikipediaArticle {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn title(&self) -> &str {
+        &self.title
+    }
+
+    fn data(&self) -> &str {
+        &self.text
+    }
+
+    fn size_char(size: usize) -> char {
+        size_char(size)
+    }
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct PushBenchmarkConfig {
@@ -54,20 +70,6 @@ impl std::fmt::Display for PushBenchmarkConfig {
 
         Ok(())
     }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ParallelBenchmarkConfig {
-    #[serde(default)]
-    pub defer_compaction: bool,
-
-    #[serde(default)]
-    pub rocksdb_unordered_write: Option<bool>,
-
-    #[serde(default)]
-    pub rocksdb_memtable: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]

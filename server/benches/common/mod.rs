@@ -97,6 +97,68 @@ pub mod globals {
 
         path
     });
+
+    pub static SHOW_PROGRESS: LazyLock<bool> =
+        LazyLock::new(|| std::env::var("SHOW_PROGRESS").is_ok());
+
+    pub static PUSH_USE_NEW: LazyLock<bool> = LazyLock::new(|| {
+        std::env::var("PUSH_USE_NEW").map_or_else(
+            |_err| {
+                let default = true;
+                tracing::info!("`PUSH_USE_NEW` not configured, using {default:?} as default.");
+                default
+            },
+            |s| matches!(s.as_str(), "1" | "true"),
+        )
+    });
+
+    pub static BENCH_CONF: LazyLock<String> = LazyLock::new(|| {
+        std::env::var("BENCH_CONF").unwrap_or_else(|_err| {
+            let default = "defer_compact-unordered_write";
+            tracing::info!("`BENCH_CONF` not configured, using {default:?} as default.");
+            default.to_owned()
+        })
+    });
+
+    pub static BENCH_CONFS: LazyLock<Vec<(&str, PathBuf)>> = LazyLock::new(|| {
+        BENCH_CONF
+            .split(",")
+            .map(|name| {
+                let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("benches/configs/bench")
+                    .join(name)
+                    .with_extension("toml");
+                if !path.exists() {
+                    panic!("{path:?} doesn’t exist.")
+                };
+                (name, path)
+            })
+            .collect()
+    });
+
+    pub static SONIC_CONF: LazyLock<String> = LazyLock::new(|| {
+        std::env::var("SONIC_CONF").unwrap_or_else(|_err| {
+            let default = "buf_16m-l0_64m";
+            tracing::info!("`SONIC_CONF` not configured, using {default:?} as default.");
+            default.to_owned()
+        })
+    });
+
+    pub static SONIC_CONFS: LazyLock<Vec<(&str, PathBuf)>> = LazyLock::new(|| {
+        SONIC_CONF
+            .split(",")
+            .map(|name| {
+                let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("benches/configs/sonic")
+                    .join(name)
+                    .with_extension("toml");
+                if !path.exists() {
+                    panic!("{path:?} doesn’t exist.")
+                };
+                (name, path)
+            })
+            .collect::<Vec<_>>()
+    });
 }
 
 static TEST_COUNTER: AtomicU16 = AtomicU16::new(0);
@@ -115,11 +177,13 @@ impl Drop for RunContext {
             LazyLock::new(|| std::env::var("SHOW_STORE_SIZE").is_ok());
 
         if *SHOW_STORE_SIZE {
+            println!("Index size:");
+
             // Print size of all store files at the end of each benchmark.
             Command::new("du")
                 // Show files, make it human-readable and show grand total.
                 .arg("-ahc")
-                .arg(&self.data_guard.0)
+                .current_dir(&self.data_guard.0)
                 .status()
                 .unwrap();
         }
@@ -306,4 +370,16 @@ pub fn prepopulate_gdpr(ctx: &RunContext) {
     //   Sonic.
 
     drop(sonic);
+}
+
+pub trait Ingestable {
+    fn id(&self) -> &str;
+
+    fn title(&self) -> &str {
+        self.id()
+    }
+
+    fn data(&self) -> &str;
+
+    fn size_char(size: usize) -> char;
 }

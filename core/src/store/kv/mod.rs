@@ -19,7 +19,6 @@ use rocksdb::{DB, WriteBatch};
 
 use crate::store::generic::*;
 use crate::store::*;
-use crate::util::hash::NoopU32HasherBuilder;
 
 use self::keys::KvStoreKey;
 pub use self::keys::StoreMetaKey;
@@ -40,18 +39,16 @@ pub struct KvStore {
     /// have bad read performance.
     ///
     /// In benchmarks, we saw a `~23%` throughput increase after this change.
-    // PERF: We use a no-op hasher since u32 keys come from xxhash and are
-    //   already well distributed. No need to perform another hash computation.
-    iid_incr_per_bucket: RwLock<HashMap<u32, StoreObjectIid, NoopU32HasherBuilder>>,
+    iid_incr_per_bucket: RwLock<HashMap<Vec<u8>, StoreObjectIid>>,
 }
 
 pub struct KvStoreActionReadOnly<'a> {
-    bucket: StoreItemPart<'a>,
+    bucket: Bucket<'a>,
     store: &'a KvStore,
 }
 
 pub struct KvStoreActionReadWrite<'a> {
-    bucket: StoreItemPart<'a>,
+    bucket: Bucket<'a>,
     store: &'a KvStore,
 }
 
@@ -91,10 +88,10 @@ impl KvStore {
     /// (beware of slow reads).
     fn get_iid_incr(
         &self,
-        bucket: &StoreItemPart,
-        iid_incr_per_bucket: &HashMap<u32, StoreObjectIid, NoopU32HasherBuilder>,
+        bucket: &Bucket,
+        iid_incr_per_bucket: &HashMap<Vec<u8>, StoreObjectIid>,
     ) -> Result<Option<StoreObjectIid>, Box<dyn std::error::Error>> {
-        iid_incr_per_bucket.get(&bucket.into_compact()).map_or_else(
+        iid_incr_per_bucket.get(&bucket.to_bytes()).map_or_else(
             || {
                 tracing::debug!(?bucket, "IIDIncr not found in cache, reading database…");
                 self.fetch_iid_incr(bucket)
@@ -109,7 +106,7 @@ impl KvStore {
     /// Reads `IIDIncr` directly from the database.
     fn fetch_iid_incr<'a>(
         &self,
-        bucket: &StoreItemPart<'a>,
+        bucket: &Bucket<'a>,
     ) -> Result<Option<StoreObjectIid>, Box<dyn std::error::Error>> {
         let store_key = KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
         let value = self.database.get(store_key)?;
@@ -136,12 +133,12 @@ impl KvStore {
 
     fn get_new_iid(
         &self,
-        bucket: StoreItemPart,
+        bucket: Bucket,
         batch: &mut WriteBatch,
     ) -> Result<StoreObjectIid, Box<dyn std::error::Error>> {
         let mut write_guard = self.iid_incr_per_bucket.write().unwrap();
 
-        let cache_key = bucket.into_compact();
+        let cache_key = bucket.to_bytes();
         let iid = match write_guard.get_mut(&cache_key) {
             Some(iid) => {
                 let new_iid = iid.saturating_add(1);
@@ -159,11 +156,11 @@ impl KvStore {
                                 KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::ObjectCount);
 
                             if (self.database)
-                                .get_pinned(object_count_key)
+                                .get_pinned(&object_count_key)
                                 .is_ok_and(|opt| opt.is_none())
                             {
                                 self.database
-                                    .put(object_count_key, iid_incr.into_bytes())
+                                    .put(&object_count_key, iid_incr.into_bytes())
                                     .unwrap_or_else(|error| {
                                         tracing::error!(
                                             "Could not backfill ObjectCount from IIDIncr: {error:?}"
@@ -206,17 +203,14 @@ impl StoreGeneric for KvStore {
 }
 
 impl KvStore {
-    pub fn access_read_only<'a>(&'a self, bucket: StoreItemPart<'a>) -> KvStoreActionReadOnly<'a> {
+    pub fn access_read_only<'a>(&'a self, bucket: Bucket<'a>) -> KvStoreActionReadOnly<'a> {
         KvStoreActionReadOnly {
             bucket,
             store: self,
         }
     }
 
-    pub fn access_read_write<'a>(
-        &'a self,
-        bucket: StoreItemPart<'a>,
-    ) -> KvStoreActionReadWrite<'a> {
+    pub fn access_read_write<'a>(&'a self, bucket: Bucket<'a>) -> KvStoreActionReadWrite<'a> {
         KvStoreActionReadWrite {
             bucket,
             store: self,
@@ -236,7 +230,7 @@ impl<'a> KvStoreActionReadOnly<'a> {
 
         tracing::debug!("store get meta-to-value: {store_key}");
 
-        match self.store.database.get(store_key) {
+        match self.store.database.get(&store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got meta-to-value: {store_key}");
 
@@ -300,7 +294,7 @@ impl<'a> KvStoreActionReadOnly<'a> {
 
         tracing::debug!("store get term-to-iids: {store_key}");
 
-        match self.store.database.get(store_key) {
+        match self.store.database.get(&store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got term-to-iids: {store_key} with encoded value: {value:?}");
 
@@ -333,7 +327,7 @@ impl<'a> KvStoreActionReadOnly<'a> {
 
         tracing::debug!("store get oid-to-iid: {store_key}");
 
-        match self.store.database.get(store_key) {
+        match self.store.database.get(&store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got oid-to-iid: {store_key} with encoded value: {value:?}");
 
@@ -366,7 +360,7 @@ impl<'a> KvStoreActionReadOnly<'a> {
 
         tracing::debug!("store get iid-to-oid: {store_key}");
 
-        match self.store.database.get(store_key) {
+        match self.store.database.get(&store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got iid-to-oid: {store_key}");
 
@@ -393,7 +387,7 @@ impl<'a> KvStoreActionReadOnly<'a> {
 
         tracing::debug!("store get iid-to-terms: {store_key}");
 
-        match self.store.database.get(store_key) {
+        match self.store.database.get(&store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got iid-to-terms: {store_key} with encoded value: {value:?}");
 
@@ -527,7 +521,7 @@ impl<'a> KvStoreActionReadWrite<'a> {
         tracing::debug!("store add term-to-iids: {store_key}");
 
         for iid in iids {
-            batch.merge(store_key, iid.into_bytes());
+            batch.merge(&store_key, iid.into_bytes());
         }
     }
 
@@ -628,7 +622,7 @@ impl<'a> KvStoreActionReadWrite<'a> {
         tracing::debug!("store add iid-to-terms: {store_key}");
 
         for term_hash in terms_hashes {
-            batch.merge(store_key, term_hash.into_bytes());
+            batch.merge(&store_key, term_hash.into_bytes());
         }
     }
 
@@ -688,50 +682,25 @@ impl<'a> KvStoreActionReadWrite<'a> {
         let bucket = self.bucket;
 
         // Generate all key prefix values (with dummy post-prefix values; we dont care)
-        let (k_meta_to_value, k_term_to_iids, k_oid_to_iid, k_iid_to_oid, k_iid_to_terms) = (
+        let key_ranges_dummies = [
             KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr),
             KvStoreKey::term_to_iids(&bucket, 0.into()),
             KvStoreKey::oid_to_iid(&bucket, StoreObjectOid(StoreItemPart(""))),
             KvStoreKey::iid_to_oid(&bucket, 0.into()),
             KvStoreKey::iid_to_terms(&bucket, 0.into()),
-        );
-
-        let key_prefixes = [
-            k_meta_to_value.into_prefix(),
-            k_term_to_iids.into_prefix(),
-            k_oid_to_iid.into_prefix(),
-            k_iid_to_oid.into_prefix(),
-            k_iid_to_terms.into_prefix(),
         ];
 
         // Scan all keys per-prefix and nuke them right away
-        for key_prefix in &key_prefixes {
-            tracing::debug!("store batch erase bucket: {bucket} for prefix: {key_prefix:?}");
+        for key_range_dummy in key_ranges_dummies.into_iter() {
+            tracing::debug!(
+                "store batch erase bucket: {bucket} for prefix: {key_prefix:?}",
+                key_prefix = key_range_dummy.as_prefix()
+            );
 
             // Generate start and end prefix for batch delete (in other words,
             // the minimum key value possible, and the highest key value possible)
-            let key_prefix_start = KvStoreKey::from([
-                key_prefix[0],
-                key_prefix[1],
-                key_prefix[2],
-                key_prefix[3],
-                key_prefix[4],
-                0,
-                0,
-                0,
-                0,
-            ]);
-            let key_prefix_end = KvStoreKey::from([
-                key_prefix[0],
-                key_prefix[1],
-                key_prefix[2],
-                key_prefix[3],
-                key_prefix[4],
-                255,
-                255,
-                255,
-                255,
-            ]);
+            let key_prefix_start = key_range_dummy.to_prefix_range_start();
+            let key_prefix_end = key_range_dummy.to_prefix_range_end();
 
             // TODO: Move the batch outside the for loop?
             let mut batch = WriteBatch::default();

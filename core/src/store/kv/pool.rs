@@ -16,7 +16,6 @@ use rocksdb::DB;
 use crate::config::KvStoreDatabaseConfig;
 use crate::store::generic::*;
 use crate::store::*;
-use crate::util::hash::NoopU32HasherBuilder;
 
 use super::util::default_merge_operator;
 use super::{KvStore, KvStoreAtom};
@@ -77,7 +76,7 @@ impl StoreGenericPool for KvStorePool {
 
     fn proceed_erase_collection(&self, collection: StoreItemPart) -> Result<u32, ()> {
         let store_id = KvStoreId::from_part(collection);
-        let collection_path = self.kv_store_config.store_path(store_id);
+        let collection_path = self.kv_store_config.store_path(&store_id);
 
         // Force a KV store close
         self.close(store_id, None);
@@ -106,11 +105,7 @@ impl StoreGenericPool for KvStorePool {
     }
 
     // FIXME: Implement this, as it does not need a lock like mentioned below.
-    fn proceed_erase_bucket(
-        &self,
-        _collection: StoreItemPart,
-        _bucket: StoreItemPart,
-    ) -> Result<u32, ()> {
+    fn proceed_erase_bucket(&self, _collection: StoreItemPart, _bucket: Bucket) -> Result<u32, ()> {
         // This one is not implemented, as we need to acquire the collection; which would cause \
         //   a party-killer dead-lock.
         Err(())
@@ -153,7 +148,7 @@ impl KvStorePool {
         tracing::debug!("kv store {store_id} not in pool, opening it");
 
         // Check if can open database?
-        let can_open_db = create_if_missing || self.kv_store_config.store_path(store_id).exists();
+        let can_open_db = create_if_missing || self.kv_store_config.store_path(&store_id).exists();
 
         // Do not create a new KV database file tree if the database does not
         // exist yet on disk and we are just looking to read data from it.
@@ -172,7 +167,7 @@ impl KvStorePool {
 
     fn build(
         &self,
-        store_id: KvStoreId,
+        store_id: &KvStoreId,
         override_options: impl FnOnce(&mut rocksdb::Options),
     ) -> Result<KvStore, ()> {
         match self.open(store_id, override_options) {
@@ -185,7 +180,7 @@ impl KvStorePool {
                     last_flushed: RwLock::new(now),
                     lock: RwLock::new(()),
                     kv_store_config: Arc::clone(&self.kv_store_config),
-                    iid_incr_per_bucket: RwLock::new(HashMap::with_hasher(NoopU32HasherBuilder)),
+                    iid_incr_per_bucket: RwLock::new(HashMap::new()),
                 })
             }
             Err(err) => {
@@ -198,7 +193,7 @@ impl KvStorePool {
 
     pub(super) fn open(
         &self,
-        store_id: KvStoreId,
+        store_id: &KvStoreId,
         override_options: impl FnOnce(&mut rocksdb::Options),
     ) -> Result<DB, rocksdb::Error> {
         tracing::debug!("opening key-value database for collection: {store_id}");
@@ -363,11 +358,7 @@ impl KvStorePool {
         tracing::info!("done compacting {store_ids:?}");
     }
 
-    pub fn erase(
-        &self,
-        collection: StoreItemPart,
-        bucket: Option<StoreItemPart>,
-    ) -> Result<u32, ()> {
+    pub fn erase(&self, collection: StoreItemPart, bucket: Option<Bucket>) -> Result<u32, ()> {
         self.dispatch_erase(collection, bucket)
     }
 }
@@ -554,7 +545,7 @@ impl fmt::Display for KvStoreId {
 
 impl crate::config::KvStoreConfig {
     #[inline]
-    pub(super) fn store_path(&self, id: KvStoreId) -> PathBuf {
+    pub(super) fn store_path(&self, id: &KvStoreId) -> PathBuf {
         let KvStoreId { collection_hash } = id;
 
         self.path.join(format!("{collection_hash:x}"))

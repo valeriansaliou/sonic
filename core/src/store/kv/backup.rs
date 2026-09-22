@@ -98,7 +98,7 @@ impl KvStorePool {
         fs::create_dir_all(backup_path.join(collection_hash))?;
 
         let origin_kv = self
-            .open(store_id, |_| {})
+            .open(&store_id, |_| {})
             .map_err(|_| io::Error::other("database open failure"))?;
 
         // Initialize KV database backup engine
@@ -138,7 +138,7 @@ impl KvStorePool {
         self.close(store_id, None);
 
         // Generate path to KV
-        let kv_path = self.kv_store_config.store_path(store_id);
+        let kv_path = self.kv_store_config.store_path(&store_id);
 
         // Remove existing KV database data?
         if kv_path.exists() {

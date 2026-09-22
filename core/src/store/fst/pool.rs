@@ -8,6 +8,7 @@
 use std::collections::VecDeque;
 use std::fs::File;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{Duration, SystemTime};
 use std::{fmt, fs, io};
@@ -15,8 +16,8 @@ use std::{fmt, fs, io};
 use fst::Streamer as _;
 use hashbrown::{DefaultHashBuilder, HashMap, HashSet};
 
-use crate::store::StoreItemPart;
-use crate::store::generic::*;
+use crate::store::{Bucket, StoreItemPart};
+use crate::store::{BucketOwned, generic::*};
 
 use super::util::*;
 use super::{FstStore, FstStoreActionConfig, FstStoreAtom, FstStorePathMode};
@@ -87,41 +88,41 @@ impl StoreGenericPool for FstStorePool {
     }
 
     fn proceed_erase_collection(&self, collection_name: StoreItemPart) -> Result<u32, ()> {
-        let collection_atom = collection_name.into_compact();
-        let collection_path = self.fst_store_config.collection_path(collection_atom);
+        let collection_hash = collection_name.into_compact();
+        let collection_path = self.fst_store_config.collection_path(&collection_hash);
 
         // Force a FST graph close (on all contained buckets)
         // NOTE: we first need to scan for opened buckets in-memory, as not all FSTs may be
         //   committed to disk; thus some FST stores that exist in-memory may not exist on-disk.
         // TODO(perf): Instead of collection into a `Vec` just to check `is_empty` and
         //   lock only if necessary, use a `LazyCell` to do the same in a single step.
-        let mut bucket_atoms: Vec<FstStoreAtom> = Vec::new();
+        let mut buckets: Vec<BucketOwned> = Vec::new();
 
         {
             let graph_pool_read = self.graph_pool.read().unwrap();
 
             for store_id in graph_pool_read.keys() {
-                if store_id.collection_hash == collection_atom {
-                    bucket_atoms.push(store_id.bucket_hash);
+                if store_id.collection_hash == collection_hash {
+                    buckets.push(store_id.bucket.clone());
                 }
             }
         }
 
-        if !bucket_atoms.is_empty() {
+        if !buckets.is_empty() {
             tracing::trace!(
                 "Will force-close {nbuckets} fst buckets for collection {collection_name:?}",
-                nbuckets = bucket_atoms.len()
+                nbuckets = buckets.len()
             );
 
             let mut graph_pool_write = self.graph_pool.write().unwrap();
             let mut graph_consolidate_write = self.graph_consolidate.write().unwrap();
 
-            for bucket_atom in bucket_atoms {
+            for bucket in buckets {
                 tracing::debug!(
-                    "fst bucket graph force close for bucket: {collection_name}/<{bucket_atom:x}>"
+                    "fst bucket graph force close for bucket: {collection_name}/{bucket}"
                 );
 
-                let bucket_target = FstStoreId::from_atoms(collection_atom, bucket_atom);
+                let bucket_target = FstStoreId::from_atoms(collection_hash, bucket);
 
                 graph_pool_write.remove(&bucket_target);
                 graph_consolidate_write.remove(&bucket_target);
@@ -161,7 +162,7 @@ impl StoreGenericPool for FstStorePool {
     fn proceed_erase_bucket(
         &self,
         collection_name: StoreItemPart,
-        bucket_name: StoreItemPart,
+        bucket_name: Bucket,
     ) -> Result<u32, ()> {
         tracing::debug!(
             "Sub-erase on fst bucket {bucket_name:?} for collection {collection_name:?}"
@@ -171,10 +172,10 @@ impl StoreGenericPool for FstStorePool {
 
         let bucket_path = self
             .fst_store_config
-            .store_path(store_id, FstStorePathMode::Permanent);
+            .store_path(&store_id, FstStorePathMode::Permanent);
 
         // Force a FST graph close.
-        self.close(store_id);
+        self.close(&store_id);
 
         // Remove on-disk FST.
         if bucket_path.exists() {
@@ -210,11 +211,7 @@ impl StoreGenericPool for FstStorePool {
 }
 
 impl FstStorePool {
-    pub fn acquire(
-        &self,
-        collection: StoreItemPart,
-        bucket: StoreItemPart,
-    ) -> Result<Arc<FstStore>, ()> {
+    pub fn acquire(&self, collection: StoreItemPart, bucket: Bucket) -> Result<Arc<FstStore>, ()> {
         let store_id = FstStoreId::from_parts(collection, bucket);
 
         // Freeze acquire lock, and reference it in context
@@ -237,7 +234,7 @@ impl FstStorePool {
         }
     }
 
-    fn build(&self, store_id: FstStoreId) -> Result<FstStore, ()> {
+    fn build(&self, store_id: &FstStoreId) -> Result<FstStore, ()> {
         let graph = (self.open(store_id))
             .map_err(|error| tracing::error!("Failed opening fst: {error:?}"))?;
 
@@ -245,7 +242,7 @@ impl FstStorePool {
 
         Ok(FstStore {
             graph,
-            target: store_id,
+            target: store_id.clone(),
             pending: Default::default(),
             last_used: Arc::new(RwLock::new(now)),
             last_consolidated: Arc::new(RwLock::new(now)),
@@ -254,7 +251,7 @@ impl FstStorePool {
         })
     }
 
-    pub(super) fn open(&self, id: FstStoreId) -> Result<fst::Set, fst::Error> {
+    pub(super) fn open(&self, id: &FstStoreId) -> Result<fst::Set, fst::Error> {
         tracing::debug!("Opening fst graph for {id}");
 
         let collection_bucket_path = self
@@ -274,11 +271,11 @@ impl FstStorePool {
         }
     }
 
-    pub(super) fn close(&self, id: FstStoreId) {
+    pub(super) fn close(&self, id: &FstStoreId) {
         tracing::debug!("Closing fst graph {id}");
 
-        self.graph_pool.write().unwrap().remove(&id);
-        self.graph_consolidate.write().unwrap().remove(&id);
+        self.graph_pool.write().unwrap().remove(id);
+        self.graph_consolidate.write().unwrap().remove(id);
     }
 
     pub fn janitor(&self, filter: impl Fn(&FstStoreId) -> bool) {
@@ -343,7 +340,7 @@ impl FstStorePool {
                             "fst key {key:?} not consolidated for {not_consolidated_for:.1?}, may consolidate"
                         );
 
-                        keys_consolidate.push(*key);
+                        keys_consolidate.push(key.clone());
                     } else {
                         tracing::debug!(
                             "fst key: {key:?} not consolidated for {not_consolidated_for:.1?}, no consolidate"
@@ -453,13 +450,13 @@ impl FstStorePool {
         }
 
         // Read old FST (or default to empty FST).
-        let old_fst = (self.open(store.target))
+        let old_fst = (self.open(&store.target))
             .map_err(|error| tracing::error!("Error opening old fst: {error:?}"))?;
 
         // Initialize the new FST (temporary).
         let bucket_tmp_path = self
             .fst_store_config
-            .store_path(store.target, FstStorePathMode::Temporary);
+            .store_path(&store.target, FstStorePathMode::Temporary);
 
         let bucket_tmp_path_parent = bucket_tmp_path.parent().unwrap();
 
@@ -609,7 +606,7 @@ impl FstStorePool {
                 //   automatically opened on its next access.
                 let bucket_final_path = self
                     .fst_store_config
-                    .store_path(store.target, FstStorePathMode::Permanent);
+                    .store_path(&store.target, FstStorePathMode::Permanent);
 
                 // Proceed temporary FST to final FST path rename?
                 match fs::rename(&bucket_tmp_path, &bucket_final_path) {
@@ -638,11 +635,7 @@ impl FstStorePool {
         Ok(should_close)
     }
 
-    pub fn erase(
-        &self,
-        collection: StoreItemPart,
-        bucket: Option<StoreItemPart>,
-    ) -> Result<u32, ()> {
+    pub fn erase(&self, collection: StoreItemPart, bucket: Option<Bucket>) -> Result<u32, ()> {
         self.dispatch_erase(collection, bucket)
     }
 
@@ -651,7 +644,7 @@ impl FstStorePool {
         let path_mode = FstStorePathMode::Permanent;
 
         let collection_atom = collection.into_compact();
-        let collection_path = self.fst_store_config.collection_path(collection_atom);
+        let collection_path = self.fst_store_config.collection_path(&collection_atom);
 
         if !collection_path.exists() {
             return Ok(0);
@@ -687,35 +680,35 @@ impl FstStorePool {
 
 // MARK: - Store ID
 
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, Clone)]
 pub struct FstStoreId {
     collection_hash: FstStoreAtom,
-    bucket_hash: FstStoreAtom,
+    bucket: BucketOwned,
 }
 
 impl FstStoreId {
-    pub fn from_atoms(collection_hash: FstStoreAtom, bucket_hash: FstStoreAtom) -> FstStoreId {
+    pub fn from_atoms(collection_hash: FstStoreAtom, bucket: BucketOwned) -> FstStoreId {
         FstStoreId {
             collection_hash,
-            bucket_hash,
+            bucket,
         }
     }
 
-    pub fn from_parts(collection: StoreItemPart, bucket: StoreItemPart) -> FstStoreId {
+    pub fn from_parts(collection: StoreItemPart, bucket: Bucket) -> FstStoreId {
         FstStoreId {
             collection_hash: collection.into_compact(),
-            bucket_hash: bucket.into_compact(),
+            bucket: bucket.into(),
         }
     }
 
     /// Filesystem path components are hex-encoded (via `format!("{:x}")`), we
     /// must convert it back into proper `u32` otherwise roundtrips will fail.
     #[inline]
-    pub fn try_from_hex(collection_hash: &str, bucket_hash: &str) -> Result<FstStoreId, io::Error> {
+    pub fn try_from_hex(collection_hash: &str, bucket_name: &str) -> Result<FstStoreId, io::Error> {
         let collection_hash = u32_from_hex(collection_hash)?;
-        let bucket_hash = u32_from_hex(bucket_hash)?;
+        let bucket_name = BucketOwned::from_str(bucket_name)?;
 
-        Ok(Self::from_atoms(collection_hash, bucket_hash))
+        Ok(Self::from_atoms(collection_hash, bucket_name))
     }
 
     pub fn as_collection_hash(&self) -> &FstStoreAtom {
@@ -727,10 +720,10 @@ impl fmt::Display for FstStoreId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let Self {
             collection_hash,
-            bucket_hash,
+            bucket,
         } = self;
 
-        write!(f, "<{collection_hash:x}>/<{bucket_hash:x}>")
+        write!(f, "<{collection_hash:x}>/{bucket}")
     }
 }
 
@@ -738,22 +731,26 @@ impl fmt::Display for FstStoreId {
 
 impl crate::config::FstStoreConfig {
     #[inline]
-    pub(super) fn collection_path(&self, collection_hash: FstStoreAtom) -> PathBuf {
+    pub(super) fn collection_path(&self, collection_hash: &FstStoreAtom) -> PathBuf {
         self.path.join(format!("{collection_hash:x}"))
     }
 
     #[inline]
-    pub(super) fn store_path(&self, id: FstStoreId, mode: FstStorePathMode) -> PathBuf {
+    pub(super) fn store_path(&self, id: &FstStoreId, mode: FstStorePathMode) -> PathBuf {
         let FstStoreId {
             collection_hash,
-            bucket_hash,
+            bucket,
         } = id;
+
+        let bucket = bucket.as_str();
+        // FIXME: Introduce proper parsing/validation, this is just a last resort debug-only check!
+        debug_assert!(!bucket.contains("../"));
 
         let extension = mode.extension();
         assert!(extension.starts_with("."));
 
         self.collection_path(collection_hash)
-            .join(format!("{bucket_hash:x}{extension}"))
+            .join(format!("{bucket}{extension}"))
     }
 }
 

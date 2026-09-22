@@ -7,13 +7,13 @@
 
 use super::types::QuerySearchLimit;
 use crate::lexer::preprocessor::PreprocessorOutput;
-use crate::store::StoreItemPart;
+use crate::store::{Bucket, StoreItemPart};
 
 impl super::Executor {
     pub fn suggest(
         &self,
         collection: StoreItemPart,
-        bucket: StoreItemPart,
+        bucket: Bucket,
         input: PreprocessorOutput,
         limit: QuerySearchLimit,
     ) -> Result<Option<impl ExactSizeIterator<Item = String> + DoubleEndedIterator>, ()> {

@@ -11,7 +11,7 @@ use std::iter::FromIterator;
 
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
-use crate::store::StoreItemPart;
+use crate::store::{Bucket, StoreItemPart};
 use crate::store::{StoreObjectOid, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
 
@@ -19,7 +19,7 @@ impl super::Executor {
     pub fn pop(
         &self,
         collection: StoreItemPart,
-        bucket: StoreItemPart,
+        bucket: Bucket,
         oid: StoreObjectOid,
         input: PreprocessorOutput,
     ) -> Result<u32, ()> {

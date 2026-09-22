@@ -10,17 +10,16 @@ use indexmap::IndexMap;
 use super::types::{QueryMatchScore, QueryResultScore, QuerySearchLimit, QuerySearchOffset};
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
-use crate::store::StoreItemPart;
 use crate::store::fst::typo_factor;
 use crate::store::kv::KvStoreActionReadOnly;
-use crate::store::{StoreObjectIid, StoreTermHash};
+use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
     pub fn search(
         &self,
         collection: StoreItemPart,
-        bucket: StoreItemPart,
+        bucket: Bucket,
         input: PreprocessorOutput,
         limit: QuerySearchLimit,
         offset: QuerySearchOffset,

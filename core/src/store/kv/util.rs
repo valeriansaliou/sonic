@@ -84,12 +84,12 @@ pub(super) fn default_merge_operator(
     use super::keys::constants::*;
 
     match key[0] {
-        META_TO_VALUE => match &key[5..9] {
+        META_TO_VALUE => match &key[(key.len() - 4)..] {
             v if v == encode_u32(StoreMetaKey::IIDIncr.as_u32()) => u32_max(existing_val, operands),
             v if v == encode_u32(StoreMetaKey::ObjectCount.as_u32()) => {
                 u32_counter_signed(existing_val, operands)
             }
-            _ => None,
+            v => panic!("Unrecognized meta key: {v:?}"),
         },
         TERM_TO_IIDS | IID_TO_TERMS => {
             // eprintln!(

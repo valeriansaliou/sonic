@@ -32,16 +32,48 @@ impl StoreObjectIid {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct StoreObjectOid<'a>(pub(super) StoreItemPart<'a>);
 
-crate::util::impl_transparent_wrapper_utils!(base for StoreObjectOid<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(Deref for StoreObjectOid<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(From for StoreObjectOid<'a>(StoreItemPart<'a>));
 crate::util::impl_transparent_wrapper_utils!(Debug for StoreObjectOid<'a>(StoreItemPart<'a>));
 crate::util::impl_transparent_wrapper_utils!(Display for StoreObjectOid<'a>(StoreItemPart<'a>));
 
-impl<'a, T> From<T> for StoreObjectOid<'a>
-where
-    StoreItemPart<'a>: From<T>,
-{
-    fn from(value: T) -> Self {
-        Self(value.into())
+// MARK: Bucket
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Bucket<'a>(pub(super) StoreItemPart<'a>);
+
+impl<'a> Bucket<'a> {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.as_bytes().to_vec()
+    }
+}
+
+crate::util::impl_transparent_wrapper_utils!(Deref for Bucket<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(From for Bucket<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(Debug for Bucket<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(Display for Bucket<'a>(StoreItemPart<'a>));
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct BucketOwned(String);
+
+crate::util::impl_transparent_wrapper_utils!(Deref for BucketOwned(String));
+crate::util::impl_transparent_wrapper_utils!(Debug for BucketOwned(String));
+crate::util::impl_transparent_wrapper_utils!(Display for BucketOwned(String));
+
+impl<'a> From<Bucket<'a>> for BucketOwned {
+    fn from(value: Bucket<'a>) -> Self {
+        Self(value.0.0.to_owned())
+    }
+}
+
+impl std::str::FromStr for BucketOwned {
+    type Err = std::io::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match StoreItemPart::from_str(s) {
+            Ok(part) => Ok(Self(part.0.to_owned())),
+            Err(()) => Err(std::io::Error::other("Invalid bucket")),
+        }
     }
 }
 
@@ -95,7 +127,7 @@ mod tests_store_term_hash {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StoreItemPart<'a>(pub(super) &'a str);
 
-crate::util::impl_transparent_wrapper_utils!(base for StoreItemPart<'a>(&'a str));
+crate::util::impl_transparent_wrapper_utils!(Deref for StoreItemPart<'a>(&'a str));
 crate::util::impl_transparent_wrapper_utils!(Debug for StoreItemPart<'a>(&'a str));
 crate::util::impl_transparent_wrapper_utils!(Display for StoreItemPart<'a>(&'a str));
 
@@ -136,12 +168,6 @@ pub fn bucket(str: &'static str) -> StoreItemPart<'static> {
     StoreItemPart::from_str(str).unwrap()
 }
 
-impl<'a> AsRef<str> for StoreItemPart<'a> {
-    fn as_ref(&self) -> &str {
-        self.0
-    }
-}
-
 pub enum StoreItemBuilder {}
 
 #[allow(clippy::enum_variant_names)]
@@ -165,13 +191,15 @@ impl StoreItemBuilder {
     pub fn from_depth_2<'a>(
         collection: &'a str,
         bucket: &'a str,
-    ) -> Result<(StoreItemPart<'a>, StoreItemPart<'a>), StoreItemError> {
+    ) -> Result<(StoreItemPart<'a>, Bucket<'a>), StoreItemError> {
         // Validate & box collection + bucket
         match (
             StoreItemPart::from_str(collection),
             StoreItemPart::from_str(bucket),
         ) {
-            (Ok(collection_item), Ok(bucket_item)) => Ok((collection_item, bucket_item)),
+            (Ok(collection_item), Ok(bucket_item)) => {
+                Ok((collection_item, Bucket::from(bucket_item)))
+            }
             (Err(_), _) => Err(StoreItemError::InvalidCollection),
             (_, Err(_)) => Err(StoreItemError::InvalidBucket),
         }
@@ -181,7 +209,7 @@ impl StoreItemBuilder {
         collection: &'a str,
         bucket: &'a str,
         object: &'a str,
-    ) -> Result<(StoreItemPart<'a>, StoreItemPart<'a>, StoreObjectOid<'a>), StoreItemError> {
+    ) -> Result<(StoreItemPart<'a>, Bucket<'a>, StoreObjectOid<'a>), StoreItemError> {
         // Validate & box collection + bucket + object
         match (
             StoreItemPart::from_str(collection),
@@ -190,7 +218,7 @@ impl StoreItemBuilder {
         ) {
             (Ok(collection_item), Ok(bucket_item), Ok(object_item)) => Ok((
                 collection_item,
-                bucket_item,
+                Bucket::from(bucket_item),
                 StoreObjectOid::from(object_item),
             )),
             (Err(_), _, _) => Err(StoreItemError::InvalidCollection),
@@ -220,7 +248,7 @@ mod tests_store_item_builder {
     fn it_builds_store_item_depth_2() {
         assert_eq!(
             StoreItemBuilder::from_depth_2("c:test:2", "b:test:2"),
-            Ok((StoreItemPart("c:test:2"), StoreItemPart("b:test:2")))
+            Ok((StoreItemPart("c:test:2"), StoreItemPart("b:test:2").into()))
         );
         assert_eq!(
             StoreItemBuilder::from_depth_2("", "b:test:2"),
@@ -238,7 +266,7 @@ mod tests_store_item_builder {
             StoreItemBuilder::from_depth_3("c:test:3", "b:test:3", "o:test:3"),
             Ok((
                 StoreItemPart("c:test:3"),
-                StoreItemPart("b:test:3"),
+                StoreItemPart("b:test:3").into(),
                 StoreItemPart("o:test:3").into()
             ))
         );
@@ -279,8 +307,9 @@ macro_rules! impl_u32_wrapper_utils {
             }
         }
 
-        crate::util::impl_transparent_wrapper_utils!(base for $t(u32));
+        crate::util::impl_transparent_wrapper_utils!(Deref for $t(u32));
         crate::util::impl_transparent_wrapper_utils!(Debug for $t(u32));
+        crate::util::impl_transparent_wrapper_utils!(FromStr for $t(u32));
     };
 }
 use impl_u32_wrapper_utils;

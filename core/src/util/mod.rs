@@ -14,7 +14,7 @@ pub(crate) mod hash;
 pub mod serde;
 
 macro_rules! impl_transparent_wrapper_utils {
-    (base for $wrapper:ident$(<$($l1:lifetime),+>)?($(&$l2:lifetime)?$wrapped:ident$(<$($l3:lifetime),+>)?)) => {
+    (Deref for $wrapper:ident$(<$($l1:lifetime),+>)?($(&$l2:lifetime)?$wrapped:ident$(<$($l3:lifetime),+>)?)) => {
         impl$(<$($l1),+>)? std::ops::Deref for $wrapper$(<$($l1),+>)? {
             type Target = $wrapped$(<$($l3),+>)?;
 
@@ -23,15 +23,16 @@ macro_rules! impl_transparent_wrapper_utils {
                 &self.0
             }
         }
+    };
 
-        impl$(<$($l1),+>)? std::str::FromStr for $wrapper$(<$($l1),+>)?
-        where $(&$l2)?$wrapped$(<$($l3),+>)?: std::str::FromStr
+    (From for $wrapper:ident$(<$($l1:lifetime),+>)?($(&$l2:lifetime)?$wrapped:ident$(<$($l3:lifetime),+>)?)) => {
+        impl<$($($l1),+,)? T> From<T> for $wrapper$(<$($l1),+>)?
+        where
+            $wrapped$(<$($l3),+>)?: From<T>,
         {
-            type Err = <$(&$l2)?$wrapped$(<$($l3),+>)? as std::str::FromStr>::Err;
-
-            #[inline(always)]
-            fn from_str(s: &str) -> Result<Self, Self::Err> {
-                std::str::FromStr::from_str(s).map(Self)
+            #[inline]
+            fn from(value: T) -> Self {
+                Self(value.into())
             }
         }
     };
@@ -50,6 +51,17 @@ macro_rules! impl_transparent_wrapper_utils {
             #[inline(always)]
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 std::fmt::Display::fmt(&self.0, f)
+            }
+        }
+    };
+
+    (FromStr for $wrapper:ident$(<$($l1:lifetime),+>)?($(&$l2:lifetime)?$wrapped:ident$(<$($l3:lifetime),+>)?)) => {
+        impl$(<$($l1),+>)? std::str::FromStr for $wrapper$(<$($l1),+>)? {
+            type Err = <$(&$l2)?$wrapped$(<$($l3),+>)? as std::str::FromStr>::Err;
+
+            #[inline(always)]
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                std::str::FromStr::from_str(s).map(Self)
             }
         }
     };

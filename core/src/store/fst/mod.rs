@@ -135,16 +135,16 @@ impl FstStore {
     }
 
     pub fn should_consolidate(&self) {
-        let id = self.target;
+        let id = &self.target;
 
         // Check if not already scheduled.
-        if self.graph_consolidate.read().unwrap().contains(&id) {
+        if self.graph_consolidate.read().unwrap().contains(id) {
             tracing::debug!("Graph consolidation already scheduled on pool: {id}");
             return;
         };
 
         // Schedule target for next consolidation tick (i.e. collection + bucket tuple).
-        self.graph_consolidate.write().unwrap().insert(id);
+        self.graph_consolidate.write().unwrap().insert(id.clone());
 
         // Bump “last consolidated” time, effectively de-bouncing consolidation
         // to a fixed and predictable tick time in the future.
