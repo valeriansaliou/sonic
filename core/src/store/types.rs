@@ -66,6 +66,12 @@ impl<'a> From<Bucket<'a>> for BucketOwned {
     }
 }
 
+impl<'a> From<&'a BucketOwned> for Bucket<'a> {
+    fn from(value: &'a BucketOwned) -> Self {
+        Self(StoreItemPart(value.0.as_str()))
+    }
+}
+
 impl std::str::FromStr for BucketOwned {
     type Err = std::io::Error;
 
