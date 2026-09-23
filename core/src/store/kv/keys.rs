@@ -36,7 +36,7 @@ impl KvStoreKey {
     }
 
     pub(super) fn oid_to_iid(bucket: &Bucket, oid: StoreObjectOid) -> KvStoreKey {
-        Self::make(OID_TO_IID, bucket, oid.into_compact())
+        Self::make(OID_TO_IID, bucket, oid.to_compact())
     }
 
     pub(super) fn iid_to_oid(bucket: &Bucket, iid: StoreObjectIid) -> KvStoreKey {
@@ -194,8 +194,8 @@ mod tests {
 
     #[test]
     fn it_hashes_compact() {
-        assert_eq!(StoreObjectOid::from("key:1").into_compact(), 3370353088);
-        assert_eq!(StoreObjectOid::from("key:2").into_compact(), 1042559698);
+        assert_eq!(StoreObjectOid::from("key:1").to_compact(), 3370353088);
+        assert_eq!(StoreObjectOid::from("key:2").to_compact(), 1042559698);
     }
 
     #[test]

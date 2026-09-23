@@ -88,7 +88,7 @@ impl StoreGenericPool for FstStorePool {
     }
 
     fn proceed_erase_collection(&self, collection_name: StoreItemPart) -> Result<u32, ()> {
-        let collection_hash = collection_name.into_compact();
+        let collection_hash = collection_name.to_compact();
         let collection_path = self.fst_store_config.collection_path(&collection_hash);
 
         // Force a FST graph close (on all contained buckets)
@@ -643,7 +643,7 @@ impl FstStorePool {
     pub fn count_collection_buckets(&self, collection: StoreItemPart) -> Result<usize, ()> {
         let path_mode = FstStorePathMode::Permanent;
 
-        let collection_hash = collection.into_compact();
+        let collection_hash = collection.to_compact();
         let collection_path = self.fst_store_config.collection_path(&collection_hash);
 
         if !collection_path.exists() {
@@ -696,7 +696,7 @@ impl FstStoreId {
 
     pub fn from_parts(collection: StoreItemPart, bucket: Bucket) -> FstStoreId {
         FstStoreId {
-            collection_hash: collection.into_compact(),
+            collection_hash: collection.to_compact(),
             bucket: bucket.into(),
         }
     }

@@ -536,7 +536,7 @@ impl KvStoreId {
 
     pub fn from_part(collection: StoreItemPart) -> KvStoreId {
         KvStoreId {
-            collection_hash: collection.into_compact(),
+            collection_hash: collection.to_compact(),
         }
     }
 

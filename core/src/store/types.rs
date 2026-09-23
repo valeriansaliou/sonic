@@ -154,7 +154,7 @@ impl<'a> StoreItemPart<'a> {
         }
     }
 
-    pub fn into_compact(&self) -> Hash {
+    pub fn to_compact(&self) -> Hash {
         use std::hash::Hasher as _;
         use twox_hash::XxHash32;
 
