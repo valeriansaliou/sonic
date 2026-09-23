@@ -223,8 +223,7 @@ impl KvStorePool {
         tracing::debug!("configuring key-value database");
         let mut db_options = rocksdb::Options::from(&self.kv_store_config.database);
 
-        db_options
-            .set_merge_operator_associative("default_merge", super::util::default_merge_operator);
+        db_options.set_merge_operator_associative("kv_merge", super::merge::kv_merge_operator);
 
         override_options(&mut db_options);
 

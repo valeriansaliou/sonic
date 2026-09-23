@@ -7,8 +7,8 @@
 
 mod backup;
 mod keys;
+mod merge;
 mod pool;
-mod util;
 
 use std::sync::{Arc, RwLock};
 use std::time::SystemTime;

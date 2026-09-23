@@ -10,7 +10,7 @@ use crate::store::encoding::*;
 
 use super::keys::StoreMetaKey;
 
-pub(super) fn default_merge_operator(
+pub(super) fn kv_merge_operator(
     key: &[u8],
     existing_val: Option<&[u8]>,
     operands: &rocksdb::MergeOperands,
