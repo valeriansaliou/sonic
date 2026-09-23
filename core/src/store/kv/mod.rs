@@ -18,7 +18,7 @@ use hashbrown::HashMap;
 use rocksdb::{DB, WriteBatch};
 
 use crate::store::generic::*;
-use crate::store::*;
+use crate::store::types::*;
 
 use super::encoding::*;
 

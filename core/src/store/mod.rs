@@ -9,6 +9,7 @@ mod generic;
 mod encoding;
 pub mod fst;
 pub mod kv;
+mod rocksdb;
 mod types;
 
 pub use self::types::*;
