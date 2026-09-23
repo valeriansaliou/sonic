@@ -159,7 +159,12 @@ impl KvStore {
                                 .is_ok_and(|opt| opt.is_none())
                             {
                                 self.database
-                                    .put(&object_count_key, iid_incr.into_bytes())
+                                    .put(
+                                        &object_count_key,
+                                        i32::try_from(u32::from(iid_incr))
+                                            .unwrap_or(i32::MAX)
+                                            .to_le_bytes(),
+                                    )
                                     .unwrap_or_else(|error| {
                                         tracing::error!(
                                             "Could not backfill ObjectCount from IIDIncr: {error:?}"
@@ -248,6 +253,8 @@ impl<'a> KvRepositoryReadOnly<'a> {
         }
     }
 
+    /// Note that because of the underlying use of `i32`, the max value is
+    /// `i32::MAX` (hence `U32::MAX / 2`).
     pub fn get_object_count(&self) -> Result<u32, Box<dyn std::error::Error>> {
         let bucket = self.bucket;
 
@@ -255,18 +262,25 @@ impl<'a> KvRepositoryReadOnly<'a> {
         let value = self.store.database.get(store_key)?;
 
         match value {
-            Some(bytes) => match decode_u32_mapped(&bytes) {
-                Ok(count) => {
-                    tracing::debug!(?bucket, ?count, "Read ObjectCount from database");
-                    Ok(count)
+            Some(bytes) if bytes.len() == 4 => {
+                // SAFETY: `bytes` is guaranteed to be 4 bytes long.
+                let count = i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+
+                tracing::debug!(?bucket, ?count, "Read ObjectCount from database");
+
+                match u32::try_from(count) {
+                    Ok(count) => Ok(count),
+                    Err(error) => Err(Box::new(io::Error::other(format!(
+                        "Invalid ObjectCount value in bucket {bucket:?}: {error:?}",
+                    )))),
                 }
-                Err(()) => {
-                    tracing::error!(?bucket, "Invalid ObjectCount in database");
-                    Err(Box::new(io::Error::other(
-                        "Invalid ObjectCount value in bucket {bucket:?}",
-                    )))
-                }
-            },
+            }
+            Some(_bytes) => {
+                tracing::error!(?bucket, "Invalid ObjectCount in database");
+                Err(Box::new(io::Error::other(format!(
+                    "Invalid ObjectCount value in bucket {bucket:?}"
+                ))))
+            }
             None => {
                 tracing::debug!(
                     ?bucket,
@@ -466,7 +480,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
             &self.bucket
         );
 
-        batch.merge(store_key, diff.to_ne_bytes());
+        batch.merge(store_key, diff.to_le_bytes());
     }
 
     pub fn get_new_iid(
