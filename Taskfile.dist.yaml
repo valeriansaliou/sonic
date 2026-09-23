@@ -26,7 +26,7 @@ tasks:
       You can use `task test:foo,bar` to run tests foo and bar.
     aliases: [test:*]
     cmds:
-      - cargo test --locked --no-fail-fast{{ if .MATCH }} --test {{ .MATCH | first | splitList "," | join " --test " }}{{ end }}{{ if .ARGS }} {{ .ARGS }}{{ end }}
+      - cargo test --locked --workspace --exclude sonic-benchmarks --no-fail-fast{{ if .MATCH }} --test {{ .MATCH | first | splitList "," | join " --test " }}{{ end }}{{ if .ARGS }} {{ .ARGS }}{{ end }}
       - task: util:update-tested-at-version
     vars:
       ARGS: '{{ without .CLI_ARGS_LIST "--trace" "--debug" "--info" "--warn" | join " " }}'
@@ -45,7 +45,7 @@ tasks:
       - cargo fmt --check
       - cargo clippy --locked
       - cargo check --locked --release
-      - cargo test --locked
+      - cargo test --locked --workspace --exclude sonic-benchmarks
       - task: util:update-tested-at-version
 
   changelog:prepare:

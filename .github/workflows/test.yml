@@ -138,4 +138,4 @@ jobs:
         run: cargo build --locked --bin sonic --no-default-features -F stemming
 
       - name: Test all
-        run: cargo test --locked --no-default-features -F stemming
+        run: cargo test --locked --workspace --exclude sonic-benchmarks --no-default-features -F stemming

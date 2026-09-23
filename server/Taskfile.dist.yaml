@@ -100,7 +100,7 @@ tasks:
 
   cargo-bench:
     internal: true
-    cmd: cargo bench -p sonic-server --locked --profile {{ .CARGO_PROFILE }}{{ if .OPTIONAL_FEATURES }} -F {{ shellQuote .OPTIONAL_FEATURES }}{{ end }} {{ .CLI_ARGS }}
+    cmd: cargo bench -p sonic-benchmarks --locked --profile {{ .CARGO_PROFILE }} {{ .CLI_ARGS }}
     preconditions:
       - sh: '! lsof -iTCP:1491 -sTCP:LISTEN'
         msg: >-
@@ -111,8 +111,6 @@ tasks:
       CARGO_PROFILE: { ref: .CARGO_PROFILE }
       SONIC_BIN: { ref: .SONIC_BIN }
       RUSTFLAGS: '{{ if eq .CARGO_PROFILE "relwithdebinfo" }}-C force-frame-pointers=yes{{ end }}'
-    vars:
-      OPTIONAL_FEATURES: { sh: '{{ .UTIL_GET_OPTIONAL_FEATURES }}' }
 
   cargo-install:
     internal: true

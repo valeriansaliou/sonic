@@ -75,7 +75,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let bench_confs = BENCH_CONFS.iter();
     let sonic_confs = &*SONIC_CONFS;
 
-    let log_file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("benches/results.md");
+    let log_file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("results.md");
     let exists = log_file_path.exists();
     let mut log_file = std::fs::File::options()
         .create(true)

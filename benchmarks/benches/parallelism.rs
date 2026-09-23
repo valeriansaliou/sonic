@@ -330,7 +330,6 @@ fn criterion_benchmark(c: &mut Criterion) {
         },
     );
 
-    #[cfg(feature = "experimental-api")]
     run_bench(
         BenchmarkId::new("test_flush_impact", "p1-f1"),
         &mut group,
