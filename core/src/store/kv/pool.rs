@@ -13,7 +13,7 @@ use std::{fmt, fs, io};
 use hashbrown::{DefaultHashBuilder, HashMap};
 use rocksdb::DB;
 
-use crate::config::KvStoreDatabaseConfig;
+use crate::config::RocksDbDatabaseConfig;
 use crate::store::generic::*;
 use crate::store::*;
 
@@ -384,11 +384,11 @@ impl KvStorePool {
     }
 }
 
-impl From<&KvStoreDatabaseConfig> for rocksdb::Options {
+impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
     #[rustfmt::skip]
-    fn from(config: &KvStoreDatabaseConfig) -> Self {
+    fn from(config: &RocksDbDatabaseConfig) -> Self {
         // NOTE: Deconstruct to avoid forgetting configuration keys.
-        let KvStoreDatabaseConfig {
+        let RocksDbDatabaseConfig {
             flush_after: _,
             compress,
             parallelism,
