@@ -11,7 +11,6 @@ use std::time::{Duration, SystemTime};
 use std::{fmt, fs};
 
 use hashbrown::{DefaultHashBuilder, HashMap};
-use rocksdb::DB;
 
 use crate::store::generic::*;
 use crate::store::types::*;
@@ -216,7 +215,7 @@ impl KvStorePool {
         &self,
         store_id: &KvStoreId,
         override_options: impl FnOnce(&mut rocksdb::Options),
-    ) -> Result<DB, rocksdb::Error> {
+    ) -> Result<rocksdb::DB, rocksdb::Error> {
         tracing::debug!("opening key-value database for collection: {store_id}");
 
         // Configure database options
@@ -228,7 +227,7 @@ impl KvStorePool {
         override_options(&mut db_options);
 
         // Open database at path for collection
-        DB::open(&db_options, self.kv_store_config.store_path(store_id))
+        rocksdb::DB::open(&db_options, self.kv_store_config.store_path(store_id))
     }
 
     pub fn close<'a>(
