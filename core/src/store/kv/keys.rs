@@ -47,11 +47,11 @@ impl KvStoreKey {
     /// Key format: `[bucket<?B> | separator<1B> | idx<1B> | route<4B>]`
     fn make(idx: u8, bucket: &Bucket, route: u32) -> KvStoreKey {
         // Encode key bucket + key route from u32 to array of u8 (i.e. binary).
-        let bucket_bytes = bucket.to_bytes();
+        let bucket_bytes = bucket.as_bytes();
 
         let mut key_bytes = Vec::with_capacity(bucket_bytes.len() + 6);
 
-        key_bytes.extend_from_slice(&bucket_bytes); // [bucket<?B>]
+        key_bytes.extend_from_slice(bucket_bytes); // [bucket<?B>]
         key_bytes.push(KEY_SEPARATOR); // [separator<1B>]
         key_bytes.push(idx); // [idx<1B>]
         key_bytes.extend_from_slice(&route.to_le_bytes()); // [route<4B>]
