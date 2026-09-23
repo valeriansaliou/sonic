@@ -30,7 +30,7 @@ impl StoreObjectIid {
 // MARK: OID
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct StoreObjectOid<'a>(pub(super) StoreItemPart<'a>);
+pub struct StoreObjectOid<'a>(StoreItemPart<'a>);
 
 crate::util::impl_transparent_wrapper_utils!(Deref for StoreObjectOid<'a>(StoreItemPart<'a>));
 crate::util::impl_transparent_wrapper_utils!(From for StoreObjectOid<'a>(StoreItemPart<'a>));
@@ -40,7 +40,7 @@ crate::util::impl_transparent_wrapper_utils!(Display for StoreObjectOid<'a>(Stor
 // MARK: Bucket
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct Bucket<'a>(pub(super) StoreItemPart<'a>);
+pub struct Bucket<'a>(StoreItemPart<'a>);
 
 impl<'a> Bucket<'a> {
     pub fn to_bytes(&self) -> Vec<u8> {
@@ -125,7 +125,7 @@ mod tests_store_term_hash {
 // MARK: Item part
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct StoreItemPart<'a>(pub(super) &'a str);
+pub struct StoreItemPart<'a>(&'a str);
 
 crate::util::impl_transparent_wrapper_utils!(Deref for StoreItemPart<'a>(&'a str));
 crate::util::impl_transparent_wrapper_utils!(Debug for StoreItemPart<'a>(&'a str));

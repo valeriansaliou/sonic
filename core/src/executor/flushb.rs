@@ -15,34 +15,12 @@ impl super::Executor {
         let _kv_read_guard = self.kv_pool.lock_read_access();
         let _fst_write_guard = self.fst_pool.lock_write_access();
 
-        if let Ok(kv_store) = self.kv_pool.acquire(false, collection, None, |_| {}) {
-            let Some(kv_store) = kv_store else {
-                tracing::debug!(
-                    "collection store does not exist, consider {bucket:?} from {collection:?} already erased"
-                );
-                return Ok(0);
-            };
-
-            // Important: acquire bucket store write lock
-            executor_kv_lock_write!(kv_store);
-
-            // Store exists, proceed erasure.
-            tracing::debug!("collection store exists, erasing: {bucket} from {collection}");
-
-            let kv_action = kv_store.access_read_write(bucket);
-
-            // Notice: we cannot use the provided KV bucket erasure helper there, as \
-            //   erasing a bucket requires a database lock, which would incur a dead-lock, \
-            //   thus we need to perform the erasure from there.
-            if let Ok(erase_count) = kv_action.batch_erase_bucket() {
-                if self.fst_pool.erase(collection, Some(bucket)).is_ok() {
-                    tracing::debug!("done with bucket erasure");
-
-                    return Ok(erase_count);
-                }
-            }
+        match (
+            self.kv_pool.erase(collection, Some(bucket)),
+            self.fst_pool.erase(collection, Some(bucket)),
+        ) {
+            (Ok(_), Ok(erase_count)) => Ok(erase_count),
+            _ => Err(()),
         }
-
-        Err(())
     }
 }
