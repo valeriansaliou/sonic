@@ -76,7 +76,7 @@ impl StoreGenericPool for FstStorePool {
     type HashBuilder = DefaultHashBuilder;
 
     fn kind() -> &'static str {
-        "fst"
+        "FST"
     }
 
     fn consider_inactive_after_secs(&self) -> u64 {
