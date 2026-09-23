@@ -17,8 +17,8 @@ use crate::config::RocksDbDatabaseConfig;
 use crate::store::generic::*;
 use crate::store::*;
 
+use super::KvStore;
 use super::util::default_merge_operator;
-use super::{KvStore, KvStoreAtom};
 
 // MARK: - Store pool
 
@@ -526,11 +526,11 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct KvStoreId {
-    collection_hash: KvStoreAtom,
+    collection_hash: Hash,
 }
 
 impl KvStoreId {
-    pub fn from_atom(collection_hash: KvStoreAtom) -> KvStoreId {
+    pub fn from_hash(collection_hash: Hash) -> KvStoreId {
         KvStoreId { collection_hash }
     }
 
@@ -546,10 +546,10 @@ impl KvStoreId {
     pub fn try_from_hex(collection_hash: &str) -> Result<KvStoreId, io::Error> {
         let collection_hash = u32_from_hex(collection_hash)?;
 
-        Ok(Self::from_atom(collection_hash))
+        Ok(Self::from_hash(collection_hash))
     }
 
-    pub fn as_collection_hash(&self) -> &KvStoreAtom {
+    pub fn as_collection_hash(&self) -> &Hash {
         &self.collection_hash
     }
 }

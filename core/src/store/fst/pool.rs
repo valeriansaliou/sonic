@@ -16,11 +16,11 @@ use std::{fmt, fs, io};
 use fst::Streamer as _;
 use hashbrown::{DefaultHashBuilder, HashMap, HashSet};
 
-use crate::store::{Bucket, StoreItemPart};
+use crate::store::{Bucket, Hash, StoreItemPart};
 use crate::store::{BucketOwned, generic::*};
 
 use super::util::*;
-use super::{FstRepositoryConfig, FstStore, FstStoreAtom, FstStorePathMode};
+use super::{FstRepositoryConfig, FstStore, FstStorePathMode};
 
 // MARK: - Store pool
 
@@ -122,7 +122,7 @@ impl StoreGenericPool for FstStorePool {
                     "fst bucket graph force close for bucket: {collection_name}/{bucket}"
                 );
 
-                let bucket_target = FstStoreId::from_atoms(collection_hash, bucket);
+                let bucket_target = FstStoreId::new(collection_hash, bucket);
 
                 graph_pool_write.remove(&bucket_target);
                 graph_consolidate_write.remove(&bucket_target);
@@ -643,8 +643,8 @@ impl FstStorePool {
     pub fn count_collection_buckets(&self, collection: StoreItemPart) -> Result<usize, ()> {
         let path_mode = FstStorePathMode::Permanent;
 
-        let collection_atom = collection.into_compact();
-        let collection_path = self.fst_store_config.collection_path(&collection_atom);
+        let collection_hash = collection.into_compact();
+        let collection_path = self.fst_store_config.collection_path(&collection_hash);
 
         if !collection_path.exists() {
             return Ok(0);
@@ -682,12 +682,12 @@ impl FstStorePool {
 
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub struct FstStoreId {
-    collection_hash: FstStoreAtom,
+    collection_hash: Hash,
     pub(super) bucket: BucketOwned,
 }
 
 impl FstStoreId {
-    pub fn from_atoms(collection_hash: FstStoreAtom, bucket: BucketOwned) -> FstStoreId {
+    pub fn new(collection_hash: Hash, bucket: BucketOwned) -> FstStoreId {
         FstStoreId {
             collection_hash,
             bucket,
@@ -708,10 +708,10 @@ impl FstStoreId {
         let collection_hash = u32_from_hex(collection_hash)?;
         let bucket_name = BucketOwned::from_str(bucket_name)?;
 
-        Ok(Self::from_atoms(collection_hash, bucket_name))
+        Ok(Self::new(collection_hash, bucket_name))
     }
 
-    pub fn as_collection_hash(&self) -> &FstStoreAtom {
+    pub fn as_collection_hash(&self) -> &Hash {
         &self.collection_hash
     }
 }
@@ -731,7 +731,7 @@ impl fmt::Display for FstStoreId {
 
 impl crate::config::FstStoreConfig {
     #[inline]
-    pub(super) fn collection_path(&self, collection_hash: &FstStoreAtom) -> PathBuf {
+    pub(super) fn collection_path(&self, collection_hash: &Hash) -> PathBuf {
         self.path.join(format!("{collection_hash:x}"))
     }
 

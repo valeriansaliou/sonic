@@ -5,24 +5,26 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+pub(super) type Hash = u32;
+
 // MARK: IID
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct StoreObjectIid(u32);
+pub struct StoreObjectIid(Hash);
 
 impl_u32_wrapper_utils!(StoreObjectIid);
 
 impl StoreObjectIid {
     #[inline]
-    pub const fn saturating_add(self, rhs: u32) -> Self {
+    pub const fn saturating_add(self, rhs: Hash) -> Self {
         Self(self.0.saturating_add(rhs))
     }
 
     // NOTE: We went for `into_inner` here instead of marking `.0` `pub(super)`
     //   so it’s easier to identify call sites and keep constuction via `From`.
     #[inline]
-    pub(super) const fn into_inner(self) -> u32 {
+    pub(super) const fn into_inner(self) -> Hash {
         self.0
     }
 }
@@ -152,7 +154,7 @@ impl<'a> StoreItemPart<'a> {
         }
     }
 
-    pub fn into_compact(&self) -> u32 {
+    pub fn into_compact(&self) -> Hash {
         use std::hash::Hasher as _;
         use twox_hash::XxHash32;
 

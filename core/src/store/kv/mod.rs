@@ -52,8 +52,6 @@ pub struct KvRepositoryReadWrite<'a> {
     store: &'a KvStore,
 }
 
-type KvStoreAtom = u32;
-
 impl KvStore {
     fn flush(&self) -> Result<(), rocksdb::Error> {
         // Generate flush options

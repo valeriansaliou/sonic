@@ -41,8 +41,6 @@ pub struct FstStorePending {
     push: Arc<RwLock<HashSet<Vec<u8>>>>,
 }
 
-type FstStoreAtom = u32;
-
 #[derive(Copy, Clone)]
 enum FstStorePathMode {
     Permanent,
