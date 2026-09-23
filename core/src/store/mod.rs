@@ -6,6 +6,7 @@
 
 mod generic;
 
+mod encoding;
 pub mod fst;
 pub mod kv;
 mod types;

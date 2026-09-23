@@ -20,10 +20,11 @@ use rocksdb::{DB, WriteBatch};
 use crate::store::generic::*;
 use crate::store::*;
 
+use super::encoding::*;
+
 use self::keys::KvStoreKey;
 pub use self::keys::StoreMetaKey;
 pub use self::pool::{KvStoreId, KvStorePool};
-use self::util::*;
 
 pub struct KvStore {
     database: DB,
