@@ -30,15 +30,15 @@ impl super::Executor {
             // Important: acquire bucket store read lock
             executor_kv_lock_read!(kv_store);
 
-            let kv_action = kv_store.access_read_only(bucket);
+            let kv_repo = kv_store.to_repository_read_only(bucket);
 
             // Try to resolve existing OID to IID
-            kv_action
+            kv_repo
                 .get_oid_to_iid(oid)
                 .unwrap_or(None)
                 .map(|iid| {
                     // List terms for IID
-                    if let Some(terms) = kv_action.get_iid_to_terms(iid).unwrap_or(None) {
+                    if let Some(terms) = kv_repo.get_iid_to_terms(iid).unwrap_or(None) {
                         terms.len() as u32
                     } else {
                         0
@@ -62,9 +62,9 @@ impl super::Executor {
             return Ok(0);
         };
 
-        let kv_action = kv_store.access_read_only(bucket);
+        let kv_repo = kv_store.to_repository_read_only(bucket);
 
-        let count = kv_action
+        let count = kv_repo
             .get_object_count()
             .map_err(|error| tracing::warn!("{error:?}"))?;
 
@@ -89,7 +89,9 @@ impl super::Executor {
         let _fst_read_guard = self.fst_pool.lock_read_access();
 
         if let Ok(fst_store) = self.fst_pool.acquire(collection, bucket) {
-            Ok(fst_store.count_words() as u32)
+            let fst_repo = fst_store.to_repository();
+
+            Ok(fst_repo.count_words() as u32)
         } else {
             Err(())
         }

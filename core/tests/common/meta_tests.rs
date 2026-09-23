@@ -16,7 +16,7 @@ macro_rules! test_ingest_then_query {
         let mut executor = make_test_executor(|#[allow(unused)] app_conf| {
             $($(app_conf.normalization.$nc_field = $nc_value;)+)?
         });
-        $($(executor.fst_pool.fst_action_config.$sc_field = $sc_value;)+)?
+        $($(executor.fst_pool.fst_repo_config.$sc_field = $sc_value;)+)?
 
         #[allow(unused_mut, unused_assignments)]
         let mut ingest_lang = "none"; // For logging purposes.

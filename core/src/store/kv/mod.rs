@@ -42,12 +42,12 @@ pub struct KvStore {
     iid_incr_per_bucket: RwLock<HashMap<Vec<u8>, StoreObjectIid>>,
 }
 
-pub struct KvStoreActionReadOnly<'a> {
+pub struct KvRepositoryReadOnly<'a> {
     bucket: Bucket<'a>,
     store: &'a KvStore,
 }
 
-pub struct KvStoreActionReadWrite<'a> {
+pub struct KvRepositoryReadWrite<'a> {
     bucket: Bucket<'a>,
     store: &'a KvStore,
 }
@@ -190,7 +190,7 @@ impl KvStore {
     }
 }
 
-impl<'a> KvStoreActionReadWrite<'a> {
+impl<'a> KvRepositoryReadWrite<'a> {
     pub fn write(&self, batch: WriteBatch) -> Result<(), rocksdb::Error> {
         self.store.do_write(batch)
     }
@@ -203,22 +203,22 @@ impl StoreGeneric for KvStore {
 }
 
 impl KvStore {
-    pub fn access_read_only<'a>(&'a self, bucket: Bucket<'a>) -> KvStoreActionReadOnly<'a> {
-        KvStoreActionReadOnly {
+    pub fn to_repository_read_only<'a>(&'a self, bucket: Bucket<'a>) -> KvRepositoryReadOnly<'a> {
+        KvRepositoryReadOnly {
             bucket,
             store: self,
         }
     }
 
-    pub fn access_read_write<'a>(&'a self, bucket: Bucket<'a>) -> KvStoreActionReadWrite<'a> {
-        KvStoreActionReadWrite {
+    pub fn to_repository_read_write<'a>(&'a self, bucket: Bucket<'a>) -> KvRepositoryReadWrite<'a> {
+        KvRepositoryReadWrite {
             bucket,
             store: self,
         }
     }
 }
 
-impl<'a> KvStoreActionReadOnly<'a> {
+impl<'a> KvRepositoryReadOnly<'a> {
     /// Meta-to-Value mapper
     ///
     /// [IDX=0] ((meta)) ~> ((value))
@@ -420,10 +420,10 @@ impl<'a> KvStoreActionReadOnly<'a> {
     }
 }
 
-impl<'a> KvStoreActionReadWrite<'a> {
+impl<'a> KvRepositoryReadWrite<'a> {
     /// This is `O(1)`, nothing meaningful happens.
-    fn as_read_only<'b>(&'b self) -> KvStoreActionReadOnly<'b> {
-        KvStoreActionReadOnly {
+    fn as_read_only<'b>(&'b self) -> KvRepositoryReadOnly<'b> {
+        KvRepositoryReadOnly {
             bucket: self.bucket,
             store: self.store,
         }
@@ -725,7 +725,7 @@ mod tests {
             .acquire(true, "c:test:3".into(), None, |_| {})
             .unwrap()
             .unwrap();
-        let action = store.access_read_write("b:test:3".into());
+        let action = store.to_repository_read_write("b:test:3".into());
 
         assert!(
             action

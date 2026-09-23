@@ -122,12 +122,12 @@ impl StoreGenericPool for KvStorePool {
         // Store exists, proceed erasure.
         tracing::debug!("collection store exists, erasing: {bucket} from {collection}");
 
-        let kv_action = kv_store.access_read_write(bucket);
+        let kv_repo = kv_store.to_repository_read_write(bucket);
 
         // Notice: we cannot use the provided KV bucket erasure helper there, as \
         //   erasing a bucket requires a database lock, which would incur a dead-lock, \
         //   thus we need to perform the erasure from there.
-        kv_action
+        kv_repo
             .batch_erase_bucket()
             .inspect(|_n| tracing::debug!("done with bucket erasure"))
     }

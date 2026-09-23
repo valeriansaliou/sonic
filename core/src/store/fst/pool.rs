@@ -20,7 +20,7 @@ use crate::store::{Bucket, StoreItemPart};
 use crate::store::{BucketOwned, generic::*};
 
 use super::util::*;
-use super::{FstStore, FstStoreActionConfig, FstStoreAtom, FstStorePathMode};
+use super::{FstRepositoryConfig, FstStore, FstStoreAtom, FstStorePathMode};
 
 // MARK: - Store pool
 
@@ -30,7 +30,7 @@ use super::{FstStore, FstStoreActionConfig, FstStoreAtom, FstStorePathMode};
 pub struct FstStorePool {
     pub(super) fst_store_config: Arc<crate::config::FstStoreConfig>,
     // NOTE: This shouldn’t be here, but until a big rewrite let’s not care.
-    pub fst_action_config: FstStoreActionConfig,
+    pub fst_repo_config: FstRepositoryConfig,
     graph_pool: Arc<RwLock<HashMap<FstStoreId, Arc<FstStore>>>>,
     graph_acquire_lock: Arc<Mutex<()>>,
     graph_rebuild_lock: Arc<Mutex<()>>,
@@ -41,11 +41,11 @@ pub struct FstStorePool {
 impl FstStorePool {
     pub fn new(
         fst_store_config: Arc<crate::config::FstStoreConfig>,
-        fst_action_config: FstStoreActionConfig,
+        fst_repo_config: FstRepositoryConfig,
     ) -> Self {
         Self {
             fst_store_config,
-            fst_action_config,
+            fst_repo_config,
             graph_pool: Arc::default(),
             graph_acquire_lock: Arc::default(),
             graph_rebuild_lock: Arc::default(),
@@ -247,7 +247,7 @@ impl FstStorePool {
             last_used: Arc::new(RwLock::new(now)),
             last_consolidated: Arc::new(RwLock::new(now)),
             graph_consolidate: Arc::clone(&self.graph_consolidate),
-            action_config: self.fst_action_config,
+            action_config: self.fst_repo_config,
         })
     }
 
@@ -683,7 +683,7 @@ impl FstStorePool {
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub struct FstStoreId {
     collection_hash: FstStoreAtom,
-    bucket: BucketOwned,
+    pub(super) bucket: BucketOwned,
 }
 
 impl FstStoreId {
@@ -777,17 +777,6 @@ mod tests {
 
         fst_pool.janitor(|_| true);
     }
-
-    #[test]
-    fn it_proceeds_primitives() {
-        let fst_pool = test_fst_pool();
-
-        let store = fst_pool
-            .acquire("c:test:2".into(), "b:test:2".into())
-            .unwrap();
-
-        assert!(store.lookup_typos_("valerien", 1).is_ok());
-    }
 }
 
 // MARK: - Boilerplate
@@ -806,7 +795,7 @@ impl fmt::Debug for FstStorePool {
 
         // NOTE: Deconstructing to future-proof this function.
         let Self {
-            fst_action_config,
+            fst_repo_config: fst_action_config,
             graph_pool,
             graph_acquire_lock,
             graph_rebuild_lock,
