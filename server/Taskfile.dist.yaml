@@ -11,6 +11,7 @@ vars:
   CLEAN_ARGS_LIST: { ref: without .CLI_ARGS_LIST "--trace" "--debug" "--info" "--warn" }
   CLEAN_ARGS: { ref: .CLEAN_ARGS_LIST | join " " }
   CARGO_PROFILE: { ref: env "CARGO_PROFILE" | default "relwithdebinfo" }
+  WORKING_DIR: { ref: .ROOT_DIR }
   UTIL_GET_OPTIONAL_FEATURES:
     value: >-
       cargo metadata --format-version 1 --no-deps | jq -r '
@@ -34,6 +35,9 @@ tasks:
     summary: |-
       syntax: {{ .SELF }} [--bench BENCH [-- [FILTER] [--baseline BASELINE]]]
     cmds:
+      - task: cargo-install
+        vars:
+          INSTALL_DIR: './target/{{ .CARGO_PROFILE }}'
       - task: cargo-bench
         vars:
           CLI_ARGS: { ref: .CLEAN_ARGS }
@@ -44,6 +48,9 @@ tasks:
       - sh: test {{ len .CLEAN_ARGS_LIST }} -ge 1
         msg: "syntax: {{ .SELF }} GIT_REF [--bench BENCH [-- FILTER]]"
     cmds:
+      - task: cargo-install
+        vars:
+          INSTALL_DIR: './target/{{ .CARGO_PROFILE }}'
       - task: cargo-bench
         vars:
           CLI_ARGS: '{{ .ARGS_1 }} -- --baseline {{ .BASELINE_NAME }} {{ .ARGS_2 }}'
@@ -68,7 +75,6 @@ tasks:
         vars:
           WORKING_DIR: { ref: .WORKTREE_PATH }
           INSTALL_DIR: { ref: .INSTALL_DIR }
-          OPTIONAL_FEATURES: { sh: "cd {{ shellQuote .WORKTREE_PATH }} && {{ .UTIL_GET_OPTIONAL_FEATURES }}" }
       - task: cargo-bench
         vars:
           CLI_ARGS: '{{ .ARGS_1 }} -- --save-baseline {{ .BASELINE_NAME }} {{ .ARGS_2 }}'
@@ -130,6 +136,7 @@ tasks:
     vars:
       # COMPAT: Compat with <v1.6.0.
       PATH: { sh: 'test -d {{ shellQuote .WORKING_DIR }}/server && echo {{ shellQuote .WORKING_DIR }}/server || echo {{ shellQuote .WORKING_DIR }}' }
+      OPTIONAL_FEATURES: { sh: "cd {{ shellQuote .WORKING_DIR }} && {{ .UTIL_GET_OPTIONAL_FEATURES }}" }
 
   util:git-add-worktree:
     internal: true
