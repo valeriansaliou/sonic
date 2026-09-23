@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{Duration, SystemTime};
-use std::{fmt, fs, io};
+use std::{fmt, fs};
 
 use hashbrown::{DefaultHashBuilder, HashMap};
 use rocksdb::DB;
@@ -21,6 +21,8 @@ use super::KvStore;
 use super::util::default_merge_operator;
 
 // MARK: - Store pool
+
+pub type KvStoreId = CollectionHash;
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
@@ -522,52 +524,12 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
     }
 }
 
-// MARK: - Store ID
-
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
-pub struct KvStoreId {
-    collection_hash: Hash,
-}
-
-impl KvStoreId {
-    pub fn from_hash(collection_hash: Hash) -> KvStoreId {
-        KvStoreId { collection_hash }
-    }
-
-    pub fn from_part(collection: StoreItemPart) -> KvStoreId {
-        KvStoreId {
-            collection_hash: collection.to_compact(),
-        }
-    }
-
-    /// Filesystem path components are hex-encoded (via `format!("{:x}")`), we
-    /// must convert it back into proper `u32` otherwise roundtrips will fail.
-    #[inline]
-    pub fn try_from_hex(collection_hash: &str) -> Result<KvStoreId, io::Error> {
-        let collection_hash = u32_from_hex(collection_hash)?;
-
-        Ok(Self::from_hash(collection_hash))
-    }
-
-    pub fn as_collection_hash(&self) -> &Hash {
-        &self.collection_hash
-    }
-}
-
-impl fmt::Display for KvStoreId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let Self { collection_hash } = self;
-
-        write!(f, "<{collection_hash:x}>")
-    }
-}
-
 // MARK: - Helpers
 
 impl crate::config::KvStoreConfig {
     #[inline]
     pub(super) fn store_path(&self, id: &KvStoreId) -> PathBuf {
-        let KvStoreId { collection_hash } = id;
+        let collection_hash = id.into_inner();
 
         self.path.join(format!("{collection_hash:x}"))
     }
@@ -633,11 +595,5 @@ impl fmt::Debug for KvStorePool {
             .field("store_acquire_lock", &AsPrettyMutex(store_acquire_lock))
             .field("store_flush_lock", &AsPrettyMutex(store_flush_lock))
             .finish_non_exhaustive()
-    }
-}
-
-impl fmt::Debug for KvStoreId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self, f)
     }
 }

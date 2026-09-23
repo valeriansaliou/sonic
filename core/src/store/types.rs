@@ -293,6 +293,60 @@ mod tests_store_item_builder {
     }
 }
 
+// MARK: - Collection hash
+
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+pub struct CollectionHash(Hash);
+
+impl CollectionHash {
+    pub fn from_hash(collection_hash: Hash) -> CollectionHash {
+        CollectionHash(collection_hash)
+    }
+
+    pub fn from_part(collection: StoreItemPart) -> CollectionHash {
+        CollectionHash(collection.to_compact())
+    }
+
+    /// Filesystem path components are hex-encoded (via `format!("{:x}")`), we
+    /// must convert it back into proper `u32` otherwise roundtrips will fail.
+    #[inline]
+    pub fn try_from_hex(collection_hash: &str) -> Result<CollectionHash, std::io::Error> {
+        let collection_hash = super::generic::u32_from_hex(collection_hash)?;
+
+        Ok(Self::from_hash(collection_hash))
+    }
+
+    pub fn into_inner(self) -> Hash {
+        self.0
+    }
+
+    // NOTE: This is just a helper to avoid having to create a `KvStoreId` wrapper.
+    pub fn as_collection_hash(&self) -> &Hash {
+        &self.0
+    }
+}
+
+impl<'a> From<StoreItemPart<'a>> for CollectionHash {
+    #[inline]
+    fn from(collection: StoreItemPart<'a>) -> Self {
+        Self::from_part(collection)
+    }
+}
+
+impl std::fmt::Display for CollectionHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let Self(collection_hash) = self;
+
+        write!(f, "<{collection_hash:x}>")
+    }
+}
+
+impl std::fmt::Debug for CollectionHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self, f)
+    }
+}
+
 // MARK: - Helpers
 
 macro_rules! impl_u32_wrapper_utils {

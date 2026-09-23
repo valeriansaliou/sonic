@@ -8,7 +8,7 @@
 use std::collections::VecDeque;
 use std::fs::File;
 use std::path::PathBuf;
-use std::str::FromStr;
+use std::str::FromStr as _;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{Duration, SystemTime};
 use std::{fmt, fs, io};
@@ -16,7 +16,7 @@ use std::{fmt, fs, io};
 use fst::Streamer as _;
 use hashbrown::{DefaultHashBuilder, HashMap, HashSet};
 
-use crate::store::{Bucket, Hash, StoreItemPart};
+use crate::store::{Bucket, CollectionHash, Hash, StoreItemPart};
 use crate::store::{BucketOwned, generic::*};
 
 use super::util::*;
@@ -88,7 +88,7 @@ impl StoreGenericPool for FstStorePool {
     }
 
     fn proceed_erase_collection(&self, collection_name: StoreItemPart) -> Result<u32, ()> {
-        let collection_hash = collection_name.to_compact();
+        let collection_hash = CollectionHash::from_part(collection_name);
         let collection_path = self.fst_store_config.collection_path(&collection_hash);
 
         // Force a FST graph close (on all contained buckets)
@@ -168,7 +168,7 @@ impl StoreGenericPool for FstStorePool {
             "Sub-erase on fst bucket {bucket_name:?} for collection {collection_name:?}"
         );
 
-        let store_id = FstStoreId::from_parts(collection_name, bucket_name);
+        let store_id = FstStoreId::new(collection_name, bucket_name);
 
         let bucket_path = self
             .fst_store_config
@@ -212,7 +212,7 @@ impl StoreGenericPool for FstStorePool {
 
 impl FstStorePool {
     pub fn acquire(&self, collection: StoreItemPart, bucket: Bucket) -> Result<Arc<FstStore>, ()> {
-        let store_id = FstStoreId::from_parts(collection, bucket);
+        let store_id = FstStoreId::new(collection, bucket);
 
         // Freeze acquire lock, and reference it in context
         // Notice: this prevents two graphs on the same collection to be opened at the same time.
@@ -643,7 +643,7 @@ impl FstStorePool {
     pub fn count_collection_buckets(&self, collection: StoreItemPart) -> Result<usize, ()> {
         let path_mode = FstStorePathMode::Permanent;
 
-        let collection_hash = collection.to_compact();
+        let collection_hash = CollectionHash::from_part(collection);
         let collection_path = self.fst_store_config.collection_path(&collection_hash);
 
         if !collection_path.exists() {
@@ -682,21 +682,17 @@ impl FstStorePool {
 
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub struct FstStoreId {
-    collection_hash: Hash,
+    collection_hash: CollectionHash,
     pub(super) bucket: BucketOwned,
 }
 
 impl FstStoreId {
-    pub fn new(collection_hash: Hash, bucket: BucketOwned) -> FstStoreId {
+    pub fn new(
+        collection_hash: impl Into<CollectionHash>,
+        bucket: impl Into<BucketOwned>,
+    ) -> FstStoreId {
         FstStoreId {
-            collection_hash,
-            bucket,
-        }
-    }
-
-    pub fn from_parts(collection: StoreItemPart, bucket: Bucket) -> FstStoreId {
-        FstStoreId {
-            collection_hash: collection.to_compact(),
+            collection_hash: collection_hash.into(),
             bucket: bucket.into(),
         }
     }
@@ -705,14 +701,14 @@ impl FstStoreId {
     /// must convert it back into proper `u32` otherwise roundtrips will fail.
     #[inline]
     pub fn try_from_hex(collection_hash: &str, bucket_name: &str) -> Result<FstStoreId, io::Error> {
-        let collection_hash = u32_from_hex(collection_hash)?;
+        let collection_hash = CollectionHash::try_from_hex(collection_hash)?;
         let bucket_name = BucketOwned::from_str(bucket_name)?;
 
         Ok(Self::new(collection_hash, bucket_name))
     }
 
     pub fn as_collection_hash(&self) -> &Hash {
-        &self.collection_hash
+        self.collection_hash.as_collection_hash()
     }
 }
 
@@ -723,7 +719,7 @@ impl fmt::Display for FstStoreId {
             bucket,
         } = self;
 
-        write!(f, "<{collection_hash:x}>/{bucket}")
+        write!(f, "{collection_hash}/{bucket}")
     }
 }
 
@@ -731,7 +727,9 @@ impl fmt::Display for FstStoreId {
 
 impl crate::config::FstStoreConfig {
     #[inline]
-    pub(super) fn collection_path(&self, collection_hash: &Hash) -> PathBuf {
+    pub(super) fn collection_path(&self, collection_hash: &CollectionHash) -> PathBuf {
+        let collection_hash = collection_hash.into_inner();
+
         self.path.join(format!("{collection_hash:x}"))
     }
 
