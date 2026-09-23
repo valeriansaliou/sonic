@@ -41,13 +41,7 @@ pub struct FstStorePending {
     push: Arc<RwLock<HashSet<Vec<u8>>>>,
 }
 
-pub struct FstStoreActionBuilder<'build> {
-    pub fst_store_config: &'build crate::config::FstStoreConfig,
-}
-
 type FstStoreAtom = u32;
-
-pub struct FstStoreMisc;
 
 #[derive(Copy, Clone)]
 enum FstStorePathMode {
