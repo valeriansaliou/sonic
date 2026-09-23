@@ -714,7 +714,7 @@ impl fmt::Display for FstStoreId {
 impl crate::config::FstStoreConfig {
     #[inline]
     pub(super) fn collection_path(&self, collection_hash: &CollectionHash) -> PathBuf {
-        let collection_hash = collection_hash.into_inner();
+        let collection_hash = collection_hash.into_inner().to_le();
 
         self.path.join(format!("{collection_hash:x}"))
     }
