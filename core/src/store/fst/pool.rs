@@ -10,7 +10,7 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::str::FromStr as _;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use std::time::{Duration, SystemTime};
+use std::time::Instant;
 use std::{fmt, fs, io};
 
 use fst::Streamer as _;
@@ -238,7 +238,7 @@ impl FstStorePool {
         let graph = (self.open(store_id))
             .map_err(|error| tracing::error!("Failed opening fst: {error:?}"))?;
 
-        let now = SystemTime::now();
+        let now = Instant::now();
 
         Ok(FstStore {
             graph,
@@ -316,21 +316,7 @@ impl FstStorePool {
 
             for key in graph_consolidate_read.iter().filter(|k| filter(k)) {
                 if let Some(store) = graph_pool_read.get(key) {
-                    // Important: be lenient with system clock going back to a past duration, \
-                    //   since we may be running in a virtualized environment where clock is not \
-                    //   guaranteed to be monotonic. This is done to avoid poisoning associated \
-                    //   mutexes by crashing on unwrap().
-                    let not_consolidated_for = store
-                        .last_consolidated
-                        .read()
-                        .unwrap()
-                        .elapsed()
-                        .unwrap_or_else(|err| {
-                            tracing::error!("fst key {key:?} last consolidated duration clock issue, zeroing: {err:?}");
-
-                            // Assuming a zero seconds fallback duration
-                            Duration::ZERO
-                        });
+                    let not_consolidated_for = store.last_consolidated.read().unwrap().elapsed();
 
                     if force
                         || not_consolidated_for.as_secs()

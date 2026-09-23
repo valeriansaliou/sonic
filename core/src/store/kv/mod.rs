@@ -11,7 +11,7 @@ mod merge;
 mod pool;
 
 use std::sync::{Arc, RwLock};
-use std::time::SystemTime;
+use std::time::Instant;
 use std::{fmt, io};
 
 use hashbrown::HashMap;
@@ -28,8 +28,8 @@ pub use self::pool::{KvStoreId, KvStorePool};
 
 pub struct KvStore {
     database: DB,
-    last_used: RwLock<SystemTime>,
-    last_flushed: RwLock<SystemTime>,
+    last_used: RwLock<Instant>,
+    last_flushed: RwLock<Instant>,
     pub lock: RwLock<()>,
     kv_store_config: Arc<crate::config::KvStoreConfig>,
 
@@ -196,7 +196,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
 }
 
 impl StoreGeneric for KvStore {
-    fn ref_last_used(&self) -> &RwLock<SystemTime> {
+    fn ref_last_used(&self) -> &RwLock<Instant> {
         &self.last_used
     }
 }

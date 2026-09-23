@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use std::time::{Duration, SystemTime};
+use std::time::Instant;
 use std::{fmt, fs};
 
 use hashbrown::{DefaultHashBuilder, HashMap};
@@ -220,7 +220,7 @@ impl KvStorePool {
     ) -> Result<KvStore, ()> {
         match self.open(store_id, override_options) {
             Ok(db) => {
-                let now = SystemTime::now();
+                let now = Instant::now();
 
                 Ok(KvStore {
                     database: db,
@@ -297,25 +297,7 @@ impl KvStorePool {
         let store_pool_read = self.pool.read().unwrap();
 
         for (store_id, store) in store_pool_read.iter().filter(|(k, _)| filter(k)) {
-            let last_flushed_guard = store.last_flushed.read().unwrap();
-
-            let not_flushed_for = (last_flushed_guard.elapsed())
-                // WARN: Be lenient with system clock going back to a past
-                //   duration, since we may be running in a virtualized
-                //   environment where clock is not guaranteed to be
-                //   monotonic. This is done to avoid poisoning associated
-                //   locks by crashing on `.unwrap()`.
-                .unwrap_or_else(|error| {
-                    tracing::error!(
-                        "{} store {store_id} last flush duration clock issue, zeroing: {error:?}",
-                        Self::kind()
-                    );
-
-                    // Assuming a zero seconds fallback duration
-                    Duration::ZERO
-                });
-
-            drop(last_flushed_guard);
+            let not_flushed_for = store.last_flushed.read().unwrap().elapsed();
 
             if force || not_flushed_for.as_secs() >= self.kv_store_config.database.flush_after {
                 tracing::debug!(
@@ -363,7 +345,7 @@ impl KvStorePool {
                 }
 
                 // Bump 'last flushed' time
-                *store.last_flushed.write().unwrap() = SystemTime::now();
+                *store.last_flushed.write().unwrap() = Instant::now();
             }
 
             // Early release the lock.

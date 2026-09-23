@@ -11,7 +11,7 @@ mod util;
 
 use std::fmt;
 use std::sync::{Arc, RwLock};
-use std::time::SystemTime;
+use std::time::Instant;
 
 use fst::{IntoStreamer as _, Streamer as _};
 use hashbrown::HashSet;
@@ -28,8 +28,8 @@ pub struct FstStore {
     graph: fst::Set,
     target: FstStoreId,
     pending: FstStorePending,
-    last_used: Arc<RwLock<SystemTime>>,
-    last_consolidated: Arc<RwLock<SystemTime>>,
+    last_used: Arc<RwLock<Instant>>,
+    last_consolidated: Arc<RwLock<Instant>>,
     graph_consolidate: Arc<RwLock<HashSet<FstStoreId>>>,
     // NOTE: This shouldn’t be here, but until a big rewrite let’s not care.
     action_config: FstRepositoryConfig,
@@ -148,7 +148,7 @@ impl FstStore {
         // to a fixed and predictable tick time in the future.
         let mut last_consolidated_value = self.last_consolidated.write().unwrap();
 
-        *last_consolidated_value = SystemTime::now();
+        *last_consolidated_value = Instant::now();
 
         // Perform an early drop of the lock (frees up write lock early).
         drop(last_consolidated_value);
@@ -158,7 +158,7 @@ impl FstStore {
 }
 
 impl StoreGeneric for FstStore {
-    fn ref_last_used(&self) -> &RwLock<SystemTime> {
+    fn ref_last_used(&self) -> &RwLock<Instant> {
         &self.last_used
     }
 }
