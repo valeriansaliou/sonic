@@ -111,7 +111,7 @@ impl KvStore {
         let value = self.database.get(store_key)?;
 
         match value {
-            Some(bytes) => match decode_u32_mapped(&bytes) {
+            Some(bytes) => match try_decode_iid(&bytes) {
                 Ok(iid_incr) => {
                     tracing::debug!(?bucket, ?iid_incr, "Read IIDIncr from database");
                     Ok(Some(iid_incr))
@@ -158,8 +158,9 @@ impl KvStore {
                                 .get_pinned(&object_count_key)
                                 .is_ok_and(|opt| opt.is_none())
                             {
+                                let count = i32::try_from(u32::from(iid_incr)).unwrap_or(i32::MAX);
                                 self.database
-                                    .put(&object_count_key, iid_incr.into_bytes())
+                                    .put(&object_count_key, encode_i32_counter(count))
                                     .unwrap_or_else(|error| {
                                         tracing::error!(
                                             "Could not backfill ObjectCount from IIDIncr: {error:?}"
@@ -183,7 +184,7 @@ impl KvStore {
         drop(write_guard);
 
         let store_key = KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
-        batch.merge(store_key, iid.into_bytes());
+        batch.merge(store_key, encode_u32_counter(iid.into()));
 
         Ok(iid)
     }
@@ -248,6 +249,8 @@ impl<'a> KvRepositoryReadOnly<'a> {
         }
     }
 
+    /// Note that because of the underlying use of `i32`, the max value is
+    /// `i32::MAX` (hence `U32::MAX / 2`).
     pub fn get_object_count(&self) -> Result<u32, Box<dyn std::error::Error>> {
         let bucket = self.bucket;
 
@@ -255,18 +258,25 @@ impl<'a> KvRepositoryReadOnly<'a> {
         let value = self.store.database.get(store_key)?;
 
         match value {
-            Some(bytes) => match decode_u32_mapped(&bytes) {
-                Ok(count) => {
-                    tracing::debug!(?bucket, ?count, "Read ObjectCount from database");
-                    Ok(count)
+            Some(bytes) if bytes.len() == 4 => {
+                // SAFETY: `bytes` is guaranteed to be 4 bytes long.
+                let count = decode_i32_counter([bytes[0], bytes[1], bytes[2], bytes[3]]);
+
+                tracing::debug!(?bucket, ?count, "Read ObjectCount from database");
+
+                match u32::try_from(count) {
+                    Ok(count) => Ok(count),
+                    Err(error) => Err(Box::new(io::Error::other(format!(
+                        "Invalid ObjectCount value in bucket {bucket:?}: {error:?}",
+                    )))),
                 }
-                Err(()) => {
-                    tracing::error!(?bucket, "Invalid ObjectCount in database");
-                    Err(Box::new(io::Error::other(
-                        "Invalid ObjectCount value in bucket {bucket:?}",
-                    )))
-                }
-            },
+            }
+            Some(_bytes) => {
+                tracing::error!(?bucket, "Invalid ObjectCount in database");
+                Err(Box::new(io::Error::other(format!(
+                    "Invalid ObjectCount value in bucket {bucket:?}"
+                ))))
+            }
             None => {
                 tracing::debug!(
                     ?bucket,
@@ -297,7 +307,7 @@ impl<'a> KvRepositoryReadOnly<'a> {
             Ok(Some(value)) => {
                 tracing::debug!("got term-to-iids: {store_key} with encoded value: {value:?}");
 
-                decode_u32_list_mapped(&value).map(|value_decoded| {
+                decode_iids_list(&value).map(|value_decoded| {
                     tracing::debug!(
                         "got term-to-iids: {store_key} with decoded value: {value_decoded:?}"
                     );
@@ -330,7 +340,7 @@ impl<'a> KvRepositoryReadOnly<'a> {
             Ok(Some(value)) => {
                 tracing::debug!("got oid-to-iid: {store_key} with encoded value: {value:?}");
 
-                decode_u32_mapped(&value).map(|value_decoded| {
+                try_decode_iid(&value).map(|value_decoded| {
                     tracing::debug!(
                         "got oid-to-iid: {store_key} with decoded value: {value_decoded:?}"
                     );
@@ -390,7 +400,7 @@ impl<'a> KvRepositoryReadOnly<'a> {
             Ok(Some(value)) => {
                 tracing::debug!("got iid-to-terms: {store_key} with encoded value: {value:?}");
 
-                decode_u32_list_mapped(&value).map(|value_decoded| {
+                decode_terms_list(&value).map(|value_decoded| {
                     tracing::debug!(
                         "got iid-to-terms: {store_key} with decoded value: {value_decoded:?}"
                     );
@@ -466,7 +476,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
             &self.bucket
         );
 
-        batch.merge(store_key, diff.to_ne_bytes());
+        batch.merge(store_key, encode_i32_counter(diff));
     }
 
     pub fn get_new_iid(
@@ -502,7 +512,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         tracing::debug!("store set term-to-iids: {store_key}");
 
         // Encode IID list into storage serialized format
-        let iids_encoded = encode_u32_list_mapped(iids);
+        let iids_encoded = encode_iids_list(iids);
 
         tracing::debug!("store set term-to-iids: {store_key} with encoded value: {iids_encoded:?}");
 
@@ -520,7 +530,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         tracing::debug!("store add term-to-iids: {store_key}");
 
         for iid in iids {
-            batch.merge(&store_key, iid.into_bytes());
+            batch.merge(&store_key, encode_iid(iid));
         }
     }
 
@@ -545,7 +555,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         tracing::debug!("store set oid-to-iid: {store_key}");
 
         // Encode IID
-        let iid_encoded = iid.into_bytes();
+        let iid_encoded = encode_iid(iid);
 
         tracing::debug!("store set oid-to-iid: {store_key} with encoded value: {iid_encoded:?}");
 
@@ -601,7 +611,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         tracing::debug!("store set iid-to-terms: {store_key}");
 
         // Encode term list into storage serialized format
-        let terms_hashes_encoded = encode_u32_list_mapped(terms_hashes);
+        let terms_hashes_encoded = encode_terms_list(terms_hashes);
 
         tracing::debug!(
             "store set iid-to-terms: {store_key} with encoded value: {terms_hashes_encoded:?}"
@@ -621,7 +631,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         tracing::debug!("store add iid-to-terms: {store_key}");
 
         for term_hash in terms_hashes {
-            batch.merge(&store_key, term_hash.into_bytes());
+            batch.merge(&store_key, encode_term_hash(term_hash));
         }
     }
 

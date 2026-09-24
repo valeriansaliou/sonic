@@ -311,13 +311,14 @@ impl CollectionHash {
     /// must convert it back into proper `u32` otherwise roundtrips will fail.
     #[inline]
     pub fn try_from_hex(collection_hash: &str) -> Result<CollectionHash, std::io::Error> {
-        let collection_hash = super::generic::u32_from_hex(collection_hash)?;
+        let collection_hash = super::generic::u32_from_hex(collection_hash).map(u32::from_le)?;
 
         Ok(Self::from_hash(collection_hash))
     }
 
-    pub fn into_inner(self) -> Hash {
-        self.0
+    #[inline]
+    pub fn to_hex(&self) -> String {
+        format!("{:x}", self.0.to_le())
     }
 
     // NOTE: This is just a helper to avoid having to create a `KvStoreId` wrapper.
@@ -351,6 +352,12 @@ impl std::fmt::Debug for CollectionHash {
 
 macro_rules! impl_u32_wrapper_utils {
     ($t:ident) => {
+        impl $t {
+            pub const fn new(value: u32) -> Self {
+                Self(value)
+            }
+        }
+
         impl From<u32> for $t {
             fn from(value: u32) -> Self {
                 Self(value)

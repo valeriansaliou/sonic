@@ -416,9 +416,7 @@ impl KvStorePool {
 impl crate::config::KvStoreConfig {
     #[inline]
     pub(super) fn store_path(&self, id: &KvStoreId) -> PathBuf {
-        let collection_hash = id.into_inner();
-
-        self.path.join(format!("{collection_hash:x}"))
+        self.path.join(id.to_hex())
     }
 }
 

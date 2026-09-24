@@ -5,6 +5,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use crate::store::encoding::*;
 use crate::store::generic::KEY_SEPARATOR;
 use crate::store::types::*;
 
@@ -54,7 +55,7 @@ impl KvStoreKey {
         key_bytes.extend_from_slice(bucket_bytes); // [bucket<?B>]
         key_bytes.push(KEY_SEPARATOR); // [separator<1B>]
         key_bytes.push(idx); // [idx<1B>]
-        key_bytes.extend_from_slice(&route.to_le_bytes()); // [route<4B>]
+        key_bytes.extend_from_slice(&encode_kv_key_part(route)); // [route<4B>]
 
         KvStoreKey::from(key_bytes)
     }
@@ -104,7 +105,7 @@ impl std::fmt::Display for KvStoreKey {
         let key_idx = rest[0];
 
         let route_bytes = &rest[1..];
-        let key_route = u32::from_le_bytes([
+        let key_route = decode_kv_key_part([
             route_bytes[0],
             route_bytes[1],
             route_bytes[2],
@@ -153,11 +154,11 @@ mod tests {
     fn it_keys_term_to_iids() {
         assert_eq!(
             KvStoreKey::term_to_iids(&"b:2".into(), 772137347.into()).0,
-            [b'b', b':', b'2', KEY_SEPARATOR, 1, 131, 225, 5, 46]
+            [b'b', b':', b'2', KEY_SEPARATOR, 1, 46, 5, 225, 131]
         );
         assert_eq!(
             KvStoreKey::term_to_iids(&"b:2".into(), 3582484684.into()).0,
-            [b'b', b':', b'2', KEY_SEPARATOR, 1, 204, 96, 136, 213]
+            [b'b', b':', b'2', KEY_SEPARATOR, 1, 213, 136, 96, 204]
         );
     }
 
@@ -165,7 +166,7 @@ mod tests {
     fn it_keys_oid_to_iid() {
         assert_eq!(
             KvStoreKey::oid_to_iid(&"b:3".into(), "conversation:6501e83a".into()).0,
-            [b'b', b':', b'3', KEY_SEPARATOR, 2, 31, 156, 118, 213]
+            [b'b', b':', b'3', KEY_SEPARATOR, 2, 213, 118, 156, 31]
         );
     }
 
@@ -173,7 +174,15 @@ mod tests {
     fn it_keys_iid_to_oid() {
         assert_eq!(
             KvStoreKey::iid_to_oid(&"b:4".into(), 10292198.into()).0,
-            [b'b', b':', b'4', KEY_SEPARATOR, 3, 230, 11, 157, 0]
+            [b'b', b':', b'4', KEY_SEPARATOR, 3, 0, 157, 11, 230]
+        );
+    }
+
+    #[test]
+    fn iid_to_oid_is_lexicographically_sorted() {
+        assert!(
+            KvStoreKey::iid_to_oid(&"b:4".into(), 1.into()).0
+                < KvStoreKey::iid_to_oid(&"b:4".into(), 2.into()).0
         );
     }
 
@@ -181,11 +190,11 @@ mod tests {
     fn it_keys_iid_to_terms() {
         assert_eq!(
             KvStoreKey::iid_to_terms(&"b:5".into(), 1.into()).0,
-            [b'b', b':', b'5', KEY_SEPARATOR, 4, 1, 0, 0, 0]
+            [b'b', b':', b'5', KEY_SEPARATOR, 4, 0, 0, 0, 1]
         );
         assert_eq!(
             KvStoreKey::iid_to_terms(&"b:5".into(), 20.into()).0,
-            [b'b', b':', b'5', KEY_SEPARATOR, 4, 20, 0, 0, 0]
+            [b'b', b':', b'5', KEY_SEPARATOR, 4, 0, 0, 0, 20]
         );
     }
 

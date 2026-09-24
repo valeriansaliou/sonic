@@ -19,9 +19,11 @@ pub(super) fn kv_merge_operator(
 
     match key[key.len() - 5] {
         META_TO_VALUE => match &key[(key.len() - 4)..] {
-            v if v == encode_u32(StoreMetaKey::IIDIncr.as_u32()) => u32_max(existing_val, operands),
-            v if v == encode_u32(StoreMetaKey::ObjectCount.as_u32()) => {
-                u32_counter_signed(existing_val, operands)
+            v if v == encode_kv_key_part(StoreMetaKey::IIDIncr.as_u32()) => {
+                u32_max(existing_val, operands)
+            }
+            v if v == encode_kv_key_part(StoreMetaKey::ObjectCount.as_u32()) => {
+                i32_counter(existing_val, operands)
             }
             v => panic!("Unrecognized meta key: {v:?}"),
         },
@@ -92,7 +94,7 @@ fn prepend_u32_list(
     Some(res)
 }
 
-/// This keeps only the maximum u32.
+/// This keeps only the maximum `u32`.
 ///
 /// It’s used for `IIDIncr`, where we can’t guarantee the order in which
 /// incremental values will effectively be written.
@@ -100,7 +102,7 @@ fn u32_max(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -> Op
     let mut res = match existing_val {
         Some(bytes) if bytes.len() == 4 => {
             // SAFETY: `bytes` is guaranteed to be 4 bytes long.
-            decode_u32(bytes).unwrap()
+            decode_u32_counter([bytes[0], bytes[1], bytes[2], bytes[3]])
         }
         Some(_) => panic!("u32_max: initial value isn’t a u32"),
         None if operands.is_empty() => return None,
@@ -110,7 +112,7 @@ fn u32_max(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -> Op
     for op in operands {
         for chunk in op.chunks(4) {
             // SAFETY: `chunk` is guaranteed to be 4 bytes long.
-            let new_val = decode_u32(chunk).unwrap();
+            let new_val = decode_u32_counter([chunk[0], chunk[1], chunk[2], chunk[3]]);
 
             if new_val > res {
                 res = new_val;
@@ -118,26 +120,29 @@ fn u32_max(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -> Op
         }
     }
 
-    Some(encode_u32(res).to_vec())
+    Some(encode_u32_counter(res).to_vec())
 }
 
-/// This implements a counter.
+/// This implements a counter (as `i32`).
 ///
 /// It’s used for `ObjectCount`, where we have to add **and remove** `1`.
 ///
-/// The accumulator is a `u32`, but because we want the counter to go both ways
-/// we have to pass signed values. By having this mix of types, we do not create
-/// a discrepancy between `ObjectCount`’s maximum value and that of `IIDIncr`.
-fn u32_counter_signed(
-    existing_val: Option<&[u8]>,
-    operands: &rocksdb::MergeOperands,
-) -> Option<Vec<u8>> {
+/// We can’t keep `u32` as value space, because of how operands are merged
+/// together. If we used a `u32` accumulator and `i32` operands, the last merge
+/// operation would yield incorrect results. On `n` iterations, `existing_val`
+/// would be `None` and `operands` filled with `i32` values. Those values would
+/// be merged into `0u32` and returned as a `u32` counter. On last iteration,
+/// all `n` intermediate counters would be passed as operands, and we’d have no
+/// way to know that they’re now encoded as `u32`. In addition, if one merge
+/// operation gets `(None, [-1, -1])` and another `(None, [1, 1, 1])`, the
+/// final counter value would be `3`; which is incorrect (expected: `1`).
+fn i32_counter(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -> Option<Vec<u8>> {
     let mut res = match existing_val {
         Some(bytes) if bytes.len() == 4 => {
             // SAFETY: `bytes` is guaranteed to be 4 bytes long.
-            decode_u32(bytes).unwrap()
+            decode_i32_counter([bytes[0], bytes[1], bytes[2], bytes[3]])
         }
-        Some(_) => panic!("u32_counter_signed: initial value isn’t a u32"),
+        Some(_) => panic!("i32_counter: initial value isn’t a u32"),
         None if operands.is_empty() => return None,
         None => 0,
     };
@@ -145,16 +150,11 @@ fn u32_counter_signed(
     for op in operands {
         for chunk in op.chunks(4) {
             // SAFETY: `chunk` is guaranteed to be 4 bytes long.
-            let diff = i32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            let diff = decode_i32_counter([chunk[0], chunk[1], chunk[2], chunk[3]]);
 
-            if diff > 0 {
-                res = res.saturating_add(diff as u32);
-            } else if diff < 0 {
-                debug_assert_ne!(res, 0);
-                res = res.saturating_sub(diff.unsigned_abs());
-            }
+            res = res.saturating_add(diff);
         }
     }
 
-    Some(encode_u32(res).to_vec())
+    Some(encode_i32_counter(res).to_vec())
 }
