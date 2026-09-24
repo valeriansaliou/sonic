@@ -68,6 +68,8 @@ impl KvStore {
         // Configure this write
         let mut write_options = rocksdb::WriteOptions::default();
 
+        // write_options.set_memtable_insert_hint_per_batch(true);
+
         // WAL disabled?
         if !self.kv_store_config.database.write_ahead_log {
             tracing::debug!("ignoring wal for kv write");

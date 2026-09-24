@@ -11,7 +11,7 @@ mod util;
 
 use std::fmt;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::Instant;
 
 use fst::{IntoStreamer as _, Streamer as _};
@@ -161,7 +161,12 @@ impl FstStore {
 }
 
 impl<'a> FstRepository<'a> {
-    pub fn push_word(&self, word: &str, fst_store_config: &crate::config::FstStoreConfig) -> bool {
+    fn push_word(
+        &self,
+        word: &str,
+        fst_store_config: &crate::config::FstStoreConfig,
+        pending: &mut MutexGuard<'_, HashMap<Vec<u8>, PendingAction>>,
+    ) -> bool {
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(word) {
             return false;
@@ -179,8 +184,6 @@ impl<'a> FstRepository<'a> {
         };
 
         let word_bytes = word.as_bytes();
-
-        let mut pending = self.store.pending.lock().unwrap();
 
         // PERF: To be correct we’d have to filter to keep only “push” actions,
         //   but in a real-world situation we’d trigger this condition only
@@ -209,11 +212,19 @@ impl<'a> FstRepository<'a> {
             }
         }
 
-        drop(pending);
-
         self.store.should_consolidate();
 
         true
+    }
+
+    pub fn push_words(&self, terms: &[&str], fst_store_config: &crate::config::FstStoreConfig) {
+        let mut pending = self.store.pending.lock().unwrap();
+
+        for term in terms {
+            if self.push_word(term, fst_store_config, &mut pending) {
+                tracing::trace!("push term committed to graph: {term}");
+            }
+        }
     }
 
     pub fn pop_word(&self, word: &str) -> bool {
