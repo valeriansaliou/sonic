@@ -16,6 +16,7 @@ use std::{fmt, fs, io};
 use fst::Streamer as _;
 use hashbrown::{DefaultHashBuilder, HashMap, HashSet};
 
+use crate::store::fst::PendingAction;
 use crate::store::{Bucket, CollectionHash, Hash, StoreItemPart};
 use crate::store::{BucketOwned, generic::*};
 
@@ -406,14 +407,13 @@ struct ConsolidateStats {
 
 impl FstStorePool {
     fn consolidate_item(&self, store: &FstStore, stats: &mut ConsolidateStats) -> Result<bool, ()> {
-        // Acquire write references to pending sets.
-        let mut pending_push_write = store.pending.push.write().unwrap();
-        let mut pending_pop_write = store.pending.pop.write().unwrap();
+        // Acquire write reference to pending actions.
+        let mut pending = store.pending.lock().unwrap();
 
         // Do consolidate? (any change committed)
-        // NOTE: If both pending sets are empty do not consolidate as there may have
-        //   been a push then a pop of this push, nulling out any committed change.
-        if pending_push_write.is_empty() && pending_pop_write.is_empty() {
+        // NOTE: If pending set is empty do not consolidate as there may have been
+        //   a push then a pop of this push, nulling out any committed change.
+        if pending.is_empty() {
             return Ok(false);
         }
 
@@ -454,8 +454,19 @@ impl FstStorePool {
         // Convert push keys to an ordered vector.
         // NOTE: We must go from a `Vec` to a `VecDeque` to sort values,
         //   which is a requirement for FST insertions.
-        let mut ordered_push_vec: Vec<&[u8]> =
-            Vec::from_iter(pending_push_write.iter().map(|item| item.as_ref()));
+        let mut ordered_push_vec: Vec<&[u8]> = Vec::with_capacity(pending.len());
+        let mut to_pop: HashSet<&[u8]> = HashSet::with_capacity(pending.len());
+
+        for (item, action) in pending.iter() {
+            match action {
+                PendingAction::Push => {
+                    ordered_push_vec.push(item.as_slice());
+                }
+                PendingAction::Pop => {
+                    to_pop.insert(item.as_slice());
+                }
+            }
+        }
 
         ordered_push_vec.sort();
 
@@ -516,7 +527,7 @@ impl FstStorePool {
             }
 
             // Restore old word (if not popped).
-            if pending_pop_write.contains(old_fst_word) {
+            if to_pop.contains(old_fst_word) {
                 stats.count_popped += 1;
             } else {
                 if check_over_limits(
@@ -596,9 +607,10 @@ impl FstStorePool {
             }
         };
 
-        // Clear all pending sets.
-        pending_push_write.clear();
-        pending_pop_write.clear();
+        drop(to_pop);
+
+        // Clear pending actions.
+        pending.clear();
 
         Ok(should_close)
     }

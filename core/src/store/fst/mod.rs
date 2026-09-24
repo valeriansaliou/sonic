@@ -11,11 +11,11 @@ mod util;
 
 use std::fmt;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
 use fst::{IntoStreamer as _, Streamer as _};
-use hashbrown::HashSet;
+use hashbrown::HashMap;
 use regex_syntax::escape as regex_escape;
 
 use crate::lexer::ranges::LexerRegexRange;
@@ -28,7 +28,7 @@ use self::util::*;
 pub struct FstStore {
     graph: fst::Set,
     target: FstStoreId,
-    pending: FstStorePending,
+    pending: Mutex<HashMap<Vec<u8>, PendingAction>>,
     last_used: Arc<RwLock<Instant>>,
     last_consolidated: Arc<RwLock<Instant>>,
     should_consolidate: AtomicBool,
@@ -36,10 +36,10 @@ pub struct FstStore {
     action_config: FstRepositoryConfig,
 }
 
-#[derive(Default)]
-pub struct FstStorePending {
-    pop: Arc<RwLock<HashSet<Vec<u8>>>>,
-    push: Arc<RwLock<HashSet<Vec<u8>>>>,
+#[derive(Debug, PartialEq)]
+enum PendingAction {
+    Push,
+    Pop,
 }
 
 #[derive(Copy, Clone)]
@@ -167,37 +167,49 @@ impl<'a> FstRepository<'a> {
             return false;
         }
 
+        // PERF: Perform some checks before acquiring any lock, so it stays
+        //   in scope as briefly as possible.
+        let graph_contains_word = self.store.graph.contains(&word);
+
+        // NOTE: Also check whether FST is over limits or not from there, to avoid
+        //   stacking words that could never be consolidated to final FST anyway.
+        let is_fst_over_limits = {
+            let graph_fst = self.store.graph.as_fst();
+            check_over_limits(graph_fst.size(), graph_fst.len(), &fst_store_config.graph)
+        };
+
         let word_bytes = word.as_bytes();
 
-        // Nuke word from 'pop' set? (void a previous un-consolidated commit)
-        if self.store.pending.pop.read().unwrap().contains(word_bytes) {
-            self.store.pending.pop.write().unwrap().remove(word_bytes);
-        }
+        let mut pending = self.store.pending.lock().unwrap();
 
-        // Add word in 'push' set? (only if word is not in FST)
-        // NOTE: also check whether FST is over limits or not from there, to avoid
-        //   stacking words that could never be consolidated to final FST anyway.
-        let graph_fst = self.store.graph.as_fst();
+        // PERF: To be correct we’d have to filter to keep only “push” actions,
+        //   but in a real-world situation we’d trigger this condition only
+        //   during a batch ingestion; when all actions are “push”.
+        let has_too_many_pending = pending.len() >= fst_store_config.graph.max_words;
 
-        if self.store.graph.contains(&word) {
-            return false;
-        }
+        let should_insert = !graph_contains_word && !is_fst_over_limits && !has_too_many_pending;
 
-        if check_over_limits(graph_fst.size(), graph_fst.len(), &fst_store_config.graph) {
-            return false;
-        }
-
-        {
-            let pending_push_guard = self.store.pending.push.read().unwrap();
-
-            if pending_push_guard.contains(word_bytes)
-                || pending_push_guard.len() >= fst_store_config.graph.max_words
-            {
-                return false;
+        match pending.get_mut(word_bytes) {
+            Some(PendingAction::Push) => return false,
+            // Remove scheduled “pop”? (void a previous un-consolidated commit)
+            Some(pending_action @ PendingAction::Pop) => {
+                if should_insert {
+                    *pending_action = PendingAction::Push;
+                } else {
+                    pending.remove(word_bytes);
+                    return false;
+                }
+            }
+            None => {
+                if should_insert {
+                    pending.insert(word_bytes.to_vec(), PendingAction::Push);
+                } else {
+                    return false;
+                }
             }
         }
 
-        (self.store.pending.push.write().unwrap()).insert(word_bytes.to_vec());
+        drop(pending);
 
         self.store.should_consolidate();
 
@@ -210,23 +222,38 @@ impl<'a> FstRepository<'a> {
             return false;
         }
 
+        // PERF: Perform some checks before acquiring any lock, so it stays
+        //   in scope as briefly as possible.
+        let graph_contains_word = self.store.graph.contains(&word);
+
+        let should_insert = graph_contains_word;
+
         let word_bytes = word.as_bytes();
 
-        // Nuke word from 'push' set? (void a previous un-consolidated commit)
-        if self.store.pending.push.read().unwrap().contains(word_bytes) {
-            self.store.pending.push.write().unwrap().remove(word_bytes);
+        let mut pending = self.store.pending.lock().unwrap();
+
+        match pending.get_mut(word_bytes) {
+            Some(PendingAction::Pop) => return false,
+            // Remove scheduled “push”? (void a previous un-consolidated commit)
+            Some(pending_action @ PendingAction::Push) => {
+                if should_insert {
+                    *pending_action = PendingAction::Pop;
+                } else {
+                    // drop(pending_action);
+                    pending.remove(word_bytes);
+                    return false;
+                }
+            }
+            None => {
+                if should_insert {
+                    pending.insert(word_bytes.to_vec(), PendingAction::Pop);
+                } else {
+                    return false;
+                }
+            }
         }
 
-        if !self.store.graph.contains(word_bytes) {
-            return false;
-        }
-
-        // Add word in 'pop' set? (only if word is in FST)
-        if self.store.pending.pop.read().unwrap().contains(word_bytes) {
-            return false;
-        }
-
-        (self.store.pending.pop.write().unwrap()).insert(word_bytes.to_vec());
+        drop(pending);
 
         self.store.should_consolidate();
 
@@ -470,7 +497,7 @@ mod tests {
 
 impl fmt::Debug for FstStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use crate::util::fmt::AsPrettyRwLock;
+        use crate::util::fmt::{AsPrettyMutex, AsPrettyRwLock};
 
         // NOTE: Deconstructing to future-proof this function.
         let Self {
@@ -486,25 +513,11 @@ impl fmt::Debug for FstStore {
         f.debug_struct("FstStore")
             .field("graph", graph)
             .field("target", target)
-            .field("pending", pending)
+            .field("pending", &AsPrettyMutex(pending))
             .field("last_used", &AsPrettyRwLock(last_used))
             .field("last_consolidated", &AsPrettyRwLock(last_consolidated))
             .field("should_consolidate", should_consolidate)
             .field("action_config", action_config)
-            .finish()
-    }
-}
-
-impl fmt::Debug for FstStorePending {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use crate::util::fmt::AsPrettyRwLock;
-
-        // NOTE: Deconstructing to future-proof this function.
-        let Self { pop, push } = self;
-
-        f.debug_struct("FstStorePending")
-            .field("pop", &AsPrettyRwLock(pop))
-            .field("push", &AsPrettyRwLock(push))
             .finish()
     }
 }
