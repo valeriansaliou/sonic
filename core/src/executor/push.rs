@@ -88,18 +88,19 @@ impl super::Executor {
         let mut tokens =
             UniqueBy::new_with_hasher(input.tokens(), Token::hash, NoopU32HasherBuilder);
 
+        let mut terms = Vec::with_capacity(input.tokens().len());
+
         for token in &mut tokens {
-            let term = token.as_normalized();
             let term_hash = token.hash();
 
-            // Push to FST graph? (this consumes the term; to avoid sub-clones)
-            if fst_repo.push_word(&term, &self.app_conf.store.fst) {
-                tracing::trace!("push term committed to graph: {}", term);
-            }
-
             // Link IID to term
-            kv_repo.add_term_to_iids(&mut batch, term_hash, std::iter::once(iid));
+            kv_repo.add_term_to_iid(&mut batch, term_hash, iid);
+
+            terms.push(token.into_normalized());
         }
+
+        // Push to FST graph
+        fst_repo.push_words(&terms, &self.app_conf.store.fst);
 
         // Link terms to IID
         if assume_new && is_new {

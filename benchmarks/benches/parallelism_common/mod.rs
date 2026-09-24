@@ -297,6 +297,11 @@ pub fn ingest_parallel<T: Ingestable>(
         }
     }
 
+    // {
+    //     let term_count = ingest.legacy_countb(COLLECTION, BUCKET).unwrap();
+    //     tracing::info!("Final term count: {term_count}");
+    // }
+
     drop(control);
     drop(ingest);
     drop(sonic);
