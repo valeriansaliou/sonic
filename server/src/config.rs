@@ -61,6 +61,15 @@ pub fn defaults_toml() -> &'static str {
     graph.consolidate_after = 180
     graph.max_size = 2048
     graph.max_words = 250000
+
+    [store.object]
+    path = "./data/store/corpus/"
+    pool.inactive_after = 1800
+    database.flush_after = 900
+    database.compression_type = "zstd"
+    database.parallelism = 2
+    # database.write_buffer_size = 16384 # Default handled via serde
+    database.write_ahead_log = true
     "#
 }
 

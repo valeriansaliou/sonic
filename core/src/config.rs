@@ -126,6 +126,9 @@ pub struct StoreConfig {
     pub kv: Arc<KvStoreConfig>,
 
     pub fst: Arc<FstStoreConfig>,
+
+    #[serde(alias = "objects", alias = "corpus")]
+    pub object: Arc<KvStoreConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -394,6 +397,14 @@ pub(crate) mod tests {
         graph.consolidate_after = 180
         graph.max_size = 2048
         graph.max_words = 250000
+
+        [store.object]
+        path = "./data/store/corpus/"
+        pool.inactive_after = 1800
+        database.flush_after = 900
+        database.compression_type = "zstd"
+        database.parallelism = 2
+        database.write_ahead_log = true
         "#
     }
 }

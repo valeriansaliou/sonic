@@ -19,7 +19,11 @@ use crate::store::generic::GenericStore;
 pub(super) trait GenericRocksDbStore: GenericStore {
     fn new(db: rocksdb::DB, config: Arc<KvStoreConfig>) -> Self;
 
-    fn configure(db_options: &mut rocksdb::Options);
+    #[allow(
+        unused_variables,
+        reason = "Underscoring would affect what’s generated when implementing"
+    )]
+    fn configure(db_options: &mut rocksdb::Options) {}
 
     fn bucket_key_range(bucket: &Bucket) -> Range<Vec<u8>>;
 
@@ -177,6 +181,7 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
             });
         }
         if_some!(db_options.set_compression_type(compression_type));
+        if_some!(db_options.set_blob_compression_type(compression_type));
         if let Some(compression_level) = compression_level {
             db_options.set_compression_options(
                 -14,

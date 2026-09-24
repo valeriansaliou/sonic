@@ -74,6 +74,7 @@ const META_PART_GROUP_CLOSE: char = ')';
 
 static BACKUP_KV_PATH: &str = "kv";
 static BACKUP_FST_PATH: &str = "fst";
+static BACKUP_OBJECT_PATH: &str = "object";
 
 pub static COMMANDS_MODE_SEARCH: &[&str] = &["QUERY", "SUGGEST", "LIST", "PING", "HELP", "QUIT"];
 pub static COMMANDS_MODE_INGEST: &[&str] = &[
@@ -1142,7 +1143,10 @@ impl ChannelCommandControl {
                 let action_key_lower = action_key.to_lowercase();
 
                 let Executor {
-                    kv_pool, fst_pool, ..
+                    kv_pool,
+                    fst_pool,
+                    object_store_pool,
+                    ..
                 } = &ctx.executor;
 
                 match action_key_lower.as_str() {
@@ -1161,6 +1165,7 @@ impl ChannelCommandControl {
                         if data_part.is_none() {
                             // Force a KV flush
                             kv_pool.flush(true, |_| true);
+                            object_store_pool.flush(true, |_| true);
 
                             Ok(vec![ChannelCommandResponse::Ok])
                         } else {
@@ -1186,7 +1191,15 @@ impl ChannelCommandControl {
                         };
 
                         // Force a KV compaction
+                        let object_compact = std::thread::spawn({
+                            let object_store_pool = object_store_pool.clone();
+
+                            move || {
+                                object_store_pool.compact(None);
+                            }
+                        });
                         kv_pool.compact(collections.as_deref());
+                        object_compact.join().unwrap();
 
                         Ok(vec![ChannelCommandResponse::Ok])
                     }
@@ -1198,6 +1211,9 @@ impl ChannelCommandControl {
 
                                 if kv_pool.backup(&path.join(BACKUP_KV_PATH)).is_ok()
                                     && fst_pool.backup(&path.join(BACKUP_FST_PATH)).is_ok()
+                                    && object_store_pool
+                                        .backup(&path.join(BACKUP_OBJECT_PATH))
+                                        .is_ok()
                                 {
                                     Ok(vec![ChannelCommandResponse::Ok])
                                 } else {
@@ -1215,6 +1231,9 @@ impl ChannelCommandControl {
 
                                 if kv_pool.restore(&path.join(BACKUP_KV_PATH)).is_ok()
                                     && fst_pool.restore(&path.join(BACKUP_FST_PATH)).is_ok()
+                                    && object_store_pool
+                                        .restore(&path.join(BACKUP_OBJECT_PATH))
+                                        .is_ok()
                                 {
                                     Ok(vec![ChannelCommandResponse::Ok])
                                 } else {

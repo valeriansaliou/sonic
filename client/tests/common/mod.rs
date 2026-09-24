@@ -36,6 +36,7 @@ pub fn start_sonic() -> (SpawnGuard, SocketAddr) {
         .env("SONIC_SERVER__LOG_LEVEL", "WARN")
         .env("SONIC_STORE__KV__PATH", sonic_data_path.join("kv"))
         .env("SONIC_STORE__FST__PATH", sonic_data_path.join("fst"))
+        .env("SONIC_STORE__OBJECT__PATH", sonic_data_path.join("object"))
         .spawn()
         .unwrap();
 

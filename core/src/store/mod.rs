@@ -9,6 +9,7 @@ mod generic;
 mod encoding;
 pub mod fst;
 pub mod kv;
+pub mod object;
 mod rocksdb;
 mod types;
 

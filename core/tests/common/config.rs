@@ -33,6 +33,8 @@ pub fn defaults_toml() -> String {
     std::fs::create_dir(&kv_store_path).unwrap();
     let fst_store_path = test_data_path.join("fst-store");
     std::fs::create_dir(&fst_store_path).unwrap();
+    let object_store_path = test_data_path.join("object-store");
+    std::fs::create_dir(&object_store_path).unwrap();
 
     format!(
         r#"
@@ -75,6 +77,14 @@ pub fn defaults_toml() -> String {
         graph.consolidate_after = 180
         graph.max_size = 2048
         graph.max_words = 250000
+
+        [store.object]
+        path = {object_store_path:?}
+        pool.inactive_after = 1800
+        database.flush_after = 900
+        database.compression_type = "zstd"
+        database.parallelism = 2
+        database.write_ahead_log = true
         "#,
     )
 }

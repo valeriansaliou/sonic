@@ -12,17 +12,20 @@ use std::time::{Duration, Instant};
 use sonic::executor::DynamicConfigStore;
 use sonic::store::fst::FstStorePool;
 use sonic::store::kv::KvStorePool;
+use sonic::store::object::ObjectStorePool;
 
 #[derive(Clone)]
 pub struct TaskerBuilder {
     pub kv_pool: KvStorePool,
     pub fst_pool: FstStorePool,
+    pub object_store_pool: ObjectStorePool,
     pub dynamic_conf_store: Arc<DynamicConfigStore>,
 }
 
 pub struct Tasker {
     kv_pool: KvStorePool,
     fst_pool: FstStorePool,
+    object_store_pool: ObjectStorePool,
     dynamic_conf_store: Arc<DynamicConfigStore>,
 }
 
@@ -33,6 +36,7 @@ impl TaskerBuilder {
         Tasker {
             kv_pool: self.kv_pool.clone(),
             fst_pool: self.fst_pool.clone(),
+            object_store_pool: self.object_store_pool.clone(),
             dynamic_conf_store: Arc::clone(&self.dynamic_conf_store),
         }
     }
@@ -81,40 +85,67 @@ impl Tasker {
                 })
                 .collect::<Vec<_>>();
 
-            self.kv_pool.janitor(|kv_key| {
-                let skip = disabled.contains(kv_key.as_collection_hash());
+            self.kv_pool.janitor(|store_id| {
+                let skip = disabled.contains(store_id.as_collection_hash());
                 if skip {
-                    tracing::info!("Not running KV janitor task for {kv_key:?}: {TASK_DISABLED}");
+                    tracing::info!(
+                        "Not running janitor task for KV store {store_id:?}: {TASK_DISABLED}"
+                    );
                 }
                 !skip
             });
-            self.fst_pool.janitor(|fst_key| {
-                let skip = disabled.contains(fst_key.as_collection_hash());
+            self.fst_pool.janitor(|store_id| {
+                let skip = disabled.contains(store_id.as_collection_hash());
                 if skip {
-                    tracing::info!("Not running FST janitor task for {fst_key:?}: {TASK_DISABLED}");
+                    tracing::info!(
+                        "Not running janitor task for FST store {store_id:?}: {TASK_DISABLED}"
+                    );
+                }
+                !skip
+            });
+            self.object_store_pool.janitor(|store_id| {
+                let skip = disabled.contains(store_id.as_collection_hash());
+                if skip {
+                    tracing::info!(
+                        "Not running janitor task for Object store {store_id:?}: {TASK_DISABLED}"
+                    );
                 }
                 !skip
             });
         }
 
         // #2: Others
-        self.kv_pool.flush(false, |kv_key| {
+        self.kv_pool.flush(false, |store_id| {
             let skip = dynamic_conf_store_read_guard
-                .get(kv_key.as_collection_hash())
+                .get(store_id.as_collection_hash())
                 .and_then(|conf| conf.sonic.disable_kv_flush_task)
                 .unwrap_or(false);
             if skip {
-                tracing::info!("Not running KV flush task for {kv_key:?}: {TASK_DISABLED}");
+                tracing::info!("Not running flush task for KV store {store_id:?}: {TASK_DISABLED}");
             }
             !skip
         });
-        self.fst_pool.consolidate(false, |fst_key| {
+        self.fst_pool.consolidate(false, |store_id| {
             let skip = dynamic_conf_store_read_guard
-                .get(fst_key.as_collection_hash())
+                .get(store_id.as_collection_hash())
                 .and_then(|conf| conf.sonic.disable_fst_consolidate_task)
                 .unwrap_or(false);
             if skip {
-                tracing::info!("Not running FST consolidate task for {fst_key:?}: {TASK_DISABLED}");
+                tracing::info!(
+                    "Not running consolidate task for FST store {store_id:?}: {TASK_DISABLED}"
+                );
+            }
+            !skip
+        });
+        self.object_store_pool.flush(false, |store_id| {
+            let skip = dynamic_conf_store_read_guard
+                .get(store_id.as_collection_hash())
+                .and_then(|conf| conf.sonic.disable_kv_flush_task)
+                .unwrap_or(false);
+            if skip {
+                tracing::info!(
+                    "Not running flush task for Object store {store_id:?}: {TASK_DISABLED}"
+                );
             }
             !skip
         });
