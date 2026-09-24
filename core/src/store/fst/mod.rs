@@ -10,6 +10,7 @@ mod pool;
 mod util;
 
 use std::fmt;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
@@ -30,7 +31,7 @@ pub struct FstStore {
     pending: FstStorePending,
     last_used: Arc<RwLock<Instant>>,
     last_consolidated: Arc<RwLock<Instant>>,
-    graph_consolidate: Arc<RwLock<HashSet<FstStoreId>>>,
+    should_consolidate: AtomicBool,
     // NOTE: This shouldn’t be here, but until a big rewrite let’s not care.
     action_config: FstRepositoryConfig,
 }
@@ -133,27 +134,14 @@ impl FstStore {
     }
 
     fn should_consolidate(&self) {
-        let id = &self.target;
-
-        // Check if not already scheduled.
-        if self.graph_consolidate.read().unwrap().contains(id) {
-            tracing::debug!("Graph consolidation already scheduled on pool: {id}");
-            return;
-        };
-
-        // Schedule target for next consolidation tick (i.e. collection + bucket tuple).
-        self.graph_consolidate.write().unwrap().insert(id.clone());
+        self.should_consolidate
+            .store(true, std::sync::atomic::Ordering::Relaxed);
 
         // Bump “last consolidated” time, effectively de-bouncing consolidation
         // to a fixed and predictable tick time in the future.
-        let mut last_consolidated_value = self.last_consolidated.write().unwrap();
+        *self.last_consolidated.write().unwrap() = Instant::now();
 
-        *last_consolidated_value = Instant::now();
-
-        // Perform an early drop of the lock (frees up write lock early).
-        drop(last_consolidated_value);
-
-        tracing::info!("Graph consolidation scheduled on pool: {id}");
+        tracing::info!("Graph consolidation scheduled for {}", self.target);
     }
 }
 
@@ -491,7 +479,7 @@ impl fmt::Debug for FstStore {
             pending,
             last_used,
             last_consolidated,
-            graph_consolidate,
+            should_consolidate,
             action_config,
         } = self;
 
@@ -501,7 +489,7 @@ impl fmt::Debug for FstStore {
             .field("pending", pending)
             .field("last_used", &AsPrettyRwLock(last_used))
             .field("last_consolidated", &AsPrettyRwLock(last_consolidated))
-            .field("graph_consolidate", &AsPrettyRwLock(graph_consolidate))
+            .field("should_consolidate", should_consolidate)
             .field("action_config", action_config)
             .finish()
     }

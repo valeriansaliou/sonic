@@ -35,7 +35,6 @@ pub struct FstStorePool {
     graph_acquire_lock: Arc<Mutex<()>>,
     graph_rebuild_lock: Arc<Mutex<()>>,
     pub(super) graph_access_lock: Arc<RwLock<()>>,
-    graph_consolidate: Arc<RwLock<HashSet<FstStoreId>>>,
 }
 
 impl FstStorePool {
@@ -50,15 +49,20 @@ impl FstStorePool {
             graph_acquire_lock: Arc::default(),
             graph_rebuild_lock: Arc::default(),
             graph_access_lock: Arc::default(),
-            graph_consolidate: Arc::default(),
         }
     }
 
     pub fn count(&self) -> (usize, usize) {
-        (
-            self.graph_pool.read().unwrap().len(),
-            self.graph_consolidate.read().unwrap().len(),
-        )
+        use std::sync::atomic;
+
+        let pool = self.graph_pool.read().unwrap();
+
+        let open_count = pool.len();
+        let consolidate_count = (pool.values())
+            .filter(|store| store.should_consolidate.load(atomic::Ordering::Relaxed))
+            .count();
+
+        (open_count, consolidate_count)
     }
 
     pub fn lock_read_access<'a>(&'a self) -> RwLockReadGuard<'a, ()> {
@@ -115,7 +119,6 @@ impl StoreGenericPool for FstStorePool {
             );
 
             let mut graph_pool_write = self.graph_pool.write().unwrap();
-            let mut graph_consolidate_write = self.graph_consolidate.write().unwrap();
 
             for bucket in buckets {
                 tracing::debug!(
@@ -125,7 +128,6 @@ impl StoreGenericPool for FstStorePool {
                 let bucket_target = FstStoreId::new(collection_hash, bucket);
 
                 graph_pool_write.remove(&bucket_target);
-                graph_consolidate_write.remove(&bucket_target);
             }
         }
 
@@ -246,7 +248,7 @@ impl FstStorePool {
             pending: Default::default(),
             last_used: Arc::new(RwLock::new(now)),
             last_consolidated: Arc::new(RwLock::new(now)),
-            graph_consolidate: Arc::clone(&self.graph_consolidate),
+            should_consolidate: Default::default(),
             action_config: self.fst_repo_config,
         })
     }
@@ -275,7 +277,6 @@ impl FstStorePool {
         tracing::debug!("Closing fst graph {id}");
 
         self.graph_pool.write().unwrap().remove(id);
-        self.graph_consolidate.write().unwrap().remove(id);
     }
 
     pub fn janitor(&self, filter: impl Fn(&FstStoreId) -> bool) {
@@ -283,6 +284,8 @@ impl FstStorePool {
     }
 
     pub fn consolidate(&self, force: bool, filter: impl Fn(&FstStoreId) -> bool) {
+        use std::sync::atomic;
+
         tracing::debug!("scanning for fst store pool items to consolidate");
 
         // Notice: we do not consolidate all items at each tick, we try to even out multiple \
@@ -294,13 +297,6 @@ impl FstStorePool {
         // Notice: this prevents two consolidate operations to be executed at the same time.
         let _rebuild = self.graph_rebuild_lock.lock().unwrap();
 
-        // Exit trap: Register is empty? Abort there.
-        if self.graph_consolidate.read().unwrap().is_empty() {
-            tracing::info!("no fst store pool items to consolidate in register");
-
-            return;
-        }
-
         // Step 1: List keys to be consolidated
         let mut keys_consolidate: Vec<FstStoreId> = Vec::new();
 
@@ -309,29 +305,30 @@ impl FstStorePool {
             // Notice: this prevents store to be acquired from any context
             let _access = self.graph_access_lock.write().unwrap();
 
-            let (graph_pool_read, graph_consolidate_read) = (
-                self.graph_pool.read().unwrap(),
-                self.graph_consolidate.read().unwrap(),
-            );
+            let graph_pool_read = self.graph_pool.read().unwrap();
 
-            for key in graph_consolidate_read.iter().filter(|k| filter(k)) {
-                if let Some(store) = graph_pool_read.get(key) {
-                    let not_consolidated_for = store.last_consolidated.read().unwrap().elapsed();
+            for store in (graph_pool_read.values())
+                // WARN: Filter before doing the read-and-update on `should_consolidate`.
+                .filter(|store| filter(&store.target))
+                .filter(|store| (store.should_consolidate).swap(false, atomic::Ordering::Relaxed))
+            {
+                let store_id = &store.target;
 
-                    if force
-                        || not_consolidated_for.as_secs()
-                            >= self.fst_store_config.graph.consolidate_after
-                    {
-                        tracing::info!(
-                            "fst key {key:?} not consolidated for {not_consolidated_for:.1?}, may consolidate"
-                        );
+                let not_consolidated_for = store.last_consolidated.read().unwrap().elapsed();
 
-                        keys_consolidate.push(key.clone());
-                    } else {
-                        tracing::debug!(
-                            "fst key: {key:?} not consolidated for {not_consolidated_for:.1?}, no consolidate"
-                        );
-                    }
+                if force
+                    || not_consolidated_for.as_secs()
+                        >= self.fst_store_config.graph.consolidate_after
+                {
+                    tracing::info!(
+                        "fst store {store_id} not consolidated for {not_consolidated_for:.1?}, may consolidate"
+                    );
+
+                    keys_consolidate.push(store_id.clone());
+                } else {
+                    tracing::debug!(
+                        "fst store: {store_id} not consolidated for {not_consolidated_for:.1?}, no consolidate"
+                    );
                 }
             }
         }
@@ -343,22 +340,7 @@ impl FstStorePool {
             return;
         }
 
-        // Step 2: Clear keys to be consolidated from register
-        {
-            // Acquire access lock (in blocking write mode), and reference it in context
-            // Notice: this prevents store to be acquired from any context
-            let _access = self.graph_access_lock.write().unwrap();
-
-            let mut graph_consolidate_write = self.graph_consolidate.write().unwrap();
-
-            for key in &keys_consolidate {
-                graph_consolidate_write.remove(key);
-
-                tracing::debug!("fst key {key:?} cleared from consolidate register");
-            }
-        }
-
-        // Step 3: Consolidate FSTs, one-by-one (sequential locking; this avoids global locks)
+        // Step 2: Consolidate FSTs, one-by-one (sequential locking; this avoids global locks)
         let mut stats = ConsolidateStats::default();
 
         for key in &keys_consolidate {
@@ -782,7 +764,6 @@ impl fmt::Debug for FstStorePool {
             graph_acquire_lock,
             graph_rebuild_lock,
             graph_access_lock,
-            graph_consolidate,
             // NOTE: We don’t care about the configuration,
             //   we can see it elsewhere if needed.
             fst_store_config: _fst_store_config,
@@ -794,7 +775,6 @@ impl fmt::Debug for FstStorePool {
             .field("graph_acquire_lock", &AsPrettyMutex(graph_acquire_lock))
             .field("graph_rebuild_lock", &AsPrettyMutex(graph_rebuild_lock))
             .field("graph_access_lock", &AsPrettyRwLock(graph_access_lock))
-            .field("graph_consolidate", &AsPrettyRwLock(graph_consolidate))
             .finish_non_exhaustive()
     }
 }
