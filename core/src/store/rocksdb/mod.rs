@@ -5,7 +5,94 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use crate::config::RocksDbDatabaseConfig;
+mod backup;
+pub(crate) mod pool;
+
+use std::ops::Range;
+use std::sync::{Arc, RwLock};
+use std::time::Instant;
+
+use crate::config::{KvStoreConfig, RocksDbDatabaseConfig};
+use crate::store::Bucket;
+use crate::store::generic::GenericStore;
+
+pub(super) trait GenericRocksDbStore: GenericStore {
+    fn new(db: rocksdb::DB, config: Arc<KvStoreConfig>) -> Self;
+
+    fn configure(db_options: &mut rocksdb::Options);
+
+    fn bucket_key_range(bucket: &Bucket) -> Range<Vec<u8>>;
+
+    fn database(&self) -> &rocksdb::DB;
+
+    fn config(&self) -> &KvStoreConfig;
+
+    fn last_flushed(&self) -> &RwLock<Instant>;
+
+    fn lock(&self) -> &RwLock<()>;
+
+    fn write(&self, batch: rocksdb::WriteBatch) -> Result<(), rocksdb::Error> {
+        // Configure this write
+        let mut write_options = rocksdb::WriteOptions::default();
+
+        // write_options.set_memtable_insert_hint_per_batch(true);
+
+        // WAL disabled?
+        if !self.config().database.write_ahead_log {
+            tracing::trace!("Ignoring WAL for {} write", Self::kind());
+
+            write_options.disable_wal(true);
+        } else {
+            tracing::trace!("Using WAL for {} write", Self::kind());
+
+            write_options.disable_wal(false);
+        }
+
+        // Commit this write
+        self.database().write_opt(batch, &write_options)
+    }
+
+    fn batch_erase_bucket(&self, bucket: &Bucket) -> Result<u32, ()> {
+        tracing::debug!("{} store batch erase bucket: {bucket}", Self::kind());
+
+        // Generate start and end prefix for batch delete (in other words,
+        // the minimum key value possible, and the highest key value possible).
+        let key_range = Self::bucket_key_range(&bucket);
+
+        // TODO: Move the batch outside the for loop?
+        let mut batch = rocksdb::WriteBatch::default();
+
+        // Batch-delete keys matching range.
+        // NOTE: RocksDB excludes end key, but Rust ranges are exclusive too
+        //   ([as they should](https://devblog.remibardon.name/til/dijkstra-ranges/))
+        //   so all keys will be deleted.
+        batch.delete_range(&key_range.start, &key_range.end);
+
+        // Commit operation to database.
+        match self.write(batch) {
+            Ok(()) => {
+                tracing::debug!("succeeded in store batch erase bucket: {bucket}");
+                Ok(1)
+            }
+            Err(error) => {
+                tracing::error!(
+                    "failed in store batch erase bucket: {bucket} with error: {error:?}"
+                );
+                Err(())
+            }
+        }
+    }
+
+    fn flush(&self) -> Result<(), rocksdb::Error> {
+        // Generate flush options
+        let mut flush_options = rocksdb::FlushOptions::default();
+
+        flush_options.set_wait(true);
+
+        // Perform flush (in blocking mode)
+        self.database().flush_opt(&flush_options)
+    }
+}
 
 impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
     #[rustfmt::skip]

@@ -13,9 +13,8 @@ use std::{fmt, fs};
 use hashbrown::{DefaultHashBuilder, HashMap};
 
 use crate::store::generic::*;
+use crate::store::rocksdb::GenericRocksDbStore;
 use crate::store::types::*;
-
-use super::KvStore;
 
 // MARK: - Store pool
 
@@ -23,16 +22,15 @@ pub type KvStoreId = CollectionHash;
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
-#[derive(Clone)]
-pub struct KvStorePool {
-    pool: Arc<RwLock<HashMap<KvStoreId, Arc<KvStore>>>>,
+pub struct GenericKvStorePool<Store> {
+    pool: Arc<RwLock<HashMap<KvStoreId, Arc<Store>>>>,
     pub(super) kv_store_config: Arc<crate::config::KvStoreConfig>,
     pub(super) store_access_lock: Arc<RwLock<()>>,
     store_acquire_lock: Arc<Mutex<()>>,
     store_flush_lock: Arc<Mutex<()>>,
 }
 
-impl KvStorePool {
+impl<Store> GenericKvStorePool<Store> {
     pub fn new(kv_store_config: Arc<crate::config::KvStoreConfig>) -> Self {
         Self {
             pool: Arc::default(),
@@ -56,9 +54,9 @@ impl KvStorePool {
     }
 }
 
-impl GenericStorePool for KvStorePool {
+impl<Store: GenericRocksDbStore> GenericStorePool for GenericKvStorePool<Store> {
     type StoreId = KvStoreId;
-    type Store = KvStore;
+    type Store = Store;
     type HashBuilder = DefaultHashBuilder;
 
     fn consider_inactive_after_secs(&self) -> u64 {
@@ -134,7 +132,7 @@ impl GenericStorePool for KvStorePool {
         };
 
         // Important: acquire bucket store write lock
-        let _write_guard = kv_store.lock.write().unwrap();
+        let _write_guard = kv_store.lock().write().unwrap();
 
         // Store exists, proceed erasure.
         tracing::trace!(
@@ -142,12 +140,10 @@ impl GenericStorePool for KvStorePool {
             Self::kind()
         );
 
-        let kv_repo = kv_store.to_repository_read_write(bucket);
-
         // Notice: we cannot use the provided KV bucket erasure helper there, as \
         //   erasing a bucket requires a database lock, which would incur a dead-lock, \
         //   thus we need to perform the erasure from there.
-        kv_repo.batch_erase_bucket().inspect(|_n| {
+        kv_store.batch_erase_bucket(&bucket).inspect(|_n| {
             tracing::debug!(
                 "{} bucket {bucket} from {collection} erased successfully",
                 Self::kind()
@@ -156,7 +152,8 @@ impl GenericStorePool for KvStorePool {
     }
 }
 
-impl KvStorePool {
+#[allow(private_bounds)]
+impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
     // TODO(refactor): Replace `create_if_missing` and `override_options` by a
     //   struct. I(@RemiBardon) had suggested adding `bypass_cache: bool` before,
     //   but I don’t remember why.
@@ -164,9 +161,9 @@ impl KvStorePool {
         &'a self,
         create_if_missing: bool,
         collection: StoreItemPart,
-        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<KvStoreId, Arc<KvStore>>>>,
+        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<KvStoreId, Arc<Store>>>>,
         override_options: impl FnOnce(&mut rocksdb::Options),
-    ) -> Result<Option<Arc<KvStore>>, ()> {
+    ) -> Result<Option<Arc<Store>>, ()> {
         let store_id = KvStoreId::from_part(collection);
 
         // Freeze acquire lock, and reference it in context
@@ -213,20 +210,9 @@ impl KvStorePool {
         &self,
         store_id: &KvStoreId,
         override_options: impl FnOnce(&mut rocksdb::Options),
-    ) -> Result<KvStore, ()> {
+    ) -> Result<Store, ()> {
         match self.open(store_id, override_options) {
-            Ok(db) => {
-                let now = Instant::now();
-
-                Ok(KvStore {
-                    database: db,
-                    last_used: RwLock::new(now),
-                    last_flushed: RwLock::new(now),
-                    lock: RwLock::new(()),
-                    kv_store_config: Arc::clone(&self.kv_store_config),
-                    iid_incr_per_bucket: RwLock::new(HashMap::new()),
-                })
-            }
+            Ok(db) => Ok(Store::new(db, Arc::clone(&self.kv_store_config))),
             Err(error) => {
                 tracing::error!("Failed opening {} store {store_id}: {error}", Self::kind());
 
@@ -245,7 +231,7 @@ impl KvStorePool {
         // Configure database options.
         let mut db_options = rocksdb::Options::from(&self.kv_store_config.database);
 
-        db_options.set_merge_operator_associative("kv_merge", super::merge::kv_merge_operator);
+        Store::configure(&mut db_options);
 
         override_options(&mut db_options);
 
@@ -256,7 +242,7 @@ impl KvStorePool {
     pub fn close<'a>(
         &'a self,
         store_id: KvStoreId,
-        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<KvStoreId, Arc<KvStore>>>>,
+        write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<KvStoreId, Arc<Store>>>>,
     ) {
         tracing::debug!("Closing {} store {store_id}", Self::kind());
 
@@ -290,7 +276,7 @@ impl KvStorePool {
         let store_pool_read = self.pool.read().unwrap();
 
         for (store_id, store) in store_pool_read.iter().filter(|(k, _)| filter(k)) {
-            let not_flushed_for = store.last_flushed.read().unwrap().elapsed();
+            let not_flushed_for = store.last_flushed().read().unwrap().elapsed();
 
             if force || not_flushed_for.as_secs() >= self.kv_store_config.database.flush_after {
                 tracing::debug!(
@@ -338,7 +324,7 @@ impl KvStorePool {
                 }
 
                 // Bump 'last flushed' time
-                *store.last_flushed.write().unwrap() = Instant::now();
+                *store.last_flushed().write().unwrap() = Instant::now();
             }
 
             // Early release the lock.
@@ -388,7 +374,7 @@ impl KvStorePool {
             drop(pool_guard);
 
             // Compact whole range of keys (we can hardly predict the range here).
-            store.database.compact_range::<&[u8], &[u8]>(None, None);
+            store.database().compact_range::<&[u8], &[u8]>(None, None);
 
             // Give a bit of time to other threads before continuing
             // PERF: Compactions can take a very long time, and collections are
@@ -413,46 +399,29 @@ impl crate::config::KvStoreConfig {
     }
 }
 
-// MARK: - Tests
-
-#[cfg(test)]
-mod tests {
-    use crate::store::kv::tests::test_kv_store_config;
-
-    use super::*;
-
-    #[test]
-    fn it_acquires_database() {
-        let kv_store_config = test_kv_store_config();
-        let kv_pool = KvStorePool::new(kv_store_config);
-
-        assert!(
-            kv_pool
-                .acquire(true, "c:test:1".into(), None, |_| {})
-                .is_ok()
-        );
-    }
-
-    #[test]
-    fn it_janitors_database() {
-        let kv_store_config = test_kv_store_config();
-        let kv_pool = KvStorePool::new(kv_store_config);
-
-        kv_pool.janitor(|_| true);
-    }
-}
-
 // MARK: - Boilerplate
 
-impl std::ops::Deref for KvStorePool {
-    type Target = RwLock<HashMap<KvStoreId, Arc<KvStore>>>;
+impl<Store> std::ops::Deref for GenericKvStorePool<Store> {
+    type Target = RwLock<HashMap<KvStoreId, Arc<Store>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.pool
     }
 }
 
-impl fmt::Debug for KvStorePool {
+impl<Store> Clone for GenericKvStorePool<Store> {
+    fn clone(&self) -> Self {
+        Self {
+            pool: Arc::clone(&self.pool),
+            kv_store_config: Arc::clone(&self.kv_store_config),
+            store_access_lock: Arc::clone(&self.store_access_lock),
+            store_acquire_lock: Arc::clone(&self.store_acquire_lock),
+            store_flush_lock: Arc::clone(&self.store_flush_lock),
+        }
+    }
+}
+
+impl<Store: fmt::Debug> fmt::Debug for GenericKvStorePool<Store> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use crate::util::fmt::{AsPrettyMutex, AsPrettyRwLock};
 

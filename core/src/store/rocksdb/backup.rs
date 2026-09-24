@@ -13,11 +13,17 @@ use rocksdb::backup::{
     RestoreOptions as DBRestoreOptions,
 };
 
-use super::{KvStoreId, KvStorePool};
+use crate::store::kv::{GenericKvStorePool, KvStoreId};
 
-impl KvStorePool {
+use super::GenericRocksDbStore;
+
+#[allow(private_bounds)]
+impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
     pub fn backup(&self, path: &Path) -> Result<(), io::Error> {
-        tracing::debug!("backing up all kv stores to path: {path:?}");
+        tracing::debug!(
+            "backing up all {kind} stores to path: {path:?}",
+            kind = Store::kind()
+        );
 
         // Create backup directory (full path)
         fs::create_dir_all(path)?;
@@ -32,7 +38,10 @@ impl KvStorePool {
     }
 
     pub fn restore(&self, path: &Path) -> Result<(), io::Error> {
-        tracing::debug!("restoring all kv stores from path: {path:?}");
+        tracing::debug!(
+            "restoring all {kind} stores from path: {path:?}",
+            kind = Store::kind()
+        );
 
         // Proceed dump action (restore)
         self.dump_action(
@@ -51,6 +60,8 @@ impl KvStorePool {
         write_path: &Path,
         fn_item: &dyn Fn(&Self, &Path, &Path, &str) -> Result<(), io::Error>,
     ) -> Result<(), io::Error> {
+        let kind = Store::kind();
+
         // Iterate on KV collections.
         for entry in fs::read_dir(read_path)? {
             let Ok(collection) = entry else {
@@ -63,7 +74,7 @@ impl KvStorePool {
             }
 
             if let Some(collection_hash) = collection.file_name().to_str() {
-                tracing::debug!("kv collection ongoing {action}: {collection_hash}");
+                tracing::debug!("{kind} collection ongoing {action}: {collection_hash}");
 
                 fn_item(self, write_path, &collection.path(), collection_hash)?;
             }
@@ -78,6 +89,8 @@ impl KvStorePool {
         _origin_path: &Path,
         collection_hash: &str,
     ) -> Result<(), io::Error> {
+        let kind = Store::kind();
+
         // Acquire access lock (in blocking write mode), and reference it in context
         // Notice: this prevents store to be acquired from any context
         let _access = self.store_access_lock.write().unwrap();
@@ -87,7 +100,7 @@ impl KvStorePool {
 
         let store_id = KvStoreId::try_from_hex(collection_hash)?;
 
-        tracing::debug!("kv store {store_id} backing up to path: {kv_backup_path:?}");
+        tracing::debug!("{kind} store {store_id} backing up to path: {kv_backup_path:?}");
 
         // Erase any previously-existing KV backup
         if kv_backup_path.exists() {
@@ -115,7 +128,7 @@ impl KvStorePool {
             .create_new_backup(&origin_kv)
             .map_err(|_| io::Error::other("database backup failure"))?;
 
-        tracing::info!("kv store {store_id} backed up to path: {kv_backup_path:?}");
+        tracing::info!("{kind} store {store_id} backed up to path: {kv_backup_path:?}");
 
         Ok(())
     }
@@ -126,13 +139,15 @@ impl KvStorePool {
         origin_path: &Path,
         collection_hash: &str,
     ) -> Result<(), io::Error> {
+        let kind = Store::kind();
+
         // Acquire access lock (in blocking write mode), and reference it in context
         // Notice: this prevents store to be acquired from any context
         let _access = self.store_access_lock.write().unwrap();
 
         let store_id = KvStoreId::try_from_hex(collection_hash)?;
 
-        tracing::debug!("kv store {store_id} restoring from path: {origin_path:?}");
+        tracing::debug!("{kind} store {store_id} restoring from path: {origin_path:?}");
 
         // Force a KV store close
         self.close(store_id, None);
@@ -162,7 +177,7 @@ impl KvStorePool {
             .map_err(|_| io::Error::other("database restore failure"))?;
 
         tracing::info!(
-            "kv store {store_id} restored to path: {kv_path:?} from backup: {origin_path:?}"
+            "{kind} store {store_id} restored to path: {kv_path:?} from backup: {origin_path:?}"
         );
 
         Ok(())

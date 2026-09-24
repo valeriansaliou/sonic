@@ -5,10 +5,8 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-mod backup;
 mod keys;
 mod merge;
-mod pool;
 
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
@@ -18,13 +16,16 @@ use hashbrown::HashMap;
 use rocksdb::{DB, WriteBatch};
 
 use crate::store::generic::*;
+use crate::store::rocksdb::GenericRocksDbStore;
+pub use crate::store::rocksdb::pool::{GenericKvStorePool, KvStoreId};
 use crate::store::types::*;
 
 use super::encoding::*;
 
 use self::keys::KvStoreKey;
 pub use self::keys::StoreMetaKey;
-pub use self::pool::{KvStoreId, KvStorePool};
+
+pub type KvStorePool = GenericKvStorePool<KvStore>;
 
 pub struct KvStore {
     database: DB,
@@ -54,37 +55,6 @@ pub struct KvRepositoryReadWrite<'a> {
 }
 
 impl KvStore {
-    fn flush(&self) -> Result<(), rocksdb::Error> {
-        // Generate flush options
-        let mut flush_options = rocksdb::FlushOptions::default();
-
-        flush_options.set_wait(true);
-
-        // Perform flush (in blocking mode)
-        self.database.flush_opt(&flush_options)
-    }
-
-    fn do_write(&self, batch: WriteBatch) -> Result<(), rocksdb::Error> {
-        // Configure this write
-        let mut write_options = rocksdb::WriteOptions::default();
-
-        // write_options.set_memtable_insert_hint_per_batch(true);
-
-        // WAL disabled?
-        if !self.kv_store_config.database.write_ahead_log {
-            tracing::debug!("ignoring wal for kv write");
-
-            write_options.disable_wal(true);
-        } else {
-            tracing::debug!("using wal for kv write");
-
-            write_options.disable_wal(false);
-        }
-
-        // Commit this write
-        self.database.write_opt(batch, &write_options)
-    }
-
     /// Reads `IIDIncr` from the cache, fetching from the database if necessary
     /// (beware of slow reads).
     fn get_iid_incr(
@@ -193,8 +163,9 @@ impl KvStore {
 }
 
 impl<'a> KvRepositoryReadWrite<'a> {
+    #[inline]
     pub fn write(&self, batch: WriteBatch) -> Result<(), rocksdb::Error> {
-        self.store.do_write(batch)
+        self.store.write(batch)
     }
 }
 
@@ -205,6 +176,45 @@ impl GenericStore for KvStore {
 
     fn ref_last_used(&self) -> &RwLock<Instant> {
         &self.last_used
+    }
+}
+
+impl GenericRocksDbStore for KvStore {
+    fn new(db: DB, config: Arc<crate::config::KvStoreConfig>) -> Self {
+        let now = Instant::now();
+
+        Self {
+            database: db,
+            last_used: RwLock::new(now),
+            last_flushed: RwLock::new(now),
+            lock: RwLock::new(()),
+            kv_store_config: config,
+            iid_incr_per_bucket: RwLock::new(HashMap::new()),
+        }
+    }
+
+    fn configure(db_options: &mut rocksdb::Options) {
+        db_options.set_merge_operator_associative("kv_merge", merge::kv_merge_operator);
+    }
+
+    fn database(&self) -> &DB {
+        &self.database
+    }
+
+    fn config(&self) -> &crate::config::KvStoreConfig {
+        &self.kv_store_config
+    }
+
+    fn last_flushed(&self) -> &RwLock<Instant> {
+        &self.last_flushed
+    }
+
+    fn lock(&self) -> &RwLock<()> {
+        &self.lock
+    }
+
+    fn bucket_key_range(bucket: &Bucket) -> std::ops::Range<Vec<u8>> {
+        KvStoreKey::prefix_range(bucket)
     }
 }
 
@@ -690,44 +700,33 @@ impl<'a> KvRepositoryReadWrite<'a> {
 
         count
     }
-
-    pub(super) fn batch_erase_bucket(&self) -> Result<u32, ()> {
-        let bucket = self.bucket;
-
-        tracing::debug!("store batch erase bucket: {bucket}");
-
-        // Generate start and end prefix for batch delete (in other words,
-        // the minimum key value possible, and the highest key value possible).
-        let key_range = KvStoreKey::prefix_range(&bucket);
-
-        // TODO: Move the batch outside the for loop?
-        let mut batch = WriteBatch::default();
-
-        // Batch-delete keys matching range.
-        // NOTE: RocksDB excludes end key, but Rust ranges are exclusive too
-        //   ([as they should](https://devblog.remibardon.name/til/dijkstra-ranges/))
-        //   so all keys will be deleted.
-        batch.delete_range(&key_range.start, &key_range.end);
-
-        // Commit operation to database.
-        match self.write(batch) {
-            Ok(()) => {
-                tracing::debug!("succeeded in store batch erase bucket: {bucket}");
-                Ok(1)
-            }
-            Err(error) => {
-                tracing::error!(
-                    "failed in store batch erase bucket: {bucket} with error: {error:?}"
-                );
-                Err(())
-            }
-        }
-    }
 }
+
+// MARK: - Tests
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn it_acquires_database() {
+        let kv_store_config = test_kv_store_config();
+        let kv_pool = KvStorePool::new(kv_store_config);
+
+        assert!(
+            kv_pool
+                .acquire(true, "c:test:1".into(), None, |_| {})
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn it_janitors_database() {
+        let kv_store_config = test_kv_store_config();
+        let kv_pool = KvStorePool::new(kv_store_config);
+
+        kv_pool.janitor(|_| true);
+    }
 
     #[test]
     fn it_proceeds_actions() {
