@@ -145,7 +145,7 @@ impl FstStore {
     }
 }
 
-impl StoreGeneric for FstStore {
+impl GenericStore for FstStore {
     fn kind() -> &'static str {
         "FST"
     }

@@ -75,7 +75,7 @@ impl FstStorePool {
     }
 }
 
-impl StoreGenericPool for FstStorePool {
+impl GenericStorePool for FstStorePool {
     type StoreId = FstStoreId;
     type Store = FstStore;
     type HashBuilder = DefaultHashBuilder;

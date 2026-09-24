@@ -56,7 +56,7 @@ impl KvStorePool {
     }
 }
 
-impl StoreGenericPool for KvStorePool {
+impl GenericStorePool for KvStorePool {
     type StoreId = KvStoreId;
     type Store = KvStore;
     type HashBuilder = DefaultHashBuilder;

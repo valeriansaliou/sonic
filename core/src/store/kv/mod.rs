@@ -198,7 +198,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
     }
 }
 
-impl StoreGeneric for KvStore {
+impl GenericStore for KvStore {
     fn kind() -> &'static str {
         "KV"
     }
