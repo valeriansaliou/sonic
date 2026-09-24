@@ -610,6 +610,9 @@ impl FstStorePool {
         drop(to_pop);
 
         // Clear pending actions.
+        // TODO(perf): Truncate capacity if too big? Otherwise memory usage
+        //   won’t go down after a batch ingestion. Need to find a sensible
+        //   value though.
         pending.clear();
 
         Ok(should_close)
