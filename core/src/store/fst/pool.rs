@@ -8,19 +8,19 @@
 use std::collections::VecDeque;
 use std::fs::File;
 use std::path::PathBuf;
-use std::str::FromStr;
+use std::str::FromStr as _;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use std::time::{Duration, SystemTime};
+use std::time::Instant;
 use std::{fmt, fs, io};
 
 use fst::Streamer as _;
 use hashbrown::{DefaultHashBuilder, HashMap, HashSet};
 
-use crate::store::{Bucket, StoreItemPart};
+use crate::store::{Bucket, CollectionHash, Hash, StoreItemPart};
 use crate::store::{BucketOwned, generic::*};
 
 use super::util::*;
-use super::{FstStore, FstStoreActionConfig, FstStoreAtom, FstStorePathMode};
+use super::{FstRepositoryConfig, FstStore, FstStorePathMode};
 
 // MARK: - Store pool
 
@@ -30,7 +30,7 @@ use super::{FstStore, FstStoreActionConfig, FstStoreAtom, FstStorePathMode};
 pub struct FstStorePool {
     pub(super) fst_store_config: Arc<crate::config::FstStoreConfig>,
     // NOTE: This shouldn’t be here, but until a big rewrite let’s not care.
-    pub fst_action_config: FstStoreActionConfig,
+    pub fst_repo_config: FstRepositoryConfig,
     graph_pool: Arc<RwLock<HashMap<FstStoreId, Arc<FstStore>>>>,
     graph_acquire_lock: Arc<Mutex<()>>,
     graph_rebuild_lock: Arc<Mutex<()>>,
@@ -41,11 +41,11 @@ pub struct FstStorePool {
 impl FstStorePool {
     pub fn new(
         fst_store_config: Arc<crate::config::FstStoreConfig>,
-        fst_action_config: FstStoreActionConfig,
+        fst_repo_config: FstRepositoryConfig,
     ) -> Self {
         Self {
             fst_store_config,
-            fst_action_config,
+            fst_repo_config,
             graph_pool: Arc::default(),
             graph_acquire_lock: Arc::default(),
             graph_rebuild_lock: Arc::default(),
@@ -76,7 +76,7 @@ impl StoreGenericPool for FstStorePool {
     type HashBuilder = DefaultHashBuilder;
 
     fn kind() -> &'static str {
-        "fst"
+        "FST"
     }
 
     fn consider_inactive_after_secs(&self) -> u64 {
@@ -88,7 +88,7 @@ impl StoreGenericPool for FstStorePool {
     }
 
     fn proceed_erase_collection(&self, collection_name: StoreItemPart) -> Result<u32, ()> {
-        let collection_hash = collection_name.into_compact();
+        let collection_hash = CollectionHash::from_part(collection_name);
         let collection_path = self.fst_store_config.collection_path(&collection_hash);
 
         // Force a FST graph close (on all contained buckets)
@@ -122,7 +122,7 @@ impl StoreGenericPool for FstStorePool {
                     "fst bucket graph force close for bucket: {collection_name}/{bucket}"
                 );
 
-                let bucket_target = FstStoreId::from_atoms(collection_hash, bucket);
+                let bucket_target = FstStoreId::new(collection_hash, bucket);
 
                 graph_pool_write.remove(&bucket_target);
                 graph_consolidate_write.remove(&bucket_target);
@@ -168,7 +168,7 @@ impl StoreGenericPool for FstStorePool {
             "Sub-erase on fst bucket {bucket_name:?} for collection {collection_name:?}"
         );
 
-        let store_id = FstStoreId::from_parts(collection_name, bucket_name);
+        let store_id = FstStoreId::new(collection_name, bucket_name);
 
         let bucket_path = self
             .fst_store_config
@@ -212,7 +212,7 @@ impl StoreGenericPool for FstStorePool {
 
 impl FstStorePool {
     pub fn acquire(&self, collection: StoreItemPart, bucket: Bucket) -> Result<Arc<FstStore>, ()> {
-        let store_id = FstStoreId::from_parts(collection, bucket);
+        let store_id = FstStoreId::new(collection, bucket);
 
         // Freeze acquire lock, and reference it in context
         // Notice: this prevents two graphs on the same collection to be opened at the same time.
@@ -238,7 +238,7 @@ impl FstStorePool {
         let graph = (self.open(store_id))
             .map_err(|error| tracing::error!("Failed opening fst: {error:?}"))?;
 
-        let now = SystemTime::now();
+        let now = Instant::now();
 
         Ok(FstStore {
             graph,
@@ -247,7 +247,7 @@ impl FstStorePool {
             last_used: Arc::new(RwLock::new(now)),
             last_consolidated: Arc::new(RwLock::new(now)),
             graph_consolidate: Arc::clone(&self.graph_consolidate),
-            action_config: self.fst_action_config,
+            action_config: self.fst_repo_config,
         })
     }
 
@@ -316,21 +316,7 @@ impl FstStorePool {
 
             for key in graph_consolidate_read.iter().filter(|k| filter(k)) {
                 if let Some(store) = graph_pool_read.get(key) {
-                    // Important: be lenient with system clock going back to a past duration, \
-                    //   since we may be running in a virtualized environment where clock is not \
-                    //   guaranteed to be monotonic. This is done to avoid poisoning associated \
-                    //   mutexes by crashing on unwrap().
-                    let not_consolidated_for = store
-                        .last_consolidated
-                        .read()
-                        .unwrap()
-                        .elapsed()
-                        .unwrap_or_else(|err| {
-                            tracing::error!("fst key {key:?} last consolidated duration clock issue, zeroing: {err:?}");
-
-                            // Assuming a zero seconds fallback duration
-                            Duration::ZERO
-                        });
+                    let not_consolidated_for = store.last_consolidated.read().unwrap().elapsed();
 
                     if force
                         || not_consolidated_for.as_secs()
@@ -643,8 +629,8 @@ impl FstStorePool {
     pub fn count_collection_buckets(&self, collection: StoreItemPart) -> Result<usize, ()> {
         let path_mode = FstStorePathMode::Permanent;
 
-        let collection_atom = collection.into_compact();
-        let collection_path = self.fst_store_config.collection_path(&collection_atom);
+        let collection_hash = CollectionHash::from_part(collection);
+        let collection_path = self.fst_store_config.collection_path(&collection_hash);
 
         if !collection_path.exists() {
             return Ok(0);
@@ -682,21 +668,17 @@ impl FstStorePool {
 
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub struct FstStoreId {
-    collection_hash: FstStoreAtom,
-    bucket: BucketOwned,
+    collection_hash: CollectionHash,
+    pub(super) bucket: BucketOwned,
 }
 
 impl FstStoreId {
-    pub fn from_atoms(collection_hash: FstStoreAtom, bucket: BucketOwned) -> FstStoreId {
+    pub fn new(
+        collection_hash: impl Into<CollectionHash>,
+        bucket: impl Into<BucketOwned>,
+    ) -> FstStoreId {
         FstStoreId {
-            collection_hash,
-            bucket,
-        }
-    }
-
-    pub fn from_parts(collection: StoreItemPart, bucket: Bucket) -> FstStoreId {
-        FstStoreId {
-            collection_hash: collection.into_compact(),
+            collection_hash: collection_hash.into(),
             bucket: bucket.into(),
         }
     }
@@ -705,14 +687,14 @@ impl FstStoreId {
     /// must convert it back into proper `u32` otherwise roundtrips will fail.
     #[inline]
     pub fn try_from_hex(collection_hash: &str, bucket_name: &str) -> Result<FstStoreId, io::Error> {
-        let collection_hash = u32_from_hex(collection_hash)?;
+        let collection_hash = CollectionHash::try_from_hex(collection_hash)?;
         let bucket_name = BucketOwned::from_str(bucket_name)?;
 
-        Ok(Self::from_atoms(collection_hash, bucket_name))
+        Ok(Self::new(collection_hash, bucket_name))
     }
 
-    pub fn as_collection_hash(&self) -> &FstStoreAtom {
-        &self.collection_hash
+    pub fn as_collection_hash(&self) -> &Hash {
+        self.collection_hash.as_collection_hash()
     }
 }
 
@@ -723,7 +705,7 @@ impl fmt::Display for FstStoreId {
             bucket,
         } = self;
 
-        write!(f, "<{collection_hash:x}>/{bucket}")
+        write!(f, "{collection_hash}/{bucket}")
     }
 }
 
@@ -731,7 +713,9 @@ impl fmt::Display for FstStoreId {
 
 impl crate::config::FstStoreConfig {
     #[inline]
-    pub(super) fn collection_path(&self, collection_hash: &FstStoreAtom) -> PathBuf {
+    pub(super) fn collection_path(&self, collection_hash: &CollectionHash) -> PathBuf {
+        let collection_hash = collection_hash.into_inner();
+
         self.path.join(format!("{collection_hash:x}"))
     }
 
@@ -777,17 +761,6 @@ mod tests {
 
         fst_pool.janitor(|_| true);
     }
-
-    #[test]
-    fn it_proceeds_primitives() {
-        let fst_pool = test_fst_pool();
-
-        let store = fst_pool
-            .acquire("c:test:2".into(), "b:test:2".into())
-            .unwrap();
-
-        assert!(store.lookup_typos_("valerien", 1).is_ok());
-    }
 }
 
 // MARK: - Boilerplate
@@ -806,7 +779,7 @@ impl fmt::Debug for FstStorePool {
 
         // NOTE: Deconstructing to future-proof this function.
         let Self {
-            fst_action_config,
+            fst_repo_config: fst_action_config,
             graph_pool,
             graph_acquire_lock,
             graph_rebuild_lock,

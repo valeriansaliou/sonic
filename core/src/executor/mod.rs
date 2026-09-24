@@ -90,12 +90,12 @@ pub struct DynamicConfigStore(RwLock<HashMap<u32, DynamicConfig, NoopU32HasherBu
 
 impl DynamicConfigStore {
     pub fn insert(&self, collection: StoreItemPart, config: DynamicConfig) {
-        (self.0.write().unwrap()).insert(collection.into_compact(), config);
+        (self.0.write().unwrap()).insert(collection.to_compact(), config);
     }
 
     pub fn get(&self, collection: StoreItemPart) -> Option<DynamicConfig> {
         (self.0.read().unwrap())
-            .get(&collection.into_compact())
+            .get(&collection.to_compact())
             .copied()
     }
 

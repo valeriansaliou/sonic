@@ -23,7 +23,9 @@ impl super::Executor {
         if let Ok(fst_store) = self.fst_pool.acquire(collection, bucket) {
             tracing::debug!("running list");
 
-            return fst_store.list_words(limit as usize, offset as usize);
+            let fst_repo = fst_store.to_repository();
+
+            return fst_repo.list_words(limit as usize, offset as usize);
         }
 
         Err(())

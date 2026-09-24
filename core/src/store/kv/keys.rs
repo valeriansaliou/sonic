@@ -5,16 +5,13 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-// TODO(major): Change index structure so bucket comes first.
-
-use crate::store::*;
+use crate::store::generic::KEY_SEPARATOR;
+use crate::store::types::*;
 
 use self::constants::*;
 
 // WARN: Don’t update values here, it would break the index! Only add new cases.
 pub(super) mod constants {
-    pub(super) const KEY_SEPARATOR: u8 = 0x22;
-
     pub(in crate::store::kv) const META_TO_VALUE: u8 = 0;
     pub(in crate::store::kv) const TERM_TO_IIDS: u8 = 1;
     pub(in crate::store::kv) const OID_TO_IID: u8 = 2;
@@ -36,7 +33,7 @@ impl KvStoreKey {
     }
 
     pub(super) fn oid_to_iid(bucket: &Bucket, oid: StoreObjectOid) -> KvStoreKey {
-        Self::make(OID_TO_IID, bucket, oid.into_compact())
+        Self::make(OID_TO_IID, bucket, oid.to_compact())
     }
 
     pub(super) fn iid_to_oid(bucket: &Bucket, iid: StoreObjectIid) -> KvStoreKey {
@@ -50,11 +47,11 @@ impl KvStoreKey {
     /// Key format: `[bucket<?B> | separator<1B> | idx<1B> | route<4B>]`
     fn make(idx: u8, bucket: &Bucket, route: u32) -> KvStoreKey {
         // Encode key bucket + key route from u32 to array of u8 (i.e. binary).
-        let bucket_bytes = bucket.to_bytes();
+        let bucket_bytes = bucket.as_bytes();
 
         let mut key_bytes = Vec::with_capacity(bucket_bytes.len() + 6);
 
-        key_bytes.extend_from_slice(&bucket_bytes); // [bucket<?B>]
+        key_bytes.extend_from_slice(bucket_bytes); // [bucket<?B>]
         key_bytes.push(KEY_SEPARATOR); // [separator<1B>]
         key_bytes.push(idx); // [idx<1B>]
         key_bytes.extend_from_slice(&route.to_le_bytes()); // [route<4B>]
@@ -194,8 +191,8 @@ mod tests {
 
     #[test]
     fn it_hashes_compact() {
-        assert_eq!(StoreObjectOid::from("key:1").into_compact(), 3370353088);
-        assert_eq!(StoreObjectOid::from("key:2").into_compact(), 1042559698);
+        assert_eq!(StoreObjectOid::from("key:1").to_compact(), 3370353088);
+        assert_eq!(StoreObjectOid::from("key:2").to_compact(), 1042559698);
     }
 
     #[test]

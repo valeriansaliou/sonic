@@ -7,20 +7,19 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use std::time::{Duration, SystemTime};
-use std::{fmt, fs, io};
+use std::time::Instant;
+use std::{fmt, fs};
 
 use hashbrown::{DefaultHashBuilder, HashMap};
-use rocksdb::DB;
 
-use crate::config::KvStoreDatabaseConfig;
 use crate::store::generic::*;
-use crate::store::*;
+use crate::store::types::*;
 
-use super::util::default_merge_operator;
-use super::{KvStore, KvStoreAtom};
+use super::KvStore;
 
 // MARK: - Store pool
+
+pub type KvStoreId = CollectionHash;
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
@@ -63,7 +62,7 @@ impl StoreGenericPool for KvStorePool {
     type HashBuilder = DefaultHashBuilder;
 
     fn kind() -> &'static str {
-        "kv"
+        "KV"
     }
 
     fn consider_inactive_after_secs(&self) -> u64 {
@@ -83,35 +82,57 @@ impl StoreGenericPool for KvStorePool {
 
         if !collection_path.exists() {
             tracing::debug!(
-                "kv collection store does not exist, consider already erased: {collection}/* at path: {collection_path:?}"
+                "{} store does not exist, consider already erased: {collection}/* at path: {collection_path:?}",
+                Self::kind()
             );
 
             return Ok(0);
         }
 
-        tracing::debug!(
-            "kv collection store exists, erasing: {collection}/* at path: {collection_path:?}"
+        tracing::trace!(
+            "{} store exists, erasing: {collection}/* at path: {collection_path:?}",
+            Self::kind()
         );
 
         // Remove KV store storage from filesystem
         match fs::remove_dir_all(&collection_path) {
             Ok(()) => {
-                tracing::debug!("done with kv collection erasure");
+                tracing::debug!(
+                    "{} store erased successfully: {collection}/* at path: {collection_path:?}",
+                    Self::kind()
+                );
 
                 Ok(1)
             }
-            Err(_err) => Err(()),
+            Err(error) => {
+                tracing::error!(
+                    ?collection,
+                    ?collection_path,
+                    "Failed erasing {} store: {error:?}",
+                    Self::kind()
+                );
+
+                Err(())
+            }
         }
     }
 
     fn proceed_erase_bucket(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u32, ()> {
         let kv_store = self
             .acquire(false, collection, None, |_| {})
-            .map_err(|()| tracing::error!("failed erasing KV buckets"))?;
+            .map_err(|()| {
+                tracing::error!(
+                    ?collection,
+                    ?bucket,
+                    "Failed opening {} store for bucket erasure",
+                    Self::kind()
+                )
+            })?;
 
         let Some(kv_store) = kv_store else {
             tracing::debug!(
-                "collection store does not exist, consider {bucket:?} from {collection:?} already erased"
+                "{} store does not exist, consider {bucket} from {collection} already erased",
+                Self::kind()
             );
             return Ok(0);
         };
@@ -120,16 +141,22 @@ impl StoreGenericPool for KvStorePool {
         let _write_guard = kv_store.lock.write().unwrap();
 
         // Store exists, proceed erasure.
-        tracing::debug!("collection store exists, erasing: {bucket} from {collection}");
+        tracing::trace!(
+            "{} store exists, erasing {bucket} from {collection}",
+            Self::kind()
+        );
 
-        let kv_action = kv_store.access_read_write(bucket);
+        let kv_repo = kv_store.to_repository_read_write(bucket);
 
         // Notice: we cannot use the provided KV bucket erasure helper there, as \
         //   erasing a bucket requires a database lock, which would incur a dead-lock, \
         //   thus we need to perform the erasure from there.
-        kv_action
-            .batch_erase_bucket()
-            .inspect(|_n| tracing::debug!("done with bucket erasure"))
+        kv_repo.batch_erase_bucket().inspect(|_n| {
+            tracing::debug!(
+                "{} bucket {bucket} from {collection} erased successfully",
+                Self::kind()
+            )
+        })
     }
 }
 
@@ -166,7 +193,7 @@ impl KvStorePool {
             }
         };
 
-        tracing::debug!("kv store {store_id} not in pool, opening it");
+        tracing::debug!("{} store {store_id} not in pool, opening it", Self::kind());
 
         // Check if can open database?
         let can_open_db = create_if_missing || self.kv_store_config.store_path(&store_id).exists();
@@ -193,7 +220,7 @@ impl KvStorePool {
     ) -> Result<KvStore, ()> {
         match self.open(store_id, override_options) {
             Ok(db) => {
-                let now = SystemTime::now();
+                let now = Instant::now();
 
                 Ok(KvStore {
                     database: db,
@@ -204,8 +231,11 @@ impl KvStorePool {
                     iid_incr_per_bucket: RwLock::new(HashMap::new()),
                 })
             }
-            Err(err) => {
-                tracing::error!("failed opening kv: {err}");
+            Err(error) => {
+                tracing::error!(
+                    "Failed opening {} store {store_id}: {error:?}",
+                    Self::kind()
+                );
 
                 Err(())
             }
@@ -216,17 +246,18 @@ impl KvStorePool {
         &self,
         store_id: &KvStoreId,
         override_options: impl FnOnce(&mut rocksdb::Options),
-    ) -> Result<DB, rocksdb::Error> {
-        tracing::debug!("opening key-value database for collection: {store_id}");
+    ) -> Result<rocksdb::DB, rocksdb::Error> {
+        tracing::debug!("Opening {} store {store_id}", Self::kind());
 
-        // Configure database options
-        tracing::debug!("configuring key-value database");
+        // Configure database options.
         let mut db_options = rocksdb::Options::from(&self.kv_store_config.database);
+
+        db_options.set_merge_operator_associative("kv_merge", super::merge::kv_merge_operator);
 
         override_options(&mut db_options);
 
-        // Open database at path for collection
-        DB::open(&db_options, self.kv_store_config.store_path(store_id))
+        // Open database connection.
+        rocksdb::DB::open(&db_options, self.kv_store_config.store_path(store_id))
     }
 
     pub fn close<'a>(
@@ -234,10 +265,10 @@ impl KvStorePool {
         store_id: KvStoreId,
         write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<KvStoreId, Arc<KvStore>>>>,
     ) {
-        tracing::debug!("closing key-value database for collection: {store_id}");
+        tracing::debug!("Closing {} store {store_id}", Self::kind());
 
         let store_pool_write = match write_guard {
-            Some(x) => x,
+            Some(guard) => guard,
             None => &mut self.pool.write().unwrap(),
         };
 
@@ -251,7 +282,10 @@ impl KvStorePool {
     }
 
     pub fn flush(&self, force: bool, filter: impl Fn(&KvStoreId) -> bool) {
-        tracing::debug!("scanning for kv store pool items to flush to disk");
+        tracing::debug!(
+            "Scanning for {} store pool items to flush to disk",
+            Self::kind()
+        );
 
         // Acquire flush lock, and reference it in context
         // Notice: this prevents two flush operations to be executed at the same time.
@@ -262,32 +296,21 @@ impl KvStorePool {
 
         let store_pool_read = self.pool.read().unwrap();
 
-        for (key, store) in store_pool_read.iter().filter(|(k, _)| filter(k)) {
-            let last_flushed_guard = store.last_flushed.read().unwrap();
-
-            let not_flushed_for = (last_flushed_guard.elapsed())
-                // WARN: Be lenient with system clock going back to a past
-                //   duration, since we may be running in a virtualized
-                //   environment where clock is not guaranteed to be
-                //   monotonic. This is done to avoid poisoning associated
-                //   locks by crashing on `.unwrap()`.
-                .unwrap_or_else(|err| {
-                    tracing::error!(
-                        "kv key: {key} last flush duration clock issue, zeroing: {err}"
-                    );
-
-                    // Assuming a zero seconds fallback duration
-                    Duration::ZERO
-                });
-
-            drop(last_flushed_guard);
+        for (store_id, store) in store_pool_read.iter().filter(|(k, _)| filter(k)) {
+            let not_flushed_for = store.last_flushed.read().unwrap().elapsed();
 
             if force || not_flushed_for.as_secs() >= self.kv_store_config.database.flush_after {
-                tracing::info!("kv key: {key} not flushed for: {not_flushed_for:.0?}, may flush");
+                tracing::debug!(
+                    "{} store {store_id} not flushed for {not_flushed_for:.0?}, may flush",
+                    Self::kind()
+                );
 
-                keys_flush.push(*key);
+                keys_flush.push(*store_id);
             } else {
-                tracing::debug!("kv key: {key} not flushed for: {not_flushed_for:.0?}, no flush");
+                tracing::trace!(
+                    "{} store {store_id} not flushed for {not_flushed_for:.0?}, no flush",
+                    Self::kind()
+                );
             }
         }
 
@@ -296,7 +319,10 @@ impl KvStorePool {
 
         // Exit trap: Nothing to flush yet? Abort there.
         if keys_flush.is_empty() {
-            tracing::info!("no kv store pool items need to be flushed at the moment");
+            tracing::info!(
+                "No {} store pool items need to be flushed at the moment",
+                Self::kind()
+            );
 
             return;
         }
@@ -304,22 +330,22 @@ impl KvStorePool {
         // Step 2: Flush KVs, one-by-one (sequential locking; this avoids global locks)
         let mut count_flushed = 0;
 
-        for key in keys_flush.iter() {
+        for store_id in keys_flush.iter() {
             let pool_guard = self.pool.read().unwrap();
 
-            if let Some(store) = pool_guard.get(key) {
-                tracing::debug!("kv key: {key} flush started");
+            if let Some(store) = pool_guard.get(store_id) {
+                tracing::debug!("{} store {store_id} flush started", Self::kind());
 
-                if let Err(err) = store.flush() {
-                    tracing::error!("kv key: {key} flush failed: {err}");
+                if let Err(error) = store.flush() {
+                    tracing::error!("{} store {store_id} flush failed: {error:?}", Self::kind());
                 } else {
                     count_flushed += 1;
 
-                    tracing::debug!("kv key: {key} flush complete");
+                    tracing::debug!("{} store {store_id} flush complete", Self::kind());
                 }
 
                 // Bump 'last flushed' time
-                *store.last_flushed.write().unwrap() = SystemTime::now();
+                *store.last_flushed.write().unwrap() = Instant::now();
             }
 
             // Early release the lock.
@@ -330,14 +356,15 @@ impl KvStorePool {
         }
 
         tracing::info!(
-            "done scanning for kv store pool items to flush to disk (flushed: {count_flushed})"
+            "Done scanning for {} store pool items to flush to disk (flushed: {count_flushed})",
+            Self::kind()
         );
     }
 
     pub fn compact(&self, collections_opt: Option<&[StoreItemPart]>) {
         match collections_opt {
-            Some(collections) => tracing::debug!("compacting {collections:?}…"),
-            None => tracing::debug!("compacting all collections…"),
+            Some(collections) => tracing::debug!("Compacting {collections:?}…"),
+            None => tracing::debug!("Compacting all collections…"),
         }
 
         let store_ids: Vec<KvStoreId> = match collections_opt {
@@ -360,7 +387,7 @@ impl KvStorePool {
             let pool_guard = self.pool.write().unwrap();
 
             let Some(store) = pool_guard.get(store_id).map(Arc::clone) else {
-                tracing::warn!("Cannot compact {store_id:?}: no open connection");
+                tracing::warn!("Cannot compact {store_id}: no open connection");
                 continue;
             };
 
@@ -376,189 +403,11 @@ impl KvStorePool {
             std::thread::yield_now();
         }
 
-        tracing::info!("done compacting {store_ids:?}");
+        tracing::info!("Done compacting {store_ids:?}");
     }
 
     pub fn erase(&self, collection: StoreItemPart, bucket: Option<Bucket>) -> Result<u32, ()> {
         self.dispatch_erase(collection, bucket)
-    }
-}
-
-impl From<&KvStoreDatabaseConfig> for rocksdb::Options {
-    #[rustfmt::skip]
-    fn from(config: &KvStoreDatabaseConfig) -> Self {
-        // NOTE: Deconstruct to avoid forgetting configuration keys.
-        let KvStoreDatabaseConfig {
-            flush_after: _,
-            compress,
-            parallelism,
-            max_open_files,
-            max_flushes,
-            write_ahead_log: _,
-            write_buffer_size,
-            max_write_buffer_number,
-            min_write_buffer_number,
-            min_write_buffer_number_to_merge,
-            block_cache_size,
-            cache_index_and_filter_blocks,
-            compression_type,
-            wal_compression_type,
-            wal_ttl_seconds,
-            wal_size_limit_mb,
-            wal_bytes_per_sync,
-            wal_recovery_mode,
-            compression_level,
-            min_level_to_compress,
-            level_zero_file_num_compaction_trigger,
-            level_zero_slowdown_writes_trigger,
-            level_zero_stop_writes_trigger,
-            max_bytes_for_level_base,
-            max_bytes_for_level_multiplier,
-            target_file_size_base,
-            max_background_jobs,
-            max_subcompactions,
-            stats_dump_period_sec,
-        } = config;
-
-        // Make database options
-        let mut db_options = rocksdb::Options::default();
-        let mut env = rocksdb::Env::new().unwrap();
-
-        macro_rules! if_some {
-            ($(#[$($meta:meta),+])? $opts:ident.$set_fn:ident($value:expr)) => {
-                if let Some(value) = $value {
-                    $(#[$($meta),+])?
-                    $opts.$set_fn(*value);
-                }
-            };
-        }
-
-        // Set static options
-        db_options.create_if_missing(true);
-        db_options.set_use_fsync(false);
-        db_options.set_compaction_style(rocksdb::DBCompactionStyle::Level);
-        db_options.set_merge_operator_associative("default_merge", default_merge_operator);
-
-        // Set dynamic options
-        if_some!(db_options.set_write_buffer_size(write_buffer_size.map(|n| n * 1024).as_ref()));
-        if_some!(db_options.set_min_write_buffer_number(min_write_buffer_number));
-        if_some!(db_options.set_min_write_buffer_number_to_merge(min_write_buffer_number_to_merge));
-        if_some!(db_options.set_max_write_buffer_number(max_write_buffer_number));
-
-        if_some!(db_options.set_max_open_files(max_open_files));
-
-        // db_options.set_block_cache_size();
-        // db_options.set_cache_index_and_filter_blocks();
-
-        if let Some(block_cache_size) = block_cache_size {
-            let cache = rocksdb::Cache::new_lru_cache((*block_cache_size as usize) * 1024 * 1024);
-            let mut block_opts = rocksdb::BlockBasedOptions::default();
-            block_opts.set_block_cache(&cache);
-            if_some!(block_opts.set_cache_index_and_filter_blocks(cache_index_and_filter_blocks));
-            db_options.set_block_based_table_factory(&block_opts);
-        }
-
-        // NOTE: `compress` is a legacy shorthand for `compression_type`, it
-        //   will get overriden if `compression_type` is also specified.
-        if let Some(compress) = compress {
-            db_options.set_compression_type(if *compress {
-                rocksdb::DBCompressionType::Zstd
-            } else {
-                rocksdb::DBCompressionType::None
-            });
-        }
-        if_some!(db_options.set_compression_type(compression_type));
-        if let Some(compression_level) = compression_level {
-            db_options.set_compression_options(
-                -14,
-                *compression_level,
-                0,
-                0,
-            );
-        }
-
-        if_some!(db_options.set_wal_compression_type(wal_compression_type));
-        if_some!(db_options.set_wal_ttl_seconds(wal_ttl_seconds));
-        if_some!(db_options.set_wal_size_limit_mb(wal_size_limit_mb));
-        if_some!(db_options.set_wal_bytes_per_sync(wal_bytes_per_sync));
-        if_some!(db_options.set_wal_recovery_mode(wal_recovery_mode));
-
-        if_some!(db_options.set_min_level_to_compress(min_level_to_compress));
-
-        if_some!(db_options.set_level_zero_file_num_compaction_trigger(level_zero_file_num_compaction_trigger));
-        if_some!(db_options.set_level_zero_slowdown_writes_trigger(level_zero_slowdown_writes_trigger));
-        if_some!(db_options.set_level_zero_stop_writes_trigger(level_zero_stop_writes_trigger));
-
-        if_some!(db_options.set_max_bytes_for_level_base(max_bytes_for_level_base));
-        if_some!(db_options.set_max_bytes_for_level_multiplier(max_bytes_for_level_multiplier));
-        if_some!(db_options.set_target_file_size_base(target_file_size_base));
-
-        let mut max_background_jobs = *max_background_jobs;
-
-        if let Some(max_flushes) = max_flushes {
-            if max_background_jobs.is_none() {
-                max_background_jobs = Some(max_subcompactions.unwrap_or(1) as i32 + max_flushes);
-            }
-
-            #[allow(deprecated)]
-            db_options.set_max_background_flushes(*max_flushes);
-
-            // Update threads configuration otherwise RocksDB only uses 1/4 for flushes by default.
-            env.set_high_priority_background_threads(*max_flushes); // HIGH pool = flushes (default)
-            env.set_low_priority_background_threads(max_subcompactions.unwrap_or(1) as i32 - max_flushes); // LOW pool = compactions (default)
-        }
-
-        if_some!(db_options.set_max_background_jobs(max_background_jobs.as_ref()));
-        if_some!(db_options.set_max_subcompactions(max_subcompactions));
-
-        if_some!(db_options.set_stats_dump_period_sec(stats_dump_period_sec));
-
-        if_some!(db_options.increase_parallelism(parallelism));
-
-        db_options.set_env(&env);
-
-        db_options
-
-    }
-}
-
-// MARK: - Store ID
-
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
-pub struct KvStoreId {
-    collection_hash: KvStoreAtom,
-}
-
-impl KvStoreId {
-    pub fn from_atom(collection_hash: KvStoreAtom) -> KvStoreId {
-        KvStoreId { collection_hash }
-    }
-
-    pub fn from_part(collection: StoreItemPart) -> KvStoreId {
-        KvStoreId {
-            collection_hash: collection.into_compact(),
-        }
-    }
-
-    /// Filesystem path components are hex-encoded (via `format!("{:x}")`), we
-    /// must convert it back into proper `u32` otherwise roundtrips will fail.
-    #[inline]
-    pub fn try_from_hex(collection_hash: &str) -> Result<KvStoreId, io::Error> {
-        let collection_hash = u32_from_hex(collection_hash)?;
-
-        Ok(Self::from_atom(collection_hash))
-    }
-
-    pub fn as_collection_hash(&self) -> &KvStoreAtom {
-        &self.collection_hash
-    }
-}
-
-impl fmt::Display for KvStoreId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let Self { collection_hash } = self;
-
-        write!(f, "<{collection_hash:x}>")
     }
 }
 
@@ -567,7 +416,7 @@ impl fmt::Display for KvStoreId {
 impl crate::config::KvStoreConfig {
     #[inline]
     pub(super) fn store_path(&self, id: &KvStoreId) -> PathBuf {
-        let KvStoreId { collection_hash } = id;
+        let collection_hash = id.into_inner();
 
         self.path.join(format!("{collection_hash:x}"))
     }
@@ -633,11 +482,5 @@ impl fmt::Debug for KvStorePool {
             .field("store_acquire_lock", &AsPrettyMutex(store_acquire_lock))
             .field("store_flush_lock", &AsPrettyMutex(store_flush_lock))
             .finish_non_exhaustive()
-    }
-}
-
-impl fmt::Debug for KvStoreId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self, f)
     }
 }

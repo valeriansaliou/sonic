@@ -11,7 +11,7 @@ use super::types::{QueryMatchScore, QueryResultScore, QuerySearchLimit, QuerySea
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::fst::typo_factor;
-use crate::store::kv::KvStoreActionReadOnly;
+use crate::store::kv::KvRepositoryReadOnly;
 use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
 
@@ -54,16 +54,17 @@ impl super::Executor {
         );
 
         let (prefix_matching_enabled, fuzzy_matching_enabled) = (
-            self.fst_pool.fst_action_config.prefix_matching_enabled,
-            self.fst_pool.fst_action_config.fuzzy_matching_enabled,
+            self.fst_pool.fst_repo_config.prefix_matching_enabled,
+            self.fst_pool.fst_repo_config.fuzzy_matching_enabled,
         );
 
         // Important: acquire bucket store read lock
         executor_kv_lock_read!(kv_store);
 
-        let kv_action = kv_store.access_read_only(bucket);
+        let kv_repo = kv_store.to_repository_read_only(bucket);
+        let fst_repo = fst_store.to_repository();
 
-        let document_count = kv_action
+        let document_count = kv_repo
             .get_object_count()
             .map_err(|error| tracing::warn!("{error:?}"))? as u64;
 
@@ -96,7 +97,7 @@ impl super::Executor {
             let term_hash = token.hash();
             let term = token.as_normalized();
 
-            let mut iids = kv_action
+            let mut iids = kv_repo
                 .get_term_to_iids(term_hash)
                 .unwrap_or(None)
                 .unwrap_or_default();
@@ -106,13 +107,13 @@ impl super::Executor {
             if !token.is_special() && self.app_conf.normalization.unicode_normalization.is_none() {
                 use unicode_normalization::UnicodeNormalization as _;
 
-                let mut nfc = kv_action
+                let mut nfc = kv_repo
                     .get_term_to_iids(StoreTermHash::from(term.nfc().to_string().as_str()))
                     .unwrap_or(None)
                     .unwrap_or_default();
                 iids.append(&mut nfc);
 
-                let mut nfd = kv_action
+                let mut nfd = kv_repo
                     .get_term_to_iids(StoreTermHash::from(term.nfd().to_string().as_str()))
                     .unwrap_or(None)
                     .unwrap_or_default();
@@ -121,7 +122,7 @@ impl super::Executor {
 
             tracing::debug!("got exact search executor iids: {iids:?} for term: {term:?}");
 
-            let document_frequency = document_frequency(term_hash, &kv_action);
+            let document_frequency = document_frequency(term_hash, &kv_repo);
 
             // Filter out minimum IDF.
             // PERF: Filtering `minimum_idf > 0` to save some computation.
@@ -168,7 +169,7 @@ impl super::Executor {
                 let original_len = token.as_original().len();
                 let term = token.as_normalized();
 
-                let Some(suggestions) = fst_store.lookup_begins(term, original_len) else {
+                let Some(suggestions) = fst_repo.lookup_begins(term, original_len) else {
                     tracing::trace!("did not get any completed word for term {term:?}");
                     continue 'terms;
                 };
@@ -179,7 +180,7 @@ impl super::Executor {
                     term,
                     idx,
                     term_count,
-                    &kv_action,
+                    &kv_repo,
                     &mut alternates_try,
                     higher_limit,
                     document_count,
@@ -215,7 +216,7 @@ impl super::Executor {
                 //   the same query over and over again. Maybe try to see if
                 //   `fst_levenshtein` can return distances in its response.
                 while alternates_try > 0 && typo_factor <= max_typo_factor {
-                    let Some(suggestions) = fst_store.lookup_typos(term, typo_factor) else {
+                    let Some(suggestions) = fst_repo.lookup_typos(term, typo_factor) else {
                         tracing::trace!("did not get any completed word for term {term:?}");
                         continue 'terms;
                     };
@@ -227,7 +228,7 @@ impl super::Executor {
                         term,
                         idx,
                         term_count,
-                        &kv_action,
+                        &kv_repo,
                         &mut alternates_try,
                         higher_limit,
                         document_count,
@@ -289,7 +290,7 @@ impl super::Executor {
             }
 
             // Read IID-to-OID for this found IID
-            if let Ok(Some(oid)) = kv_action.get_iid_to_oid(found_iid) {
+            if let Ok(Some(oid)) = kv_repo.get_iid_to_oid(found_iid) {
                 result_oids.push(oid);
             } else {
                 tracing::error!("failed getting search executor iid-to-oid");
@@ -479,8 +480,8 @@ fn test_overall_score() {
     ); // 2/3
 }
 
-fn document_frequency(term_hash: StoreTermHash, kv_action: &KvStoreActionReadOnly<'_>) -> u64 {
-    kv_action
+fn document_frequency(term_hash: StoreTermHash, kv_repo: &KvRepositoryReadOnly<'_>) -> u64 {
+    kv_repo
         .get_term_to_iids(term_hash)
         .inspect_err(|err| tracing::error!("{err:?}"))
         .unwrap_or(None)
@@ -506,7 +507,7 @@ fn merge_suggestions(
     term: &str,
     term_idx: usize,
     term_count: usize,
-    kv_action: &KvStoreActionReadOnly<'_>,
+    kv_repo: &KvRepositoryReadOnly<'_>,
     alternates_try: &mut usize,
     higher_limit: usize,
     document_count: u64,
@@ -521,13 +522,13 @@ fn merge_suggestions(
         tracing::trace!(?term, ?suggested_word, "got completed word for term");
 
         let suggested_term_hash = StoreTermHash::from(suggested_word.as_str());
-        let suggested_iids = match kv_action.get_term_to_iids(suggested_term_hash) {
+        let suggested_iids = match kv_repo.get_term_to_iids(suggested_term_hash) {
             Ok(Some(suggested_iids)) => suggested_iids,
             Ok(None) => continue,
             Err(_) => continue,
         };
 
-        let document_frequency = document_frequency(suggested_term_hash, kv_action);
+        let document_frequency = document_frequency(suggested_term_hash, kv_repo);
 
         // Filter out minimum IDF.
         // PERF: Filtering `minimum_idf > 0` to save some computation.

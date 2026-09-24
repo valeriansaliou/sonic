@@ -5,24 +5,26 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+pub(super) type Hash = u32;
+
 // MARK: IID
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct StoreObjectIid(u32);
+pub struct StoreObjectIid(Hash);
 
 impl_u32_wrapper_utils!(StoreObjectIid);
 
 impl StoreObjectIid {
     #[inline]
-    pub const fn saturating_add(self, rhs: u32) -> Self {
+    pub const fn saturating_add(self, rhs: Hash) -> Self {
         Self(self.0.saturating_add(rhs))
     }
 
     // NOTE: We went for `into_inner` here instead of marking `.0` `pub(super)`
     //   so it’s easier to identify call sites and keep constuction via `From`.
     #[inline]
-    pub(super) const fn into_inner(self) -> u32 {
+    pub(super) const fn into_inner(self) -> Hash {
         self.0
     }
 }
@@ -63,6 +65,12 @@ crate::util::impl_transparent_wrapper_utils!(Display for BucketOwned(String));
 impl<'a> From<Bucket<'a>> for BucketOwned {
     fn from(value: Bucket<'a>) -> Self {
         Self(value.0.0.to_owned())
+    }
+}
+
+impl<'a> From<&'a BucketOwned> for Bucket<'a> {
+    fn from(value: &'a BucketOwned) -> Self {
+        Self(StoreItemPart(value.0.as_str()))
     }
 }
 
@@ -146,7 +154,7 @@ impl<'a> StoreItemPart<'a> {
         }
     }
 
-    pub fn into_compact(&self) -> u32 {
+    pub fn to_compact(&self) -> Hash {
         use std::hash::Hasher as _;
         use twox_hash::XxHash32;
 
@@ -282,6 +290,60 @@ mod tests_store_item_builder {
             StoreItemBuilder::from_depth_3("c:test:3", "b:test:3", ""),
             Err(StoreItemError::InvalidObject)
         );
+    }
+}
+
+// MARK: - Collection hash
+
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+pub struct CollectionHash(Hash);
+
+impl CollectionHash {
+    pub fn from_hash(collection_hash: Hash) -> CollectionHash {
+        CollectionHash(collection_hash)
+    }
+
+    pub fn from_part(collection: StoreItemPart) -> CollectionHash {
+        CollectionHash(collection.to_compact())
+    }
+
+    /// Filesystem path components are hex-encoded (via `format!("{:x}")`), we
+    /// must convert it back into proper `u32` otherwise roundtrips will fail.
+    #[inline]
+    pub fn try_from_hex(collection_hash: &str) -> Result<CollectionHash, std::io::Error> {
+        let collection_hash = super::generic::u32_from_hex(collection_hash)?;
+
+        Ok(Self::from_hash(collection_hash))
+    }
+
+    pub fn into_inner(self) -> Hash {
+        self.0
+    }
+
+    // NOTE: This is just a helper to avoid having to create a `KvStoreId` wrapper.
+    pub fn as_collection_hash(&self) -> &Hash {
+        &self.0
+    }
+}
+
+impl<'a> From<StoreItemPart<'a>> for CollectionHash {
+    #[inline]
+    fn from(collection: StoreItemPart<'a>) -> Self {
+        Self::from_part(collection)
+    }
+}
+
+impl std::fmt::Display for CollectionHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let Self(collection_hash) = self;
+
+        write!(f, "<{collection_hash:x}>")
+    }
+}
+
+impl std::fmt::Debug for CollectionHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self, f)
     }
 }
 

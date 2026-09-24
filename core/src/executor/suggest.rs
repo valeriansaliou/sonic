@@ -22,6 +22,8 @@ impl super::Executor {
         let _fst_read_guard = self.fst_pool.lock_read_access();
 
         if let Ok(fst_store) = self.fst_pool.acquire(collection, bucket) {
+            let fst_repo = fst_store.to_repository();
+
             let mut tokens = input.tokens();
 
             if let (Some(token), None) = (tokens.next(), tokens.next()) {
@@ -30,7 +32,7 @@ impl super::Executor {
 
                 tracing::debug!("running suggest on word: {term:?}");
 
-                return match fst_store.suggest_words(term, len, limit as usize, None) {
+                return match fst_repo.suggest_words(term, len, limit as usize, None) {
                     Some(words) => Ok(Some(words.map(|(k, _)| k))),
                     None => Ok(None),
                 };

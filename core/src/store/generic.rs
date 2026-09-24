@@ -10,12 +10,20 @@ use core::hash::Hash;
 use hashbrown::HashMap;
 use std::fmt::Display;
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
-use std::time::{Duration, SystemTime};
+use std::time::Instant;
 
 use crate::store::{Bucket, StoreItemPart};
 
+/// Separator used in key-value stores to separate string components from the
+/// rest of the key.
+///
+/// `"` is used as a UTF-8-valid separator because this character is already
+/// prohibited in places like collection names, because of how Sonic Channel
+/// commands are parsed.
+pub(super) const KEY_SEPARATOR: u8 = b'"';
+
 pub(super) trait StoreGeneric {
-    fn ref_last_used(&self) -> &RwLock<SystemTime>;
+    fn ref_last_used(&self) -> &RwLock<Instant>;
 }
 
 pub(super) trait StoreGenericPool:
@@ -49,7 +57,7 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
         tracing::debug!("{kind} store {store_id} acquired from pool");
 
         // Bump store last used date (avoids early janitor eviction)
-        *store.ref_last_used().write().unwrap() = SystemTime::now();
+        *store.ref_last_used().write().unwrap() = Instant::now();
 
         Ok(Arc::clone(store))
     }
@@ -108,22 +116,7 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
         let store_pool_read = self.read().unwrap();
 
         for (collection_bucket, store) in store_pool_read.iter().filter(|(key, _)| filter(key)) {
-            // Important: be lenient with system clock going back to a past duration, since \
-            //   we may be running in a virtualized environment where clock is not guaranteed \
-            //   to be monotonic. This is done to avoid poisoning associated mutexes by \
-            //   crashing on unwrap().
-            let last_used_elapsed = (store.ref_last_used().read().unwrap())
-                .elapsed()
-                .unwrap_or_else(|err| {
-                    tracing::error!(
-                        "store pool item: {} last used duration clock issue, zeroing: {}",
-                        collection_bucket,
-                        err
-                    );
-
-                    // Assuming a zero seconds fallback duration
-                    Duration::ZERO
-                });
+            let last_used_elapsed = store.ref_last_used().read().unwrap().elapsed();
 
             if last_used_elapsed.as_secs() >= self.consider_inactive_after_secs() {
                 tracing::debug!(

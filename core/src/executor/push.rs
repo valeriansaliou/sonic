@@ -37,7 +37,8 @@ impl super::Executor {
             return Err(());
         };
 
-        let kv_action = kv_store.access_read_write(bucket);
+        let kv_repo = kv_store.to_repository_read_write(bucket);
+        let fst_repo = fst_store.to_repository();
 
         let mut batch = WriteBatch::default();
 
@@ -47,12 +48,12 @@ impl super::Executor {
             tracing::trace!("must initialize push executor oid-to-iid and iid-to-oid");
 
             // Bump last stored increment
-            let iid = (kv_action.get_new_iid(&mut batch))
+            let iid = (kv_repo.get_new_iid(&mut batch))
                 .map_err(|error| tracing::error!("Error getting new IID: {error:?}"))?;
 
             // Associate OID <> IID (bidirectional)
-            kv_action.set_oid_to_iid(&mut batch, oid, iid);
-            kv_action.set_iid_to_oid(&mut batch, iid, oid);
+            kv_repo.set_oid_to_iid(&mut batch, oid, iid);
+            kv_repo.set_iid_to_oid(&mut batch, iid, oid);
 
             Ok(iid)
         };
@@ -71,7 +72,7 @@ impl super::Executor {
                 iid
             }
         } else {
-            match kv_action.get_oid_to_iid(oid) {
+            match kv_repo.get_oid_to_iid(oid) {
                 Ok(Some(iid)) => {
                     is_new = false;
                     iid
@@ -92,22 +93,22 @@ impl super::Executor {
             let term_hash = token.hash();
 
             // Push to FST graph? (this consumes the term; to avoid sub-clones)
-            if fst_store.push_word(&term, &self.app_conf.store.fst) {
+            if fst_repo.push_word(&term, &self.app_conf.store.fst) {
                 tracing::trace!("push term committed to graph: {}", term);
             }
 
             // Link IID to term
-            kv_action.add_term_to_iids(&mut batch, term_hash, std::iter::once(iid));
+            kv_repo.add_term_to_iids(&mut batch, term_hash, std::iter::once(iid));
         }
 
         // Link terms to IID
         if assume_new && is_new {
-            kv_action.set_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());
+            kv_repo.set_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());
         } else {
-            kv_action.add_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());
+            kv_repo.add_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());
         }
 
-        executor_ensure_op!(kv_action.write(batch));
+        executor_ensure_op!(kv_repo.write(batch));
 
         Ok(())
     }

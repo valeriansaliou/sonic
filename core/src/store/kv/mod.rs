@@ -7,28 +7,29 @@
 
 mod backup;
 mod keys;
+mod merge;
 mod pool;
-mod util;
 
 use std::sync::{Arc, RwLock};
-use std::time::SystemTime;
+use std::time::Instant;
 use std::{fmt, io};
 
 use hashbrown::HashMap;
 use rocksdb::{DB, WriteBatch};
 
 use crate::store::generic::*;
-use crate::store::*;
+use crate::store::types::*;
+
+use super::encoding::*;
 
 use self::keys::KvStoreKey;
 pub use self::keys::StoreMetaKey;
 pub use self::pool::{KvStoreId, KvStorePool};
-use self::util::*;
 
 pub struct KvStore {
     database: DB,
-    last_used: RwLock<SystemTime>,
-    last_flushed: RwLock<SystemTime>,
+    last_used: RwLock<Instant>,
+    last_flushed: RwLock<Instant>,
     pub lock: RwLock<()>,
     kv_store_config: Arc<crate::config::KvStoreConfig>,
 
@@ -42,17 +43,15 @@ pub struct KvStore {
     iid_incr_per_bucket: RwLock<HashMap<Vec<u8>, StoreObjectIid>>,
 }
 
-pub struct KvStoreActionReadOnly<'a> {
+pub struct KvRepositoryReadOnly<'a> {
     bucket: Bucket<'a>,
     store: &'a KvStore,
 }
 
-pub struct KvStoreActionReadWrite<'a> {
+pub struct KvRepositoryReadWrite<'a> {
     bucket: Bucket<'a>,
     store: &'a KvStore,
 }
-
-type KvStoreAtom = u32;
 
 impl KvStore {
     fn flush(&self) -> Result<(), rocksdb::Error> {
@@ -190,35 +189,35 @@ impl KvStore {
     }
 }
 
-impl<'a> KvStoreActionReadWrite<'a> {
+impl<'a> KvRepositoryReadWrite<'a> {
     pub fn write(&self, batch: WriteBatch) -> Result<(), rocksdb::Error> {
         self.store.do_write(batch)
     }
 }
 
 impl StoreGeneric for KvStore {
-    fn ref_last_used(&self) -> &RwLock<SystemTime> {
+    fn ref_last_used(&self) -> &RwLock<Instant> {
         &self.last_used
     }
 }
 
 impl KvStore {
-    pub fn access_read_only<'a>(&'a self, bucket: Bucket<'a>) -> KvStoreActionReadOnly<'a> {
-        KvStoreActionReadOnly {
+    pub fn to_repository_read_only<'a>(&'a self, bucket: Bucket<'a>) -> KvRepositoryReadOnly<'a> {
+        KvRepositoryReadOnly {
             bucket,
             store: self,
         }
     }
 
-    pub fn access_read_write<'a>(&'a self, bucket: Bucket<'a>) -> KvStoreActionReadWrite<'a> {
-        KvStoreActionReadWrite {
+    pub fn to_repository_read_write<'a>(&'a self, bucket: Bucket<'a>) -> KvRepositoryReadWrite<'a> {
+        KvRepositoryReadWrite {
             bucket,
             store: self,
         }
     }
 }
 
-impl<'a> KvStoreActionReadOnly<'a> {
+impl<'a> KvRepositoryReadOnly<'a> {
     /// Meta-to-Value mapper
     ///
     /// [IDX=0] ((meta)) ~> ((value))
@@ -420,10 +419,10 @@ impl<'a> KvStoreActionReadOnly<'a> {
     }
 }
 
-impl<'a> KvStoreActionReadWrite<'a> {
+impl<'a> KvRepositoryReadWrite<'a> {
     /// This is `O(1)`, nothing meaningful happens.
-    fn as_read_only<'b>(&'b self) -> KvStoreActionReadOnly<'b> {
-        KvStoreActionReadOnly {
+    fn as_read_only<'b>(&'b self) -> KvRepositoryReadOnly<'b> {
+        KvRepositoryReadOnly {
             bucket: self.bucket,
             store: self.store,
         }
@@ -725,7 +724,7 @@ mod tests {
             .acquire(true, "c:test:3".into(), None, |_| {})
             .unwrap()
             .unwrap();
-        let action = store.access_read_write("b:test:3".into());
+        let action = store.to_repository_read_write("b:test:3".into());
 
         assert!(
             action

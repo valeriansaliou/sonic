@@ -135,19 +135,19 @@ pub struct KvStoreConfig {
 
     pub retain_word_objects: usize,
 
-    pub pool: KvStorePoolConfig,
+    pub pool: StorePoolConfig,
 
-    pub database: KvStoreDatabaseConfig,
+    pub database: RocksDbDatabaseConfig,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct KvStorePoolConfig {
+pub struct StorePoolConfig {
     pub inactive_after: u64,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct KvStoreDatabaseConfig {
+pub struct RocksDbDatabaseConfig {
     pub flush_after: u64,
 
     pub write_ahead_log: bool,
@@ -335,14 +335,9 @@ pub struct FstStoreConfig {
     #[serde(deserialize_with = "env_var::path_buf")]
     pub path: PathBuf,
 
-    pub pool: FstStorePoolConfig,
+    pub pool: StorePoolConfig,
 
     pub graph: FstStoreGraphConfig,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct FstStorePoolConfig {
-    pub inactive_after: u64,
 }
 
 #[derive(Debug, Deserialize)]
