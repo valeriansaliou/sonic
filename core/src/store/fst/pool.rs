@@ -460,10 +460,10 @@ impl FstStorePool {
         for (item, action) in pending.iter() {
             match action {
                 PendingAction::Push => {
-                    ordered_push_vec.push(item.as_slice());
+                    ordered_push_vec.push(item.as_ref());
                 }
                 PendingAction::Pop => {
-                    to_pop.insert(item.as_slice());
+                    to_pop.insert(item.as_ref());
                 }
             }
         }

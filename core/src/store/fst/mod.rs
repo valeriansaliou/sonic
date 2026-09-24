@@ -28,7 +28,7 @@ use self::util::*;
 pub struct FstStore {
     graph: fst::Set,
     target: FstStoreId,
-    pending: Mutex<HashMap<Vec<u8>, PendingAction>>,
+    pending: Mutex<HashMap<Box<[u8]>, PendingAction>>,
     last_used: Arc<RwLock<Instant>>,
     last_consolidated: Arc<RwLock<Instant>>,
     should_consolidate: AtomicBool,
@@ -165,7 +165,7 @@ impl<'a> FstRepository<'a> {
         &self,
         word: &str,
         fst_store_config: &crate::config::FstStoreConfig,
-        pending: &mut MutexGuard<'_, HashMap<Vec<u8>, PendingAction>>,
+        pending: &mut MutexGuard<'_, HashMap<Box<[u8]>, PendingAction>>,
     ) -> bool {
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(word) {
@@ -207,7 +207,7 @@ impl<'a> FstRepository<'a> {
             }
             None => {
                 if should_insert() {
-                    pending.insert(word_bytes.to_vec(), PendingAction::Push);
+                    pending.insert(Box::from(word_bytes), PendingAction::Push);
                 } else {
                     return false;
                 }
@@ -259,7 +259,7 @@ impl<'a> FstRepository<'a> {
             }
             None => {
                 if should_insert {
-                    pending.insert(word_bytes.to_vec(), PendingAction::Pop);
+                    pending.insert(Box::from(word_bytes), PendingAction::Pop);
                 } else {
                     return false;
                 }
