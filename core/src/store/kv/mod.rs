@@ -519,19 +519,17 @@ impl<'a> KvRepositoryReadWrite<'a> {
         batch.put(store_key, &iids_encoded)
     }
 
-    pub fn add_term_to_iids(
+    pub fn add_term_to_iid(
         &self,
         batch: &mut WriteBatch,
         term_hash: StoreTermHash,
-        iids: impl Iterator<Item = StoreObjectIid>,
+        iid: StoreObjectIid,
     ) {
         let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
 
         tracing::debug!("store add term-to-iids: {store_key}");
 
-        for iid in iids {
-            batch.merge(&store_key, encode_iid(iid));
-        }
+        batch.merge(&store_key, encode_iid(iid));
     }
 
     pub fn delete_term_to_iids(&self, batch: &mut WriteBatch, term_hash: StoreTermHash) {

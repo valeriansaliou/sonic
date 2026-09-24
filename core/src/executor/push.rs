@@ -98,7 +98,7 @@ impl super::Executor {
             }
 
             // Link IID to term
-            kv_repo.add_term_to_iids(&mut batch, term_hash, std::iter::once(iid));
+            kv_repo.add_term_to_iid(&mut batch, term_hash, iid);
         }
 
         // Link terms to IID
