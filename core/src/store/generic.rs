@@ -173,7 +173,5 @@ impl<Pool: StoreGenericPool> StoreGenericPoolExt for Pool {}
 
 #[inline]
 pub(super) fn u32_from_hex(hex: &str) -> Result<u32, std::io::Error> {
-    u32::from_str_radix(hex, 16)
-        .map(u32::from_le)
-        .map_err(std::io::Error::other)
+    u32::from_str_radix(hex, 16).map_err(std::io::Error::other)
 }

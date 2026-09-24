@@ -5,6 +5,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use crate::store::encoding::*;
 use crate::store::generic::KEY_SEPARATOR;
 use crate::store::types::*;
 
@@ -54,7 +55,7 @@ impl KvStoreKey {
         key_bytes.extend_from_slice(bucket_bytes); // [bucket<?B>]
         key_bytes.push(KEY_SEPARATOR); // [separator<1B>]
         key_bytes.push(idx); // [idx<1B>]
-        key_bytes.extend_from_slice(&route.to_be_bytes()); // [route<4B>]
+        key_bytes.extend_from_slice(&encode_kv_key_part(route)); // [route<4B>]
 
         KvStoreKey::from(key_bytes)
     }
@@ -104,7 +105,7 @@ impl std::fmt::Display for KvStoreKey {
         let key_idx = rest[0];
 
         let route_bytes = &rest[1..];
-        let key_route = u32::from_be_bytes([
+        let key_route = decode_kv_key_part([
             route_bytes[0],
             route_bytes[1],
             route_bytes[2],

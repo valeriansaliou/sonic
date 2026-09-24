@@ -19,10 +19,10 @@ pub(super) fn kv_merge_operator(
 
     match key[key.len() - 5] {
         META_TO_VALUE => match &key[(key.len() - 4)..] {
-            v if v == StoreMetaKey::IIDIncr.as_u32().to_be_bytes() => {
+            v if v == encode_kv_key_part(StoreMetaKey::IIDIncr.as_u32()) => {
                 u32_max(existing_val, operands)
             }
-            v if v == StoreMetaKey::ObjectCount.as_u32().to_be_bytes() => {
+            v if v == encode_kv_key_part(StoreMetaKey::ObjectCount.as_u32()) => {
                 i32_counter(existing_val, operands)
             }
             v => panic!("Unrecognized meta key: {v:?}"),
@@ -102,7 +102,7 @@ fn u32_max(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -> Op
     let mut res = match existing_val {
         Some(bytes) if bytes.len() == 4 => {
             // SAFETY: `bytes` is guaranteed to be 4 bytes long.
-            decode_u32(bytes).unwrap()
+            decode_u32_counter([bytes[0], bytes[1], bytes[2], bytes[3]])
         }
         Some(_) => panic!("u32_max: initial value isn’t a u32"),
         None if operands.is_empty() => return None,
@@ -112,7 +112,7 @@ fn u32_max(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -> Op
     for op in operands {
         for chunk in op.chunks(4) {
             // SAFETY: `chunk` is guaranteed to be 4 bytes long.
-            let new_val = decode_u32(chunk).unwrap();
+            let new_val = decode_u32_counter([chunk[0], chunk[1], chunk[2], chunk[3]]);
 
             if new_val > res {
                 res = new_val;
@@ -120,7 +120,7 @@ fn u32_max(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -> Op
         }
     }
 
-    Some(encode_u32(res).to_vec())
+    Some(encode_u32_counter(res).to_vec())
 }
 
 /// This implements a counter (as `i32`).
@@ -140,7 +140,7 @@ fn i32_counter(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -
     let mut res = match existing_val {
         Some(bytes) if bytes.len() == 4 => {
             // SAFETY: `bytes` is guaranteed to be 4 bytes long.
-            i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+            decode_i32_counter([bytes[0], bytes[1], bytes[2], bytes[3]])
         }
         Some(_) => panic!("i32_counter: initial value isn’t a u32"),
         None if operands.is_empty() => return None,
@@ -150,11 +150,11 @@ fn i32_counter(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -
     for op in operands {
         for chunk in op.chunks(4) {
             // SAFETY: `chunk` is guaranteed to be 4 bytes long.
-            let diff = i32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            let diff = decode_i32_counter([chunk[0], chunk[1], chunk[2], chunk[3]]);
 
             res = res.saturating_add(diff);
         }
     }
 
-    Some(res.to_le_bytes().to_vec())
+    Some(encode_i32_counter(res).to_vec())
 }
