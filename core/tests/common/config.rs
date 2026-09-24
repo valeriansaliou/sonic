@@ -53,6 +53,7 @@ pub fn defaults_toml() -> String {
         query_limit_default = 10
         query_limit_maximum = 100
         query_alternates_try = 4
+        query_retain_word_objects = 1000
         query_minimum_term_idf_default = 0.1
         query_minimum_term_idf_minimum_object_count = 100
         suggest_limit_default = 5
@@ -62,7 +63,6 @@ pub fn defaults_toml() -> String {
 
         [store.kv]
         path = {kv_store_path:?}
-        retain_word_objects = 1000
         pool.inactive_after = 1800
         database.flush_after = 900
         database.compression_type = "zstd"

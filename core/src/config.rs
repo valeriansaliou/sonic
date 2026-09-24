@@ -106,6 +106,8 @@ pub struct SearchConfig {
 
     pub query_alternates_try: usize,
 
+    pub query_retain_word_objects: usize,
+
     pub query_minimum_term_idf_default: f32,
 
     pub query_minimum_term_idf_minimum_object_count: u64,
@@ -130,8 +132,6 @@ pub struct StoreConfig {
 pub struct KvStoreConfig {
     #[serde(deserialize_with = "env_var::path_buf")]
     pub path: PathBuf,
-
-    pub retain_word_objects: usize,
 
     pub pool: StorePoolConfig,
 
@@ -372,6 +372,7 @@ pub(crate) mod tests {
         query_limit_default = 10
         query_limit_maximum = 100
         query_alternates_try = 4
+        query_retain_word_objects = 1000
         query_minimum_term_idf_default = 0.1
         query_minimum_term_idf_minimum_object_count = 100
         suggest_limit_default = 5
@@ -381,7 +382,6 @@ pub(crate) mod tests {
 
         [store.kv]
         path = "./data/store/kv/"
-        retain_word_objects = 1000
         pool.inactive_after = 1800
         database.flush_after = 900
         database.compression_type = "zstd"
