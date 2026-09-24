@@ -23,6 +23,8 @@ use crate::store::{Bucket, StoreItemPart};
 pub(super) const KEY_SEPARATOR: u8 = b'"';
 
 pub(super) trait StoreGeneric {
+    fn kind() -> &'static str;
+
     fn ref_last_used(&self) -> &RwLock<Instant>;
 }
 
@@ -33,7 +35,9 @@ pub(super) trait StoreGenericPool:
     type Store: StoreGeneric;
     type HashBuilder: std::hash::BuildHasher;
 
-    fn kind() -> &'static str;
+    fn kind() -> &'static str {
+        Self::Store::kind()
+    }
 
     fn consider_inactive_after_secs(&self) -> u64;
 

@@ -61,10 +61,6 @@ impl StoreGenericPool for KvStorePool {
     type Store = KvStore;
     type HashBuilder = DefaultHashBuilder;
 
-    fn kind() -> &'static str {
-        "KV"
-    }
-
     fn consider_inactive_after_secs(&self) -> u64 {
         self.kv_store_config.pool.inactive_after
     }

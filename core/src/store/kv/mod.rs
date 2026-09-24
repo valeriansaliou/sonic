@@ -199,6 +199,10 @@ impl<'a> KvRepositoryReadWrite<'a> {
 }
 
 impl StoreGeneric for KvStore {
+    fn kind() -> &'static str {
+        "KV"
+    }
+
     fn ref_last_used(&self) -> &RwLock<Instant> {
         &self.last_used
     }
