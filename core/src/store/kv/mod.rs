@@ -163,7 +163,12 @@ impl KvStore {
                                 .is_ok_and(|opt| opt.is_none())
                             {
                                 self.database
-                                    .put(object_count_key, iid_incr.into_bytes())
+                                    .put(
+                                        object_count_key,
+                                        i32::try_from(u32::from(iid_incr))
+                                            .unwrap_or(i32::MAX)
+                                            .to_le_bytes(),
+                                    )
                                     .unwrap_or_else(|error| {
                                         tracing::error!(
                                             "Could not backfill ObjectCount from IIDIncr: {error:?}"
@@ -255,25 +260,62 @@ impl<'a> KvStoreActionReadOnly<'a> {
         }
     }
 
+    /// Note that because of the underlying use of `i32`, the max value is
+    /// `i32::MAX` (hence `u32::MAX / 2`).
     pub fn get_object_count(&self) -> Result<u32, Box<dyn std::error::Error>> {
         let bucket = self.bucket;
 
         let store_key = KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::ObjectCount);
-        let value = self.store.database.get(store_key)?;
+        let value = self.store.database.get(&store_key)?;
+
+        let get_iid_incr_fallback = || {
+            self.store
+                .get_iid_incr(&bucket, &self.store.iid_incr_per_bucket.read().unwrap())
+                .map(|opt| opt.map_or(0, |n| u32::from(n).saturating_add(1)))
+        };
 
         match value {
-            Some(bytes) => match decode_u32_mapped(&bytes) {
-                Ok(count) => {
-                    tracing::debug!(?bucket, ?count, "Read ObjectCount from database");
-                    Ok(count)
+            Some(bytes) if bytes.len() == 4 => {
+                // SAFETY: `bytes` is guaranteed to be 4 bytes long.
+                let count = i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+
+                tracing::debug!(?bucket, ?count, "Read ObjectCount from database");
+
+                // FIX: In Sonic v1.10.0, singed counters used to be stored
+                //   unsigned. In itself it wasn’t a problem, but because of
+                //   how RocksDB merges operations, huge batches would cause
+                //   partial counters to be mis-interpreted, yielding a final
+                //   sum that’s far off. We can fix it by checking whether
+                //   `ObjectCount` is negative or bigger than `IIDIncr + 1`.
+                let iid_incr_fallback = get_iid_incr_fallback()?;
+                if (count < 0) || (count as u32 > iid_incr_fallback) {
+                    // Fix stored `ObjectCount` once (issue won’t reappear).
+                    self.store.database.put(
+                        &store_key,
+                        i32::try_from(iid_incr_fallback)
+                            .unwrap_or(i32::MAX)
+                            .to_le_bytes(),
+                    )?;
+                    tracing::debug!(
+                        ?bucket,
+                        "Fixed ObjectCount in database, falling back to IIDIncr (only this time)"
+                    );
+                    return Ok(iid_incr_fallback);
                 }
-                Err(()) => {
-                    tracing::error!(?bucket, "Invalid ObjectCount in database");
-                    Err(Box::new(io::Error::other(
-                        "Invalid ObjectCount value in bucket {bucket:?}",
-                    )))
+
+                match u32::try_from(count) {
+                    Ok(count) => Ok(count),
+                    Err(error) => Err(Box::new(io::Error::other(format!(
+                        "Invalid ObjectCount value in bucket {bucket:?}: {error:?}",
+                    )))),
                 }
-            },
+            }
+            Some(_bytes) => {
+                tracing::error!(?bucket, "Invalid ObjectCount in database");
+                Err(Box::new(io::Error::other(
+                    "Invalid ObjectCount value in bucket {bucket:?}",
+                )))
+            }
             None => {
                 tracing::debug!(
                     ?bucket,
@@ -282,9 +324,7 @@ impl<'a> KvStoreActionReadOnly<'a> {
 
                 // COMPAT: Fallback to `IIDIncr` for users migrating from an older version.
                 // TODO(major): Remove compat fallback.
-                self.store
-                    .get_iid_incr(&bucket, &self.store.iid_incr_per_bucket.read().unwrap())
-                    .map(|opt| opt.map_or(0, u32::from))
+                get_iid_incr_fallback()
             }
         }
     }
@@ -473,7 +513,7 @@ impl<'a> KvStoreActionReadWrite<'a> {
             &self.bucket
         );
 
-        batch.merge(store_key, diff.to_ne_bytes());
+        batch.merge(store_key, diff.to_le_bytes());
     }
 
     pub fn get_new_iid(
