@@ -793,6 +793,8 @@ impl<'a> KvStoreActionReadWrite<'a> {
             tracing::debug!("succeeded in store batch erase bucket: {bucket}");
         }
 
+        (self.store.iid_incr_per_bucket.write().unwrap()).remove(&bucket.into_compact());
+
         tracing::info!("done processing store batch erase bucket: {bucket}");
 
         Ok(1)
