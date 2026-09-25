@@ -7,6 +7,9 @@
 <!-- WARN: Do not move the next line and add changelog entries **under** it.
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/core-v0.4.0...HEAD
+### Bug Fixes
+
+* Fix panic on Chinese text (`start byte index … is not a char boundary`): use `jieba_rs::Token::byte_start` (byte offset) instead of `start` (Unicode offset) in `Tokenizer::tokenize`. Also use `lindera` `Token::byte_start` instead of the removed `token_start` field.
 
 ## [0.4.0] (2026-09-21)
 
