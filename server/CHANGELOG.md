@@ -8,6 +8,29 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/v1.10.0...HEAD
 
+### Changes
+
+* docs: Explain `write_buffer_size` in MiB instead of asking for a multiple of 1024 (in `52faa84`)
+
+Performance improvements:
+
+* perf(core): Use `set_iid_to_terms` on `PUSH` when assuming new (in `c29f50d`)
+
+Dependency updates:
+
+* Update dependencies (in `3e99e50`)
+* deps(core): Bump `jieba-rs` from `0.10` to `0.11` (in `6e2b5a1`)
+* deps(server): Bump `rand` from `=0.10.2` to `=0.10.3` (in `11b721d`)
+* deps(server): Bump `config` from `=0.15.25` to `=0.15.26` (in `26e3494`)
+
+### Bug Fixes
+
+* fix(server): Make experimental flag `NEW` compatible with content > `buffer_size` (in `1c43813`)
+* fix(core): Use byte offsets in CJK tokenizer (in `638d310`)
+  * Fix panic on Chinese text (`start byte index … is not a char boundary`): use `jieba_rs::Token::byte_start` (byte offset) instead of `start` (Unicode offset) in `Tokenizer::tokenize`. Also use `lindera` `Token::byte_start` instead of the removed `token_start` field.
+* fix(core): Fix object counter on big-endian platforms and after batch ingest (in `6902b0e`)
+* fix(core): Clear `IIDIncr` from cache during a `FLUSHO` (in `0e1a2ce`)
+
 ## [1.10.0] (2026-09-21)
 
 [1.10.0]: https://github.com/valeriansaliou/sonic/compare/v1.9.1...v1.10.0
