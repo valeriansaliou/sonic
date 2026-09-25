@@ -7,9 +7,24 @@
 <!-- WARN: Do not move the next line and add changelog entries **under** it.
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/core-v0.4.0...HEAD
+
+### Changes
+
+Performance improvements:
+
+* Use `set_iid_to_terms` on `PUSH` when assuming new (in `c29f50d`)
+
+Dependency updates:
+
+* Update dependencies (in `3e99e50`)
+* Bump `jieba-rs` from `0.10` to `0.11` (in `6e2b5a1`)
+
 ### Bug Fixes
 
-* Fix panic on Chinese text (`start byte index … is not a char boundary`): use `jieba_rs::Token::byte_start` (byte offset) instead of `start` (Unicode offset) in `Tokenizer::tokenize`. Also use `lindera` `Token::byte_start` instead of the removed `token_start` field.
+* Use byte offsets in CJK tokenizer (in `638d310`)
+  * Fix panic on Chinese text (`start byte index … is not a char boundary`): use `jieba_rs::Token::byte_start` (byte offset) instead of `start` (Unicode offset) in `Tokenizer::tokenize`. Also use `lindera` `Token::byte_start` instead of the removed `token_start` field.
+* Fix object counter on big-endian platforms and after batch ingest (in `6902b0e`)
+* Clear `IIDIncr` from cache during a `FLUSHO` (in `0e1a2ce`)
 
 ## [0.4.0] (2026-09-21)
 
