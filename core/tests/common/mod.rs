@@ -64,11 +64,16 @@ macro_rules! exec {
             true,
             true,
         );
+        let options = sonic::executor::PushOptions {
+            assume_new: $assume_new,
+            ..Default::default()
+        };
+
         $executor
             .push(
                 c, b, o,
                 preprocessor.preprocess($text, exec!(internal_ lang $($lang)?)),
-                $assume_new,
+                options,
             )
             .unwrap()
     }};

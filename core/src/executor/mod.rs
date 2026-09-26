@@ -26,6 +26,7 @@ mod push;
 mod search;
 mod suggest;
 
+pub use push::PushOptions;
 pub use types::*;
 
 pub struct Executor {

@@ -19,7 +19,7 @@ use std::vec::Vec;
 
 use sonic::Executor;
 use sonic::executor::{
-    ListMetaData, QueryGenericLang, QueryMetaData, QuerySearchLimit, QuerySearchOffset,
+    ListMetaData, PushOptions, QueryGenericLang, QueryMetaData, QuerySearchLimit, QuerySearchOffset,
 };
 
 use super::format::unescape;
@@ -787,9 +787,13 @@ impl ChannelCommandIngest {
                         );
                         let text_lexed = preprocessor
                             .preprocess(&text, push_lang.and_then(QueryGenericLang::into_lang_opt));
+                        let options = PushOptions {
+                            assume_new: push_assume_new,
+                            ..Default::default()
+                        };
 
                         ctx.executor
-                            .push(collection, bucket, oid, text_lexed, push_assume_new)
+                            .push(collection, bucket, oid, text_lexed, options)
                     })
                 }
             }

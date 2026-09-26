@@ -12,6 +12,11 @@ use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::{Bucket, StoreItemPart, StoreObjectOid};
 use crate::util::hash::NoopU32HasherBuilder;
 
+#[derive(Debug, Default)]
+pub struct PushOptions {
+    pub assume_new: bool,
+}
+
 impl super::Executor {
     pub fn push(
         &self,
@@ -19,7 +24,7 @@ impl super::Executor {
         bucket: Bucket,
         oid: StoreObjectOid,
         input: PreprocessorOutput,
-        assume_new: bool,
+        options: PushOptions,
     ) -> Result<(), ()> {
         // Important: acquire database access read lock, and reference it in context. This \
         //   prevents the database from being erased while using it in this block.
@@ -58,7 +63,7 @@ impl super::Executor {
             Ok(iid)
         };
         let mut is_new = true;
-        let iid = if assume_new {
+        let iid = if options.assume_new {
             if let Some((last_oid, iid)) = self.last_assumed_new_oid.read().unwrap().as_ref()
                 && **oid == *last_oid.as_str()
             {
@@ -103,7 +108,7 @@ impl super::Executor {
         fst_repo.push_words(&terms, &self.app_conf.store.fst);
 
         // Link terms to IID
-        if assume_new && is_new {
+        if options.assume_new && is_new {
             kv_repo.set_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());
         } else {
             kv_repo.add_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());
