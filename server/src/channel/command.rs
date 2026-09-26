@@ -744,21 +744,19 @@ impl ChannelCommandIngest {
                 tracing::debug!("ingest push has text: {}", text);
 
                 // Define push parameters
-                let mut push_lang = None;
-                let mut push_assume_new = false;
+                let mut push_params = (None, PushOptions::default());
 
                 // Parse meta parts (meta comes after text; extract meta parts second)
                 let mut last_meta_err = None;
 
                 while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
                 {
-                    match Self::handle_push_meta(meta_result) {
-                        Ok((Some(push_lang_parsed), None)) => push_lang = Some(push_lang_parsed),
-                        Ok((None, Some(PushMetaNew))) => push_assume_new = true,
-                        Err(parse_err) => last_meta_err = Some(parse_err),
-                        _ => {}
+                    if let Err(parse_err) = Self::handle_push_meta(meta_result, &mut push_params) {
+                        last_meta_err = Some(parse_err);
                     }
                 }
+
+                let (push_lang, push_options) = push_params;
 
                 if let Some(err) = last_meta_err {
                     Err(err)
@@ -787,13 +785,9 @@ impl ChannelCommandIngest {
                         );
                         let text_lexed = preprocessor
                             .preprocess(&text, push_lang.and_then(QueryGenericLang::into_lang_opt));
-                        let options = PushOptions {
-                            assume_new: push_assume_new,
-                            ..Default::default()
-                        };
 
                         ctx.executor
-                            .push(collection, bucket, oid, text_lexed, options)
+                            .push(collection, bucket, oid, text_lexed, push_options)
                     })
                 }
             }
@@ -1072,7 +1066,8 @@ impl ChannelCommandIngest {
 
     fn handle_push_meta(
         meta_result: MetaPartsResult,
-    ) -> Result<(Option<QueryGenericLang>, Option<PushMetaNew>), ChannelCommandError> {
+        options: &mut (Option<QueryGenericLang>, PushOptions),
+    ) -> Result<(), ChannelCommandError> {
         match meta_result {
             Ok((meta_key, meta_value)) => {
                 tracing::debug!("handle push meta: {} = {}", meta_key, meta_value);
@@ -1081,7 +1076,8 @@ impl ChannelCommandIngest {
                     "LANG" => {
                         // 'LANG(<locale>)' where <locale> ∈ ISO 639-3
                         if let Some(query_lang_parsed) = QueryGenericLang::from_value(meta_value) {
-                            Ok((Some(query_lang_parsed), None))
+                            options.0 = Some(query_lang_parsed);
+                            Ok(())
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
                                 meta_key, meta_value,
@@ -1091,7 +1087,19 @@ impl ChannelCommandIngest {
                     #[cfg(feature = "experimental-api")]
                     "NEW" => {
                         if meta_value.is_empty() {
-                            Ok((None, Some(PushMetaNew)))
+                            options.1.assume_new = true;
+                            Ok(())
+                        } else {
+                            Err(ChannelCommandBase::make_error_invalid_meta_value(
+                                meta_key, meta_value,
+                            ))
+                        }
+                    }
+                    #[cfg(feature = "experimental-api")]
+                    "INCOMPLETE" => {
+                        if meta_value.is_empty() {
+                            options.1.is_incomplete = true;
+                            Ok(())
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
                                 meta_key, meta_value,
@@ -1109,10 +1117,6 @@ impl ChannelCommandIngest {
         }
     }
 }
-
-/// This should be somewhere else, but the query routing code is so convoluted
-/// I(@RemiBardon) have no idea where to put it. I should rewrite it someday.
-struct PushMetaNew;
 
 impl ChannelCommandControl {
     pub fn dispatch_trigger(

@@ -173,7 +173,7 @@ fn issue_392() {
 fn issue_405() {
     let executor = make_test_executor(|_| {});
 
-    exec!(executor -> PUSH "docs" "default" "doc:1" "very very long text" LANG("none") NEW);
+    exec!(executor -> PUSH "docs" "default" "doc:1" "very very long text" LANG("none") INCOMPLETE);
     exec!(executor -> PUSH "docs" "default" "doc:1" "then the rest" LANG("none") NEW);
 
     assert_eq!(exec!(executor -> COUNTB "docs" "default").unwrap(), 1);

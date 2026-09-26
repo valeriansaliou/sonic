@@ -163,6 +163,11 @@ impl<'a> StoreItemPart<'a> {
         hasher.write(self.0.as_bytes());
         hasher.finish() as u32
     }
+
+    #[inline]
+    pub const fn as_str(self) -> &'a str {
+        self.0
+    }
 }
 
 #[cfg(test)]
