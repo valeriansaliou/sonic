@@ -4,6 +4,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use std::collections::HashSet;
 use std::str::FromStr;
 
 use crate::logging::*;
@@ -94,24 +95,32 @@ impl std::str::FromStr for ServerInfo {
 
 // MARK: STARTED
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChannelInfo {
     pub protocol_version: u8,
     pub buffer_size: usize,
+
+    /// Experimental features enabled.
+    pub caps: HashSet<Box<str>>,
 }
 
 impl std::str::FromStr for ChannelInfo {
     type Err = std::io::Error;
 
     /// ```
+    /// use std::collections::HashSet;
     /// use std::str::FromStr as _;
     ///
     /// use sonic_client::ChannelInfo;
     ///
     /// // Parsing works.
     /// assert_eq!(
-    ///     ChannelInfo::from_str("protocol(1) buffer(20000)").unwrap(),
-    ///     ChannelInfo { protocol_version: 1, buffer_size: 20000 }
+    ///     ChannelInfo::from_str("protocol(1) buffer(20000) caps(foo,bar-baz)").unwrap(),
+    ///     ChannelInfo {
+    ///         protocol_version: 1,
+    ///         buffer_size: 20000,
+    ///         caps: HashSet::from_iter(["foo", "bar-baz"].into_iter().map(Box::from)),
+    ///     }
     /// );
     ///
     /// // Missing keys raise errors.
@@ -121,12 +130,13 @@ impl std::str::FromStr for ChannelInfo {
     /// // Unknown keys do not raise errors.
     /// assert_eq!(
     ///     ChannelInfo::from_str("protocol(1) buffer(20000) foo(bar)").unwrap(),
-    ///     ChannelInfo { protocol_version: 1, buffer_size: 20000 }
+    ///     ChannelInfo { protocol_version: 1, buffer_size: 20000, caps: HashSet::new() }
     /// );
     /// ```
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut protocol_version: Option<u8> = None;
         let mut buffer_size: Option<usize> = None;
+        let mut caps: Option<HashSet<Box<str>>> = None;
 
         for arg in s.split(' ') {
             let Some(stripped) = arg.strip_suffix(')') else {
@@ -153,11 +163,20 @@ impl std::str::FromStr for ChannelInfo {
                         log_warn!("{key:?} was provided multiple times, using new value (old: {old_value}, new: {new_value}).");
                     }
                 }};
+                ($store:ident with $value:ident as HashSet) => {{
+                    let new_value = $value.split(",").map(Into::into);
+                    let old_value = $store.replace(HashSet::from_iter(new_value));
+
+                    if let Some(old_value) = old_value {
+                        log_warn!("{key:?} was provided multiple times, using new value (old: {old_value:?}, new: {new_value:?}).", new_value = $store.as_ref().unwrap());
+                    }
+                }};
             }
 
             match (key, value) {
                 ("protocol", v) => update!(protocol_version with v),
                 ("buffer", v) => update!(buffer_size with v),
+                ("caps", v) => update!(caps with v as HashSet),
                 _ => log_warn!("Unknown info: {arg:?}"),
             }
         }
@@ -179,6 +198,7 @@ impl std::str::FromStr for ChannelInfo {
         Ok(Self {
             protocol_version,
             buffer_size,
+            caps: caps.unwrap_or_default(),
         })
     }
 }
