@@ -36,8 +36,9 @@ macro_rules! make_command {
         let mut message: String = String::with_capacity(
             $format.len()
                 $(+ $arg.len())*
-                // NOTE: `*2` to account for escaping.
-                $(+ ($text.len() * 2))?
+                // NOTE: `*2` accounts for escaping, `+4` accounts for
+                //   surrounding quotes and spaces.
+                $(+ ($text.len() * 2) + 4)?
                 $(+ ($options.len() * 16))?
         );
 
