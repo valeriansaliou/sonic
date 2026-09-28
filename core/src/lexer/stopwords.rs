@@ -10,16 +10,16 @@ use unicode_normalization::UnicodeNormalization;
 use crate::config::StopwordsConfig;
 
 pub(super) fn is_stopword(word: &str, config: &StopwordsConfig) -> bool {
+    // PERF: Short-circuit: do not process word if unnecessary.
+    if config.deny.is_empty() {
+        return false;
+    }
+
     let word = word.nfkd().to_string();
 
     if config.deny.contains(&word) {
         // Word is a stopword (per configuration).
         return true;
-    }
-
-    if config.allow.contains(&word) {
-        // Word is *not* a stopword (per configuration).
-        return false;
     }
 
     false
