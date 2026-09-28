@@ -5,9 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::channel::{ChannelMode, SonicChannel};
-use crate::options::Lang;
-#[cfg(feature = "experimental-api")]
-use crate::options::New;
+use crate::options;
 use crate::util::errors::io_error_invalid_data;
 use crate::util::{impl_channel_structs, impl_fns, make_command};
 
@@ -61,10 +59,10 @@ impl ChannelMode for IngestMode {
 
 pub trait PushOption: std::fmt::Display + Sync {}
 
-impl<'a> PushOption for Lang<'a> {}
+impl<'a> PushOption for options::Lang<'a> {}
 
 #[cfg(feature = "experimental-api")]
-impl PushOption for New {}
+impl PushOption for options::New {}
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]

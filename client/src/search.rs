@@ -5,10 +5,9 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::channel::{ChannelMode, SonicChannel};
-use crate::events;
-use crate::options::{Lang, Limit, Offset};
 use crate::util::errors::io_error_invalid_data;
 use crate::util::{impl_channel_structs, impl_fns, make_command};
+use crate::{events, options};
 
 // NOTE: Shorter type aliases.
 use self::SearchMode as Mode;
@@ -83,9 +82,9 @@ impl ChannelMode for SearchMode {
 
 pub trait QueryOption: std::fmt::Display + Sync {}
 
-impl QueryOption for Limit {}
-impl<'a> QueryOption for Lang<'a> {}
-impl QueryOption for Offset {}
+impl QueryOption for options::Limit {}
+impl<'a> QueryOption for options::Lang<'a> {}
+impl QueryOption for options::Offset {}
 
 impl_fns!(
     #[doc = "Time complexity: O(1) if enough exact word matches or O(N)"]
@@ -128,7 +127,7 @@ impl_fns!(
 
 pub trait SuggestOption: std::fmt::Display + Sync {}
 
-impl SuggestOption for Limit {}
+impl SuggestOption for options::Limit {}
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
@@ -165,8 +164,8 @@ impl_fns!(
 
 pub trait ListOption: std::fmt::Display + Sync {}
 
-impl ListOption for Limit {}
-impl ListOption for Offset {}
+impl ListOption for options::Limit {}
+impl ListOption for options::Offset {}
 
 impl_fns!(
     #[doc = "Time complexity: O(N) where N is the number of words"]
