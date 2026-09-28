@@ -359,10 +359,15 @@ impl Command {
         self.value.len()
     }
 
+    /// Length, in bytes (not chars).
+    pub fn content(&self) -> &str {
+        &self.value[self.prefix_len..(self.value.len() - self.suffix_len)]
+    }
+
     pub fn split(self, buffer_size: usize) -> Vec<Self> {
         let command_overhead = self.prefix_len + self.suffix_len;
 
-        let mut content = &self.value[self.prefix_len..(self.value.len() - self.suffix_len)];
+        let mut content = self.content();
 
         let chunk_size = buffer_size - command_overhead;
 
@@ -429,7 +434,7 @@ impl std::fmt::Debug for Command {
 
             const CONTEXT_SIZE: usize = 10;
 
-            let content = &self.value[self.prefix_len..(self.value.len() - self.suffix_len)];
+            let content = &self.content();
             if content.len() < 2 * CONTEXT_SIZE + 2 {
                 // Print whole command (short content).
                 f.write_str(content)?;
