@@ -35,6 +35,9 @@ DEBIAN_RULES_FILE="${REPOSITORY_ROOT:?}"/packaging/debian/rules
 SERVER_DIR="${REPOSITORY_ROOT:?}"/server
 CORE_DIR="${REPOSITORY_ROOT:?}"/core
 CLIENT_DIR="${REPOSITORY_ROOT:?}"/client
+BENCHMARKS_DIR="${REPOSITORY_ROOT:?}"/benchmarks
+
+BENCHMARKS_CARGO_TOML_FILE="${BENCHMARKS_DIR:?}"/Cargo.toml
 
 # NOTE: We could use `cargo metadata` here, but it would require `jq` to parse
 #   so this is a good enough no-dependency equivalent.
@@ -281,6 +284,9 @@ update_all_versions() {
   elif [ "${RELEASING:?}" == 'sonic_client' ]; then
     log_info "Changing client version number in '${SERVER_CARGO_TOML_FILE#"${REPOSITORY_ROOT:?}/"}'…"
     replace_version '^(sonic_client = \{ version = \"=)[^\"]+(\")' "${SERVER_CARGO_TOML_FILE:?}"
+
+    log_info "Changing client version number in '${BENCHMARKS_CARGO_TOML_FILE#"${REPOSITORY_ROOT:?}/"}'…"
+    replace_version '^(sonic_client = \{ version = \"=)[^\"]+(\")' "${BENCHMARKS_CARGO_TOML_FILE:?}"
   elif [ "${RELEASING:?}" == 'sonic-server' ]; then
     log_info "Changing version number in '$(basename "${README_FILE:?}")'…"
     replace_version '^(.*valeriansaliou/sonic:v).+$' "${README_FILE:?}"

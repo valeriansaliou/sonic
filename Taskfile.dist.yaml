@@ -83,6 +83,7 @@ tasks:
       - server/Cargo.toml
       - core/Cargo.toml
       - client/Cargo.toml
+      - benchmarks/Cargo.toml
       - Cargo.lock
       - deny.toml
     preconditions:
