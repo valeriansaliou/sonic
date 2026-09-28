@@ -59,7 +59,8 @@ macro_rules! make_command {
         )?
 
         $(for option in $options {
-            write!(&mut message, " {option}").map_err(std::io::Error::other)?;
+            write!(&mut message, " {option}")
+                .expect("Command option’s `Display` implementation should never fail");
         })?
 
         let suffix_len = message.len() - suffix_start;
