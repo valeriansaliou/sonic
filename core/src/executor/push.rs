@@ -20,6 +20,7 @@ use crate::util::hash::NoopU32HasherBuilder;
 pub struct PushOptions {
     pub assume_new: bool,
     pub is_incomplete: bool,
+    pub capacity: Option<usize>,
 }
 
 impl super::Executor {
@@ -99,8 +100,15 @@ impl super::Executor {
             match *multipart_context {
                 // Received first chunk: initiate multipart context.
                 None => {
+                    let expected_term_count = if let Some(total_len) = options.capacity {
+                        // NOTE: This is an approximation, supposing all chunks
+                        //   will have about as many tokens as the first one.
+                        (total_len / input.original_text().len()) * input.tokens().len()
+                    } else {
+                        input.tokens().len()
+                    };
                     let mut terms: HashMap<StoreTermHash, Box<str>> =
-                        HashMap::with_capacity(input.tokens().len());
+                        HashMap::with_capacity(expected_term_count);
 
                     for token in tokens {
                         terms.insert(token.hash(), Box::from(token.into_normalized()));
@@ -111,6 +119,7 @@ impl super::Executor {
                         // `NEW` in any multipart chunk is considered `NEW` on commit.
                         assume_new: options.assume_new,
                         terms,
+                        capacity: options.capacity,
                     });
 
                     Ok(())
@@ -121,7 +130,9 @@ impl super::Executor {
                     // `NEW` in any multipart chunk is considered `NEW` on commit.
                     ctx.assume_new |= options.assume_new;
 
-                    ctx.terms.reserve(input.tokens().len());
+                    if ctx.capacity.is_none() {
+                        ctx.terms.reserve(input.tokens().len());
+                    }
 
                     for token in tokens {
                         ctx.terms
@@ -138,7 +149,9 @@ impl super::Executor {
                     // `NEW` in any multipart chunk is considered `NEW` on commit.
                     ctx.assume_new |= options.assume_new;
 
-                    ctx.terms.reserve(input.tokens().len());
+                    if ctx.capacity.is_none() {
+                        ctx.terms.reserve(input.tokens().len());
+                    }
 
                     for token in tokens {
                         ctx.terms

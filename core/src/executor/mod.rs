@@ -237,4 +237,6 @@ struct MultipartPushContext {
     assume_new: bool,
 
     terms: HashMap<StoreTermHash, Box<str>>,
+
+    capacity: Option<usize>,
 }

@@ -793,7 +793,7 @@ impl ChannelCommandIngest {
             }
             #[cfg(feature = "experimental-api")]
             _ => Err(ChannelCommandError::InvalidFormat(
-                "PUSH <collection> <bucket> <object> \"<text>\" [LANG(<locale>)]? [NEW]?",
+                "PUSH <collection> <bucket> <object> \"<text>\" [LANG(<locale>)]? [NEW]? [INCOMPLETE]? [CAPACITY(<len>)]?",
             )),
             #[cfg(not(feature = "experimental-api"))]
             _ => Err(ChannelCommandError::InvalidFormat(
@@ -1106,6 +1106,16 @@ impl ChannelCommandIngest {
                             ))
                         }
                     }
+                    #[cfg(feature = "experimental-api")]
+                    "CAPACITY" => match meta_value.parse::<usize>() {
+                        Ok(capacity) => {
+                            options.1.capacity = Some(capacity);
+                            Ok(())
+                        }
+                        Err(_error) => Err(ChannelCommandBase::make_error_invalid_meta_value(
+                            meta_key, meta_value,
+                        )),
+                    },
                     _ => Err(ChannelCommandBase::make_error_invalid_meta_key(
                         meta_key, meta_value,
                     )),
