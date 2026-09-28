@@ -48,3 +48,14 @@ impl std::fmt::Display for New {
         write!(f, "NEW")
     }
 }
+
+#[cfg(feature = "experimental-api")]
+#[derive(Debug, Clone, Copy)]
+pub struct Incomplete;
+
+#[cfg(feature = "experimental-api")]
+impl std::fmt::Display for Incomplete {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "INCOMPLETE")
+    }
+}

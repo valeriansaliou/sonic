@@ -88,6 +88,25 @@ impl_fns!(
         text: impl AsRef<str>,
         options: &[&'a dyn PushOption],
     ) -> std::io::Result<()> {
+        #[cfg(feature = "experimental-api")]
+        {
+            if self.channel_info().caps.contains("push-multipart") {
+                // TODO(perf): Filter out unnecessary options in intermediate commands? Like `NEW`?
+                let mut intermediate_options: Vec<String> = Vec::with_capacity(options.len() + 1);
+                intermediate_options.extend(options.into_iter().map(|opt| opt.to_string()));
+                intermediate_options.push(options::Incomplete.to_string());
+
+                let placeholder = "";
+
+                return self.inner.send_buffered_complex(
+                    make_command!("PUSH {} {} {}", collection, bucket, object; text: text; options: options),
+                    make_command!("PUSH {} {} {}", collection, bucket, object; text: placeholder; options: intermediate_options),
+                    Discriminant::Ok,
+                    |_acc, _data| Ok(())
+                );
+            }
+        }
+
         self.inner.send_buffered(
             make_command!("PUSH {} {} {}", collection, bucket, object; text: text; options: options),
             Discriminant::Ok,
