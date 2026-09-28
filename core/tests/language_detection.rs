@@ -12,6 +12,8 @@ use crate::common::*;
 
 /// Search should be language-aware.
 #[test]
+#[ignore = "Packaged stopwords have been removed. \
+    For now, stopwords are no longer language-bound."]
 fn test_search_language_aware() {
     let sentence = "J’ai envie de boire un thé";
 

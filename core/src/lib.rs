@@ -29,7 +29,6 @@
 pub mod config;
 pub mod executor;
 pub mod lexer;
-mod stopwords;
 pub mod store;
 pub mod util;
 

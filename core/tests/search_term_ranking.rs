@@ -80,41 +80,46 @@ fn test_no_implicit_and() {
     ]);
 }
 
+/// Before, Sonic used to apply an implicit `AND` between all query terms.
+/// If one ended up being a stopword during ingestion, no result would be
+/// returned at all. This ensures all expected documents are returned, and
+/// in the expected order.
 #[test]
 fn test_no_implicit_and_with_stopwords() {
     init_logging();
     let executor = make_test_executor(|app_conf| {
         // Disable stemming to make results more predictable.
         app_conf.normalization.stemming_enabled = false;
+
+        app_conf.stopwords.deny =
+            std::collections::HashSet::from_iter(["to", "the"].into_iter().map(str::to_owned));
     });
 
     // NOTE: This is NOT legal advice. It is solely for example purposes.
-    exec!(executor -> PUSH "movies" "default" "movie:1" "Back to the Future");
-    exec!(executor -> PUSH "movies" "default" "movie:2" "Back to the Future Part II");
-    exec!(executor -> PUSH "movies" "default" "movie:3" "Back to the Future Part III");
-    exec!(executor -> PUSH "movies" "default" "movie:4" "Back to the Future Part IV"); // It doesn’t exist yet…
+    exec!(executor -> PUSH "movies" "default" "movie:1" "Back to the Future" LANG("eng"));
+    exec!(executor -> PUSH "movies" "default" "movie:2" "Back to the Future Part II" LANG("eng"));
+    exec!(executor -> PUSH "movies" "default" "movie:3" "Back to the Future Part III" LANG("eng"));
+    exec!(executor -> PUSH "movies" "default" "movie:4" "Back to the Future Part IV" LANG("eng")); // It doesn’t exist yet…
 
     exec!(executor -> TRIGGER consolidate);
 
     {
-        let response = exec!(executor -> QUERY "movies" "default" "Back to the Future");
+        let response =
+            exec!(executor -> QUERY "movies" "default" "Back to the Future Part II" LANG("none"));
         #[rustfmt::skip]
         assert_eq!(response, [
             // Exact match.
-            "movie:1",
+            "movie:2",
+            // Completion.
+            "movie:3",
             // Then reverse ingestion order.
-            "movie:4", "movie:3", "movie:2",
+            "movie:4", "movie:1",
         ]);
     }
 
     {
-        let response = exec!(executor -> QUERY "movies" "default" "Back to the Future Part II");
-        // Reverse ingestion order, because `ii` and `part` are stopwords in English.
-        assert_eq!(response, ["movie:4", "movie:3", "movie:2", "movie:1"]);
-    }
-
-    {
-        let response = exec!(executor -> QUERY "movies" "default" "Back to the Future Part III");
+        let response =
+            exec!(executor -> QUERY "movies" "default" "Back to the Future Part III" LANG("none"));
         #[rustfmt::skip]
         assert_eq!(response, [
             // Exact match.
