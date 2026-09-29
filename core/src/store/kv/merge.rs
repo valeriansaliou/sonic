@@ -89,7 +89,11 @@ fn prepend_u32_list(
         }
     }
 
-    assert!(!res.is_empty());
+    assert!(
+        !res.is_empty(),
+        "{existing_val:?}, {operands:?}",
+        operands = operands.iter().collect::<Vec<_>>()
+    );
 
     Some(res)
 }
