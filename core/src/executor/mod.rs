@@ -301,4 +301,6 @@ struct MultipartPushContext {
     terms: HashMap<StoreTermHash, Box<str>>,
 
     capacity: Option<usize>,
+
+    original_text: String,
 }

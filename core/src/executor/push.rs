@@ -37,6 +37,10 @@ impl super::Executor {
         match *multipart_context {
             // Received first chunk: initiate multipart context.
             None if options.is_incomplete => {
+                let mut original_text: String =
+                    String::with_capacity(options.capacity.unwrap_or(input.original_text().len()));
+                original_text.push_str(input.original_text());
+
                 let expected_term_count = if let Some(total_len) = options.capacity {
                     // NOTE: This is an approximation, supposing all chunks
                     //   will have about as many tokens as the first one.
@@ -57,6 +61,7 @@ impl super::Executor {
                     assume_new: options.assume_new,
                     terms,
                     capacity: options.capacity,
+                    original_text,
                 });
 
                 return Ok(());
@@ -72,7 +77,10 @@ impl super::Executor {
 
                 if ctx.capacity.is_none() {
                     ctx.terms.reserve(input.tokens().len());
+                    ctx.terms.reserve(input.tokens().len());
                 }
+
+                ctx.original_text.push_str(input.original_text());
 
                 for token in input.tokens() {
                     ctx.terms
@@ -106,20 +114,30 @@ impl super::Executor {
         //   prevents the database from being erased while using it in this block.
         let _kv_read_guard = self.kv_pool.lock_read_access();
         let _fst_read_guard = self.fst_pool.lock_read_access();
+        let _object_read_guard = self.object_store_pool.lock_read_access();
 
         let kv_store = self.kv_pool.acquire(true, collection, None, |_| {})?;
         let fst_store = self.fst_pool.acquire(collection, bucket)?;
+        let object_store = (self.object_store_pool).acquire(true, collection, None, |_| {})?;
 
         debug_assert!(kv_store.is_some());
         let Some(kv_store) = kv_store else {
             tracing::error!(
-                "collection store {collection:?} does not exist, but it should have been created"
+                "KV store {collection:?} does not exist, but it should have been created"
+            );
+            return Err(());
+        };
+        debug_assert!(object_store.is_some());
+        let Some(object_store) = object_store else {
+            tracing::error!(
+                "Object store {collection:?} does not exist, but it should have been created"
             );
             return Err(());
         };
 
         let kv_repo = kv_store.to_repository_read_write(bucket);
         let fst_repo = fst_store.to_repository();
+        let object_repo = object_store.to_repository(bucket);
 
         fn assign_new_iid(
             oid: StoreObjectOid<'_>,
@@ -165,7 +183,7 @@ impl super::Executor {
             // Received last multipart chunk.
             Some(ref ctx) => {
                 // Update KV store
-                {
+                let is_new = {
                     let mut batch = WriteBatch::default();
 
                     let (iid, is_new) = get_iid(oid, ctx.assume_new, &kv_repo, &mut batch)?;
@@ -183,6 +201,22 @@ impl super::Executor {
                     }
 
                     executor_ensure_op!(kv_repo.write(batch));
+
+                    is_new
+                };
+
+                // Update Object store
+                {
+                    let mut batch = WriteBatch::default();
+
+                    // Store original text
+                    if is_new {
+                        object_repo.put_object_original(oid, &ctx.original_text, &mut batch);
+                    } else {
+                        object_repo.push_object_original(oid, &ctx.original_text, &mut batch);
+                    }
+
+                    executor_ensure_op!(object_repo.write(batch));
                 }
 
                 // Update FST store
@@ -211,7 +245,7 @@ impl super::Executor {
                 let mut terms = Vec::with_capacity(input.tokens().len());
 
                 // Update KV store
-                {
+                let is_new = {
                     let mut batch = WriteBatch::default();
 
                     let (iid, is_new) = get_iid(oid, options.assume_new, &kv_repo, &mut batch)?;
@@ -233,6 +267,22 @@ impl super::Executor {
                     }
 
                     executor_ensure_op!(kv_repo.write(batch));
+
+                    is_new
+                };
+
+                // Update Object store
+                {
+                    let mut batch = WriteBatch::default();
+
+                    // Store original text
+                    if is_new {
+                        object_repo.put_object_original(oid, input.original_text(), &mut batch);
+                    } else {
+                        object_repo.push_object_original(oid, input.original_text(), &mut batch);
+                    }
+
+                    executor_ensure_op!(object_repo.write(batch));
                 }
 
                 // Update FST store
