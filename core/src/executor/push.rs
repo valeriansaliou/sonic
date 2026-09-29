@@ -32,9 +32,6 @@ impl super::Executor {
         input: PreprocessorOutput,
         options: PushOptions,
     ) -> Result<(), ()> {
-        let mut tokens =
-            UniqueBy::new_with_hasher(input.tokens(), Token::hash, NoopU32HasherBuilder);
-
         let mut multipart_context = self.multipart_push_context.lock().unwrap();
 
         if options.is_incomplete {
@@ -51,7 +48,7 @@ impl super::Executor {
                     let mut terms: HashMap<StoreTermHash, Box<str>> =
                         HashMap::with_capacity(expected_term_count);
 
-                    for token in tokens {
+                    for token in input.tokens() {
                         terms.insert(token.hash(), Box::from(token.into_normalized()));
                     }
 
@@ -75,7 +72,7 @@ impl super::Executor {
                         ctx.terms.reserve(input.tokens().len());
                     }
 
-                    for token in tokens {
+                    for token in input.tokens() {
                         ctx.terms
                             .insert(token.hash(), Box::from(token.into_normalized()));
                     }
@@ -154,7 +151,7 @@ impl super::Executor {
                     ctx.terms.reserve(input.tokens().len());
                 }
 
-                for token in tokens {
+                for token in input.tokens() {
                     ctx.terms
                         .insert(token.hash(), Box::from(token.into_normalized()));
                 }
@@ -212,6 +209,9 @@ impl super::Executor {
 
             // Normal `PUSH`.
             None => {
+                let mut tokens =
+                    UniqueBy::new_with_hasher(input.tokens(), Token::hash, NoopU32HasherBuilder);
+
                 let mut terms = Vec::with_capacity(input.tokens().len());
 
                 // Update KV store
