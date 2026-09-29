@@ -66,7 +66,7 @@ fn prepend_u32_list(
     let mut seen: HashSet<&[u8]> = HashSet::with_capacity(operands_total_len / WORD_LEN);
 
     for op in operands {
-        for chunk in op.chunks(WORD_LEN) {
+        for chunk in op.as_chunks::<WORD_LEN>().0 {
             // Filter duplicate operands.
             // NOTE: In benchmarks, `operands` showed a length of `13761` for
             //   example, so we _have_ to keep this at most `O(n*log(n))`!
@@ -81,10 +81,10 @@ fn prepend_u32_list(
     // Trim unused bytes at the start (because of duplicate operands).
     res = res.split_off(cursor);
 
-    for existing in current.chunks(WORD_LEN) {
+    for existing in current.as_chunks::<WORD_LEN>().0 {
         // Skip already inserted operands.
         // See reason in <https://github.com/valeriansaliou/sonic/issues/389#issuecomment-5374968203>.
-        if !seen.contains(existing) {
+        if !seen.contains(existing as &[u8]) {
             res.extend_from_slice(existing);
         }
     }
