@@ -493,7 +493,7 @@ impl From<&KvStoreDatabaseConfig> for rocksdb::Options {
 
             // Update threads configuration otherwise RocksDB only uses 1/4 for flushes by default.
             env.set_high_priority_background_threads(*max_flushes); // HIGH pool = flushes (default)
-            env.set_low_priority_background_threads(max_subcompactions.unwrap_or(1) as i32 - max_flushes); // LOW pool = compactions (default)
+            env.set_low_priority_background_threads(max_background_jobs.map_or(1i32, |n| (n - max_flushes).max(1i32))); // LOW pool = compactions (default)
         }
 
         if_some!(db_options.set_max_background_jobs(max_background_jobs.as_ref()));
