@@ -34,53 +34,73 @@ impl super::Executor {
     ) -> Result<(), ()> {
         let mut multipart_context = self.multipart_push_context.lock().unwrap();
 
-        if options.is_incomplete {
-            return match *multipart_context {
-                // Received first chunk: initiate multipart context.
-                None => {
-                    let expected_term_count = if let Some(total_len) = options.capacity {
-                        // NOTE: This is an approximation, supposing all chunks
-                        //   will have about as many tokens as the first one.
-                        (total_len / input.original_text().len()) * input.tokens().len()
-                    } else {
-                        input.tokens().len()
-                    };
-                    let mut terms: HashMap<StoreTermHash, Box<str>> =
-                        HashMap::with_capacity(expected_term_count);
+        match *multipart_context {
+            // Received first chunk: initiate multipart context.
+            None if options.is_incomplete => {
+                let expected_term_count = if let Some(total_len) = options.capacity {
+                    // NOTE: This is an approximation, supposing all chunks
+                    //   will have about as many tokens as the first one.
+                    (total_len / input.original_text().len()) * input.tokens().len()
+                } else {
+                    input.tokens().len()
+                };
+                let mut terms: HashMap<StoreTermHash, Box<str>> =
+                    HashMap::with_capacity(expected_term_count);
 
-                    for token in input.tokens() {
-                        terms.insert(token.hash(), Box::from(token.into_normalized()));
-                    }
-
-                    *multipart_context = Some(MultipartPushContext {
-                        oid: oid.to_string(),
-                        // `NEW` in any multipart chunk is considered `NEW` on commit.
-                        assume_new: options.assume_new,
-                        terms,
-                        capacity: options.capacity,
-                    });
-
-                    Ok(())
+                for token in input.tokens() {
+                    terms.insert(token.hash(), Box::from(token.into_normalized()));
                 }
 
-                // Received intermediate chunk: update multipart context.
-                Some(ref mut ctx) => {
+                *multipart_context = Some(MultipartPushContext {
+                    oid: oid.to_string(),
                     // `NEW` in any multipart chunk is considered `NEW` on commit.
-                    ctx.assume_new |= options.assume_new;
+                    assume_new: options.assume_new,
+                    terms,
+                    capacity: options.capacity,
+                });
 
-                    if ctx.capacity.is_none() {
-                        ctx.terms.reserve(input.tokens().len());
-                    }
+                return Ok(());
+            }
 
-                    for token in input.tokens() {
-                        ctx.terms
-                            .insert(token.hash(), Box::from(token.into_normalized()));
-                    }
+            // Normal `PUSH`, proceed with the rest of the code.
+            None => {}
 
-                    Ok(())
+            // Received multipart chunk: update multipart context.
+            Some(ref mut ctx) if ctx.oid.as_str() == oid.as_str() => {
+                // `NEW` in any multipart chunk is considered `NEW` on commit.
+                ctx.assume_new |= options.assume_new;
+
+                if ctx.capacity.is_none() {
+                    ctx.terms.reserve(input.tokens().len());
                 }
-            };
-        }
+
+                for token in input.tokens() {
+                    ctx.terms
+                        .insert(token.hash(), Box::from(token.into_normalized()));
+                }
+
+                if options.is_incomplete {
+                    return Ok(());
+                } else {
+                    // Proceed with the rest of the code.
+                }
+            }
+
+            // Received wrong multipart chunk.
+            // NOTE: Because we store a single piece of context, we should
+            //   not commit intermediate data.
+            Some(ref ctx) => {
+                let prev_oid = ctx.oid.clone();
+
+                // Clear multipart context.
+                *multipart_context = None;
+
+                panic!(
+                    "Last multipart chunk never received for OID {prev_oid:?}. \
+                    This should not happen, something’s wrong in your code."
+                );
+            }
+        };
 
         // Important: acquire database access read lock, and reference it in context. This \
         //   prevents the database from being erased while using it in this block.
@@ -143,19 +163,7 @@ impl super::Executor {
 
         match *multipart_context {
             // Received last multipart chunk.
-            Some(ref mut ctx) if ctx.oid.as_str() == oid.as_str() => {
-                // `NEW` in any multipart chunk is considered `NEW` on commit.
-                ctx.assume_new |= options.assume_new;
-
-                if ctx.capacity.is_none() {
-                    ctx.terms.reserve(input.tokens().len());
-                }
-
-                for token in input.tokens() {
-                    ctx.terms
-                        .insert(token.hash(), Box::from(token.into_normalized()));
-                }
-
+            Some(ref ctx) => {
                 // Update KV store
                 {
                     let mut batch = WriteBatch::default();
@@ -190,21 +198,6 @@ impl super::Executor {
                 *multipart_context = None;
 
                 Ok(())
-            }
-
-            // Received wrong last multipart chunk.
-            // NOTE: Because we store a single piece of context, we should
-            //   not commit intermediate data “”
-            Some(ref ctx) => {
-                let prev_oid = ctx.oid.clone();
-
-                // Clear multipart context.
-                *multipart_context = None;
-
-                panic!(
-                    "Last multipart chunk never received for OID {prev_oid:?}. \
-                        This should not happen, something’s wrong in your code."
-                );
             }
 
             // Normal `PUSH`.
