@@ -187,6 +187,9 @@ impl Drop for RunContext {
                 .status()
                 .unwrap();
         }
+
+        // let data_path = std::mem::take(&mut self.data_guard.0);
+        // println!("Data path: {data_path:?}");
     }
 }
 
