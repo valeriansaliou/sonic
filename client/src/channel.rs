@@ -240,14 +240,79 @@ impl<Mode: ChannelMode + 'static> SonicChannel<Mode> {
         discriminant: Mode::Discriminant,
         reduce: impl Fn(T, &str) -> std::io::Result<T> + Clone + Send + Sync + 'static,
     ) -> std::io::Result<oneshot::Receiver<std::io::Result<T>>> {
-        if command.len() <= self.channel_info.buffer_size {
+        let buffer_size = self.channel_info.buffer_size;
+
+        if command.len() <= buffer_size {
             return self.send(command, discriminant, move |data| {
                 reduce(T::default(), data)
             });
         }
 
-        let splits = command.split(self.channel_info.buffer_size);
+        let splits = command.split(buffer_size);
 
+        self.send_splits(splits, discriminant, reduce)
+    }
+
+    /// Same as [`SonicChannel::send_buffered`], but allows mapping text chunks
+    /// to different commands for first, intermediate and last splits.
+    pub(crate) fn send_buffered_complex<T: Default + Send + 'static>(
+        &self,
+        command: Command,
+        intermediate_command: Command,
+        discriminant: Mode::Discriminant,
+        reduce: impl Fn(T, &str) -> std::io::Result<T> + Clone + Send + Sync + 'static,
+    ) -> std::io::Result<oneshot::Receiver<std::io::Result<T>>> {
+        let buffer_size = self.channel_info.buffer_size;
+
+        // PERF: Short-circuit if the whole fits on one line.
+        if command.len() <= buffer_size {
+            return self.send(command, discriminant, move |data| {
+                reduce(T::default(), data)
+            });
+        }
+
+        let intermediate_overhead =
+            intermediate_command.prefix_len + intermediate_command.suffix_len;
+        let intermediate_chunk_size = buffer_size - intermediate_overhead;
+
+        let mut rest_content: &str = command.content();
+
+        // NOTE: `+1` to account for backtracks (to split on spaces)
+        //   and commands overhead variations.
+        let mut splits: Vec<Command> =
+            Vec::with_capacity((rest_content.len() / intermediate_chunk_size) + 1);
+
+        while rest_content.len() > intermediate_chunk_size {
+            let (head, tail) = split_on_whitespace(rest_content, intermediate_chunk_size);
+
+            rest_content = tail;
+
+            splits.push(intermediate_command.with_content(head));
+        }
+
+        let last_overhead = command.prefix_len + command.suffix_len;
+
+        if intermediate_overhead < last_overhead {
+            let (head, tail) = split_on_whitespace(rest_content, intermediate_chunk_size);
+
+            rest_content = tail;
+
+            splits.push(intermediate_command.with_content(head));
+        }
+
+        splits.push(command.with_content(rest_content));
+
+        self.send_splits(splits, discriminant, reduce)
+    }
+
+    /// Sends multiple splits of a command and reduces all responses into a
+    /// single result.
+    fn send_splits<T: Default + Send + 'static>(
+        &self,
+        splits: Vec<Command>,
+        discriminant: Mode::Discriminant,
+        reduce: impl Fn(T, &str) -> std::io::Result<T> + Clone + Send + Sync + 'static,
+    ) -> std::io::Result<oneshot::Receiver<std::io::Result<T>>> {
         let mut final_rx: Option<oneshot::Receiver<std::io::Result<T>>> = None;
 
         for command in splits {

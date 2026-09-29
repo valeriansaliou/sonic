@@ -103,13 +103,21 @@ impl ChannelHandle {
                 // Send started acknowledgement (with environment variables)
                 write!(
                     stream,
-                    "STARTED {} protocol({}) buffer({}){}",
-                    mode.to_str(),
-                    PROTOCOL_REVISION,
-                    BUFFER_SIZE,
-                    LINE_FEED
+                    "STARTED {mode} protocol({PROTOCOL_REVISION}) buffer({BUFFER_SIZE})",
+                    mode = mode.to_str()
                 )
                 .expect("write failed");
+
+                // Inform if experimental features are enabled
+                #[cfg(feature = "experimental-api")]
+                write!(
+                    stream,
+                    " caps(dynamic-config,push-capacity,push-new,push-multipart,trigger-compact,trigger-flush)"
+                )
+                .expect("write failed");
+
+                // End started acknowledgement
+                write!(stream, "{LINE_FEED}").expect("write failed");
 
                 self.handle_stream(mode, stream)
                     .unwrap_or_else(|err| tracing::error!("closing channel thread: {err:?}"));

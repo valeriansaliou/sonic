@@ -48,3 +48,26 @@ impl std::fmt::Display for New {
         write!(f, "NEW")
     }
 }
+
+#[cfg(feature = "experimental-api")]
+#[derive(Debug, Clone, Copy)]
+pub struct Incomplete;
+
+#[cfg(feature = "experimental-api")]
+impl std::fmt::Display for Incomplete {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "INCOMPLETE")
+    }
+}
+
+#[cfg(feature = "experimental-api")]
+#[derive(Debug, Clone, Copy)]
+pub struct Capacity(pub usize);
+
+#[cfg(feature = "experimental-api")]
+impl std::fmt::Display for Capacity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(capacity) = self;
+        write!(f, "CAPACITY({capacity})")
+    }
+}

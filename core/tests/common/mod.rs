@@ -45,16 +45,21 @@ pub(crate) mod item_ref {
 
 macro_rules! exec {
     ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $(LANG($lang:expr))? NEW) => {
-        exec!(internal_ $executor -> PUSH $collection $bucket $oid $text true $(LANG($lang))?)
+        exec!(internal_ $executor -> PUSH $collection $bucket $oid $text false true $(LANG($lang))?)
+    };
+    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $(LANG($lang:expr))? INCOMPLETE) => {
+        exec!(internal_ $executor -> PUSH $collection $bucket $oid $text true false $(LANG($lang))?)
     };
     ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $(LANG($lang:expr))?) => {
-        exec!(internal_ $executor -> PUSH $collection $bucket $oid $text false $(LANG($lang))?)
+        exec!(internal_ $executor -> PUSH $collection $bucket $oid $text false false $(LANG($lang))?)
     };
-    (internal_ $executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $assume_new:ident $(LANG($lang:expr))?) => {{
+    (internal_ $executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $assume_new:ident $is_incomplete:ident $(LANG($lang:expr))?) => {{
         #[rustfmt::skip]
         $executor.log(format!(
-            "PUSH {:?} {:?} {:?} {:?}{}{}",
-            $collection, $bucket, $oid, $text, exec!(internal_ lang_txt $($lang)?), if $assume_new { " NEW" } else { "" }
+            "PUSH {:?} {:?} {:?} {:?}{}{}{}",
+            $collection, $bucket, $oid, $text, exec!(internal_ lang_txt $($lang)?),
+            if $assume_new { " NEW" } else { "" },
+            if $is_incomplete { " INCOMPLETE" } else { "" }
         ));
         let (c, b, o) = crate::common::object_ref!($collection, $bucket, $oid);
         let preprocessor = sonic::lexer::preprocessor::Preprocessor::new(
@@ -64,11 +69,17 @@ macro_rules! exec {
             true,
             true,
         );
+        let options = sonic::executor::PushOptions {
+            assume_new: $assume_new,
+            is_incomplete: $is_incomplete,
+            ..Default::default()
+        };
+
         $executor
             .push(
                 c, b, o,
                 preprocessor.preprocess($text, exec!(internal_ lang $($lang)?)),
-                $assume_new,
+                options,
             )
             .unwrap()
     }};

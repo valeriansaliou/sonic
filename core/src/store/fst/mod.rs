@@ -219,7 +219,11 @@ impl<'a> FstRepository<'a> {
         true
     }
 
-    pub fn push_words(&self, terms: &[&str], fst_store_config: &crate::config::FstStoreConfig) {
+    pub fn push_words<'t>(
+        &self,
+        terms: impl Iterator<Item = &'t str>,
+        fst_store_config: &crate::config::FstStoreConfig,
+    ) {
         let mut pending = self.store.pending.lock().unwrap();
 
         for term in terms {
