@@ -158,29 +158,35 @@ impl super::Executor {
                             .insert(token.hash(), Box::from(token.into_normalized()));
                     }
 
-                    let mut batch = WriteBatch::default();
+                    // Update KV store
+                    {
+                        let mut batch = WriteBatch::default();
 
-                    let (iid, is_new) = get_iid(oid, ctx.assume_new, &kv_repo, &mut batch)?;
+                        let (iid, is_new) = get_iid(oid, ctx.assume_new, &kv_repo, &mut batch)?;
 
-                    for term_hash in ctx.terms.keys() {
-                        // Link IID to term
-                        kv_repo.add_term_to_iid(&mut batch, *term_hash, iid);
+                        for term_hash in ctx.terms.keys() {
+                            // Link IID to term
+                            kv_repo.add_term_to_iid(&mut batch, *term_hash, iid);
+                        }
+
+                        // Link terms to IID
+                        if is_new {
+                            kv_repo.set_iid_to_terms(&mut batch, iid, ctx.terms.keys().copied());
+                        } else {
+                            kv_repo.add_iid_to_terms(&mut batch, iid, ctx.terms.keys().copied());
+                        }
+
+                        executor_ensure_op!(kv_repo.write(batch));
                     }
 
-                    // Push to FST graph
-                    fst_repo.push_words(
-                        ctx.terms.values().map(Box::as_ref),
-                        &self.app_conf.store.fst,
-                    );
-
-                    // Link terms to IID
-                    if is_new {
-                        kv_repo.set_iid_to_terms(&mut batch, iid, ctx.terms.keys().copied());
-                    } else {
-                        kv_repo.add_iid_to_terms(&mut batch, iid, ctx.terms.keys().copied());
+                    // Update FST store
+                    {
+                        // Push to FST graph
+                        fst_repo.push_words(
+                            ctx.terms.values().map(Box::as_ref),
+                            &self.app_conf.store.fst,
+                        );
                     }
-
-                    executor_ensure_op!(kv_repo.write(batch));
 
                     // Clear multipart context.
                     *multipart_context = None;
@@ -205,32 +211,46 @@ impl super::Executor {
 
                 // Normal `PUSH`.
                 None => {
-                    let mut batch = WriteBatch::default();
-
-                    let (iid, is_new) = get_iid(oid, options.assume_new, &kv_repo, &mut batch)?;
-
                     let mut terms = Vec::with_capacity(input.tokens().len());
 
-                    for token in &mut tokens {
-                        let term_hash = token.hash();
+                    // Update KV store
+                    {
+                        let mut batch = WriteBatch::default();
 
-                        // Link IID to term
-                        kv_repo.add_term_to_iid(&mut batch, term_hash, iid);
+                        let (iid, is_new) = get_iid(oid, options.assume_new, &kv_repo, &mut batch)?;
 
-                        terms.push(token.into_normalized());
+                        for token in &mut tokens {
+                            let term_hash = token.hash();
+
+                            // Link IID to term
+                            kv_repo.add_term_to_iid(&mut batch, term_hash, iid);
+
+                            terms.push(token.into_normalized());
+                        }
+
+                        // Link terms to IID
+                        if is_new {
+                            kv_repo.set_iid_to_terms(
+                                &mut batch,
+                                iid,
+                                tokens.seen().iter().copied(),
+                            );
+                        } else {
+                            kv_repo.add_iid_to_terms(
+                                &mut batch,
+                                iid,
+                                tokens.seen().iter().copied(),
+                            );
+                        }
+
+                        executor_ensure_op!(kv_repo.write(batch));
                     }
 
-                    // Push to FST graph
-                    fst_repo.push_words(terms.into_iter(), &self.app_conf.store.fst);
-
-                    // Link terms to IID
-                    if is_new {
-                        kv_repo.set_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());
-                    } else {
-                        kv_repo.add_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());
+                    // Update FST store
+                    {
+                        // Push to FST graph
+                        fst_repo.push_words(terms.into_iter(), &self.app_conf.store.fst);
                     }
-
-                    executor_ensure_op!(kv_repo.write(batch));
 
                     Ok(())
                 }
