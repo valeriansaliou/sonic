@@ -202,6 +202,9 @@ impl super::Executor {
 
             // Normal `PUSH`.
             None => {
+                // PERF: Drop lock early because why not?
+                drop(multipart_context);
+
                 let mut tokens =
                     UniqueBy::new_with_hasher(input.tokens(), Token::hash, NoopU32HasherBuilder);
 
