@@ -148,11 +148,11 @@ mod tests {
             "hacker do hack"
         );
 
-        // NOTE: This works because of automatic language detection.
+        // NOTE: This doesn’t work because automatic language detection isn’t good enough on 3 words.
         #[rustfmt::skip]
         assert_eq!(
             preprocessor.preprocess("Hackers doing hacking", None).normalized_text(),
-            "hacker do hack"
+            "hackers doing hacking"
         );
     }
 
@@ -384,13 +384,6 @@ pub mod preprocessor {
                     lang
                 }
 
-                // If user asked to cleanup, detect the language.
-                None if self.filter_stopwords => {
-                    let lang = detect_lang(text);
-                    tracing::debug!(?text, "detected lang: {lang:?}");
-                    lang
-                }
-
                 // If user asked not to cleanup but stemming is enabled,
                 // detect the language.
                 #[cfg(feature = "stemming")]
@@ -436,7 +429,7 @@ pub mod preprocessor {
                 let normalized = &text_normalized[start_normalized..end_normalized];
 
                 // Check if word is a stopword.
-                if self.detect_stopwords && is_stopword(normalized, lang, &self.stopwords_config) {
+                if self.detect_stopwords && is_stopword(normalized, &self.stopwords_config) {
                     if self.filter_stopwords {
                         // Remove normalized word from normalized text as it won’t
                         // be used.
@@ -1266,8 +1259,6 @@ mod lang_detection {
 
     use whatlang::Lang;
 
-    use crate::lexer::stopwords::LexerStopWord;
-
     const TEXT_LANG_TRUNCATE_OVER_CHARS: usize = 200;
     const TEXT_LANG_DETECT_PROCEED_OVER_CHARS: usize = 20;
     const TEXT_LANG_DETECT_NGRAM_UNDER_CHARS: usize = 60;
@@ -1333,7 +1324,7 @@ mod lang_detection {
             Some(info) => {
                 let ngram_took = ngram_start.elapsed();
 
-                let mut locale = info.lang();
+                let locale = info.lang();
 
                 tracing::info!(
                     "[slow lexer] locale detected from text: {} ({} from {} at {}/1; {}s + {}ms)",
@@ -1345,26 +1336,12 @@ mod lang_detection {
                     ngram_took.subsec_millis()
                 );
 
-                // Confidence is low, try to detect locale from stop-words.
-                // Notice: this is a fallback but should not be too reliable for short \
-                //   texts.
-                if !info.is_reliable() {
-                    tracing::debug!("[slow lexer] trying to detect locale from stopwords instead");
-
-                    // Better alternate locale found?
-                    if let Some(alternate_locale) =
-                        LexerStopWord::guess_lang(safe_text, info.script())
-                    {
-                        tracing::info!(
-                            "[slow lexer] detected more accurate locale from stopwords: {}",
-                            alternate_locale
-                        );
-
-                        locale = alternate_locale;
-                    }
+                if info.is_reliable() {
+                    Some(locale)
+                } else {
+                    tracing::debug!("[slow lexer] detected locale is unreliable");
+                    None
                 }
-
-                Some(locale)
             }
             None => {
                 tracing::info!(
@@ -1383,7 +1360,9 @@ mod lang_detection {
         match whatlang::detect_script(safe_text) {
             Some(script) => {
                 // Locale found?
-                if let Some(locale) = LexerStopWord::guess_lang(safe_text, script) {
+                if let Some((&locale, other_langs)) = script.langs().split_first()
+                    && other_langs.is_empty()
+                {
                     let stopwords_took = stopwords_start.elapsed();
 
                     tracing::info!(

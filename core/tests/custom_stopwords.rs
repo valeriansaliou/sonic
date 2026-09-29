@@ -12,33 +12,6 @@ use crate::common::*;
 
 /// See <https://github.com/valeriansaliou/sonic/issues/300>.
 #[test]
-fn test_config_stopwords_allow() {
-    init_logging();
-    let executor = make_test_executor(|app_conf| {
-        // NOTE: In Sonic `<= 1.7.4` (and possibly until `2.0.0`), `"microsoft"`
-        //   was a hard-coded stopword in `ENG`. That wasn’t intended.
-        app_conf.stopwords.allow = ["microsoft"].into_iter().map(ToOwned::to_owned).collect();
-    });
-
-    exec!(
-        executor -> PUSH "articles" "default" "article:1"
-        "Microsoft shouldn’t be a stopword."
-    );
-    exec!(
-        executor -> PUSH "articles" "default" "article:2"
-        "But now there’s a way to allow “Microsoft” to be indexed :)"
-    );
-
-    exec!(executor -> TRIGGER consolidate);
-
-    {
-        let response = exec!(executor -> QUERY "articles" "default" "Microsoft");
-        assert_eq!(response, ["article:2", "article:1"]);
-    }
-}
-
-/// See <https://github.com/valeriansaliou/sonic/issues/300>.
-#[test]
 fn test_config_stopwords_deny() {
     init_logging();
     let executor = make_test_executor(|app_conf| {

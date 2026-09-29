@@ -83,9 +83,6 @@ pub struct TokenizationConfig {
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct StopwordsConfig {
     #[serde(deserialize_with = "to_stopwords")]
-    pub allow: HashSet<String>,
-
-    #[serde(deserialize_with = "to_stopwords")]
     pub deny: HashSet<String>,
 }
 
