@@ -91,8 +91,8 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
 
                 Ok(store_box)
             }
-            Err(error) => {
-                tracing::error!("failed opening {kind} store {store_id}: {error:?}");
+            Err(()) => {
+                tracing::error!("failed opening {kind} store {store_id}");
 
                 Err(())
             }

@@ -232,10 +232,7 @@ impl KvStorePool {
                 })
             }
             Err(error) => {
-                tracing::error!(
-                    "Failed opening {} store {store_id}: {error:?}",
-                    Self::kind()
-                );
+                tracing::error!("Failed opening {} store {store_id}: {error}", Self::kind());
 
                 Err(())
             }
