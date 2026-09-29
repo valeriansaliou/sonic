@@ -57,7 +57,7 @@ fn prepend_u32_list(
     // PERF: This is just a fancy way to preprend without extra allocation nor
     //   reverse iteration.
     let mut cursor = operands_total_len;
-    res.extend_from_slice(vec![0; cursor].as_slice());
+    res.resize(cursor, 0);
 
     // TODO(perf): We might be able to make this a tiny bit faster by using a
     //   custom hasher that only maps `&[u8]` to a `u32`. When there is a high
