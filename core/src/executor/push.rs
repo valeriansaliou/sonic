@@ -32,6 +32,59 @@ impl super::Executor {
         input: PreprocessorOutput,
         options: PushOptions,
     ) -> Result<(), ()> {
+        let mut tokens =
+            UniqueBy::new_with_hasher(input.tokens(), Token::hash, NoopU32HasherBuilder);
+
+        let mut multipart_context = self.multipart_push_context.lock().unwrap();
+
+        if options.is_incomplete {
+            return match *multipart_context {
+                // Received first chunk: initiate multipart context.
+                None => {
+                    let expected_term_count = if let Some(total_len) = options.capacity {
+                        // NOTE: This is an approximation, supposing all chunks
+                        //   will have about as many tokens as the first one.
+                        (total_len / input.original_text().len()) * input.tokens().len()
+                    } else {
+                        input.tokens().len()
+                    };
+                    let mut terms: HashMap<StoreTermHash, Box<str>> =
+                        HashMap::with_capacity(expected_term_count);
+
+                    for token in tokens {
+                        terms.insert(token.hash(), Box::from(token.into_normalized()));
+                    }
+
+                    *multipart_context = Some(MultipartPushContext {
+                        oid: oid.to_string(),
+                        // `NEW` in any multipart chunk is considered `NEW` on commit.
+                        assume_new: options.assume_new,
+                        terms,
+                        capacity: options.capacity,
+                    });
+
+                    Ok(())
+                }
+
+                // Received intermediate chunk: update multipart context.
+                Some(ref mut ctx) => {
+                    // `NEW` in any multipart chunk is considered `NEW` on commit.
+                    ctx.assume_new |= options.assume_new;
+
+                    if ctx.capacity.is_none() {
+                        ctx.terms.reserve(input.tokens().len());
+                    }
+
+                    for token in tokens {
+                        ctx.terms
+                            .insert(token.hash(), Box::from(token.into_normalized()));
+                    }
+
+                    Ok(())
+                }
+            };
+        }
+
         // Important: acquire database access read lock, and reference it in context. This \
         //   prevents the database from being erased while using it in this block.
         let _kv_read_guard = self.kv_pool.lock_read_access();
@@ -91,169 +144,108 @@ impl super::Executor {
             }
         }
 
-        let mut multipart_context = self.multipart_push_context.lock().unwrap();
+        match *multipart_context {
+            // Received last multipart chunk.
+            Some(ref mut ctx) if ctx.oid.as_str() == oid.as_str() => {
+                // `NEW` in any multipart chunk is considered `NEW` on commit.
+                ctx.assume_new |= options.assume_new;
 
-        let mut tokens =
-            UniqueBy::new_with_hasher(input.tokens(), Token::hash, NoopU32HasherBuilder);
+                if ctx.capacity.is_none() {
+                    ctx.terms.reserve(input.tokens().len());
+                }
 
-        if options.is_incomplete {
-            match *multipart_context {
-                // Received first chunk: initiate multipart context.
-                None => {
-                    let expected_term_count = if let Some(total_len) = options.capacity {
-                        // NOTE: This is an approximation, supposing all chunks
-                        //   will have about as many tokens as the first one.
-                        (total_len / input.original_text().len()) * input.tokens().len()
+                for token in tokens {
+                    ctx.terms
+                        .insert(token.hash(), Box::from(token.into_normalized()));
+                }
+
+                // Update KV store
+                {
+                    let mut batch = WriteBatch::default();
+
+                    let (iid, is_new) = get_iid(oid, ctx.assume_new, &kv_repo, &mut batch)?;
+
+                    for term_hash in ctx.terms.keys() {
+                        // Link IID to term
+                        kv_repo.add_term_to_iid(&mut batch, *term_hash, iid);
+                    }
+
+                    // Link terms to IID
+                    if is_new {
+                        kv_repo.set_iid_to_terms(&mut batch, iid, ctx.terms.keys().copied());
                     } else {
-                        input.tokens().len()
-                    };
-                    let mut terms: HashMap<StoreTermHash, Box<str>> =
-                        HashMap::with_capacity(expected_term_count);
-
-                    for token in tokens {
-                        terms.insert(token.hash(), Box::from(token.into_normalized()));
+                        kv_repo.add_iid_to_terms(&mut batch, iid, ctx.terms.keys().copied());
                     }
 
-                    *multipart_context = Some(MultipartPushContext {
-                        oid: oid.to_string(),
-                        // `NEW` in any multipart chunk is considered `NEW` on commit.
-                        assume_new: options.assume_new,
-                        terms,
-                        capacity: options.capacity,
-                    });
-
-                    Ok(())
+                    executor_ensure_op!(kv_repo.write(batch));
                 }
 
-                // Received intermediate chunk: update multipart context.
-                Some(ref mut ctx) => {
-                    // `NEW` in any multipart chunk is considered `NEW` on commit.
-                    ctx.assume_new |= options.assume_new;
-
-                    if ctx.capacity.is_none() {
-                        ctx.terms.reserve(input.tokens().len());
-                    }
-
-                    for token in tokens {
-                        ctx.terms
-                            .insert(token.hash(), Box::from(token.into_normalized()));
-                    }
-
-                    Ok(())
-                }
-            }
-        } else {
-            match *multipart_context {
-                // Received last multipart chunk.
-                Some(ref mut ctx) if ctx.oid.as_str() == oid.as_str() => {
-                    // `NEW` in any multipart chunk is considered `NEW` on commit.
-                    ctx.assume_new |= options.assume_new;
-
-                    if ctx.capacity.is_none() {
-                        ctx.terms.reserve(input.tokens().len());
-                    }
-
-                    for token in tokens {
-                        ctx.terms
-                            .insert(token.hash(), Box::from(token.into_normalized()));
-                    }
-
-                    // Update KV store
-                    {
-                        let mut batch = WriteBatch::default();
-
-                        let (iid, is_new) = get_iid(oid, ctx.assume_new, &kv_repo, &mut batch)?;
-
-                        for term_hash in ctx.terms.keys() {
-                            // Link IID to term
-                            kv_repo.add_term_to_iid(&mut batch, *term_hash, iid);
-                        }
-
-                        // Link terms to IID
-                        if is_new {
-                            kv_repo.set_iid_to_terms(&mut batch, iid, ctx.terms.keys().copied());
-                        } else {
-                            kv_repo.add_iid_to_terms(&mut batch, iid, ctx.terms.keys().copied());
-                        }
-
-                        executor_ensure_op!(kv_repo.write(batch));
-                    }
-
-                    // Update FST store
-                    {
-                        // Push to FST graph
-                        fst_repo.push_words(
-                            ctx.terms.values().map(Box::as_ref),
-                            &self.app_conf.store.fst,
-                        );
-                    }
-
-                    // Clear multipart context.
-                    *multipart_context = None;
-
-                    Ok(())
-                }
-
-                // Received wrong last multipart chunk.
-                // NOTE: Because we store a single piece of context, we should
-                //   not commit intermediate data “”
-                Some(ref ctx) => {
-                    let prev_oid = ctx.oid.clone();
-
-                    // Clear multipart context.
-                    *multipart_context = None;
-
-                    panic!(
-                        "Last multipart chunk never received for OID {prev_oid:?}. \
-                        This should not happen, something’s wrong in your code."
+                // Update FST store
+                {
+                    // Push to FST graph
+                    fst_repo.push_words(
+                        ctx.terms.values().map(Box::as_ref),
+                        &self.app_conf.store.fst,
                     );
                 }
 
-                // Normal `PUSH`.
-                None => {
-                    let mut terms = Vec::with_capacity(input.tokens().len());
+                // Clear multipart context.
+                *multipart_context = None;
 
-                    // Update KV store
-                    {
-                        let mut batch = WriteBatch::default();
+                Ok(())
+            }
 
-                        let (iid, is_new) = get_iid(oid, options.assume_new, &kv_repo, &mut batch)?;
+            // Received wrong last multipart chunk.
+            // NOTE: Because we store a single piece of context, we should
+            //   not commit intermediate data “”
+            Some(ref ctx) => {
+                let prev_oid = ctx.oid.clone();
 
-                        for token in &mut tokens {
-                            let term_hash = token.hash();
+                // Clear multipart context.
+                *multipart_context = None;
 
-                            // Link IID to term
-                            kv_repo.add_term_to_iid(&mut batch, term_hash, iid);
+                panic!(
+                    "Last multipart chunk never received for OID {prev_oid:?}. \
+                        This should not happen, something’s wrong in your code."
+                );
+            }
 
-                            terms.push(token.into_normalized());
-                        }
+            // Normal `PUSH`.
+            None => {
+                let mut terms = Vec::with_capacity(input.tokens().len());
 
-                        // Link terms to IID
-                        if is_new {
-                            kv_repo.set_iid_to_terms(
-                                &mut batch,
-                                iid,
-                                tokens.seen().iter().copied(),
-                            );
-                        } else {
-                            kv_repo.add_iid_to_terms(
-                                &mut batch,
-                                iid,
-                                tokens.seen().iter().copied(),
-                            );
-                        }
+                // Update KV store
+                {
+                    let mut batch = WriteBatch::default();
 
-                        executor_ensure_op!(kv_repo.write(batch));
+                    let (iid, is_new) = get_iid(oid, options.assume_new, &kv_repo, &mut batch)?;
+
+                    for token in &mut tokens {
+                        let term_hash = token.hash();
+
+                        // Link IID to term
+                        kv_repo.add_term_to_iid(&mut batch, term_hash, iid);
+
+                        terms.push(token.into_normalized());
                     }
 
-                    // Update FST store
-                    {
-                        // Push to FST graph
-                        fst_repo.push_words(terms.into_iter(), &self.app_conf.store.fst);
+                    // Link terms to IID
+                    if is_new {
+                        kv_repo.set_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());
+                    } else {
+                        kv_repo.add_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());
                     }
 
-                    Ok(())
+                    executor_ensure_op!(kv_repo.write(batch));
                 }
+
+                // Update FST store
+                {
+                    // Push to FST graph
+                    fst_repo.push_words(terms.into_iter(), &self.app_conf.store.fst);
+                }
+
+                Ok(())
             }
         }
     }
