@@ -255,6 +255,7 @@ impl<Mode: ChannelMode + 'static> SonicChannel<Mode> {
 
     /// Same as [`SonicChannel::send_buffered`], but allows mapping text chunks
     /// to different commands for first, intermediate and last splits.
+    #[cfg(feature = "experimental-api")]
     pub(crate) fn send_buffered_complex<T: Default + Send + 'static>(
         &self,
         command: Command,
