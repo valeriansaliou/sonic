@@ -16,7 +16,7 @@ use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
 
 impl super::Executor {
-    pub fn search(
+    pub fn query(
         &self,
         collection: StoreItemPart,
         bucket: Bucket,

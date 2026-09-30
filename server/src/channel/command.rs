@@ -446,7 +446,7 @@ impl ChannelCommandSearch {
                         );
 
                         ctx.executor
-                            .search(collection, bucket, text_lexed, query_limit, query_offset)
+                            .query(collection, bucket, text_lexed, query_limit, query_offset)
                             .map(|results| {
                                 if results.is_empty() {
                                     None

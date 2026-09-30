@@ -128,7 +128,7 @@ macro_rules! exec {
             true,
         );
         $executor
-            .search(
+            .query(
                 c, b,
                 preprocessor.preprocess($term, exec!(internal_ lang $($lang)?)),
                 exec!(internal_ limit $($limit)?),

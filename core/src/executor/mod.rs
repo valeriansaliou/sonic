@@ -23,7 +23,7 @@ mod flusho;
 mod list;
 mod pop;
 mod push;
-mod search;
+mod query;
 mod suggest;
 
 pub use push::PushOptions;
