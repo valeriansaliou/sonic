@@ -19,7 +19,7 @@ use std::vec::Vec;
 
 use sonic::Executor;
 use sonic::executor::{
-    ListMetaData, PushOptions, QueryGenericLang, QueryMetaData, QuerySearchLimit, QuerySearchOffset,
+    ListMetaData, PushOptions, QueryGenericLang, QuerySearchLimit, QuerySearchOffset,
 };
 
 use super::format::unescape;
@@ -64,6 +64,12 @@ pub type ChannelCommandResponseArgs = (&'static str, Option<Vec<String>>);
 
 type ChannelResult = Result<Vec<ChannelCommandResponse>, ChannelCommandError>;
 type MetaPartsResult<'a> = Result<(&'a str, &'a str), (&'a str, &'a str)>;
+
+pub struct QueryMetaData {
+    pub limit: QuerySearchLimit,
+    pub offset: QuerySearchOffset,
+    pub lang: Option<QueryGenericLang>,
+}
 
 pub const EVENT_ID_SIZE: usize = 8;
 
@@ -385,43 +391,38 @@ impl ChannelCommandSearch {
                 );
 
                 // Define query parameters
-                let (mut query_limit, mut query_offset, mut query_lang) =
-                    (ctx.search_config.query_limit_default, 0, None);
+                let mut query_params = QueryMetaData {
+                    limit: ctx.search_config.query_limit_default,
+                    offset: 0,
+                    lang: None,
+                };
 
                 // Parse meta parts (meta comes after text; extract meta parts second)
                 let mut last_meta_err = None;
 
                 while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
                 {
-                    match Self::handle_query_meta(meta_result) {
-                        Ok((Some(query_limit_parsed), None, None)) => {
-                            query_limit = query_limit_parsed
-                        }
-                        Ok((None, Some(query_offset_parsed), None)) => {
-                            query_offset = query_offset_parsed
-                        }
-                        Ok((None, None, Some(query_lang_parsed))) => {
-                            query_lang = Some(query_lang_parsed)
-                        }
-                        Err(parse_err) => last_meta_err = Some(parse_err),
-                        _ => {}
+                    if let Err(parse_err) = Self::handle_query_meta(meta_result, &mut query_params)
+                    {
+                        last_meta_err = Some(parse_err);
                     }
                 }
 
+                let QueryMetaData {
+                    limit,
+                    offset,
+                    lang,
+                } = query_params;
+
                 if let Some(err) = last_meta_err {
                     Err(err)
-                } else if query_limit < 1 || query_limit > ctx.search_config.query_limit_maximum {
+                } else if limit < 1 || limit > ctx.search_config.query_limit_maximum {
                     Err(ChannelCommandError::PolicyReject(
                         "LIMIT out of minimum/maximum bounds",
                     ))
                 } else {
                     tracing::debug!(
-                        "will search for #{} with text: {}, limit: {}, offset: {}, locale: <{:?}>",
-                        event_id,
-                        text,
-                        query_limit,
-                        query_offset,
-                        query_lang
+                        "will search for #{event_id} with text: {text:?}, limit: {limit}, offset: {offset}, locale: <{lang:?}>"
                     );
 
                     let (collection, bucket) = StoreItemBuilder::from_depth_2(collection, bucket)
@@ -432,7 +433,7 @@ impl ChannelCommandSearch {
                     // Commit 'search' query
                     ChannelCommandBase::commit_pending_operation("QUERY", &event_id, move || {
                         let should_cleanup =
-                            TokenLexerMode::from_query_lang(&query_lang).should_cleanup();
+                            TokenLexerMode::from_query_lang(&lang).should_cleanup();
                         let preprocessor = Preprocessor::new(
                             *ctx.tokenization_config,
                             *ctx.normalization_config,
@@ -440,13 +441,11 @@ impl ChannelCommandSearch {
                             should_cleanup,
                             should_cleanup,
                         );
-                        let text_lexed = preprocessor.preprocess(
-                            &text,
-                            query_lang.and_then(QueryGenericLang::into_lang_opt),
-                        );
+                        let text_lexed = preprocessor
+                            .preprocess(&text, lang.and_then(QueryGenericLang::into_lang_opt));
 
                         ctx.executor
-                            .query(collection, bucket, text_lexed, query_limit, query_offset)
+                            .query(collection, bucket, text_lexed, limit, offset)
                             .map(|results| {
                                 if results.is_empty() {
                                     None
@@ -610,7 +609,8 @@ impl ChannelCommandSearch {
 
     fn handle_query_meta(
         meta_result: MetaPartsResult,
-    ) -> Result<QueryMetaData, ChannelCommandError> {
+        meta: &mut QueryMetaData,
+    ) -> Result<(), ChannelCommandError> {
         match meta_result {
             Ok((meta_key, meta_value)) => {
                 tracing::debug!("handle query meta: {} = {}", meta_key, meta_value);
@@ -619,7 +619,8 @@ impl ChannelCommandSearch {
                     "LIMIT" => {
                         // 'LIMIT(<count>)' where 0 <= <count> < 2^16
                         if let Ok(query_limit_parsed) = meta_value.parse::<QuerySearchLimit>() {
-                            Ok((Some(query_limit_parsed), None, None))
+                            meta.limit = query_limit_parsed;
+                            Ok(())
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
                                 meta_key, meta_value,
@@ -629,7 +630,8 @@ impl ChannelCommandSearch {
                     "OFFSET" => {
                         // 'OFFSET(<count>)' where 0 <= <count> < 2^32
                         if let Ok(query_offset_parsed) = meta_value.parse::<QuerySearchOffset>() {
-                            Ok((None, Some(query_offset_parsed), None))
+                            meta.offset = query_offset_parsed;
+                            Ok(())
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
                                 meta_key, meta_value,
@@ -639,7 +641,8 @@ impl ChannelCommandSearch {
                     "LANG" => {
                         // 'LANG(<locale>)' where <locale> ∈ ISO 639-3
                         if let Some(query_lang_parsed) = QueryGenericLang::from_value(meta_value) {
-                            Ok((None, None, Some(query_lang_parsed)))
+                            meta.lang = Some(query_lang_parsed);
+                            Ok(())
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(
                                 meta_key, meta_value,

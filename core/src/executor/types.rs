@@ -20,12 +20,6 @@ pub type PushAssumeNew = bool;
 pub type QueryMatchScore = f32;
 pub type QueryResultScore = f32;
 
-pub type QueryMetaData = (
-    Option<QuerySearchLimit>,
-    Option<QuerySearchOffset>,
-    Option<QueryGenericLang>,
-);
-
 pub type ListMetaData = (Option<QuerySearchLimit>, Option<QuerySearchOffset>);
 
 impl QueryGenericLang {
