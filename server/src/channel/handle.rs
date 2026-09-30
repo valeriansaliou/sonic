@@ -120,7 +120,7 @@ impl ChannelHandle {
                 write!(stream, "{LINE_FEED}").expect("write failed");
 
                 self.handle_stream(mode, stream)
-                    .unwrap_or_else(|err| tracing::error!("closing channel thread: {err:?}"));
+                    .unwrap_or_else(|error| tracing::error!("closing channel thread: {error}"));
             }
             Err(err) => match write!(stream, "ENDED {}{}", err.to_str(), LINE_FEED) {
                 Ok(()) => {}
