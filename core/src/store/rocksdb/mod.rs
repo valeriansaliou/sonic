@@ -132,6 +132,10 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
             max_background_jobs,
             max_subcompactions,
             stats_dump_period_sec,
+            enable_blob_files,
+            min_blob_size,
+            blob_file_size,
+            enable_blob_gc,
         } = config;
 
         // Make database options
@@ -206,6 +210,11 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
         if_some!(db_options.set_max_bytes_for_level_base(max_bytes_for_level_base));
         if_some!(db_options.set_max_bytes_for_level_multiplier(max_bytes_for_level_multiplier));
         if_some!(db_options.set_target_file_size_base(target_file_size_base));
+
+        if_some!(db_options.set_enable_blob_files(enable_blob_files));
+        if_some!(db_options.set_min_blob_size(min_blob_size));
+        if_some!(db_options.set_blob_file_size(blob_file_size));
+        if_some!(db_options.set_enable_blob_gc(enable_blob_gc));
 
         let mut max_background_jobs = *max_background_jobs;
 

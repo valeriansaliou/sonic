@@ -63,11 +63,6 @@ impl GenericRocksDbStore for ObjectStore {
 
     fn configure(db_options: &mut rocksdb::Options) {
         db_options.set_merge_operator_associative("object_merge", merge::object_merge_operator);
-
-        db_options.set_enable_blob_files(true);
-        db_options.set_min_blob_size(4096);
-        db_options.set_blob_file_size(256 * 1024 * 1024);
-        db_options.set_enable_blob_gc(true);
     }
 
     fn database(&self) -> &rocksdb::DB {

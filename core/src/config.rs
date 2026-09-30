@@ -251,6 +251,18 @@ pub struct RocksDbDatabaseConfig {
 
     #[serde(default)]
     pub stats_dump_period_sec: Option<u32>,
+
+    #[serde(default)]
+    pub enable_blob_files: Option<bool>,
+
+    #[serde(default)]
+    pub min_blob_size: Option<u64>,
+
+    #[serde(default)]
+    pub blob_file_size: Option<u64>,
+
+    #[serde(default)]
+    pub enable_blob_gc: Option<bool>,
 }
 
 fn default_write_buffer_size() -> Option<usize> {

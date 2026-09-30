@@ -134,6 +134,10 @@ Under `[store.kv]`:
 * `database.max_subcompactions` (type: _integer_, allowed: `≥1`, default: RocksDB default (`1`)) — Limit on the number of concurrent database compaction jobs
 * `database.max_flushes` (type: _integer_, allowed: numbers, default: `1`) — Limit on the number of concurrent database flush jobs
 * `database.stats_dump_period_sec` (type: _integer_, allowed: `≥0`, default: RocksDB default (`600` (10 mins))) — Interval in seconds at which RocksDB writes internal statistics (throughput, compaction stats, cache hit rates, etc.) to its log file (`0` disables periodic dumping)
+* `database.enable_blob_files` (type: _boolean_ (optional), allowed: `true`, `false`, default: RocksDB default) — Whether or not to enable BlobDB
+* `database.min_blob_size` (type: _integer_ (optional), allowed: `≥0`, default: none) — Minimum threshold value at or above which will be written to blob files during flush or compaction
+* `database.blob_file_size` (type: _integer_ (optional), allowed: `≥0`, default: none) — Size limit for blob files
+* `database.enable_blob_gc` (type: _boolean_ (optional), allowed: `true`, `false`, default: none) — If this is set to `true`, RocksDB will actively relocate valid blobs from the oldest blob files as they are encountered during compaction
 
 `store.kv.retain_word_objects` has been deprecated in favor of `search.query_retain_word_objects`,
 but it’s kept as an alias for backward compatibility reasons.
