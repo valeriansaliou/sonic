@@ -245,37 +245,54 @@ pub fn ingest_parallel<T: Ingestable>(
     );
 
     let (compact_duration, consolidate_duration) = {
-        let compact_duration = {
-            tracing::info!("Compacting KV…");
+        let compact_handle = std::thread::spawn({
+            let multiplexer = Arc::clone(&multiplexer);
 
-            let start = Instant::now();
+            move || {
+                tracing::info!("Compacting KV…");
 
-            black_box(trigger_compact(&control, &[COLLECTION])).unwrap();
+                let start = Instant::now();
 
-            let compact_duration = start.elapsed();
-            elapsed_total += compact_duration;
+                let control =
+                    SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer)
+                        .unwrap();
+                black_box(trigger_compact(&control, &[COLLECTION])).unwrap();
 
-            tracing::info!("Compacted KV in {compact_duration:.3?}.");
+                let compact_duration = start.elapsed();
+                elapsed_total += compact_duration;
 
-            compact_duration
-        };
+                tracing::info!("Compacted KV in {compact_duration:.3?}.");
 
-        let consolidate_duration = {
-            tracing::info!("Consolidating FST…");
+                compact_duration
+            }
+        });
 
-            let start = Instant::now();
+        let consolidate_handle = std::thread::spawn({
+            let multiplexer = Arc::clone(&multiplexer);
 
-            black_box(control.trigger_consolidate()).unwrap();
+            move || {
+                tracing::info!("Consolidating FST…");
 
-            let consolidate_duration = start.elapsed();
-            elapsed_total += consolidate_duration;
+                let start = Instant::now();
 
-            tracing::info!("Consolidated FST in {consolidate_duration:.3?}.");
+                let control =
+                    SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer)
+                        .unwrap();
+                black_box(control.trigger_consolidate()).unwrap();
 
-            consolidate_duration
-        };
+                let consolidate_duration = start.elapsed();
+                elapsed_total += consolidate_duration;
 
-        (compact_duration, consolidate_duration)
+                tracing::info!("Consolidated FST in {consolidate_duration:.3?}.");
+
+                consolidate_duration
+            }
+        });
+
+        (
+            compact_handle.join().unwrap(),
+            consolidate_handle.join().unwrap(),
+        )
     };
 
     if *config != ParallelBenchmarkConfig::default() {
