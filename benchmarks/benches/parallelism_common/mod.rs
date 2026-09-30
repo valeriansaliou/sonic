@@ -99,7 +99,7 @@ pub struct IngestStats {
     pub consolidate_duration: Duration,
     pub elapsed_total: Duration,
     pub ingested_count: usize,
-    pub ingested_bytes: u32,
+    pub ingested_bytes: u64,
 }
 
 pub fn ingest_parallel<T: Ingestable>(
@@ -177,7 +177,7 @@ pub fn ingest_parallel<T: Ingestable>(
                     channel.ping().unwrap();
 
                     let mut ingested_count = 0usize;
-                    let mut ingested_bytes = 0u32;
+                    let mut ingested_bytes = 0u64;
 
                     /// Helper function which returns the next iterator element without keeping the lock guard alive.
                     /// When put on a single line (e.g. in a `while` loop), the lock guard stays alive all the time,
@@ -206,7 +206,7 @@ pub fn ingest_parallel<T: Ingestable>(
                                 }
 
                                 ingested_count += 1;
-                                ingested_bytes += len as u32;
+                                ingested_bytes += len as u64;
                             }
                             Err(err) => {
                                 panic!(
