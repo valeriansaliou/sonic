@@ -6,7 +6,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 pub(crate) mod none_string_as_none {
-    use serde::{Deserialize, Deserializer};
+    use serde::{Deserialize, Deserializer, de::IntoDeserializer as _};
 
     pub(crate) fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
     where
@@ -25,13 +25,7 @@ pub(crate) mod none_string_as_none {
         match Option::<StringOrT<T>>::deserialize(deserializer)? {
             None => Ok(None),
             Some(StringOrT::String(s)) if s.eq_ignore_ascii_case("none") => Ok(None),
-            Some(StringOrT::String(s)) => {
-                // Try to parse the string itself as T (in case T is String-like)
-                // For simple cases you may just want to error here instead.
-                Err(serde::de::Error::custom(format!(
-                    "unexpected string value: {s}"
-                )))
-            }
+            Some(StringOrT::String(s)) => T::deserialize(s.into_deserializer()).map(Some),
             Some(StringOrT::T(v)) => Ok(Some(v)),
         }
     }
