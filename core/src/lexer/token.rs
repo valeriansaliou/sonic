@@ -585,7 +585,7 @@ pub mod preprocessor {
         /// Start index (byte) in original text.
         pub(super) start: usize,
 
-        /// Start index (byte) in original text.
+        /// End index (byte) in original text (exclusive).
         pub(super) end: usize,
 
         /// Index of the token in the tokenized text (stopwords included).
