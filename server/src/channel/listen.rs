@@ -13,6 +13,7 @@ use std::thread;
 use sonic::executor::DynamicConfigStore;
 use sonic::store::fst::FstStorePool;
 use sonic::store::kv::KvStorePool;
+use sonic::store::object::ObjectStorePool;
 
 use super::handle::ChannelHandle;
 use crate::THREAD_NAME_CHANNEL_CLIENT;
@@ -22,6 +23,7 @@ pub struct ChannelListenBuilder {
     pub app_conf: Arc<crate::Config>,
     pub kv_pool: KvStorePool,
     pub fst_pool: FstStorePool,
+    pub object_store_pool: ObjectStorePool,
     pub dynamic_conf_store: Arc<DynamicConfigStore>,
 }
 
@@ -29,6 +31,7 @@ pub struct ChannelListen {
     app_conf: Arc<crate::Config>,
     kv_pool: KvStorePool,
     fst_pool: FstStorePool,
+    object_store_pool: ObjectStorePool,
     dynamic_conf_store: Arc<DynamicConfigStore>,
 }
 
@@ -40,6 +43,7 @@ impl ChannelListenBuilder {
             app_conf: Arc::clone(&self.app_conf),
             kv_pool: self.kv_pool.clone(),
             fst_pool: self.fst_pool.clone(),
+            object_store_pool: self.object_store_pool.clone(),
             dynamic_conf_store: Arc::clone(&self.dynamic_conf_store),
         }
     }
@@ -60,6 +64,7 @@ impl ChannelListen {
                                     Arc::clone(&self.app_conf.sonic),
                                     self.kv_pool.clone(),
                                     self.fst_pool.clone(),
+                                    self.object_store_pool.clone(),
                                     Arc::clone(&self.dynamic_conf_store),
                                 ),
                             };

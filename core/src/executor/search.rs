@@ -44,7 +44,7 @@ impl super::Executor {
         };
 
         let (higher_limit, mut alternates_try) = (
-            self.app_conf.store.kv.retain_word_objects,
+            self.app_conf.search.query_retain_word_objects,
             self.app_conf.search.query_alternates_try,
         );
 

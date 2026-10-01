@@ -95,6 +95,7 @@ fn start_sonic(
     )
     .env("SONIC_STORE__KV__PATH", data_path.join("kv"))
     .env("SONIC_STORE__FST__PATH", data_path.join("fst"))
+    .env("SONIC_STORE__OBJECT__PATH", data_path.join("object"))
     .spawn()
     .unwrap();
 

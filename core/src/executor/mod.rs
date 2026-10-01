@@ -33,6 +33,7 @@ pub struct Executor {
     pub app_conf: Arc<crate::Config>,
     pub kv_pool: crate::store::kv::KvStorePool,
     pub fst_pool: crate::store::fst::FstStorePool,
+    pub object_store_pool: crate::store::object::ObjectStorePool,
     pub dynamic_conf_store: Arc<DynamicConfigStore>,
 
     multipart_push_context: Mutex<Option<MultipartPushContext>>,
@@ -43,12 +44,14 @@ impl Executor {
         app_conf: Arc<crate::Config>,
         kv_pool: crate::store::kv::KvStorePool,
         fst_pool: crate::store::fst::FstStorePool,
+        object_store_pool: crate::store::object::ObjectStorePool,
         dynamic_conf_store: Arc<DynamicConfigStore>,
     ) -> Self {
         Self {
             app_conf,
             kv_pool,
             fst_pool,
+            object_store_pool,
             dynamic_conf_store,
             multipart_push_context: Mutex::new(None),
         }
@@ -63,6 +66,7 @@ impl std::fmt::Debug for Executor {
         let Self {
             kv_pool,
             fst_pool,
+            object_store_pool,
             dynamic_conf_store,
             multipart_push_context,
             // NOTE: We don’t care about the app configuration,
@@ -73,6 +77,7 @@ impl std::fmt::Debug for Executor {
         f.debug_struct("Executor")
             .field("kv_pool", kv_pool)
             .field("fst_pool", fst_pool)
+            .field("object_store_pool", object_store_pool)
             .field("dynamic_conf_store", dynamic_conf_store)
             .field(
                 "multipart_push_context",
@@ -136,6 +141,7 @@ pub struct DynamicConfig {
 pub struct DynamicConfigSonic {
     pub disable_janitor_tasks: Option<bool>,
     pub disable_fst_consolidate_task: Option<bool>,
+    // NOTE: Used for both the KV and Object stores (both are key-value stores).
     pub disable_kv_flush_task: Option<bool>,
 }
 
@@ -160,56 +166,112 @@ impl Executor {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let kv_store_id = KvStoreId::from_part(collection);
 
-        tracing::debug!(
-            ?new_conf.rocksdb,
-            "Re-opening KV store connection for {kv_store_id:?} with new dynamic configuration overrides…"
-        );
+        // TODO: Refactor both blocks into one.
+        {
+            tracing::debug!(
+                ?new_conf.rocksdb,
+                "Re-opening KV store connection for {kv_store_id:?} with new dynamic configuration overrides…"
+            );
 
-        let mut kv_pool_write_guard = self.kv_pool.write().unwrap();
+            let mut kv_pool_write_guard = self.kv_pool.write().unwrap();
 
-        self.kv_pool
-            .close(kv_store_id, Some(&mut kv_pool_write_guard));
+            self.kv_pool
+                .close(kv_store_id, Some(&mut kv_pool_write_guard));
 
-        self.kv_pool
-            .acquire(
-                true,
-                collection,
-                Some(&mut kv_pool_write_guard),
-                |options| {
-                    let DynamicConfigRocksDb {
-                        disable_auto_compactions,
-                        unordered_write,
-                        memtable,
-                    } = &new_conf.rocksdb;
+            self.kv_pool
+                .acquire(
+                    true,
+                    collection,
+                    Some(&mut kv_pool_write_guard),
+                    |options| {
+                        let DynamicConfigRocksDb {
+                            disable_auto_compactions,
+                            unordered_write,
+                            memtable,
+                        } = &new_conf.rocksdb;
 
-                    if let Some(disable_auto_compactions) = disable_auto_compactions {
-                        options.set_disable_auto_compactions(*disable_auto_compactions);
-                    }
-
-                    if let Some(unordered_write) = unordered_write {
-                        options.set_unordered_write(*unordered_write);
-                    }
-
-                    match memtable {
-                        Some(RocksDbMemtable::Vector) => {
-                            // Use the vector-based memtable instead of the default skiplist.
-                            options.set_memtable_factory(rocksdb::MemtableFactory::Vector);
-
-                            // Vector memtables don't support concurrent inserts, so this must be false.
-                            options.set_allow_concurrent_memtable_write(false);
+                        if let Some(disable_auto_compactions) = disable_auto_compactions {
+                            options.set_disable_auto_compactions(*disable_auto_compactions);
                         }
-                        None | Some(RocksDbMemtable::Default) => {}
-                    }
-                },
-            )
-            .map_err(|()| std::io::Error::other("Error re-opening connection"))?;
 
-        drop(kv_pool_write_guard);
+                        if let Some(unordered_write) = unordered_write {
+                            options.set_unordered_write(*unordered_write);
+                        }
 
-        tracing::info!(
-            ?new_conf.rocksdb,
-            "KV store connection for {collection:?} successfully re-opened"
-        );
+                        match memtable {
+                            Some(RocksDbMemtable::Vector) => {
+                                // Use the vector-based memtable instead of the default skiplist.
+                                options.set_memtable_factory(rocksdb::MemtableFactory::Vector);
+
+                                // Vector memtables don't support concurrent inserts, so this must be false.
+                                options.set_allow_concurrent_memtable_write(false);
+                            }
+                            None | Some(RocksDbMemtable::Default) => {}
+                        }
+                    },
+                )
+                .map_err(|()| std::io::Error::other("Error re-opening connection"))?;
+
+            drop(kv_pool_write_guard);
+
+            tracing::info!(
+                ?new_conf.rocksdb,
+                "KV store connection for {collection:?} successfully re-opened"
+            );
+        }
+
+        {
+            tracing::debug!(
+                ?new_conf.rocksdb,
+                "Re-opening Object store connection for {kv_store_id:?} with new dynamic configuration overrides…"
+            );
+
+            let mut object_store_pool_write_guard = self.object_store_pool.write().unwrap();
+
+            self.object_store_pool
+                .close(kv_store_id, Some(&mut object_store_pool_write_guard));
+
+            self.object_store_pool
+                .acquire(
+                    true,
+                    collection,
+                    Some(&mut object_store_pool_write_guard),
+                    |options| {
+                        let DynamicConfigRocksDb {
+                            disable_auto_compactions,
+                            unordered_write,
+                            memtable,
+                        } = &new_conf.rocksdb;
+
+                        if let Some(disable_auto_compactions) = disable_auto_compactions {
+                            options.set_disable_auto_compactions(*disable_auto_compactions);
+                        }
+
+                        if let Some(unordered_write) = unordered_write {
+                            options.set_unordered_write(*unordered_write);
+                        }
+
+                        match memtable {
+                            Some(RocksDbMemtable::Vector) => {
+                                // Use the vector-based memtable instead of the default skiplist.
+                                options.set_memtable_factory(rocksdb::MemtableFactory::Vector);
+
+                                // Vector memtables don't support concurrent inserts, so this must be false.
+                                options.set_allow_concurrent_memtable_write(false);
+                            }
+                            None | Some(RocksDbMemtable::Default) => {}
+                        }
+                    },
+                )
+                .map_err(|()| std::io::Error::other("Error re-opening connection"))?;
+
+            drop(object_store_pool_write_guard);
+
+            tracing::info!(
+                ?new_conf.rocksdb,
+                "Object store connection for {collection:?} successfully re-opened"
+            );
+        }
 
         self.dynamic_conf_store.insert(collection, new_conf);
 
@@ -239,4 +301,6 @@ struct MultipartPushContext {
     terms: HashMap<StoreTermHash, Box<str>>,
 
     capacity: Option<usize>,
+
+    original_text: String,
 }

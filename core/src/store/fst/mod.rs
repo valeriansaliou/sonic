@@ -145,7 +145,11 @@ impl FstStore {
     }
 }
 
-impl StoreGeneric for FstStore {
+impl GenericStore for FstStore {
+    fn kind() -> &'static str {
+        "FST"
+    }
+
     fn ref_last_used(&self) -> &RwLock<Instant> {
         &self.last_used
     }

@@ -34,7 +34,7 @@ Here is some more detailed and accurate pseudo-code:
 MISSING_MATCH_SCORE = 100
 
 fn query(query, app_config) -> [doc] {
-  limit = app_config.store.kv.retain_word_objects
+  limit = app_config.search.query_retain_word_objects
   mut alternates_try = app_config.search.query_alternates_try
 
   // Updates the document’s score for a given term.
@@ -118,7 +118,7 @@ fn query(query, app_config) -> [doc] {
 
 ### Algorithm properties
 
-- At most `store.kv.retain_word_objects` are returned.
+- At most `store.search.query_retain_word_objects` are returned.
 - Fuzzy matching yields at most `search.query_alternates_try` results.
 - Memory usage is linear, proportional to the number of results.
 - Although the pseudo-code doesn’t show it, most operations are lazy, meaning

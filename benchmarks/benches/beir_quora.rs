@@ -285,12 +285,13 @@ fn start_sonic() -> SpawnGuard {
         .env("SONIC_SERVER__LOG_LEVEL", "WARN")
         .env("SONIC_SEARCH__QUERY_LIMIT_DEFAULT", QUERY_LIMIT.to_string())
         .env("SONIC_SEARCH__QUERY_LIMIT_MAXIMUM", QUERY_LIMIT.to_string())
-        .env("SONIC_STORE__KV__PATH", data_path.join("kv"))
         .env(
-            "SONIC_STORE__KV__RETAIN_WORD_OBJECTS",
+            "SONIC_SEARCH__QUERY_RETAIN_WORD_OBJECTS",
             RETAIN_WORD_OBJECTS.to_string(),
         )
+        .env("SONIC_STORE__KV__PATH", data_path.join("kv"))
         .env("SONIC_STORE__FST__PATH", data_path.join("fst"))
+        .env("SONIC_STORE__OBJECT__PATH", data_path.join("object"))
         .spawn()
         .unwrap();
 

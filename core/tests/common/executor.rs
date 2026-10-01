@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use sonic::store::{fst::FstStorePool, kv::KvStorePool};
+use sonic::store::{fst::FstStorePool, kv::KvStorePool, object::ObjectStorePool};
 
 use crate::common::LOG_LEVEL;
 
@@ -62,10 +62,17 @@ pub fn make_test_executor_with_id(
     // Create connection pools (does not open any connection yet)
     let kv_pool = KvStorePool::new(Arc::clone(&app_conf.store.kv));
     let fst_pool = FstStorePool::new(Arc::clone(&app_conf.store.fst), Default::default());
+    let object_store_pool = ObjectStorePool::new(Arc::clone(&app_conf.store.object));
 
     ExecutorGuard {
         id: id.to_string(),
-        executor: sonic::Executor::new(Arc::new(app_conf), kv_pool, fst_pool, Arc::default()),
+        executor: sonic::Executor::new(
+            Arc::new(app_conf),
+            kv_pool,
+            fst_pool,
+            object_store_pool,
+            Arc::default(),
+        ),
     }
 }
 

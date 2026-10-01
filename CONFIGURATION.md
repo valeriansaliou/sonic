@@ -90,6 +90,7 @@ Under `[search]`:
 * `query_limit_default` (type: _integer_, allowed: numbers, default: `10`) — Default search results limit for a query command (if the LIMIT command modifier is not used when issuing a QUERY command)
 * `query_limit_maximum` (type: _integer_, allowed: numbers, default: `100`) — Maximum search results limit for a query command (if the LIMIT command modifier is being used when issuing a QUERY command)
 * `query_alternates_try` (type: _integer_, allowed: numbers, default: `4`) — Number of alternate words that look like query word to try if there are not enough query results (if zero, no alternate will be tried; if too high there may be a noticeable performance penalty)
+* `query_retain_word_objects` (type: _integer_, allowed: numbers, default: `1000`) — Maximum number of objects a given word in the index can be linked to (older objects are cleared using a sliding window)
 * `query_minimum_term_idf_default` (type: _float_, allowed: numbers in `[0;1]`, default: `0.1`) — Minimum [idf](https://en.wikipedia.org/wiki/Tf–idf#Inverse_document_frequency) of tokens taken into account in a query command. Can be used to avoid low-quality results at the end of the results list.
 * `query_minimum_term_idf_minimum_object_count` (type: _integer_, allowed: numbers, default: `100`) — Minimum number of objects in a bucket for `query_minimum_term_idf_default` to be taken into account.
 * `suggest_limit_default` (type: _integer_, allowed: numbers, default: `5`) — Default suggested words limit for a suggest command (if the LIMIT command modifier is not used when issuing a SUGGEST command)
@@ -102,7 +103,6 @@ Under `[search]`:
 Under `[store.kv]`:
 
 * `path` (type: _string_, allowed: UNIX path, default: `./data/store/kv/`) — Path to the Key-Value database store
-* `retain_word_objects` (type: _integer_, allowed: numbers, default: `1000`) — Maximum number of objects a given word in the index can be linked to (older objects are cleared using a sliding window)
 
 * `pool.inactive_after` (type: _integer_, allowed: seconds, default: `1800`) — Time after which a cached database is considered inactive and can be closed (if it is not used, ie. re-activated)
 
@@ -134,6 +134,13 @@ Under `[store.kv]`:
 * `database.max_subcompactions` (type: _integer_, allowed: `≥1`, default: RocksDB default (`1`)) — Limit on the number of concurrent database compaction jobs
 * `database.max_flushes` (type: _integer_, allowed: numbers, default: `1`) — Limit on the number of concurrent database flush jobs
 * `database.stats_dump_period_sec` (type: _integer_, allowed: `≥0`, default: RocksDB default (`600` (10 mins))) — Interval in seconds at which RocksDB writes internal statistics (throughput, compaction stats, cache hit rates, etc.) to its log file (`0` disables periodic dumping)
+* `database.enable_blob_files` (type: _boolean_ (optional), allowed: `true`, `false`, default: RocksDB default) — Whether or not to enable BlobDB
+* `database.min_blob_size` (type: _integer_ (optional), allowed: `≥0`, default: none) — Minimum threshold value at or above which will be written to blob files during flush or compaction
+* `database.blob_file_size` (type: _integer_ (optional), allowed: `≥0`, default: none) — Size limit for blob files
+* `database.enable_blob_gc` (type: _boolean_ (optional), allowed: `true`, `false`, default: none) — If this is set to `true`, RocksDB will actively relocate valid blobs from the oldest blob files as they are encountered during compaction
+
+`store.kv.retain_word_objects` has been deprecated in favor of `search.query_retain_word_objects`,
+but it’s kept as an alias for backward compatibility reasons.
 
 ### FST store configuration
 

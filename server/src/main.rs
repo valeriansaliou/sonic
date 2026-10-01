@@ -41,6 +41,7 @@ use channel::statistics::ensure_states as ensure_states_channel_statistics;
 use sonic::executor::DynamicConfigStore;
 use sonic::store::fst::FstStorePool;
 use sonic::store::kv::KvStorePool;
+use sonic::store::object::ObjectStorePool;
 use tasker::runtime::TaskerBuilder;
 use tasker::shutdown::ShutdownSignal;
 use tracing::level_filters::LevelFilter;
@@ -119,6 +120,7 @@ fn main() {
     // Create connection pools (does not open any connection yet)
     let kv_pool = KvStorePool::new(Arc::clone(&app_conf.sonic.store.kv));
     let fst_pool = FstStorePool::new(Arc::clone(&app_conf.sonic.store.fst), Default::default());
+    let object_store_pool = ObjectStorePool::new(Arc::clone(&app_conf.sonic.store.object));
 
     let dynamic_config = Arc::default();
 
@@ -126,6 +128,7 @@ fn main() {
     thread::spawn(spawn_tasker(
         kv_pool.clone(),
         fst_pool.clone(),
+        object_store_pool.clone(),
         Arc::clone(&dynamic_config),
     ));
 
@@ -133,6 +136,7 @@ fn main() {
     thread::spawn(spawn_channel(
         kv_pool.clone(),
         fst_pool.clone(),
+        object_store_pool.clone(),
         Arc::new(app_conf),
         dynamic_config,
     ));
@@ -193,6 +197,7 @@ where
 fn spawn_channel(
     kv_pool: KvStorePool,
     fst_pool: FstStorePool,
+    object_store_pool: ObjectStorePool,
     app_conf: Arc<Config>,
     dynamic_conf_store: Arc<DynamicConfigStore>,
 ) -> impl FnOnce() {
@@ -200,6 +205,7 @@ fn spawn_channel(
         app_conf,
         kv_pool,
         fst_pool,
+        object_store_pool,
         dynamic_conf_store,
     };
 
@@ -213,11 +219,13 @@ fn spawn_channel(
 fn spawn_tasker(
     kv_pool: KvStorePool,
     fst_pool: FstStorePool,
+    object_store_pool: ObjectStorePool,
     dynamic_conf_store: Arc<DynamicConfigStore>,
 ) -> impl FnOnce() {
     let builder = TaskerBuilder {
         kv_pool,
         fst_pool,
+        object_store_pool,
         dynamic_conf_store,
     };
 

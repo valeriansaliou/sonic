@@ -106,6 +106,8 @@ pub struct SearchConfig {
 
     pub query_alternates_try: usize,
 
+    pub query_retain_word_objects: usize,
+
     pub query_minimum_term_idf_default: f32,
 
     pub query_minimum_term_idf_minimum_object_count: u64,
@@ -124,14 +126,15 @@ pub struct StoreConfig {
     pub kv: Arc<KvStoreConfig>,
 
     pub fst: Arc<FstStoreConfig>,
+
+    #[serde(alias = "objects", alias = "corpus")]
+    pub object: Arc<KvStoreConfig>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct KvStoreConfig {
     #[serde(deserialize_with = "env_var::path_buf")]
     pub path: PathBuf,
-
-    pub retain_word_objects: usize,
 
     pub pool: StorePoolConfig,
 
@@ -248,6 +251,18 @@ pub struct RocksDbDatabaseConfig {
 
     #[serde(default)]
     pub stats_dump_period_sec: Option<u32>,
+
+    #[serde(default)]
+    pub enable_blob_files: Option<bool>,
+
+    #[serde(default)]
+    pub min_blob_size: Option<u64>,
+
+    #[serde(default)]
+    pub blob_file_size: Option<u64>,
+
+    #[serde(default)]
+    pub enable_blob_gc: Option<bool>,
 }
 
 fn default_write_buffer_size() -> Option<usize> {
@@ -372,6 +387,7 @@ pub(crate) mod tests {
         query_limit_default = 10
         query_limit_maximum = 100
         query_alternates_try = 4
+        query_retain_word_objects = 1000
         query_minimum_term_idf_default = 0.1
         query_minimum_term_idf_minimum_object_count = 100
         suggest_limit_default = 5
@@ -381,7 +397,6 @@ pub(crate) mod tests {
 
         [store.kv]
         path = "./data/store/kv/"
-        retain_word_objects = 1000
         pool.inactive_after = 1800
         database.flush_after = 900
         database.compression_type = "zstd"
@@ -394,6 +409,14 @@ pub(crate) mod tests {
         graph.consolidate_after = 180
         graph.max_size = 2048
         graph.max_words = 250000
+
+        [store.object]
+        path = "./data/store/corpus/"
+        pool.inactive_after = 1800
+        database.flush_after = 900
+        database.compression_type = "zstd"
+        database.parallelism = 2
+        database.write_ahead_log = true
         "#
     }
 }

@@ -38,6 +38,7 @@ pub fn defaults_toml() -> &'static str {
     query_limit_default = 10
     query_limit_maximum = 100
     query_alternates_try = 4
+    query_retain_word_objects = 1000
     query_minimum_term_idf_default = 0.1
     query_minimum_term_idf_minimum_object_count = 100
     suggest_limit_default = 5
@@ -47,7 +48,6 @@ pub fn defaults_toml() -> &'static str {
 
     [store.kv]
     path = "./data/store/kv/"
-    retain_word_objects = 1000
     pool.inactive_after = 1800
     database.flush_after = 900
     database.compression_type = "zstd"
@@ -61,6 +61,19 @@ pub fn defaults_toml() -> &'static str {
     graph.consolidate_after = 180
     graph.max_size = 2048
     graph.max_words = 250000
+
+    [store.object]
+    path = "./data/store/corpus/"
+    pool.inactive_after = 1800
+    database.flush_after = 900
+    database.compression_type = "zstd"
+    database.parallelism = 2
+    # database.write_buffer_size = 16384 # Default handled via serde
+    database.write_ahead_log = true
+    database.enable_blob_files = true
+    database.min_blob_size = 0
+    database.blob_file_size = 134_217_728 # 128MiB
+    database.enable_blob_gc = true
     "#
 }
 
@@ -101,10 +114,12 @@ impl Config {
             .try_deserialize::<ServerConfigTemp>()
             .expect("syntax error in config");
         let mut core_config = raw_config
+            .clone()
             .try_deserialize::<sonic::Config>()
             .expect("syntax error in config");
 
         back_compat::migrate_channel_search(&mut server_config.channel, &mut core_config);
+        back_compat::migrate_retain_word_objects(&raw_config, &mut core_config);
 
         // Validate configuration.
         core_config.validate();
@@ -246,6 +261,34 @@ mod back_compat {
             }
             if let Some(list_limit_maximum) = list_limit_maximum {
                 sonic.search.list_limit_maximum = list_limit_maximum;
+            }
+        }
+    }
+
+    #[deprecated(
+        since = "2.0.0",
+        note = "Use `search.query_retain_word_objects` instead of `store.kv.retain_word_objects`"
+    )]
+    #[derive(serde::Deserialize)]
+    pub struct ChannelStoreKvConfig {
+        #[serde(default)]
+        pub retain_word_objects: Option<usize>,
+    }
+
+    // This is dirty, but AFAIK (@RemiBardon) the `config` crate doesn’t
+    // provide a better API and hopefully we won’t have to do this again.
+    pub fn migrate_retain_word_objects(raw_config: &config::Config, sonic: &mut sonic::Config) {
+        if let Ok(deprecated) = raw_config.get::<ChannelStoreKvConfig>("store.kv") {
+            let ChannelStoreKvConfig {
+                retain_word_objects,
+            } = deprecated;
+
+            if let Some(retain_word_objects) = retain_word_objects {
+                tracing::warn!(
+                    "You’re still using the deprecated `store.kv.retain_word_objects` key. \
+                    Please use `search.query_retain_word_objects` instead."
+                );
+                sonic.search.query_retain_word_objects = retain_word_objects;
             }
         }
     }

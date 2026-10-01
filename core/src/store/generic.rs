@@ -22,18 +22,22 @@ use crate::store::{Bucket, StoreItemPart};
 /// commands are parsed.
 pub(super) const KEY_SEPARATOR: u8 = b'"';
 
-pub(super) trait StoreGeneric {
+pub(super) trait GenericStore {
+    fn kind() -> &'static str;
+
     fn ref_last_used(&self) -> &RwLock<Instant>;
 }
 
-pub(super) trait StoreGenericPool:
+pub(super) trait GenericStorePool:
     std::ops::Deref<Target = RwLock<HashMap<Self::StoreId, Arc<Self::Store>, Self::HashBuilder>>>
 {
     type StoreId: Hash + Eq;
-    type Store: StoreGeneric;
+    type Store: GenericStore;
     type HashBuilder: std::hash::BuildHasher;
 
-    fn kind() -> &'static str;
+    fn kind() -> &'static str {
+        Self::Store::kind()
+    }
 
     fn consider_inactive_after_secs(&self) -> u64;
 
@@ -44,7 +48,7 @@ pub(super) trait StoreGenericPool:
     fn proceed_erase_bucket(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u32, ()>;
 }
 
-pub(super) trait StoreGenericPoolExt: StoreGenericPool {
+pub(super) trait StoreGenericPoolExt: GenericStorePool {
     fn proceed_acquire_cache(
         store_id: Self::StoreId,
         store: &Arc<Self::Store>,
@@ -169,7 +173,7 @@ pub(super) trait StoreGenericPoolExt: StoreGenericPool {
     }
 }
 
-impl<Pool: StoreGenericPool> StoreGenericPoolExt for Pool {}
+impl<Pool: GenericStorePool> StoreGenericPoolExt for Pool {}
 
 #[inline]
 pub(super) fn u32_from_hex(hex: &str) -> Result<u32, std::io::Error> {
