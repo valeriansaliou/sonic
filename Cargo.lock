@@ -2499,6 +2499,7 @@ dependencies = [
  "nix",
  "rand 0.10.2",
  "serde",
+ "serde_json",
  "sonic-core",
  "sonic_client",
  "tikv-jemallocator",

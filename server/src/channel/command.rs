@@ -19,7 +19,7 @@ use std::vec::Vec;
 
 use sonic::Executor;
 use sonic::executor::{
-    ListMetaData, PushOptions, QueryGenericLang, QuerySearchLimit, QuerySearchOffset,
+    ListMetaData, PushOptions, QueryGenericLang, QueryOptions, QuerySearchLimit, QuerySearchOffset,
 };
 
 use super::format::unescape;
@@ -69,6 +69,8 @@ pub struct QueryMetaData {
     pub limit: QuerySearchLimit,
     pub offset: QuerySearchOffset,
     pub lang: Option<QueryGenericLang>,
+    #[cfg(feature = "experimental-api")]
+    pub snippets: Option<sonic::executor::QuerySnippetsConfig>,
 }
 
 pub const EVENT_ID_SIZE: usize = 8;
@@ -395,6 +397,8 @@ impl ChannelCommandSearch {
                     limit: ctx.search_config.query_limit_default,
                     offset: 0,
                     lang: None,
+                    #[cfg(feature = "experimental-api")]
+                    snippets: None,
                 };
 
                 // Parse meta parts (meta comes after text; extract meta parts second)
@@ -402,6 +406,14 @@ impl ChannelCommandSearch {
 
                 while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
                 {
+                    #[cfg(feature = "experimental-api")]
+                    if matches!(meta_result, Ok(("WITH", _))) {
+                        // NOTE: Just ignoring `WITH` is far from being the best way
+                        //   to handle this, but the parsing code is so convoluted
+                        //   I(@RemiBardon) don’t want to deal with it now.
+                        continue;
+                    }
+
                     if let Err(parse_err) = Self::handle_query_meta(meta_result, &mut query_params)
                     {
                         last_meta_err = Some(parse_err);
@@ -412,6 +424,8 @@ impl ChannelCommandSearch {
                     limit,
                     offset,
                     lang,
+                    #[cfg(feature = "experimental-api")]
+                    snippets,
                 } = query_params;
 
                 if let Some(err) = last_meta_err {
@@ -441,11 +455,36 @@ impl ChannelCommandSearch {
                             should_cleanup,
                             should_cleanup,
                         );
-                        let text_lexed = preprocessor
-                            .preprocess(&text, lang.and_then(QueryGenericLang::into_lang_opt));
+                        let lang = lang.and_then(QueryGenericLang::into_lang_opt);
+                        let text_lexed = preprocessor.preprocess(&text, lang);
+
+                        let query_options = QueryOptions { limit, offset };
+
+                        #[cfg(feature = "experimental-api")]
+                        if let Some(snippets) = snippets {
+                            return ctx
+                                .executor
+                                .query_with_snippets(
+                                    collection,
+                                    bucket,
+                                    text_lexed,
+                                    query_options,
+                                    lang,
+                                    &snippets,
+                                )
+                                .and_then(|results| match serde_json::to_string(&results) {
+                                    Ok(string) => Ok(Some(string)),
+                                    Err(error) => {
+                                        tracing::error!(
+                                            "Failed serializing QUERY snippets: {error}"
+                                        );
+                                        Err(())
+                                    }
+                                });
+                        }
 
                         ctx.executor
-                            .query(collection, bucket, text_lexed, limit, offset)
+                            .query(collection, bucket, text_lexed, query_options)
                             .map(|results| {
                                 if results.is_empty() {
                                     None
@@ -648,6 +687,40 @@ impl ChannelCommandSearch {
                                 meta_key, meta_value,
                             ))
                         }
+                    }
+                    #[cfg(feature = "experimental-api")]
+                    "SNIPPETS" => {
+                        // 'SNIPPETS[(<window_count>[, <window_size>[, <max_window_padding>]?]?)]?'
+                        let mut config = sonic::executor::QuerySnippetsConfig {
+                            window_count: 1,
+                            window_size: 42,
+                            max_window_padding: 41,
+                        };
+
+                        if !meta_value.is_empty() {
+                            let mut args = meta_value.splitn(3, ",");
+
+                            let error = |error| {
+                                tracing::error!("Command argument parsing error: {error}");
+                                Err(ChannelCommandBase::make_error_invalid_meta_value(
+                                    meta_key, meta_value,
+                                ))
+                            };
+
+                            if let Some(arg) = args.next() {
+                                config.window_count = arg.parse().or_else(error)?;
+                            }
+                            if let Some(arg) = args.next() {
+                                config.window_size = arg.parse().or_else(error)?;
+                                config.max_window_padding = config.window_size.saturating_sub(1);
+                            }
+                            if let Some(arg) = args.next() {
+                                config.max_window_padding = arg.parse().or_else(error)?;
+                            }
+                        }
+
+                        meta.snippets = Some(config);
+                        Ok(())
                     }
                     _ => Err(ChannelCommandBase::make_error_invalid_meta_key(
                         meta_key, meta_value,
