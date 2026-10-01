@@ -39,6 +39,16 @@ crate::util::impl_transparent_wrapper_utils!(From for StoreObjectOid<'a>(StoreIt
 crate::util::impl_transparent_wrapper_utils!(Debug for StoreObjectOid<'a>(StoreItemPart<'a>));
 crate::util::impl_transparent_wrapper_utils!(Display for StoreObjectOid<'a>(StoreItemPart<'a>));
 
+impl<'a> StoreObjectOid<'a> {
+    #[allow(clippy::should_implement_trait)]
+    pub(crate) fn from_str(part: &'a str) -> Result<Self, ()> {
+        match StoreItemPart::from_str(part) {
+            Ok(part) => Ok(Self(part)),
+            Err(()) => Err(()),
+        }
+    }
+}
+
 // MARK: Bucket
 
 #[derive(Clone, Copy, PartialEq, Eq)]

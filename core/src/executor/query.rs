@@ -9,21 +9,31 @@ use indexmap::IndexMap;
 
 use super::types::{QueryMatchScore, QueryResultScore, QuerySearchLimit, QuerySearchOffset};
 use crate::lexer::itertools::UniqueBy;
-use crate::lexer::preprocessor::{PreprocessorOutput, Token};
+use crate::lexer::preprocessor::{Preprocessor, PreprocessorOutput, Token};
+pub use crate::lexer::snippet_matching::QuerySnippetsConfig;
+use crate::lexer::snippet_matching::{Snippet, get_best_snippets};
 use crate::store::fst::typo_factor;
 use crate::store::kv::KvRepositoryReadOnly;
-use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreTermHash};
+use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreObjectOid, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
 
+type ScoringMatrix = IndexMap<StoreObjectIid, Vec<Option<(String, f32)>>>;
+
+pub struct QueryOptions {
+    pub limit: QuerySearchLimit,
+    pub offset: QuerySearchOffset,
+}
+
 impl super::Executor {
-    pub fn search(
+    fn query_(
         &self,
         collection: StoreItemPart,
         bucket: Bucket,
         input: PreprocessorOutput,
-        limit: QuerySearchLimit,
-        offset: QuerySearchOffset,
-    ) -> Result<Vec<String>, ()> {
+        options: QueryOptions,
+    ) -> Result<(Vec<(String, StoreObjectIid)>, ScoringMatrix), ()> {
+        let QueryOptions { limit, offset } = options;
+
         // Important: acquire database access read lock, and reference it in context. This \
         //   prevents the database from being erased while using it in this block.
         let _kv_read_guard = self.kv_pool.lock_read_access();
@@ -40,7 +50,7 @@ impl super::Executor {
             tracing::debug!(
                 "collection store does not exist, consider {bucket:?} from {collection:?} empty"
             );
-            return Ok(vec![]);
+            return Ok((vec![], ScoringMatrix::new()));
         };
 
         let (higher_limit, mut alternates_try) = (
@@ -89,7 +99,7 @@ impl super::Executor {
         //   insertion order, which correlates to reverse data ingestion
         //   order.
         // NOTE: `capacity = 24` to reduce initial grows.
-        let mut scoring_matrix: IndexMap<StoreObjectIid, Vec<Option<QueryMatchScore>>> =
+        let mut scoring_matrix: ScoringMatrix =
             IndexMap::with_capacity(24usize.min(usize::from(limit)));
 
         // Look for exact matches.
@@ -140,8 +150,14 @@ impl super::Executor {
 
             for iid in iids.into_iter() {
                 // Assign a base score of `1` as those are exact matches.
-                let inserted =
-                    update_score(&mut scoring_matrix, iid, 1. * bm25_score, idx, term_count);
+                let inserted = update_score(
+                    &mut scoring_matrix,
+                    iid,
+                    term.to_owned(),
+                    1. * bm25_score,
+                    idx,
+                    term_count,
+                );
 
                 if inserted {
                     // Higher limit now reached?
@@ -267,9 +283,12 @@ impl super::Executor {
 
         // Flatten scores, taking into account missing matches (thanks to
         // `None`).
-        let found_iids = scoring_matrix
-            .into_iter()
-            .map(|(iid, scores)| (iid, overall_score(&scores)));
+        let found_iids = scoring_matrix.iter().map(|(iid, scores)| {
+            (
+                iid,
+                overall_score(scores.iter().map(|o| o.as_ref().map(|(_, s)| *s))),
+            )
+        });
 
         // Sort found IIDs.
         let all_iids = {
@@ -290,8 +309,8 @@ impl super::Executor {
             }
 
             // Read IID-to-OID for this found IID
-            if let Ok(Some(oid)) = kv_repo.get_iid_to_oid(found_iid) {
-                result_oids.push(oid);
+            if let Ok(Some(oid)) = kv_repo.get_iid_to_oid(*found_iid) {
+                result_oids.push((oid, *found_iid));
             } else {
                 tracing::error!("failed getting search executor iid-to-oid");
             }
@@ -299,7 +318,133 @@ impl super::Executor {
 
         tracing::info!("got search executor final oids: {:?}", result_oids);
 
-        Ok(result_oids)
+        Ok((result_oids, scoring_matrix))
+    }
+
+    #[inline]
+    pub fn query(
+        &self,
+        collection: StoreItemPart,
+        bucket: Bucket,
+        input: PreprocessorOutput,
+        options: QueryOptions,
+    ) -> Result<Vec<String>, ()> {
+        self.query_(collection, bucket, input, options)
+            .map(|res| res.0.into_iter().map(|(oid, _)| oid).collect())
+    }
+
+    pub fn query_with_snippets(
+        &self,
+        collection: StoreItemPart,
+        bucket: Bucket,
+        input: PreprocessorOutput,
+        options: QueryOptions,
+        lang: Option<whatlang::Lang>,
+        snippets_config: &QuerySnippetsConfig,
+    ) -> Result<Vec<MatchWithSnippets>, ()> {
+        let (oids, mut scoring_matrix) = self.query_(collection, bucket, input, options)?;
+
+        let object_store_pool = self
+            .object_store_pool
+            .acquire(false, collection, None, |_| {})?;
+
+        let Some(object_store_pool) = object_store_pool else {
+            tracing::debug!(
+                "Object store does not exist, consider {bucket:?} from {collection:?} empty"
+            );
+            let res = (oids.into_iter())
+                .map(|(oid, _)| MatchWithSnippets::new(oid))
+                .collect::<Vec<_>>();
+            return Ok(res);
+        };
+
+        let object_repo = object_store_pool.to_repository(bucket);
+
+        let mut res = Vec::with_capacity(oids.len());
+
+        let preprocessor = Preprocessor {
+            // NOTE: This is important to get accurate tf and add padding to snippets.
+            filter_stopwords: false,
+            ..Preprocessor::default()
+        };
+
+        for (oid, iid) in oids {
+            let oid_parsed = StoreObjectOid::from_str(&oid)?;
+
+            let original = object_repo.get_object_original(oid_parsed);
+
+            // Push a new entry no matter if we find the orignal object or even
+            // any snippet. All matching objects must be returned, snippets list
+            // will just be empty.
+            let match_entry = res.push_mut(MatchWithSnippets::new(oid));
+
+            match original {
+                Ok(Some(bytes)) => {
+                    // TODO(perf): Avoid parsing to string here? Match on raw bytes?
+                    let Ok(doc) = String::from_utf8(bytes).inspect_err(|error| {
+                        tracing::warn!(
+                            ?collection,
+                            ?bucket,
+                            oid = match_entry.oid,
+                            "Invalid byte sequence found in object store: {error}"
+                        )
+                    }) else {
+                        continue;
+                    };
+
+                    let indexmap::map::Entry::Occupied(mut scoring_matrix_entry) =
+                        scoring_matrix.entry(iid)
+                    else {
+                        if cfg!(debug_assertions) {
+                            panic!("IID missing from scoring matrix; this should not happen.");
+                        } else {
+                            continue;
+                        }
+                    };
+                    let scoring_matrix_entry = std::mem::take(scoring_matrix_entry.get_mut());
+
+                    let idf_by_token: std::collections::HashMap<String, (f32, usize)> =
+                        (scoring_matrix_entry.into_iter())
+                            .enumerate()
+                            .flat_map(|(index, opt)| {
+                                opt.map(|(term, score)| (term, (score, index)))
+                            })
+                            .collect();
+
+                    match_entry.snippets = get_best_snippets(
+                        &doc,
+                        lang,
+                        &preprocessor,
+                        *snippets_config,
+                        idf_by_token,
+                    );
+                }
+                Ok(None) => continue,
+                Err(error) => {
+                    tracing::error!("Error getting original object: {error}");
+                    continue;
+                }
+            }
+        }
+
+        Ok(res)
+    }
+}
+
+#[derive(Debug)]
+#[derive(serde::Serialize)]
+pub struct MatchWithSnippets {
+    pub oid: String,
+    pub snippets: Vec<Snippet>,
+}
+
+impl MatchWithSnippets {
+    #[inline]
+    const fn new(oid: String) -> Self {
+        Self {
+            oid,
+            snippets: vec![],
+        }
     }
 }
 
@@ -392,9 +537,11 @@ fn test_typo_score() {
     assert_eq!(typo_score(3 * 20, 7 * 20), typo_score(3, 7));
 }
 
-fn overall_score(scores: &[Option<QueryMatchScore>]) -> QueryResultScore {
-    let total = scores.iter().map(|opt| opt.unwrap_or(0f32)).sum::<f32>();
+fn overall_score(
+    scores: impl ExactSizeIterator<Item = Option<QueryMatchScore>>,
+) -> QueryResultScore {
     let count = scores.len() as f32;
+    let total = scores.map(|opt| opt.unwrap_or(0f32)).sum::<f32>();
 
     #[allow(clippy::let_and_return)]
     let average = total / count;
@@ -404,78 +551,85 @@ fn overall_score(scores: &[Option<QueryMatchScore>]) -> QueryResultScore {
 
 #[cfg(test)]
 #[test]
+#[rustfmt::skip]
 fn test_overall_score() {
     const MISSING: Option<QueryMatchScore> = None;
     const EXACT_MATCH: Option<QueryMatchScore> = Some(1.);
 
     // Max score for exact matches.
-    assert_eq!(overall_score(&[EXACT_MATCH; 1]), 1.);
-    assert_eq!(overall_score(&[EXACT_MATCH; 2]), 1.);
-    assert_eq!(overall_score(&[EXACT_MATCH; 3]), 1.);
-    assert_eq!(overall_score(&[EXACT_MATCH; 4]), 1.);
+    assert_eq!(overall_score([EXACT_MATCH; 1].into_iter()), 1.);
+    assert_eq!(overall_score([EXACT_MATCH; 2].into_iter()), 1.);
+    assert_eq!(overall_score([EXACT_MATCH; 3].into_iter()), 1.);
+    assert_eq!(overall_score([EXACT_MATCH; 4].into_iter()), 1.);
 
     // Lowest score for missing matches.
-    assert_eq!(overall_score(&[MISSING; 1]), 0.);
-    assert_eq!(overall_score(&[MISSING; 2]), 0.);
-    assert_eq!(overall_score(&[MISSING; 3]), 0.);
-    assert_eq!(overall_score(&[MISSING; 4]), 0.);
+    assert_eq!(overall_score([MISSING; 1].into_iter()), 0.);
+    assert_eq!(overall_score([MISSING; 2].into_iter()), 0.);
+    assert_eq!(overall_score([MISSING; 3].into_iter()), 0.);
+    assert_eq!(overall_score([MISSING; 4].into_iter()), 0.);
 
     // Auto-complete > fuzzy matching (not always, but in most cases).
-    assert!(overall_score(&[Some(prefix_score(5, 4))]) > overall_score(&[Some(typo_score(1, 10))]));
+    assert!(
+          overall_score([Some(prefix_score(5,  4))].into_iter())
+        > overall_score([Some(  typo_score(1, 10))].into_iter())
+    );
 
     // Missing one term.
-    assert_eq!(overall_score(&[MISSING, EXACT_MATCH]), 1. / 2.);
-    assert_eq!(overall_score(&[MISSING, EXACT_MATCH, EXACT_MATCH]), 2. / 3.);
+    assert_eq!(overall_score([MISSING, EXACT_MATCH             ].into_iter()), 1. / 2.);
+    assert_eq!(overall_score([MISSING, EXACT_MATCH, EXACT_MATCH].into_iter()), 2. / 3.);
     // Missing one term is better than missing all terms.
-    assert!(overall_score(&[MISSING, EXACT_MATCH]) > overall_score(&[MISSING]));
+    assert!(
+          overall_score([MISSING, EXACT_MATCH].into_iter())
+        > overall_score([MISSING             ].into_iter())
+    );
 
     // Term order has no meaning.
     assert_eq!(
-        overall_score(&[
+        overall_score([
             EXACT_MATCH,
             Some(prefix_score(2, 3)),
             Some(typo_score(2, 7))
-        ]),
-        overall_score(&[
+        ].into_iter()),
+        overall_score([
             Some(typo_score(2, 7)),
             Some(prefix_score(2, 3)),
             EXACT_MATCH
-        ])
+        ].into_iter())
     );
 
     // All typos in one term is like the same total across multiple terms.
     // NOTE: This is not a requirement, it’s just a non-regression test.
     assert_eq!(
-        overall_score(&[Some(typo_score(1, 7)); 2]),
-        overall_score(&[Some(typo_score(2, 7)), EXACT_MATCH])
+        overall_score([Some(typo_score(1, 7)); 2]          .into_iter()),
+        overall_score([Some(typo_score(2, 7)), EXACT_MATCH].into_iter())
     );
     assert_eq!(
-        overall_score(&[Some(typo_score(1, 7)); 3]),
-        overall_score(&[Some(typo_score(3, 7)), EXACT_MATCH, EXACT_MATCH])
+        overall_score([Some(typo_score(1, 7)); 3]                       .into_iter()),
+        overall_score([Some(typo_score(3, 7)), EXACT_MATCH, EXACT_MATCH].into_iter())
     );
 
     // Examples for “The brown fox jumps over the lazy dog”:
     // “brown fox jumps”
-    assert_eq!(overall_score(&[EXACT_MATCH, EXACT_MATCH, EXACT_MATCH]), 1.);
+    assert_eq!(overall_score([EXACT_MATCH, EXACT_MATCH, EXACT_MATCH].into_iter()), 1.);
     // “brown fox jum”
     assert_eq!(
-        overall_score(&[EXACT_MATCH, EXACT_MATCH, Some(prefix_score(2, 3))]),
+        overall_score([EXACT_MATCH, EXACT_MATCH, Some(prefix_score(2, 3))].into_iter()),
         0.9892473
     );
     // “bron fox jum”
     assert_eq!(
-        overall_score(&[
+        overall_score([
             Some(typo_score(1, 5)),
             EXACT_MATCH,
             Some(prefix_score(2, 3))
-        ]),
+        ].into_iter()),
         0.92258066
     );
     // “brown fox”
-    assert_eq!(overall_score(&[EXACT_MATCH, EXACT_MATCH,]), 1.);
+    assert_eq!(overall_score([EXACT_MATCH, EXACT_MATCH].into_iter()), 1.);
     // “brown fox eats”
     assert_eq!(
-        overall_score(&[EXACT_MATCH, EXACT_MATCH, MISSING]),
+        overall_score([EXACT_MATCH, EXACT_MATCH, MISSING].into_iter()),
         0.6666667
     ); // 2/3
 }
@@ -503,7 +657,7 @@ fn bm25_lite_idf(document_count: u64, document_frequency: u64) -> f32 {
 #[allow(clippy::too_many_arguments)] // We’ll refactor this someday, and it’ not public anyway.
 fn merge_suggestions(
     suggestions: impl Iterator<Item = (String, QueryMatchScore)>,
-    scoring_matrix: &mut IndexMap<StoreObjectIid, Vec<Option<QueryMatchScore>>>,
+    scoring_matrix: &mut IndexMap<StoreObjectIid, Vec<Option<(String, QueryMatchScore)>>>,
     term: &str,
     term_idx: usize,
     term_count: usize,
@@ -553,6 +707,7 @@ fn merge_suggestions(
             let inserted = update_score(
                 scoring_matrix,
                 suggested_iid,
+                suggested_word.clone(),
                 suggestion_score,
                 term_idx,
                 term_count,
@@ -578,8 +733,9 @@ fn merge_suggestions(
 }
 
 fn update_score(
-    scoring_matrix: &mut IndexMap<StoreObjectIid, Vec<Option<QueryMatchScore>>>,
+    scoring_matrix: &mut IndexMap<StoreObjectIid, Vec<Option<(String, QueryMatchScore)>>>,
     iid: StoreObjectIid,
+    term: String,
     score: QueryMatchScore,
     term_idx: usize,
     term_count: usize,
@@ -588,12 +744,19 @@ fn update_score(
         // If entry already exists, use lowest score.
         indexmap::map::Entry::Occupied(mut occupied_entry) => {
             // SAFETY: We always initialize vecs with `term_count` entries.
-            let entry_score = unsafe { occupied_entry.get_mut().get_unchecked_mut(term_idx) };
+            let entry_score_opt = unsafe { occupied_entry.get_mut().get_unchecked_mut(term_idx) };
 
-            let new_score = entry_score.map_or(score, |entry_score| score.min(entry_score));
-
-            tracing::trace!(entry_score, new_score, "Updating to min score");
-            *entry_score = Some(new_score);
+            match entry_score_opt {
+                Some((_, entry_score)) if *entry_score > score => {
+                    tracing::trace!(entry_score, score, "Updating to min score");
+                    *entry_score_opt = Some((term, score));
+                }
+                Some(_) => {}
+                None => {
+                    tracing::trace!(score, "Setting min score");
+                    *entry_score_opt = Some((term, score));
+                }
+            }
 
             false
         }
@@ -603,7 +766,7 @@ fn update_score(
 
             tracing::trace!(new_score = score, "Inserting new score");
             // SAFETY: `scores` has `term_count` elements.
-            unsafe { *scores.get_unchecked_mut(term_idx) = Some(score) };
+            unsafe { *scores.get_unchecked_mut(term_idx) = Some((term, score)) };
 
             vacant_entry.insert(scores);
 

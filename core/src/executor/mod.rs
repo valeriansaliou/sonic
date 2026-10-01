@@ -23,10 +23,11 @@ mod flusho;
 mod list;
 mod pop;
 mod push;
-mod search;
+mod query;
 mod suggest;
 
 pub use push::PushOptions;
+pub use query::{MatchWithSnippets, QueryOptions, QuerySnippetsConfig};
 pub use types::*;
 
 pub struct Executor {

@@ -575,24 +575,24 @@ pub mod preprocessor {
     pub struct Token<'s> {
         original: &'s str,
 
-        pub(super) normalized: &'s str,
+        pub(in crate::lexer) normalized: &'s str,
 
         /// Marker to differenciate special tokens (like email addresses), which
         /// should be processed differently, (like disabling fuzzy matching
         /// during search queries).
-        pub(super) kind: TokenKind,
+        pub(in crate::lexer) kind: TokenKind,
 
         /// Start index (byte) in original text.
-        pub(super) start: usize,
+        pub(in crate::lexer) start: usize,
 
         /// End index (byte) in original text (exclusive).
-        pub(super) end: usize,
+        pub(in crate::lexer) end: usize,
 
         /// Index of the token in the tokenized text (stopwords included).
         ///
         /// To get the index without considering stopwords, use
         /// [`core::iter::Iterator::enumerate`].
-        pub(super) index_in_tokenized_text: usize,
+        pub(in crate::lexer) index_in_tokenized_text: usize,
 
         hash: Rc<OnceCell<StoreTermHash>>,
     }

@@ -314,6 +314,26 @@ pub fn ingest_parallel<T: Ingestable>(
         }
     }
 
+    // let search = SonicChannelSearchBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
+
+    // {
+    //     let query = "exanple";
+    //     let json = search
+    //         .send_async(
+    //             sonic_client::Command::new(
+    //                 format!("QUERY {COLLECTION} {BUCKET} {query:?} LIMIT(4) WITH SNIPPETS")
+    //                     .into_boxed_str(),
+    //                 0,
+    //                 0,
+    //             ),
+    //             sonic_client::search::Discriminant::Pending,
+    //             |id| sonic_client::search::Discriminant::EventQuery(Box::from(id)),
+    //             |data| Ok(data.to_owned()),
+    //         )
+    //         .unwrap();
+    //     println!("Got snippets: {json}");
+    // }
+
     // {
     //     let term_count = ingest.legacy_countb(COLLECTION, BUCKET).unwrap();
     //     tracing::info!("Final term count: {term_count}");
@@ -321,6 +341,7 @@ pub fn ingest_parallel<T: Ingestable>(
 
     drop(control);
     drop(ingest);
+    // drop(search);
     drop(sonic);
 
     IngestStats {

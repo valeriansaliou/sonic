@@ -480,46 +480,34 @@ impl FstStorePool {
             //   prevent any de-optimized jump instruction, as we may call
             //   this code block a lot on large FSTs, and the loop should not
             //   be engaged that often on stabilized FSTs (i.e. mature FSTs).
-            if let Some(push_first_ref) = ordered_push.front() {
-                // Engage the loop?
-                if *push_first_ref <= old_fst_word {
-                    while let Some(push_front_ref) = ordered_push.front() {
-                        if *push_front_ref > old_fst_word {
-                            // Important: stop loop on next front item (always the same).
-                            break;
-                        }
+            while let Some(push_front) = ordered_push.pop_front_if(|&mut push_ref| {
+                // Important: stop loop on next front item (always the same).
+                push_ref <= old_fst_word
+            }) {
+                if check_over_limits(
+                    tmp_fst_builder.bytes_written() as usize,
+                    stats.count_pushed + stats.count_moved,
+                    &self.fst_store_config.graph,
+                ) {
+                    // FST cannot accept more items (limits reached).
+                    tracing::warn!("Limit reached on new from old in fst");
 
-                        // Pop front item and consume it.
-                        // SAFETY: As we validated previously that there
-                        //   is a front value, this unwrap is safe.
-                        let push_front = ordered_push.pop_front().unwrap();
+                    // Important: stop the main loop (limit reached).
+                    break 'old;
+                }
 
-                        if check_over_limits(
-                            tmp_fst_builder.bytes_written() as usize,
-                            stats.count_pushed + stats.count_moved,
-                            &self.fst_store_config.graph,
-                        ) {
-                            // FST cannot accept more items (limits reached).
-                            tracing::warn!("Limit reached on new from old in fst");
-
-                            // Important: stop the main loop (limit reached).
-                            break 'old;
-                        }
-
-                        match tmp_fst_builder.insert(push_front) {
-                            // Word inserted in FST.
-                            Ok(()) => stats.count_pushed += 1,
-                            // Could not insert word in FST.
-                            Err(error) => {
-                                tracing::error!("Failed inserting new from old in fst: {error:?}")
-                            }
-                        }
-
-                        // Continue scanning next word (may also come
-                        // before this FST word in order).
-                        continue;
+                match tmp_fst_builder.insert(push_front) {
+                    // Word inserted in FST.
+                    Ok(()) => stats.count_pushed += 1,
+                    // Could not insert word in FST.
+                    Err(error) => {
+                        tracing::error!("Failed inserting new from old in fst: {error:?}")
                     }
                 }
+
+                // Continue scanning next word (may also come
+                // before this FST word in order).
+                continue;
             }
 
             // Restore old word (if not popped).

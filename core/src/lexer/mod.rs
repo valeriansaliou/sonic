@@ -7,6 +7,7 @@
 mod stopwords;
 
 pub mod ranges;
+pub mod snippet_matching;
 #[cfg(feature = "stemming")]
 mod stemming;
 mod token;
