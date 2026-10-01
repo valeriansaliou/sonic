@@ -131,8 +131,10 @@ macro_rules! exec {
             .query(
                 c, b,
                 preprocessor.preprocess($term, exec!(internal_ lang $($lang)?)),
-                exec!(internal_ limit $($limit)?),
-                0,
+                sonic::executor::QueryOptions {
+                    limit: exec!(internal_ limit $($limit)?),
+                    offset: 0,
+                }
             )
             .expect("QUERY should succeed")
     }};
