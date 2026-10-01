@@ -18,7 +18,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-sonic-core = { version = "=0.4.1", path = "../core", default-features = false, features = ["stemming"] }
+sonic-core = { version = "=0.4.1", path = "../core", default-features = false }
 tracing = { version = "=0.1.44", default-features = false }
 tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["std", "fmt", "ansi", "env-filter"] }
 clap = { version = "=4.6.7", default-features = false, features = ["std", "cargo", "color", "help", "usage", "error-context", "suggestions"] }
@@ -45,10 +45,11 @@ tikv-jemallocator = { optional = true, version = "=0.7.0", default-features = fa
 windows-sys = { version = "=0.61.2", default-features = false, features = ["Win32_System_Console"] }
 
 [features]
-default = ["allocator-jemalloc", "tokenizer-chinese"]
+default = ["allocator-jemalloc", "tokenizer-chinese", "stemming"]
 allocator-jemalloc = ["tikv-jemallocator", "sonic-core/allocator-jemalloc"]
 tokenizer-chinese = ["sonic-core/tokenizer-chinese"]
 tokenizer-japanese = ["sonic-core/tokenizer-japanese"]
+stemming = ["sonic-core/stemming"]
 experimental-api = []
 benchmark = []
 

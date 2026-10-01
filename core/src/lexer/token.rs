@@ -140,7 +140,10 @@ mod tests {
             "hackers doing hacking"
         );
 
-        preprocessor.normalization_config.stemming_enabled = true;
+        #[cfg(feature = "stemming")]
+        {
+            preprocessor.normalization_config.stemming_enabled = true;
+        }
 
         #[rustfmt::skip]
         assert_eq!(
@@ -343,8 +346,11 @@ pub mod preprocessor {
 
     use super::lang_detection::detect_lang;
     use super::lexing::{Lexer, TokenKind};
-    use super::normalization::{Normalizer, Stemmer};
+    use super::normalization::Normalizer;
+    #[cfg(feature = "stemming")]
+    use super::normalization::Stemmer;
     use crate::config::{NormalizationConfig, StopwordsConfig, TokenizationConfig};
+    #[cfg(feature = "stemming")]
     use crate::lexer::stemming;
     use crate::lexer::stopwords::is_stopword;
     use crate::store::StoreTermHash;
@@ -427,6 +433,7 @@ pub mod preprocessor {
             let normalizer = Normalizer::new(self.normalization_config);
 
             // Choose the stemming algorithm once
+            #[cfg(feature = "stemming")]
             let stemming_algorithm: OnceCell<Option<Stemmer>> = OnceCell::new();
 
             'tokenization: for (index, mut token) in lexer.lex(text, lang).enumerate() {
@@ -448,6 +455,7 @@ pub mod preprocessor {
                     }
                 }
 
+                #[allow(unused_mut)]
                 let mut span = TokenSpan {
                     start_original: token.start,
                     end_original: token.start + token.raw.len(),
@@ -460,6 +468,7 @@ pub mod preprocessor {
                 };
 
                 // Stemming
+                #[cfg(feature = "stemming")]
                 if self.normalization_config.stemming_enabled
                     && let Some(stemmer) = stemming_algorithm.get_or_init(|| match lang {
                         Some(ref lang) => stemming::snowball_algorithm(lang).map(Stemmer::new),
@@ -498,6 +507,7 @@ pub mod preprocessor {
                 normalization_config: NormalizationConfig {
                     unicode_normalization: None,
                     diacritic_folding_enabled: false,
+                    #[cfg(feature = "stemming")]
                     stemming_enabled: false,
                 },
                 stopwords_config: StopwordsConfig::default(),
@@ -1075,7 +1085,6 @@ pub mod lexing {
 
 mod normalization {
     use super::lexing::{LexerToken, SpecialTokenKind, TokenKind};
-    use super::preprocessor::TokenSpan;
     use crate::config::{NormalizationConfig, UnicodeNormalization};
 
     pub(super) struct Normalizer {
@@ -1171,16 +1180,22 @@ mod normalization {
         }
     }
 
+    #[cfg(feature = "stemming")]
     pub(super) struct Stemmer {
         algorithm: snowball::Algorithm,
     }
 
+    #[cfg(feature = "stemming")]
     impl Stemmer {
         pub(super) fn new(algorithm: snowball::Algorithm) -> Self {
             Self { algorithm }
         }
 
-        pub(super) fn stem(&self, span: &mut TokenSpan, text_normalized: &mut String) {
+        pub(super) fn stem(
+            &self,
+            span: &mut super::preprocessor::TokenSpan,
+            text_normalized: &mut String,
+        ) {
             match (self.algorithm.stemmer())
                 .stem(&text_normalized[span.start_normalized..span.end_normalized])
             {
