@@ -238,3 +238,17 @@ impl_fns!(
     }
     where T: Send + 'static,
 );
+
+impl_fns!(
+    #[doc = "Send a raw async command."]
+    fn send_async<T>(
+        &self,
+        command: crate::Command,
+        discriminant1: impl Into<self::Discriminant>,
+        make_discriminant2: impl FnOnce(&str) -> self::Discriminant + Send + Sync + 'static,
+        parse: impl Fn(&str) -> std::io::Result<T> + Send + 'static,
+    ) -> std::io::Result<T> {
+        self.inner.send_async(command, discriminant1, make_discriminant2, parse)
+    }
+    where T: Send + 'static,
+);
