@@ -13,6 +13,11 @@ jobs:
 
     runs-on: ubuntu-24.04
 
+    # We don’t make GitHub releases for core releases anymore. It saves
+    # everyone a notification, and keeps the “Releases” list lean. We might
+    # re-enable this in the future, which is why this stays here for now.
+    if: false
+
     steps:
       # NOTE: Required by `WyriHaximus/github-action-get-previous-tag`…
       - name: Checkout code
