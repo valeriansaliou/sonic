@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard};
 
 use crate::store::kv::KvStoreId;
-use crate::store::{StoreItemPart, StoreTermHash};
+use crate::store::{StoreItemPart, StoreObjectIid, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
 
 #[macro_use]
@@ -37,6 +37,16 @@ pub struct Executor {
     pub object_store_pool: crate::store::object::ObjectStorePool,
     pub dynamic_conf_store: Arc<DynamicConfigStore>,
 
+    /// When using `NEW` with `PUSH`, a new IID is automatically created.
+    /// However, if the input data is larger than the allowed buffer size Sonic
+    /// would end up indexing the same document across multiple IIDs
+    /// (see [issue #405 “Experimental flag `NEW` is incompatible with content > `buffer_size`”](https://github.com/valeriansaliou/sonic/issues/405)).
+    ///
+    /// To fix it, we keep track of the last “assumed new” OID and its IID so
+    /// we can reuse it on subsequent `PUSH … NEW` requests.
+    // NOTE: We can’t use `StoreObjectOid` as it’d not owned.
+    last_assumed_new_oid: RwLock<Option<(String, StoreObjectIid)>>,
+
     multipart_push_context: Mutex<Option<MultipartPushContext>>,
 }
 
@@ -54,6 +64,7 @@ impl Executor {
             fst_pool,
             object_store_pool,
             dynamic_conf_store,
+            last_assumed_new_oid: RwLock::new(None),
             multipart_push_context: Mutex::new(None),
         }
     }
@@ -61,7 +72,7 @@ impl Executor {
 
 impl std::fmt::Debug for Executor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use crate::util::fmt::AsPrettyMutex;
+        use crate::util::fmt::{AsPrettyMutex, AsPrettyRwLock};
 
         // NOTE: Deconstructing to future-proof this function.
         let Self {
@@ -69,6 +80,7 @@ impl std::fmt::Debug for Executor {
             fst_pool,
             object_store_pool,
             dynamic_conf_store,
+            last_assumed_new_oid,
             multipart_push_context,
             // NOTE: We don’t care about the app configuration,
             //   we can see it elsewhere if needed.
@@ -80,6 +92,10 @@ impl std::fmt::Debug for Executor {
             .field("fst_pool", fst_pool)
             .field("object_store_pool", object_store_pool)
             .field("dynamic_conf_store", dynamic_conf_store)
+            .field(
+                "last_assumed_new_oid",
+                &AsPrettyRwLock(last_assumed_new_oid),
+            )
             .field(
                 "multipart_push_context",
                 &AsPrettyMutex(multipart_push_context),
@@ -286,13 +302,6 @@ impl Executor {
 /// See [Issue #422 “Add a `PUSH` flag to signal partial input”](https://github.com/valeriansaliou/sonic/issues/422).
 #[derive(Debug)]
 struct MultipartPushContext {
-    /// When using `NEW` with `PUSH`, a new IID is automatically created.
-    /// However, if the input data is larger than the allowed buffer size Sonic
-    /// would end up indexing the same document across multiple IIDs
-    /// (see [issue #405 “Experimental flag `NEW` is incompatible with content > `buffer_size`”](https://github.com/valeriansaliou/sonic/issues/405)).
-    ///
-    /// To fix it, we keep track of the last “assumed new” OID and its IID so
-    /// we can reuse it on subsequent `PUSH … NEW` requests.
     // NOTE: We can’t use `StoreObjectOid` as it’s not owned.
     oid: String,
 

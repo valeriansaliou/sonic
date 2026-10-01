@@ -6,6 +6,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use std::collections::HashMap;
+use std::sync::RwLock;
 
 use rocksdb::WriteBatch;
 
@@ -162,10 +163,21 @@ impl super::Executor {
             assume_new: bool,
             kv_repo: &KvRepositoryReadWrite<'_>,
             batch: &mut WriteBatch,
+            last_assumed_new_oid: &RwLock<Option<(String, StoreObjectIid)>>,
         ) -> Result<(StoreObjectIid, bool), ()> {
             if assume_new {
-                // Get new IID (assume new).
-                assign_new_iid(oid, kv_repo, batch).map(|iid| (iid, true))
+                if let Some((last_oid, iid)) = last_assumed_new_oid.read().unwrap().as_ref()
+                    && **oid == *last_oid.as_str()
+                {
+                    Ok((*iid, false))
+                } else {
+                    // Get new IID (assume new).
+                    let iid = assign_new_iid(oid, kv_repo, batch)?;
+
+                    *last_assumed_new_oid.write().unwrap() = Some((oid.to_string(), iid));
+
+                    Ok((iid, true))
+                }
             } else {
                 // Try to resolve existing OID to IID, otherwise get new IID.
                 match kv_repo.get_oid_to_iid(oid) {
@@ -186,7 +198,13 @@ impl super::Executor {
                 let is_new = {
                     let mut batch = WriteBatch::default();
 
-                    let (iid, is_new) = get_iid(oid, ctx.assume_new, &kv_repo, &mut batch)?;
+                    let (iid, is_new) = get_iid(
+                        oid,
+                        ctx.assume_new,
+                        &kv_repo,
+                        &mut batch,
+                        &self.last_assumed_new_oid,
+                    )?;
 
                     for term_hash in ctx.terms.keys() {
                         // Link IID to term
@@ -248,7 +266,13 @@ impl super::Executor {
                 let is_new = {
                     let mut batch = WriteBatch::default();
 
-                    let (iid, is_new) = get_iid(oid, options.assume_new, &kv_repo, &mut batch)?;
+                    let (iid, is_new) = get_iid(
+                        oid,
+                        options.assume_new,
+                        &kv_repo,
+                        &mut batch,
+                        &self.last_assumed_new_oid,
+                    )?;
 
                     for token in &mut tokens {
                         let term_hash = token.hash();
