@@ -45,6 +45,8 @@ fn criterion_benchmark(c: &mut Criterion) {
         },
     );
 
+    let is_quick = std::env::args().any(|arg| arg == "--quick");
+
     let mut group = c.benchmark_group("wikipedia_parallel");
 
     // No need to warm up for 3 seconds (default).
@@ -60,7 +62,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     // Lower sample size as what we’re measuring is quite long to execute.
     group.sample_size(10);
-    group.measurement_time(Duration::from_secs(30));
+    group.measurement_time(Duration::from_secs(if is_quick { 10 } else { 30 }));
 
     let total_bytes = articles()
         .map(|article| article.text.len() as u64)
