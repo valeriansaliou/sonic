@@ -210,8 +210,9 @@ pub fn ingest_parallel<T: Ingestable>(
                             }
                             Err(err) => {
                                 panic!(
-                                    "Failed ingesting {title:?} ({len:.2}) after {ingested_count} success(es) ({ingested_bytes:.2}): {err}",
+                                    "Failed ingesting {title:?} (id={id:?}, len={len:.2}) after {ingested_count} success(es) ({ingested_bytes:.2}): {err}",
                                     title = object.title(),
+                                    id = object.id(),
                                     len = HumanBytes::from(len as u64),
                                     ingested_bytes = HumanBytes::from(ingested_bytes),
                                 );
