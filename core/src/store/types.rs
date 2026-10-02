@@ -37,7 +37,6 @@ pub struct StoreObjectOid<'a>(StoreItemPart<'a>);
 crate::util::impl_transparent_wrapper_utils!(Deref for StoreObjectOid<'a>(StoreItemPart<'a>));
 crate::util::impl_transparent_wrapper_utils!(From for StoreObjectOid<'a>(StoreItemPart<'a>));
 crate::util::impl_transparent_wrapper_utils!(Debug for StoreObjectOid<'a>(StoreItemPart<'a>));
-crate::util::impl_transparent_wrapper_utils!(Display for StoreObjectOid<'a>(StoreItemPart<'a>));
 
 impl<'a> StoreObjectOid<'a> {
     #[allow(clippy::should_implement_trait)]
