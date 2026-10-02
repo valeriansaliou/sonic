@@ -11,7 +11,7 @@ pub(super) type Hash = u32;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct StoreObjectIid(Hash);
+pub struct StoreObjectIid(u32);
 
 impl_u32_wrapper_utils!(StoreObjectIid);
 
