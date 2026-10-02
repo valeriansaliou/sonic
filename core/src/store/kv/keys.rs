@@ -26,27 +26,27 @@ pub(super) struct KvStoreKey(Vec<u8>);
 
 impl KvStoreKey {
     pub(super) fn meta_to_value(bucket: &Bucket, meta: &StoreMetaKey) -> KvStoreKey {
-        Self::make(META_TO_VALUE, bucket, meta.as_u32())
+        Self::make(META_TO_VALUE, bucket, &encode_kv_key_part(meta.as_u32()))
     }
 
     pub(super) fn term_to_iids(bucket: &Bucket, term_hash: StoreTermHash) -> KvStoreKey {
-        Self::make(TERM_TO_IIDS, bucket, term_hash.into())
+        Self::make(TERM_TO_IIDS, bucket, &encode_kv_key_part(term_hash.into()))
     }
 
     pub(super) fn oid_to_iid(bucket: &Bucket, oid: StoreObjectOid) -> KvStoreKey {
-        Self::make(OID_TO_IID, bucket, oid.to_compact())
+        Self::make(OID_TO_IID, bucket, oid.as_bytes())
     }
 
     pub(super) fn iid_to_oid(bucket: &Bucket, iid: StoreObjectIid) -> KvStoreKey {
-        Self::make(IID_TO_OID, bucket, iid.into())
+        Self::make(IID_TO_OID, bucket, &encode_kv_key_part(iid.into()))
     }
 
     pub(super) fn iid_to_terms(bucket: &Bucket, iid: StoreObjectIid) -> KvStoreKey {
-        Self::make(IID_TO_TERMS, bucket, iid.into())
+        Self::make(IID_TO_TERMS, bucket, &encode_kv_key_part(iid.into()))
     }
 
-    /// Key format: `[bucket<?B> | separator<1B> | idx<1B> | route<4B>]`
-    fn make(idx: u8, bucket: &Bucket, route: u32) -> KvStoreKey {
+    /// Key format: `[bucket<?B> | separator<1B> | idx<1B> | route<?B>]`
+    fn make(idx: u8, bucket: &Bucket, route: &[u8]) -> KvStoreKey {
         // Encode key bucket + key route from u32 to array of u8 (i.e. binary).
         let bucket_bytes = bucket.as_bytes();
 
@@ -55,7 +55,7 @@ impl KvStoreKey {
         key_bytes.extend_from_slice(bucket_bytes); // [bucket<?B>]
         key_bytes.push(KEY_SEPARATOR); // [separator<1B>]
         key_bytes.push(idx); // [idx<1B>]
-        key_bytes.extend_from_slice(&encode_kv_key_part(route)); // [route<4B>]
+        key_bytes.extend_from_slice(route); // [route<?B>]
 
         KvStoreKey::from(key_bytes)
     }
@@ -99,20 +99,26 @@ impl std::fmt::Display for KvStoreKey {
         let key_bucket = str::from_utf8(bucket_bytes).unwrap();
 
         let rest = splits.next().unwrap();
-        debug_assert_eq!(rest.len(), 5);
+        debug_assert!(rest.len() >= 2);
         debug_assert!(splits.next().is_none());
 
         let key_idx = rest[0];
 
         let route_bytes = &rest[1..];
-        let key_route = decode_kv_key_part([
-            route_bytes[0],
-            route_bytes[1],
-            route_bytes[2],
-            route_bytes[3],
-        ]);
+        if route_bytes.len() == 4 {
+            let key_route = decode_kv_key_part([
+                route_bytes[0],
+                route_bytes[1],
+                route_bytes[2],
+                route_bytes[3],
+            ]);
 
-        write!(f, "{key_bucket:?}:{key_idx}:{key_route:x}")
+            write!(f, "{key_bucket:?}:{key_idx}:{key_route:x}")
+        } else {
+            let key_route = str::from_utf8(route_bytes).unwrap();
+
+            write!(f, "{key_bucket:?}:{key_idx}:{key_route:?}")
+        }
     }
 }
 
@@ -164,9 +170,10 @@ mod tests {
 
     #[test]
     fn it_keys_oid_to_iid() {
+        #[rustfmt::skip]
         assert_eq!(
-            KvStoreKey::oid_to_iid(&"b:3".into(), "conversation:6501e83a".into()).0,
-            [b'b', b':', b'3', KEY_SEPARATOR, 2, 213, 118, 156, 31]
+            KvStoreKey::oid_to_iid(&"b:3".into(), "conv:6501e83a".into()).0,
+            [b'b', b':', b'3', KEY_SEPARATOR, 2, b'c', b'o', b'n', b'v', b':', b'6', b'5', b'0', b'1', b'e', b'8', b'3', b'a']
         );
     }
 
