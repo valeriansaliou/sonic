@@ -210,11 +210,6 @@ fn i32_counter(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -
         None if operands.is_empty() => return None,
         None => 0,
     };
-    if existing_val.is_some() {
-        eprint!("i32_counter(Some({res}), ");
-    } else {
-        eprint!("i32_counter(None, ");
-    }
 
     for op in operands {
         for chunk in op.chunks(4) {
@@ -222,11 +217,8 @@ fn i32_counter(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -
             let diff = i32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
 
             res = res.saturating_add(diff);
-            eprint!("{diff},");
         }
     }
-
-    eprintln!(")={res}");
 
     Some(res.to_le_bytes().to_vec())
 }
