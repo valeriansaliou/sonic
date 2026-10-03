@@ -79,7 +79,7 @@ tasks:
   deps:lint:
     desc: Lints the dependency graph (checks for advisories, unwanted licenses, untrusted sources…).
     aliases: [lint:deps]
-    cmd: cargo deny check --show-stats {{ .CLI_ARGS }}
+    cmd: cargo deny check --show-stats --hide-inclusion-graph -A license-not-encountered {{ .CLI_ARGS }}
     sources:
       - server/Cargo.toml
       - core/Cargo.toml
