@@ -108,7 +108,7 @@ in [“Sonic’s experimental APIs”][x-api].
   ```txt
   CONFIG <collection> RESET
   ```
-* (Optional) Restart Sonic with your usual 
+* (Optional) Restart Sonic with your usual production configuration.
 
 ## Detailed explanations
 
