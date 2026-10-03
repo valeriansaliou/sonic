@@ -108,7 +108,7 @@ Under `[store.kv]`:
 
 * `database.flush_after` (type: _integer_, allowed: seconds, default: `900`) — Time after which pending database updates should be flushed from memory to disk (increase this delay if you encounter high-CPU usage issues when a flush task kicks-in; this value should be lower than `store.kv.pool.inactive_after`)
 * `database.parallelism` (type: _integer_, allowed: numbers, default: `2`) — Limit on the number of compaction and flush threads that can run at the same time
-* `database.max_files` (type: _integer_, allowed: numbers, no default) — Maximum number of database files kept open at the same time per-database (if any; otherwise there are no limits)
+* `database.max_open_files` (type: _integer_, allowed: numbers, no default) — Maximum number of database files kept open at the same time per-database (if any; otherwise there are no limits)
 * `database.write_buffer_size` (type: _integer_, allowed: numbers, default: `16384`) — Maximum size **in KiB** of the database write buffer, after which data gets flushed to disk (ie. `16384` is `16MiB`; the size should be a multiple of `1024`, eg. `128 * 1024 = 131072` for `128MiB`)
 * `database.min_write_buffer_number` (type: _integer_, allowed: `≥1`, default: RocksDB default (`1`)) — Minimum number of memtables that must be written before they can be flushed together to disk (increasing this batches small flushes into fewer, larger ones, at the cost of more memory held before a flush)
 * `database.min_write_buffer_number_to_merge` (type: _integer_, allowed: `≥1`, default: RocksDB default (`1`)) — Minimum number of immutable memtables that must accumulate before they are merged and flushed together (higher values reduce write amplification from small flushes, at the cost of more memory usage)
@@ -139,8 +139,12 @@ Under `[store.kv]`:
 * `database.blob_file_size` (type: _integer_ (optional), allowed: `≥0`, default: none) — Size limit for blob files
 * `database.enable_blob_gc` (type: _boolean_ (optional), allowed: `true`, `false`, default: none) — If this is set to `true`, RocksDB will actively relocate valid blobs from the oldest blob files as they are encountered during compaction
 
-`store.kv.retain_word_objects` has been deprecated in favor of `search.query_retain_word_objects`,
-but it’s kept as an alias for backward compatibility reasons.
+Deprecations:
+
+* `store.kv.retain_word_objects` has been deprecated in favor of `search.query_retain_word_objects`,
+  but it’s kept as an alias for backward compatibility reasons.
+* `database.max_files` has been deprecated in favor of `database.max_open_files`,
+  but it’s kept as an alias for backward compatibility reasons.
 
 ### FST store configuration
 

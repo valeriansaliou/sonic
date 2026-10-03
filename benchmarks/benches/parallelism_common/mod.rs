@@ -541,7 +541,10 @@ impl ParallelismBenchmarkConfig {
             );
         }
         if let Some(value) = rocksdb_max_open_files {
-            command.env("SONIC_STORE__KV__DATABASE__MAX_FILES", value.to_string());
+            command.env(
+                "SONIC_STORE__KV__DATABASE__MAX_OPEN_FILES",
+                value.to_string(),
+            );
         }
         if let Some(value) = rocksdb_write_buffer_size {
             command.env(

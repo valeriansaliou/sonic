@@ -23,7 +23,7 @@ min_blob_size = 4096 # 1024 u32
 blob_file_size = 16_777_216 # 16MiB
 enable_blob_gc = true
 
-max_files = 200
+max_open_files = 200
 
 [store.object.database]
 # Merge medium-sized memtables into large L0 SSTs.
@@ -44,7 +44,7 @@ min_blob_size = 0
 blob_file_size = 134_217_728 # 128MiB
 enable_blob_gc = true
 
-max_files = 200
+max_open_files = 200
 
 [store.fst]
 graph.max_size = 1_000_000_000
