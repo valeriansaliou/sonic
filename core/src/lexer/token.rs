@@ -140,7 +140,10 @@ mod tests {
             "hackers doing hacking"
         );
 
-        preprocessor.normalization_config.stemming_enabled = true;
+        #[cfg(feature = "stemming")]
+        {
+            preprocessor.normalization_config.stemming_enabled = true;
+        }
 
         #[rustfmt::skip]
         assert_eq!(
@@ -341,10 +344,14 @@ pub mod preprocessor {
 
     use whatlang::Lang;
 
+    #[cfg(feature = "stemming")]
     use super::lang_detection::detect_lang;
     use super::lexing::{Lexer, TokenKind};
-    use super::normalization::{Normalizer, Stemmer};
+    use super::normalization::Normalizer;
+    #[cfg(feature = "stemming")]
+    use super::normalization::Stemmer;
     use crate::config::{NormalizationConfig, StopwordsConfig, TokenizationConfig};
+    #[cfg(feature = "stemming")]
     use crate::lexer::stemming;
     use crate::lexer::stopwords::is_stopword;
     use crate::store::StoreTermHash;
@@ -420,6 +427,7 @@ pub mod preprocessor {
             let normalizer = Normalizer::new(self.normalization_config);
 
             // Choose the stemming algorithm once
+            #[cfg(feature = "stemming")]
             let stemming_algorithm: OnceCell<Option<Stemmer>> = OnceCell::new();
 
             'tokenization: for (index, mut token) in lexer.lex(text, lang).enumerate() {
@@ -441,6 +449,7 @@ pub mod preprocessor {
                     }
                 }
 
+                #[allow(unused_mut)]
                 let mut span = TokenSpan {
                     start_original: token.start,
                     end_original: token.start + token.raw.len(),
@@ -453,6 +462,7 @@ pub mod preprocessor {
                 };
 
                 // Stemming
+                #[cfg(feature = "stemming")]
                 if self.normalization_config.stemming_enabled
                     && let Some(stemmer) = stemming_algorithm.get_or_init(|| match lang {
                         Some(ref lang) => stemming::snowball_algorithm(lang).map(Stemmer::new),
@@ -491,6 +501,7 @@ pub mod preprocessor {
                 normalization_config: NormalizationConfig {
                     unicode_normalization: None,
                     diacritic_folding_enabled: false,
+                    #[cfg(feature = "stemming")]
                     stemming_enabled: false,
                 },
                 stopwords_config: StopwordsConfig::default(),
@@ -695,14 +706,14 @@ pub mod lexing {
                     TOKENIZER_JIEBA
                         .cut(text, false)
                         .into_iter()
-                        .map(|token| (token.start, token.word)),
+                        .map(|token| (token.byte_start, token.word)),
                 ),
                 #[cfg(feature = "tokenizer-japanese")]
                 Some(Lang::Jpn) => match TOKENIZER_LINDERA.tokenize(text) {
                     Ok(tokens) => Box::from(
                         tokens
                             .into_iter()
-                            .map(|token| (token.token_start, token.text)),
+                            .map(|token| (token.byte_start, token.text)),
                     ),
                     Err(err) => {
                         tracing::warn!("unable to tokenize japanese, falling back: {}", err);
@@ -756,6 +767,56 @@ pub mod lexing {
                 .map(|(_index, token)| token)
                 .collect::<Vec<_>>(),
             ["我", "来到", "北京", "清华大学"],
+        );
+    }
+
+    #[cfg(feature = "tokenizer-chinese")]
+    #[test]
+    fn test_tokenizer_cmn_yields_byte_offsets() {
+        let tokenizer = Tokenizer {
+            lang: Some(Lang::Cmn),
+        };
+
+        // `jieba_rs::Token::start` is a Unicode (char) offset, but the lexer
+        // expects byte offsets. Mixing them up panics on multi-byte text
+        // (`start byte index 2 is not a char boundary`, inside '维').
+        assert_eq!(
+            tokenizer.tokenize("我来到北京清华大学").collect::<Vec<_>>(),
+            [(0, "我"), (3, "来到"), (9, "北京"), (15, "清华大学")],
+        );
+    }
+
+    #[cfg(feature = "tokenizer-chinese")]
+    #[test]
+    fn test_preprocessor_cmn_tokens_have_valid_ranges() {
+        use super::preprocessor::Preprocessor;
+
+        let mut preprocessor = Preprocessor::default();
+        preprocessor.detect_stopwords = false;
+        preprocessor.filter_stopwords = false;
+
+        let text = "我来到北京清华大学";
+        let output = preprocessor.preprocess(text, Some(Lang::Cmn));
+
+        // Iterating slices the original text by token ranges; wrong offsets
+        // panic here instead of yielding garbage.
+        assert_eq!(
+            output
+                .tokens()
+                .map(|token| {
+                    assert!(text.is_char_boundary(token.start));
+                    assert!(text.is_char_boundary(token.end));
+                    assert_eq!(&text[token.start..token.end], token.as_original());
+
+                    (token.as_original().to_owned(), token.start, token.end)
+                })
+                .collect::<Vec<_>>(),
+            [
+                ("我".to_owned(), 0, 3),
+                ("来到".to_owned(), 3, 9),
+                ("北京".to_owned(), 9, 15),
+                ("清华大学".to_owned(), 15, 27),
+            ]
         );
     }
 
@@ -1018,7 +1079,6 @@ pub mod lexing {
 
 mod normalization {
     use super::lexing::{LexerToken, SpecialTokenKind, TokenKind};
-    use super::preprocessor::TokenSpan;
     use crate::config::{NormalizationConfig, UnicodeNormalization};
 
     pub(super) struct Normalizer {
@@ -1114,16 +1174,22 @@ mod normalization {
         }
     }
 
+    #[cfg(feature = "stemming")]
     pub(super) struct Stemmer {
         algorithm: snowball::Algorithm,
     }
 
+    #[cfg(feature = "stemming")]
     impl Stemmer {
         pub(super) fn new(algorithm: snowball::Algorithm) -> Self {
             Self { algorithm }
         }
 
-        pub(super) fn stem(&self, span: &mut TokenSpan, text_normalized: &mut String) {
+        pub(super) fn stem(
+            &self,
+            span: &mut super::preprocessor::TokenSpan,
+            text_normalized: &mut String,
+        ) {
             match (self.algorithm.stemmer())
                 .stem(&text_normalized[span.start_normalized..span.end_normalized])
             {
@@ -1254,6 +1320,7 @@ pub mod to_rework {
 }
 
 // TODO: Migrate language detection tests from old tokenizer’s `token.rs`?
+#[cfg(feature = "stemming")]
 mod lang_detection {
     use std::time::Instant;
 

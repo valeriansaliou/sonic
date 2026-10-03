@@ -216,6 +216,10 @@ impl GenericRocksDbStore for KvStore {
     fn bucket_key_range(bucket: &Bucket) -> std::ops::Range<Vec<u8>> {
         KvStoreKey::prefix_range(bucket)
     }
+
+    fn on_batch_erase_bucket(&self, bucket: &Bucket) {
+        (self.iid_incr_per_bucket.write().unwrap()).remove(&bucket.to_bytes());
+    }
 }
 
 impl KvStore {
@@ -266,12 +270,18 @@ impl<'a> KvRepositoryReadOnly<'a> {
     }
 
     /// Note that because of the underlying use of `i32`, the max value is
-    /// `i32::MAX` (hence `U32::MAX / 2`).
+    /// `i32::MAX` (hence `u32::MAX / 2`).
     pub fn get_object_count(&self) -> Result<u32, Box<dyn std::error::Error>> {
         let bucket = self.bucket;
 
         let store_key = KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::ObjectCount);
-        let value = self.store.database.get(store_key)?;
+        let value = self.store.database.get(&store_key)?;
+
+        let get_iid_incr_fallback = || {
+            self.store
+                .get_iid_incr(&bucket, &self.store.iid_incr_per_bucket.read().unwrap())
+                .map(|opt| opt.map_or(0, |n| u32::from(n).saturating_add(1)))
+        };
 
         match value {
             Some(bytes) if bytes.len() == 4 => {
@@ -301,9 +311,7 @@ impl<'a> KvRepositoryReadOnly<'a> {
 
                 // COMPAT: Fallback to `IIDIncr` for users migrating from an older version.
                 // TODO(major): Remove compat fallback.
-                self.store
-                    .get_iid_incr(&bucket, &self.store.iid_incr_per_bucket.read().unwrap())
-                    .map(|opt| opt.map_or(0, u32::from))
+                get_iid_incr_fallback()
             }
         }
     }

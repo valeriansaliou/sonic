@@ -107,14 +107,14 @@ main() {
   #   (unless ran with `source`, which one shouldn’t do).
   cd "${REPOSITORY_ROOT:?}"
 
-  cargo build --target "${TARGET_TRIPLE:?}" --locked --profile "${BUILD_PROFILE:?}"
+  cargo build --target "${TARGET_TRIPLE:?}" --locked --profile "${BUILD_PROFILE:?}" $CARGO_BUILD_ARGS
 
   rm -rf ./sonic/
   mkdir -p ./sonic
   cp -p "target/${TARGET_TRIPLE:?}/${BUILD_PROFILE:?}/sonic" ./sonic/
   cp -r ./config.cfg sonic/
 
-  local final_tar="v${SERVER_VERSION:?}-${TARGET_ARCH:?}-${TARGET_PLATFORM:?}.tar.gz"
+  local final_tar="v${SERVER_VERSION:?}-${TARGET_ARCH:?}-${TARGET_PLATFORM:?}${SONIC_VARIANT:+"-${SONIC_VARIANT:?}"}.tar.gz"
   tar --owner=0 --group=0 -czvf "${final_tar:?}" ./sonic
   rm -r ./sonic/
 

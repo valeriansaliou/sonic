@@ -27,6 +27,12 @@ pub(super) trait GenericRocksDbStore: GenericStore {
 
     fn bucket_key_range(bucket: &Bucket) -> Range<Vec<u8>>;
 
+    #[allow(
+        unused_variables,
+        reason = "Underscoring would affect what’s generated when implementing"
+    )]
+    fn on_batch_erase_bucket(&self, bucket: &Bucket) {}
+
     fn database(&self) -> &rocksdb::DB;
 
     fn config(&self) -> &KvStoreConfig;
@@ -75,6 +81,7 @@ pub(super) trait GenericRocksDbStore: GenericStore {
         // Commit operation to database.
         match self.write(batch) {
             Ok(()) => {
+                self.on_batch_erase_bucket(bucket);
                 tracing::debug!("succeeded in store batch erase bucket: {bucket}");
                 Ok(1)
             }

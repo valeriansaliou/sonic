@@ -99,6 +99,12 @@ jobs:
             target_triple: x86_64-unknown-linux-gnu
             container: debian:bookworm
           - target_arch: x86_64
+            target_platform: gnu
+            target_triple: x86_64-unknown-linux-gnu
+            container: debian:bookworm
+            build_args: --no-default-features -F allocator-jemalloc
+            variant: light
+          - target_arch: x86_64
             target_platform: rhel9
             target_triple: x86_64-unknown-linux-gnu
             container: redhat/ubi9
@@ -186,6 +192,9 @@ jobs:
       - id: build_archive
         name: Build and archive binary
         run: ./scripts/build_release_archive.sh ${{ matrix.target_arch }} ${{ matrix.target_platform }} ${{ matrix.target_triple }}
+        env:
+          CARGO_BUILD_ARGS: ${{ matrix.build_args }}
+          SONIC_VARIANT: ${{ matrix.variant }}
 
       - name: Publish archive in GitHub release
         if: github.ref_type == 'tag' || github.ref == 'refs/heads/master'

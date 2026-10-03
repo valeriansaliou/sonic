@@ -17,7 +17,7 @@ pub fn random_seed() -> u64 {
     let mut buf = [0u8; 8];
     urandom.read_exact(&mut buf).unwrap();
 
-    u64::from_le_bytes(buf)
+    u64::from_ne_bytes(buf)
 }
 
 /// Word length: `4..=8`.

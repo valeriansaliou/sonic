@@ -44,6 +44,7 @@ tasks:
       - task: deps:lint
       - cargo fmt --check
       - cargo clippy --locked
+      - cargo check --locked -p sonic-server --no-default-features
       - cargo check --locked --release
       - cargo test --locked --workspace --exclude sonic-benchmarks
       - task: util:update-tested-at-version
