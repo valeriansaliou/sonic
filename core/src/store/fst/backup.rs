@@ -20,6 +20,12 @@ impl FstStorePool {
         // Create backup directory (full path)
         fs::create_dir_all(path)?;
 
+        // NOTE: The FST store directory gets created when the first FST is
+        //   consolidated, so there is nothing to back up until then.
+        if !self.fst_store_config.path.exists() {
+            return Ok(());
+        }
+
         // Proceed dump action (backup)
         self.dump_action(
             "backup",
