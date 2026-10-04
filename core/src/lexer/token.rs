@@ -23,7 +23,7 @@ mod tests {
 
     #[test]
     fn test_preprocessor_can_yield_original_positions() {
-        let preprocessor = Preprocessor::default();
+        let preprocessor = make_test_preprocessor();
 
         let tokens = preprocessor.preprocess("I had a déjà-vu.", None);
         let mut tokens_iter = tokens.tokens();
@@ -37,7 +37,7 @@ mod tests {
 
     #[test]
     fn test_preprocessor_can_fold_diacritics() {
-        let mut preprocessor = Preprocessor::default();
+        let mut preprocessor = make_test_preprocessor();
 
         #[rustfmt::skip]
         assert_eq!(
@@ -58,7 +58,7 @@ mod tests {
     /// with v1 indexes.
     #[test]
     fn test_preprocessor_pattern_detection_optional() {
-        let mut preprocessor = Preprocessor::default();
+        let mut preprocessor = make_test_preprocessor();
 
         #[rustfmt::skip]
         assert_eq!(
@@ -86,7 +86,7 @@ mod tests {
 
     #[test]
     fn test_preprocessor_can_filter_stopwords() {
-        let mut preprocessor = Preprocessor::default();
+        let mut preprocessor = make_test_preprocessor();
 
         preprocessor.stopwords_config.deny =
             HashSet::from_iter(["is", "a"].into_iter().map(str::to_owned));
@@ -112,7 +112,7 @@ mod tests {
 
     #[test]
     fn test_preprocessor_can_stem() {
-        let mut preprocessor = Preprocessor::default();
+        let mut preprocessor = make_test_preprocessor();
 
         // Disable stopword filtering as it would influence results.
         preprocessor.filter_stopwords = false;
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn test_preprocessor_can_unique_tokens() {
-        let mut preprocessor = Preprocessor::default();
+        let mut preprocessor = make_test_preprocessor();
 
         // Disable stopword filtering as it would influence results.
         preprocessor.filter_stopwords = false;
@@ -166,7 +166,7 @@ mod tests {
     #[test]
     fn test_preprocessor_can_detect_patterns() {
         fn test(sentence: &str, expected: &[(&str, TokenKind)]) {
-            let mut preprocessor = Preprocessor::default();
+            let mut preprocessor = make_test_preprocessor();
             preprocessor.detect_stopwords = false;
 
             let output = preprocessor.preprocess(sentence, Some(Lang::Eng));
@@ -315,6 +315,26 @@ mod tests {
             ],
         );
     }
+
+    // MARK: Helpers
+
+    pub(super) fn make_test_preprocessor() -> Preprocessor {
+        Preprocessor {
+            tokenization_config: crate::config::TokenizationConfig {
+                detect_special_patterns: true,
+                __compat_split_special_patterns: None,
+            },
+            normalization_config: crate::config::NormalizationConfig {
+                unicode_normalization: None,
+                diacritic_folding_enabled: false,
+                #[cfg(feature = "stemming")]
+                stemming_enabled: false,
+            },
+            stopwords_config: crate::config::StopwordsConfig::default(),
+            detect_stopwords: true,
+            filter_stopwords: true,
+        }
+    }
 }
 
 pub mod preprocessor {
@@ -345,6 +365,7 @@ pub mod preprocessor {
     }
 
     impl Preprocessor {
+        #[inline]
         pub fn new(
             tokenization_config: TokenizationConfig,
             normalization_config: NormalizationConfig,
@@ -359,6 +380,17 @@ pub mod preprocessor {
                 detect_stopwords,
                 filter_stopwords,
             }
+        }
+
+        #[inline]
+        pub fn from_app_conf(app_conf: &crate::Config) -> Preprocessor {
+            Self::new(
+                app_conf.tokenization,
+                app_conf.normalization,
+                app_conf.stopwords.clone(),
+                true,
+                true,
+            )
         }
 
         pub fn preprocess<'t>(&self, text: &'t str, lang: Option<Lang>) -> PreprocessorOutput<'t> {
@@ -467,26 +499,6 @@ pub mod preprocessor {
                 text_original: text,
                 text_normalized,
                 spans,
-            }
-        }
-    }
-
-    impl Default for Preprocessor {
-        fn default() -> Self {
-            Self {
-                tokenization_config: TokenizationConfig {
-                    detect_special_patterns: true,
-                    __compat_split_special_patterns: None,
-                },
-                normalization_config: NormalizationConfig {
-                    unicode_normalization: None,
-                    diacritic_folding_enabled: false,
-                    #[cfg(feature = "stemming")]
-                    stemming_enabled: false,
-                },
-                stopwords_config: StopwordsConfig::default(),
-                detect_stopwords: true,
-                filter_stopwords: true,
             }
         }
     }
@@ -769,9 +781,8 @@ pub mod lexing {
     #[cfg(feature = "tokenizer-chinese")]
     #[test]
     fn test_preprocessor_cmn_tokens_have_valid_ranges() {
-        use super::preprocessor::Preprocessor;
+        let mut preprocessor = crate::lexer::token::tests::make_test_preprocessor();
 
-        let mut preprocessor = Preprocessor::default();
         preprocessor.detect_stopwords = false;
         preprocessor.filter_stopwords = false;
 

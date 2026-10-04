@@ -365,7 +365,7 @@ impl super::Executor {
         let preprocessor = Preprocessor {
             // NOTE: This is important to get accurate tf and add padding to snippets.
             filter_stopwords: false,
-            ..Preprocessor::default()
+            ..Preprocessor::from_app_conf(&self.app_conf)
         };
 
         for (oid, iid) in oids {
