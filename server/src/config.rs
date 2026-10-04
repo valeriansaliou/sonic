@@ -12,7 +12,7 @@ use crate::DEFAULT_CONFIG_FILE_PATHS;
 pub fn defaults_toml() -> &'static str {
     r#"
     [server]
-    log_level = "error"
+    log_level = "warn"
 
     [channel]
     inet = "[::1]:1491"
