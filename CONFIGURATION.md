@@ -86,11 +86,11 @@ Under `[search]`:
 * `list_limit_default` (type: _integer_, allowed: numbers, default: `100`) — Default listed words limit for a list command (if the LIMIT command modifier is not used when issuing a LIST command)
 * `list_limit_maximum` (type: _integer_, allowed: numbers, default: `500`) — Maximum listed words limit for a list command (if the LIMIT command modifier is being used when issuing a LIST command)
 
-### KV store configuration
+### KV and Object store configurations
 
-Under `[store.kv]`:
+Under `[store.kv]` and `[store.object]`:
 
-* `path` (type: _string_, allowed: UNIX path, default: `./data/store/kv/`) — Path to the Key-Value database store
+* `path` (type: _string_, allowed: UNIX path, default: `./data/store/kv/` and `./data/store/corpus/`) — Path to the database store
 
 * `pool.inactive_after` (type: _integer_, allowed: seconds, default: `1800`) — Time after which a cached database is considered inactive and can be closed (if it is not used, ie. re-activated)
 
