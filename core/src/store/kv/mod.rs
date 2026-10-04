@@ -55,53 +55,6 @@ pub struct KvRepositoryReadWrite<'a> {
 }
 
 impl KvStore {
-    /// Reads `IIDIncr` from the cache, fetching from the database if necessary
-    /// (beware of slow reads).
-    fn get_iid_incr(
-        &self,
-        bucket: &Bucket,
-        iid_incr_per_bucket: &HashMap<Vec<u8>, StoreObjectIid>,
-    ) -> Result<Option<StoreObjectIid>, Box<dyn std::error::Error>> {
-        iid_incr_per_bucket.get(&bucket.to_bytes()).map_or_else(
-            || {
-                tracing::debug!(?bucket, "IIDIncr not found in cache, reading database…");
-                self.fetch_iid_incr(bucket)
-            },
-            |&iid_incr| {
-                tracing::debug!(?bucket, ?iid_incr, "Read IIDIncr from cache");
-                Ok(Some(iid_incr))
-            },
-        )
-    }
-
-    /// Reads `IIDIncr` directly from the database.
-    fn fetch_iid_incr<'a>(
-        &self,
-        bucket: &Bucket<'a>,
-    ) -> Result<Option<StoreObjectIid>, Box<dyn std::error::Error>> {
-        let store_key = KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
-        let value = self.database.get(store_key)?;
-
-        match value {
-            Some(bytes) => match try_decode_iid(&bytes) {
-                Ok(iid_incr) => {
-                    tracing::debug!(?bucket, ?iid_incr, "Read IIDIncr from database");
-                    Ok(Some(iid_incr))
-                }
-                Err(()) => {
-                    tracing::error!(?bucket, "Invalid IIDIncr in database");
-                    Err(Box::new(io::Error::other(
-                        "Invalid IIDIncr value in bucket {bucket:?}",
-                    )))
-                }
-            },
-            None => {
-                tracing::debug!(?bucket, "IIDIncr not found in database");
-                Ok(None)
-            }
-        }
-    }
-
     fn get_new_iid(
         &self,
         bucket: Bucket,
@@ -240,12 +193,6 @@ impl<'a> KvRepositoryReadOnly<'a> {
         let store_key = KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::ObjectCount);
         let value = self.store.database.get(&store_key)?;
 
-        let get_iid_incr_fallback = || {
-            self.store
-                .get_iid_incr(&bucket, &self.store.iid_incr_per_bucket.read().unwrap())
-                .map(|opt| opt.map_or(0, |n| u32::from(n).saturating_add(1)))
-        };
-
         match value {
             Some(bytes) if bytes.len() == 4 => {
                 // SAFETY: `bytes` is guaranteed to be 4 bytes long.
@@ -269,12 +216,9 @@ impl<'a> KvRepositoryReadOnly<'a> {
             None => {
                 tracing::debug!(
                     ?bucket,
-                    "ObjectCount not found in database, falling back to IIDIncr"
+                    "ObjectCount not found in database, considering bucket empty"
                 );
-
-                // COMPAT: Fallback to `IIDIncr` for users migrating from an older version.
-                // TODO(major): Remove compat fallback.
-                get_iid_incr_fallback()
+                Ok(0)
             }
         }
     }
