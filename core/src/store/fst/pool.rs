@@ -95,7 +95,7 @@ impl GenericStorePool for FstStorePool {
         // Force a FST graph close (on all contained buckets)
         // NOTE: we first need to scan for opened buckets in-memory, as not all FSTs may be
         //   committed to disk; thus some FST stores that exist in-memory may not exist on-disk.
-        // TODO(perf): Instead of collection into a `Vec` just to check `is_empty` and
+        // TODO(perf): Instead of collecting into a `Vec` just to check `is_empty` and
         //   lock only if necessary, use a `LazyCell` to do the same in a single step.
         let mut buckets: Vec<BucketOwned> = Vec::new();
 
