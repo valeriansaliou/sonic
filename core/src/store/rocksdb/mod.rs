@@ -69,7 +69,6 @@ pub(super) trait GenericRocksDbStore: GenericStore {
         // the minimum key value possible, and the highest key value possible).
         let key_range = Self::bucket_key_range(&bucket);
 
-        // TODO: Move the batch outside the for loop?
         let mut batch = rocksdb::WriteBatch::default();
 
         // Batch-delete keys matching range.
