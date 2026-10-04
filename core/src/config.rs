@@ -176,7 +176,8 @@ pub struct RocksDbDatabaseConfig {
     #[serde(alias = "max_files")]
     pub max_open_files: Option<i32>,
 
-    // TODO(major): Make this MB, as in Kvrocks.
+    // TODO: Make this MB, as in Kvrocks. For backward compatibility and clarity,
+    //   move to a string with unit.
     /// WARN: In KB!
     #[serde(default = "default_write_buffer_size")]
     #[serde(alias = "write_buffer")]
