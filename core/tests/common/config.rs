@@ -47,7 +47,6 @@ pub fn defaults_toml() -> String {
         detect_special_patterns = true
 
         [stopwords]
-        allow = []
         deny = []
 
         [search]

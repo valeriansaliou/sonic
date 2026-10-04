@@ -390,7 +390,6 @@ pub(crate) mod tests {
         detect_special_patterns = true
 
         [stopwords]
-        allow = []
         deny = []
 
         [search]

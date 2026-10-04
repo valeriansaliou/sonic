@@ -29,7 +29,6 @@ pub fn defaults_toml() -> &'static str {
     detect_special_patterns = true
 
     [stopwords]
-    allow = []
     deny = []
 
     [search]
