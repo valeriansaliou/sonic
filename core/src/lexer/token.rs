@@ -214,6 +214,16 @@ mod tests {
                 ("0612345678", TokenKind::Special(SpecialTokenKind::PhoneNumber)),
             ],
         );
+        #[rustfmt::skip]
+        test(
+            "Sonic also supports +33 (0) 6 12 34 56 78.",
+            &[
+                ("sonic", TokenKind::Normal),
+                ("also", TokenKind::Normal),
+                ("supports", TokenKind::Normal),
+                ("+33(0)612345678", TokenKind::Special(SpecialTokenKind::PhoneNumber)),
+            ],
+        );
 
         // UUID like.
         #[rustfmt::skip]
@@ -845,7 +855,6 @@ pub mod lexing {
 
         pub fn lex<'s>(&self, text: &'s str, lang: Option<Lang>) -> LexerTokens<'s> {
             // FIXME(major): Don’t allow trailing dot in `email`.
-            // FIXME(major): Allow `()` in `phone` (remember to update normalizer).
             // TODO(major): Test that numbers in various scripts are all detected as special.
             static SPECIAL_PATTERNS: LazyLock<Regex> = LazyLock::new(|| {
                 Regex::new(concat!(
@@ -853,7 +862,7 @@ pub mod lexing {
                     r"|(?P<username>@[^\s]*\w)",
                     r"|(?P<url>\w{2,}://[^\s]*[^\s.])",
                     r"|(?P<ipv4>\d{1,3}(?:\.\d{1,3}){3})(?:[^\.\d]|$)",
-                    r"|(?P<phone>\+?\d+(?:[\s\.-]?\d+){4,})",
+                    r"|(?P<phone>\+?\d+(?:\s*\(\d+\))?(?:[\s\.-]?\d+){4,})",
                     r"|(?P<domain>[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})",
                     r"|(?P<id>[\w\d:_-]*[\d_][\w\d:-]*)"
                 ))
@@ -1123,7 +1132,7 @@ mod normalization {
                     for char in token
                         .raw
                         .chars()
-                        .filter(|c| c.is_ascii_digit() || *c == '+')
+                        .filter(|c| c.is_ascii_digit() || matches!(c, '+' | '(' | ')'))
                     {
                         text_normalized.push(char);
                     }
