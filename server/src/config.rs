@@ -27,8 +27,6 @@ pub fn defaults_toml() -> &'static str {
 
     [tokenization]
     detect_special_patterns = true
-    # TODO(major): Disable by default.
-    compat_split_special_patterns = true
 
     [stopwords]
     allow = []

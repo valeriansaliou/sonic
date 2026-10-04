@@ -61,21 +61,9 @@ Under `[tokenization]`:
     usually expected to match exactly, like email addresses. To support this
     use case, Sonic detects common patterns (e.g. email addresses, phone
     numbers, UUIDs, etc. and ensures they are both not split by the tokenizer
-    (unless `tokenization.compat_split_special_patterns = true`) and matched
-    exactly in queries.
+    and matched exactly in queries.
   * For more information, see [docs/tokenizer-pattern-matching.md](./docs/tokenizer-pattern-matching.md).
   * This feature adds negligible overhead, you should probably not disable it.
-* `compat_split_special_patterns` (type: _boolean_, allowed: `true`, `false`, default: `true`) — Whether the tokenizer should split special patterns or not
-  * Special patterns are matched exactly when performing a query. However,
-    doing so without rebuilding your Sonic index breaks queries with special
-    patterns. This flag enables a compatibility feature that integrates with an
-    existing inex (at the cost of potentially worse results).
-  * For more information, see [docs/tokenizer-pattern-matching.md](./docs/tokenizer-pattern-matching.md).
-  * You don’t need to rebuild your Sonic index if you use
-    `tokenization.compat_split_special_patterns = true` (default).
-  * If you can easily rebuild your Sonic index and sometimes query things like
-    email addresses, phone numbers or identifiers, it is recommended that you
-    disable this feature.
 
 ### Stopwords configuration
 

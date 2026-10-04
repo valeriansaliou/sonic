@@ -45,7 +45,6 @@ pub fn defaults_toml() -> String {
 
         [tokenization]
         detect_special_patterns = true
-        compat_split_special_patterns = false
 
         [stopwords]
         allow = []

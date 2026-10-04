@@ -64,29 +64,6 @@ fn query_special() {
     assert_eq!(res.as_slice(), &[Box::from("msg:1")]);
 }
 
-/// Shows that the compatibility setting works, although doing worse than with
-/// `tokenization.compat_split_special_patterns = false`.
-#[test]
-fn query_special_compat() {
-    let ctx = start_empty(|command| command);
-
-    let multiplexer = SonicMultiplexer::new().unwrap();
-
-    let ingest =
-        SonicChannelIngestBlocking::connect(ctx.addr, "SecretPassword", &multiplexer).unwrap();
-    let search =
-        SonicChannelSearchBlocking::connect(ctx.addr, "SecretPassword", &multiplexer).unwrap();
-
-    for (id, text) in SPECIAL_PATTERNS_TEST_CASES {
-        ingest.push("messages", "default", id, text).unwrap();
-    }
-
-    let res = search
-        .query("messages", "default", "olivia@example.org")
-        .unwrap();
-    assert_eq!(res.as_slice(), &[Box::from("msg:6"), Box::from("msg:1")]);
-}
-
 /// Shows that disabling `tokenization.detect_special_patterns` yields unwanted
 /// results.
 #[test]

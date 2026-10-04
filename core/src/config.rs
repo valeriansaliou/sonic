@@ -47,6 +47,13 @@ impl Config {
         if self.store.fst.graph.consolidate_after >= self.store.fst.pool.inactive_after {
             panic!("consolidate_after for fst must be strictly lower than inactive_after");
         }
+
+        if self.tokenization.__compat_split_special_patterns.is_some() {
+            tracing::warn!(
+                "You’re still using the `tokenization.compat_split_special_patterns` configuration key. \
+                It’s been removed in Sonic v2, it’s useless now."
+            );
+        }
     }
 }
 
@@ -77,8 +84,10 @@ pub enum UnicodeNormalization {
 pub struct TokenizationConfig {
     pub detect_special_patterns: bool,
 
+    #[serde(default)]
+    #[serde(rename = "compat_split_special_patterns")]
     #[serde(alias = "split_special_patterns")]
-    pub compat_split_special_patterns: bool,
+    pub __compat_split_special_patterns: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -379,7 +388,6 @@ pub(crate) mod tests {
 
         [tokenization]
         detect_special_patterns = true
-        compat_split_special_patterns = false
 
         [stopwords]
         allow = []

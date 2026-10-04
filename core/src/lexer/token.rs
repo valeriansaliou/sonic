@@ -64,23 +64,6 @@ mod tests {
         assert_eq!(
             preprocessor
                 .preprocess("Please contact support@example.org", None)
-                .tokens().skip(2)
-                .map(|token| (token.normalized, token.kind, token.start, token.end, token.index_in_tokenized_text))
-                .collect::<Vec<_>>(),
-            [
-                ("support", TokenKind::Special(SpecialTokenKind::CompatSubtoken), 15, 22, 2),
-                ("example.org", TokenKind::Special(SpecialTokenKind::CompatSubtoken), 23, 34, 3),
-            ]
-        );
-
-        preprocessor
-            .tokenization_config
-            .compat_split_special_patterns = false;
-
-        #[rustfmt::skip]
-        assert_eq!(
-            preprocessor
-                .preprocess("Please contact support@example.org", None)
                 .tokens().skip(2).next()
                 .map(|token| (token.as_normalized().to_owned(), token.kind, token.start, token.end, token.index_in_tokenized_text))
                 .unwrap(),
@@ -184,9 +167,6 @@ mod tests {
     fn test_preprocessor_can_detect_patterns() {
         fn test(sentence: &str, expected: &[(&str, TokenKind)]) {
             let mut preprocessor = Preprocessor::default();
-            preprocessor
-                .tokenization_config
-                .compat_split_special_patterns = false;
             preprocessor.detect_stopwords = false;
 
             let output = preprocessor.preprocess(sentence, Some(Lang::Eng));
@@ -496,7 +476,7 @@ pub mod preprocessor {
             Self {
                 tokenization_config: TokenizationConfig {
                     detect_special_patterns: true,
-                    compat_split_special_patterns: true,
+                    __compat_split_special_patterns: None,
                 },
                 normalization_config: NormalizationConfig {
                     unicode_normalization: None,
@@ -874,7 +854,6 @@ pub mod lexing {
             };
 
             LexerTokens {
-                compat_split_special_patterns: self.config.compat_split_special_patterns,
                 tokenizer: Tokenizer { lang },
                 regex_matches,
                 text,
@@ -885,7 +864,6 @@ pub mod lexing {
     }
 
     pub struct LexerTokens<'s> {
-        compat_split_special_patterns: bool,
         text: &'s str,
         tokenizer: Tokenizer,
         regex_matches: Peekable<regex::CaptureMatches<'static, 's>>,
@@ -934,34 +912,8 @@ pub mod lexing {
                         }
                     }
 
-                    // Once all normal words have been visited, yield the special chunk
-                    // (or sub-split if `compat_split_special_patterns` is enabled).
-                    let next = if self.compat_split_special_patterns {
-                        let regex_match = captures.get_match();
-                        let raw_tokens = self.tokenizer.tokenize(regex_match.as_str());
-
-                        let mut tokens = raw_tokens.map({
-                            let global_start = regex_match.start();
-
-                            move |(local_start, raw)| LexerToken {
-                                start: global_start + local_start,
-                                raw,
-                                kind: TokenKind::Special(SpecialTokenKind::CompatSubtoken),
-                            }
-                        });
-
-                        let next = tokens.next().unwrap_or(LexerToken {
-                            start: regex_match.start(),
-                            raw: regex_match.as_str(),
-                            kind: TokenKind::Special(SpecialTokenKind::CompatSubtoken),
-                        });
-
-                        self.tokens = Some((Box::new(tokens), end));
-
-                        Some(next)
-                    } else {
-                        Some(LexerToken::special(captures))
-                    };
+                    // Once all normal words have been visited, yield the special chunk.
+                    let next = Some(LexerToken::special(captures));
 
                     // Advance the iterator now that we’ve visited all previous
                     // tokens.
@@ -1011,10 +963,6 @@ pub mod lexing {
         PhoneNumber,
         Domain,
         Id,
-        /// Special token created by `compat_split_special_patterns`. Should
-        /// still be considered special (e.g. disabling fuzzy matching), but
-        /// has no special meaning anymore.
-        CompatSubtoken,
     }
 
     #[derive(Debug, PartialEq, Eq)]
