@@ -540,7 +540,7 @@ fn split_on_whitespace(s: &str, n: usize) -> (&str, &str) {
         let (a, b) = s.split_at(i);
 
         // Skip whitespace in second slice.
-        (a, b.trim_ascii_start())
+        (a, b)
     } else {
         // Fallback to UTF-8 boundary if no whitespace exists.
         // SAFETY: We can safely unwrap here, as `s` cannot be empty.
@@ -560,7 +560,7 @@ mod tests {
 
         assert_eq!(
             split_on_whitespace("foobar foobar ", 10),
-            ("foobar", "foobar ")
+            ("foobar", " foobar ")
         );
 
         assert_eq!(split_on_whitespace("foo", 3), ("foo", ""));
