@@ -357,9 +357,11 @@ pub struct FstStoreConfig {
 pub struct FstStoreGraphConfig {
     pub consolidate_after: u64,
 
-    pub max_size: usize,
+    #[serde(default)]
+    pub max_size: Option<usize>,
 
-    pub max_words: usize,
+    #[serde(default)]
+    pub max_words: Option<usize>,
 }
 
 #[cfg(test)]
@@ -407,8 +409,6 @@ pub(crate) mod tests {
         path = "./data/store/fst/"
         pool.inactive_after = 300
         graph.consolidate_after = 180
-        graph.max_size = 2048
-        graph.max_words = 250000
 
         [store.object]
         path = "./data/store/corpus/"

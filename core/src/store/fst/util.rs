@@ -11,8 +11,9 @@ pub(super) fn check_over_limits(
     fst_graph_config: &crate::config::FstStoreGraphConfig,
 ) -> bool {
     // Over bytes limit?
-    let max_size = fst_graph_config.max_size * 1024;
-    if bytes_count >= max_size {
+    if let Some(max_size) = fst_graph_config.max_size.map(|n| n * 1024)
+        && bytes_count >= max_size
+    {
         tracing::info!(
             "fst has exceeded maximum allowed bytes: {bytes_count} over limit: {max_size}"
         );
@@ -21,8 +22,9 @@ pub(super) fn check_over_limits(
     }
 
     // Over words limit?
-    let max_words = fst_graph_config.max_words;
-    if words_count >= max_words {
+    if let Some(max_words) = fst_graph_config.max_words
+        && words_count >= max_words
+    {
         tracing::info!(
             "fst has exceeded maximum allowed words: {words_count} over limit: {max_words}"
         );

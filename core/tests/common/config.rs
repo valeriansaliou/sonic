@@ -75,8 +75,6 @@ pub fn defaults_toml() -> String {
         path = {fst_store_path:?}
         pool.inactive_after = 300
         graph.consolidate_after = 180
-        graph.max_size = 2048
-        graph.max_words = 250000
 
         [store.object]
         path = {object_store_path:?}

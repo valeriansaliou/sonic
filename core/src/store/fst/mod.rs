@@ -191,7 +191,8 @@ impl<'a> FstRepository<'a> {
             // PERF: To be correct we’d have to filter to keep only “push” actions,
             //   but in a real-world situation we’d trigger this condition only
             //   during a batch ingestion; when all actions are “push”.
-            let has_too_many_pending = pending_len >= fst_store_config.graph.max_words;
+            let has_too_many_pending =
+                (fst_store_config.graph.max_words).is_some_and(|max| pending_len >= max);
 
             !graph_contains_word && !is_fst_over_limits && !has_too_many_pending
         };

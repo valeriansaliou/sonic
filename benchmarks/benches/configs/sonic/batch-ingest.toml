@@ -45,7 +45,3 @@ blob_file_size = 134_217_728 # 128MiB
 enable_blob_gc = true
 
 max_open_files = 200
-
-[store.fst]
-graph.max_size = 1_000_000_000
-graph.max_words = 1_000_000_000 # Total term count in first 4 shards of Wikipedia (en): 2_831_647 (2_830_320 without stopwords)

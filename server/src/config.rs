@@ -59,8 +59,6 @@ pub fn defaults_toml() -> &'static str {
     path = "./data/store/fst/"
     pool.inactive_after = 300
     graph.consolidate_after = 180
-    graph.max_size = 2048
-    graph.max_words = 250000
 
     [store.object]
     path = "./data/store/corpus/"
