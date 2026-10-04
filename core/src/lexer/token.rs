@@ -14,6 +14,7 @@
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
+    use std::sync::Arc;
 
     use whatlang::Lang;
 
@@ -88,8 +89,9 @@ mod tests {
     fn test_preprocessor_can_filter_stopwords() {
         let mut preprocessor = make_test_preprocessor();
 
-        preprocessor.stopwords_config.deny =
-            HashSet::from_iter(["is", "a"].into_iter().map(str::to_owned));
+        preprocessor.stopwords_config.deny = Arc::new(HashSet::from_iter(
+            ["is", "a"].into_iter().map(str::to_owned),
+        ));
 
         #[rustfmt::skip]
         assert_eq!(

@@ -12,6 +12,8 @@ mod logging;
 mod meta_tests;
 pub mod util;
 
+pub use std::sync::Arc;
+
 pub use self::executor::*;
 pub(crate) use self::item_ref::*;
 pub use self::logging::*;

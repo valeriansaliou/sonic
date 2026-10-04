@@ -15,7 +15,7 @@ use crate::common::*;
 fn test_config_stopwords_deny() {
     init_logging();
     let executor = make_test_executor(|app_conf| {
-        app_conf.stopwords.deny = ["foobar"].into_iter().map(ToOwned::to_owned).collect();
+        app_conf.stopwords.deny = Arc::new(["foobar"].into_iter().map(ToOwned::to_owned).collect());
     });
 
     exec!(

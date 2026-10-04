@@ -93,10 +93,10 @@ pub struct TokenizationConfig {
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct StopwordsConfig {
     #[serde(deserialize_with = "to_stopwords")]
-    pub deny: HashSet<String>,
+    pub deny: Arc<HashSet<String>>,
 }
 
-fn to_stopwords<'de, D>(deserializer: D) -> Result<HashSet<String>, D::Error>
+fn to_stopwords<'de, D>(deserializer: D) -> Result<Arc<HashSet<String>>, D::Error>
 where
     D: serde::de::Deserializer<'de>,
 {
@@ -104,7 +104,7 @@ where
 
     let vec: Vec<Box<str>> = Deserialize::deserialize(deserializer)?;
     let stopwords_iter = vec.into_iter().map(|s| s.nfkd().to_string());
-    Ok(HashSet::from_iter(stopwords_iter))
+    Ok(Arc::new(HashSet::from_iter(stopwords_iter)))
 }
 
 #[derive(Debug, Deserialize)]

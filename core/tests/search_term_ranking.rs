@@ -91,8 +91,9 @@ fn test_no_implicit_and_with_stopwords() {
         // Disable stemming to make results more predictable.
         app_conf.normalization.stemming_enabled = false;
 
-        app_conf.stopwords.deny =
-            std::collections::HashSet::from_iter(["to", "the"].into_iter().map(str::to_owned));
+        app_conf.stopwords.deny = Arc::new(std::collections::HashSet::from_iter(
+            ["to", "the"].into_iter().map(str::to_owned),
+        ));
     });
 
     // NOTE: This is NOT legal advice. It is solely for example purposes.
