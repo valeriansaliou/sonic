@@ -110,47 +110,10 @@ impl KvStore {
         let mut write_guard = self.iid_incr_per_bucket.write().unwrap();
 
         let cache_key = bucket.to_bytes();
-        let iid = match write_guard.get_mut(&cache_key) {
-            Some(iid) => {
-                let new_iid = iid.saturating_add(1);
-                *iid = new_iid;
-                new_iid
-            }
-            None => {
-                let new_iid = match self.get_iid_incr(&bucket, &write_guard)? {
-                    Some(iid_incr) => {
-                        // COMPAT: Backfill `ObjectCount` from `IIDIncr` for
-                        //   users migrating from an older version.
-                        // TODO(major): Remove compat backfill.
-                        {
-                            let object_count_key =
-                                KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::ObjectCount);
-
-                            if (self.database)
-                                .get_pinned(&object_count_key)
-                                .is_ok_and(|opt| opt.is_none())
-                            {
-                                let count = i32::try_from(u32::from(iid_incr)).unwrap_or(i32::MAX);
-                                self.database
-                                    .put(&object_count_key, encode_i32_counter(count))
-                                    .unwrap_or_else(|error| {
-                                        tracing::error!(
-                                            "Could not backfill ObjectCount from IIDIncr: {error:?}"
-                                        )
-                                    });
-                            }
-                        }
-
-                        iid_incr.saturating_add(1)
-                    }
-                    None => StoreObjectIid::from(0),
-                };
-
-                write_guard.insert(cache_key, new_iid);
-
-                new_iid
-            }
-        };
+        let iid = *write_guard
+            .entry(cache_key)
+            .and_modify(|iid| *iid = iid.saturating_add(1))
+            .or_insert(StoreObjectIid::from(0));
 
         // Early release lock.
         drop(write_guard);
