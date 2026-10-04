@@ -64,7 +64,7 @@ fn test_search_is_case_insensitive_proper() {
 
 /// Unicode representation should not impact search results.
 #[test]
-#[ignore = "Not supported yet"]
+#[ignore = "Style folding supported yet (need to normalize before matching special patterns)"]
 fn test_search_is_unicode_normalized() {
     init_logging();
 

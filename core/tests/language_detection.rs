@@ -60,7 +60,7 @@ fn test_lang_is_case_insensitive() {
 
 /// “none” is a special language.
 #[test]
-#[ignore]
+#[ignore = "Not implemented yet"]
 fn test_none_is_special_lang() {
     init_logging();
 
