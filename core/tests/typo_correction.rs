@@ -67,7 +67,6 @@ fn test_search_allows_typos() {
 
 /// Ensures the order of words in search queries is insignificant.
 #[test]
-#[ignore = "Not supported yet (FIXME)"]
 fn test_search_term_order_insignificant() {
     #[rustfmt::skip]
     test_ingest_then_query!(push: ASTRONOMY_WORDS [ensure_no_stopword], query: [
