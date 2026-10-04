@@ -321,18 +321,20 @@ mod tests {
     // MARK: Helpers
 
     pub(super) fn make_test_preprocessor() -> Preprocessor {
+        use crate::config::*;
+
         Preprocessor {
-            tokenization_config: crate::config::TokenizationConfig {
+            tokenization_config: TokenizationConfig {
                 detect_special_patterns: true,
                 __compat_split_special_patterns: None,
             },
-            normalization_config: crate::config::NormalizationConfig {
-                unicode_normalization: None,
+            normalization_config: NormalizationConfig {
+                unicode_normalization: Some(UnicodeNormalization::Nfkc),
                 diacritic_folding_enabled: false,
                 #[cfg(feature = "stemming")]
                 stemming_enabled: false,
             },
-            stopwords_config: crate::config::StopwordsConfig::default(),
+            stopwords_config: StopwordsConfig::default(),
             detect_stopwords: true,
             filter_stopwords: true,
         }

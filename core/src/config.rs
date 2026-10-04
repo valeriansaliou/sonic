@@ -382,7 +382,7 @@ pub(crate) mod tests {
         tcp_timeout = 300
 
         [normalization]
-        unicode_normalization = "none"
+        unicode_normalization = "nfkc"
         diacritic_folding_enabled = true
         stemming_enabled = false
 

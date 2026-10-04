@@ -39,7 +39,7 @@ pub fn defaults_toml() -> String {
     format!(
         r#"
         [normalization]
-        unicode_normalization = "none"
+        unicode_normalization = "nfkc"
         diacritic_folding_enabled = true
         stemming_enabled = false
 
