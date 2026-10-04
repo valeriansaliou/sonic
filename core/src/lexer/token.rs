@@ -325,6 +325,16 @@ mod tests {
                 ("test_tokenizer", TokenKind::Special(SpecialTokenKind::Id)),
             ],
         );
+
+        // Number like (identifier).
+        #[rustfmt::skip]
+        test(
+            "2026, ٢٠٢٦.",
+            &[
+                ("2026", TokenKind::Special(SpecialTokenKind::Id)),
+                ("٢٠٢٦", TokenKind::Special(SpecialTokenKind::Id)),
+            ],
+        );
     }
 
     // MARK: Helpers
@@ -853,7 +863,6 @@ pub mod lexing {
         }
 
         pub fn lex<'s>(&self, text: &'s str, lang: Option<Lang>) -> LexerTokens<'s> {
-            // TODO(major): Test that numbers in various scripts are all detected as special.
             static SPECIAL_PATTERNS: LazyLock<Regex> = LazyLock::new(|| {
                 Regex::new(concat!(
                     r"(?P<email>[\w.+-]+@[\w-]+\.[\w.-]*\w)",
