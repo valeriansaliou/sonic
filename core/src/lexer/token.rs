@@ -184,15 +184,14 @@ mod tests {
         // Email address.
         #[rustfmt::skip]
         test(
-            "Contact jane.doe@example.org, alice@example.org or bob+foo@example.org for support.",
+            // NOTE: The trailing dot is on purpose.
+            "Contact jane.doe@example.org, alice@example.org or bob+foo@example.org.",
             &[
                 ("contact", TokenKind::Normal),
                 ("jane.doe@example.org", TokenKind::Special(SpecialTokenKind::EmailAddress)),
                 ("alice@example.org", TokenKind::Special(SpecialTokenKind::EmailAddress)),
                 ("or", TokenKind::Normal),
                 ("bob+foo@example.org", TokenKind::Special(SpecialTokenKind::EmailAddress)),
-                ("for", TokenKind::Normal),
-                ("support", TokenKind::Normal),
             ],
         );
 
@@ -854,11 +853,10 @@ pub mod lexing {
         }
 
         pub fn lex<'s>(&self, text: &'s str, lang: Option<Lang>) -> LexerTokens<'s> {
-            // FIXME(major): Don’t allow trailing dot in `email`.
             // TODO(major): Test that numbers in various scripts are all detected as special.
             static SPECIAL_PATTERNS: LazyLock<Regex> = LazyLock::new(|| {
                 Regex::new(concat!(
-                    r"(?P<email>[\w.+-]+@[\w-]+\.[\w.-]+)",
+                    r"(?P<email>[\w.+-]+@[\w-]+\.[\w.-]*\w)",
                     r"|(?P<username>@[^\s]*\w)",
                     r"|(?P<url>\w{2,}://[^\s]*[^\s.])",
                     r"|(?P<ipv4>\d{1,3}(?:\.\d{1,3}){3})(?:[^\.\d]|$)",
