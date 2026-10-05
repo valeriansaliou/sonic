@@ -12,13 +12,15 @@ max_flushes = 2
 
 write_ahead_log = false
 
-enable_blob_files = true
-min_blob_size = 4096 # 1024 u32
-blob_file_size = 16_777_216 # 16MiB
-enable_blob_gc = true
-blob_compression_type = "none"
+# enable_blob_files = true
+# min_blob_size = 2048 # 512 u32
+# blob_file_size = 16_777_216 # 16MiB
+# enable_blob_gc = true
+# blob_compression_type = "none"
 
-max_open_files = 200
+max_open_files = 10
+
+min_level_to_compress = 1
 
 [store.object.database]
 # Merge medium-sized memtables into large L0 SSTs.
@@ -39,4 +41,6 @@ min_blob_size = 0
 blob_file_size = 134_217_728 # 128MiB
 enable_blob_gc = true
 
-max_open_files = 200
+max_open_files = 10
+
+min_level_to_compress = 1
