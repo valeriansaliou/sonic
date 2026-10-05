@@ -8,6 +8,22 @@
        It’s used by `task release:*` when updating the changelog. -->
 [Unreleased]: https://github.com/valeriansaliou/sonic/compare/v1.10.1...HEAD
 
+### Changes
+
+* config(server): Set default `server.log_level` to `warn` (in `7f181c72`)
+* feat(server): Make `stemming` a Sonic server feature (in `1a48cdf3`)
+* ci: Build “light” version of Sonic on server releases (in `33acc004`)
+* feat(ci)!: Stop making GitHub releases for core and client releases (in `07ed5b35`)
+* chore: Update dependencies (in `4cf11e7b`)
+
+### Bug Fixes
+
+* fix(core): Remove debug logs (in `54d43044`)
+* fix(core): Make `TRIGGER backup` work while stores are in use (in `6afa0bb3`)
+* fix(core): Back up and restore FST buckets again (in `31b01504`)
+* fix(config): Fix `unicode_normalization` deserialization (in `890ba78a`)
+* fix(core): Fix `set_low_priority_background_threads` (in `cafce833`)
+
 ## [1.10.1] (2026-09-26)
 
 [1.10.1]: https://github.com/valeriansaliou/sonic/compare/v1.10.0...v1.10.1
