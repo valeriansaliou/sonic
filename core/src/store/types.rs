@@ -156,7 +156,10 @@ impl<'a> StoreItemPart<'a> {
     fn from_str(part: &'a str) -> Result<Self, ()> {
         let len = part.len();
 
-        if (STORE_ITEM_PART_LEN_MIN..=STORE_ITEM_PART_LEN_MAX).contains(&len) && part.is_ascii() {
+        if (STORE_ITEM_PART_LEN_MIN..=STORE_ITEM_PART_LEN_MAX).contains(&len)
+            && part.is_ascii()
+            && !part.contains(char::from(KEY_SEPARATOR))
+        {
             Ok(StoreItemPart(part))
         } else {
             Err(())
@@ -396,3 +399,5 @@ macro_rules! impl_u32_wrapper_utils {
     };
 }
 use impl_u32_wrapper_utils;
+
+use crate::store::generic::KEY_SEPARATOR;
