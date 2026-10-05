@@ -260,7 +260,6 @@ pub fn ingest_parallel<T: Ingestable>(
                 black_box(trigger_compact(&control, &[COLLECTION])).unwrap();
 
                 let compact_duration = start.elapsed();
-                elapsed_total += compact_duration;
 
                 tracing::info!("Compacted KV in {compact_duration:.3?}.");
 
@@ -282,7 +281,6 @@ pub fn ingest_parallel<T: Ingestable>(
                 black_box(control.trigger_consolidate()).unwrap();
 
                 let consolidate_duration = start.elapsed();
-                elapsed_total += consolidate_duration;
 
                 tracing::info!("Consolidated FST in {consolidate_duration:.3?}.");
 
@@ -295,6 +293,8 @@ pub fn ingest_parallel<T: Ingestable>(
             consolidate_handle.join().unwrap(),
         )
     };
+
+    elapsed_total += compact_duration.max(consolidate_duration);
 
     if *config != ParallelBenchmarkConfig::default() {
         tracing::info!("Resetting dynamic configuration…");
