@@ -214,10 +214,7 @@ mod back_compat {
 
     // This is dirty, but AFAIK (@RemiBardon) the `config` crate doesn’t
     // provide a better API and hopefully we won’t have to do this again.
-    pub fn migrate_channel_search(
-        channel: &mut crate::config::ChannelConfig,
-        sonic: &mut sonic::Config,
-    ) {
+    pub fn migrate_channel_search(channel: &mut super::ChannelConfig, sonic: &mut sonic::Config) {
         if let Some(search) = channel.search.take() {
             tracing::warn!(
                 "You’re still using the deprecated `channel.search` key. \
