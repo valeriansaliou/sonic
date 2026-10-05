@@ -45,7 +45,44 @@ pub(super) trait GenericRocksDbStore: GenericStore {
         // Configure this write
         let mut write_options = rocksdb::WriteOptions::default();
 
-        // write_options.set_memtable_insert_hint_per_batch(true);
+        write_options.set_memtable_insert_hint_per_batch(true);
+
+        //         struct LogHandler;
+        //
+        //         static COUNTER: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+        //         static COUNTER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        //
+        //         impl rocksdb::WriteBatchIteratorCf for LogHandler {
+        //             fn put_cf(&mut self, _cf_id: u32, key: &[u8], value: &[u8]) {
+        //                 if COUNTER.load(std::sync::atomic::Ordering::Relaxed) < 3 {
+        //                     println!("p: key={key:?} value={value:?}");
+        //                 }
+        //             }
+        //
+        //             fn delete_cf(&mut self, _cf_id: u32, key: &[u8]) {
+        //                 if COUNTER.load(std::sync::atomic::Ordering::Relaxed) < 3 {
+        //                     println!("d: key={key:?}");
+        //                 }
+        //             }
+        //
+        //             fn merge_cf(&mut self, _cf_id: u32, key: &[u8], value: &[u8]) {
+        //                 if COUNTER.load(std::sync::atomic::Ordering::Relaxed) < 3 {
+        //                     println!("m: key={key:?} value={value:?}");
+        //                 }
+        //             }
+        //         }
+        //
+        //         let lock = COUNTER_LOCK.lock().unwrap();
+        //         if COUNTER.load(std::sync::atomic::Ordering::Relaxed) < 3 {
+        //             println!("=== batch ===");
+        //         }
+        //         batch.iterate_cf(&mut LogHandler);
+        //         COUNTER.update(
+        //             std::sync::atomic::Ordering::SeqCst,
+        //             std::sync::atomic::Ordering::SeqCst,
+        //             |ct| ct.saturating_add(1),
+        //         );
+        //         drop(lock);
 
         // WAL disabled?
         if !self.config().database.write_ahead_log {

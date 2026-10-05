@@ -29,7 +29,7 @@ impl KvStoreKey {
         Self::make(META_TO_VALUE, bucket, &encode_kv_key_part(meta.as_u32()))
     }
 
-    pub(super) fn term_to_iids(bucket: &Bucket, term_hash: StoreTermHash) -> KvStoreKey {
+    pub(super) fn term_to_iids(bucket: &Bucket, term_hash: &StoreTermHash) -> KvStoreKey {
         Self::make(TERM_TO_IIDS, bucket, &encode_term_hash(term_hash))
     }
 
@@ -159,11 +159,11 @@ mod tests {
     #[test]
     fn it_keys_term_to_iids() {
         assert_eq!(
-            KvStoreKey::term_to_iids(&"b:2".into(), 772137347.into()).0,
+            KvStoreKey::term_to_iids(&"b:2".into(), &772137347.into()).0,
             [b'b', b':', b'2', KEY_SEPARATOR, 1, 131, 225, 5, 46]
         );
         assert_eq!(
-            KvStoreKey::term_to_iids(&"b:2".into(), 3582484684.into()).0,
+            KvStoreKey::term_to_iids(&"b:2".into(), &3582484684.into()).0,
             [b'b', b':', b'2', KEY_SEPARATOR, 1, 204, 96, 136, 213]
         );
     }
@@ -216,7 +216,7 @@ mod tests {
         assert_eq!(
             &format!(
                 "{}",
-                KvStoreKey::term_to_iids(&"b:6".into(), 72137347.into())
+                KvStoreKey::term_to_iids(&"b:6".into(), &72137347.into())
             ),
             r#""b:6":1:83ba4c04"#
         );

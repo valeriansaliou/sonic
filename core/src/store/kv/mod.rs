@@ -228,7 +228,7 @@ impl<'a> KvRepositoryReadOnly<'a> {
     /// [IDX=1] ((term)) ~> [((iid))]
     pub fn get_term_to_iids(
         &self,
-        term_hash: StoreTermHash,
+        term_hash: &StoreTermHash,
     ) -> Result<Option<Vec<StoreObjectIid>>, ()> {
         let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
 
@@ -426,7 +426,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
     #[inline]
     pub fn get_term_to_iids(
         &self,
-        term_hash: StoreTermHash,
+        term_hash: &StoreTermHash,
     ) -> Result<Option<Vec<StoreObjectIid>>, ()> {
         self.as_read_only().get_term_to_iids(term_hash)
     }
@@ -435,7 +435,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
     pub fn set_term_to_iids(
         &self,
         batch: &mut WriteBatch,
-        term_hash: StoreTermHash,
+        term_hash: &StoreTermHash,
         iids: impl ExactSizeIterator<Item = StoreObjectIid>,
     ) {
         let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
@@ -453,7 +453,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
     pub fn add_term_to_iid(
         &self,
         batch: &mut WriteBatch,
-        term_hash: StoreTermHash,
+        term_hash: &StoreTermHash,
         iid: StoreObjectIid,
     ) {
         let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
@@ -463,7 +463,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         batch.merge(&store_key, encode_iid(iid));
     }
 
-    pub fn delete_term_to_iids(&self, batch: &mut WriteBatch, term_hash: StoreTermHash) {
+    pub fn delete_term_to_iids(&self, batch: &mut WriteBatch, term_hash: &StoreTermHash) {
         let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
 
         tracing::debug!("store delete term-to-iids: {store_key}");
@@ -529,11 +529,11 @@ impl<'a> KvRepositoryReadWrite<'a> {
         self.as_read_only().get_iid_to_terms(iid)
     }
 
-    pub fn set_iid_to_terms(
+    pub fn set_iid_to_terms<'t>(
         &self,
         batch: &mut WriteBatch,
         iid: StoreObjectIid,
-        terms_hashes: impl ExactSizeIterator<Item = StoreTermHash>,
+        terms_hashes: impl ExactSizeIterator<Item = &'t StoreTermHash>,
     ) {
         let store_key = KvStoreKey::iid_to_terms(&self.bucket, iid);
 
@@ -549,11 +549,11 @@ impl<'a> KvRepositoryReadWrite<'a> {
         batch.put(store_key, &terms_hashes_encoded)
     }
 
-    pub fn add_iid_to_terms(
+    pub fn add_iid_to_terms<'t>(
         &self,
         batch: &mut WriteBatch,
         iid: StoreObjectIid,
-        terms_hashes: impl Iterator<Item = StoreTermHash>,
+        terms_hashes: impl Iterator<Item = &'t StoreTermHash>,
     ) {
         let store_key = KvStoreKey::iid_to_terms(&self.bucket, iid);
 
@@ -592,7 +592,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
 
         // Delete IID from each associated term
         for term_hash in iid_terms_hashes {
-            let Ok(Some(mut term_iids)) = self.get_term_to_iids(*term_hash) else {
+            let Ok(Some(mut term_iids)) = self.get_term_to_iids(term_hash) else {
                 continue;
             };
 
@@ -604,9 +604,9 @@ impl<'a> KvRepositoryReadWrite<'a> {
             }
 
             if term_iids.is_empty() {
-                self.delete_term_to_iids(batch, *term_hash)
+                self.delete_term_to_iids(batch, term_hash)
             } else {
-                self.set_term_to_iids(batch, *term_hash, term_iids.into_iter())
+                self.set_term_to_iids(batch, term_hash, term_iids.into_iter())
             };
         }
 
@@ -665,19 +665,19 @@ mod tests {
             action.write(batch).is_ok()
         });
 
-        assert!(action.get_term_to_iids(1.into()).is_ok());
+        assert!(action.get_term_to_iids(&1.into()).is_ok());
         assert!({
             let mut batch = WriteBatch::default();
             action.set_term_to_iids(
                 &mut batch,
-                1.into(),
+                &1.into(),
                 [0, 1, 2].into_iter().map(StoreObjectIid::from),
             );
             action.write(batch).is_ok()
         });
         assert!({
             let mut batch = WriteBatch::default();
-            action.delete_term_to_iids(&mut batch, 1.into());
+            action.delete_term_to_iids(&mut batch, &1.into());
             action.write(batch).is_ok()
         });
 
@@ -708,11 +708,10 @@ mod tests {
         assert!(action.get_iid_to_terms(4.into()).is_ok());
         assert!({
             let mut batch = WriteBatch::default();
-            action.set_iid_to_terms(
-                &mut batch,
-                4.into(),
-                [45402].into_iter().map(StoreTermHash::from),
-            );
+            let terms = ([45402].into_iter())
+                .map(StoreTermHash::from)
+                .collect::<Vec<_>>();
+            action.set_iid_to_terms(&mut batch, 4.into(), terms.iter());
             action.write(batch).is_ok()
         });
         assert!({

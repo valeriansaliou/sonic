@@ -108,7 +108,7 @@ impl super::Executor {
             let term = token.as_normalized();
 
             let mut iids = kv_repo
-                .get_term_to_iids(term_hash)
+                .get_term_to_iids(&term_hash)
                 .unwrap_or(None)
                 .unwrap_or_default();
 
@@ -118,13 +118,13 @@ impl super::Executor {
                 use unicode_normalization::UnicodeNormalization as _;
 
                 let mut nfc = kv_repo
-                    .get_term_to_iids(StoreTermHash::from(term.nfc().to_string().as_str()))
+                    .get_term_to_iids(&StoreTermHash::from(term.nfc().to_string().as_str()))
                     .unwrap_or(None)
                     .unwrap_or_default();
                 iids.append(&mut nfc);
 
                 let mut nfd = kv_repo
-                    .get_term_to_iids(StoreTermHash::from(term.nfd().to_string().as_str()))
+                    .get_term_to_iids(&StoreTermHash::from(term.nfd().to_string().as_str()))
                     .unwrap_or(None)
                     .unwrap_or_default();
                 iids.append(&mut nfd);
@@ -132,7 +132,7 @@ impl super::Executor {
 
             tracing::debug!("got exact search executor iids: {iids:?} for term: {term:?}");
 
-            let document_frequency = document_frequency(term_hash, &kv_repo);
+            let document_frequency = document_frequency(&term_hash, &kv_repo);
 
             // Filter out minimum IDF.
             // PERF: Filtering `minimum_idf > 0` to save some computation.
@@ -634,7 +634,7 @@ fn test_overall_score() {
     ); // 2/3
 }
 
-fn document_frequency(term_hash: StoreTermHash, kv_repo: &KvRepositoryReadOnly<'_>) -> u64 {
+fn document_frequency(term_hash: &StoreTermHash, kv_repo: &KvRepositoryReadOnly<'_>) -> u64 {
     kv_repo
         .get_term_to_iids(term_hash)
         .inspect_err(|err| tracing::error!("{err:?}"))
@@ -676,13 +676,13 @@ fn merge_suggestions(
         tracing::trace!(?term, ?suggested_word, "got completed word for term");
 
         let suggested_term_hash = StoreTermHash::from(suggested_word.as_str());
-        let suggested_iids = match kv_repo.get_term_to_iids(suggested_term_hash) {
+        let suggested_iids = match kv_repo.get_term_to_iids(&suggested_term_hash) {
             Ok(Some(suggested_iids)) => suggested_iids,
             Ok(None) => continue,
             Err(_) => continue,
         };
 
-        let document_frequency = document_frequency(suggested_term_hash, kv_repo);
+        let document_frequency = document_frequency(&suggested_term_hash, kv_repo);
 
         // Filter out minimum IDF.
         // PERF: Filtering `minimum_idf > 0` to save some computation.

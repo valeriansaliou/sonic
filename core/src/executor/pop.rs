@@ -108,15 +108,17 @@ impl super::Executor {
                                     // Check that term is linked to IID (and should be removed)
                                     if iid_terms_hashes.contains(&pop_term_hash) {
                                         if let Ok(Some(mut pop_term_iids)) =
-                                            kv_repo.get_term_to_iids(pop_term_hash)
+                                            kv_repo.get_term_to_iids(&pop_term_hash)
                                         {
                                             // Remove IID from list of IIDs to be popped
                                             pop_term_iids.retain(|cur_iid| cur_iid != &iid);
 
                                             if pop_term_iids.is_empty() {
                                                 // IIDs list was empty, delete whole key
-                                                kv_repo
-                                                    .delete_term_to_iids(&mut batch, pop_term_hash);
+                                                kv_repo.delete_term_to_iids(
+                                                    &mut batch,
+                                                    &pop_term_hash,
+                                                );
 
                                                 // Pop from FST graph (does not exist anymore)
                                                 if fst_repo.pop_word(pop_term) {
@@ -129,7 +131,7 @@ impl super::Executor {
                                                 // Re-build IIDs list w/o current IID
                                                 kv_repo.set_term_to_iids(
                                                     &mut batch,
-                                                    pop_term_hash,
+                                                    &pop_term_hash,
                                                     pop_term_iids.into_iter(),
                                                 );
                                             }
@@ -148,7 +150,7 @@ impl super::Executor {
                                 kv_repo.set_iid_to_terms(
                                     &mut batch,
                                     iid,
-                                    remaining_terms_vec.into_iter(),
+                                    remaining_terms_vec.iter(),
                                 );
                             }
 

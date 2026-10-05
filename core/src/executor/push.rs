@@ -206,16 +206,28 @@ impl super::Executor {
                         &self.last_assumed_new_oid,
                     )?;
 
-                    for term_hash in ctx.terms.keys() {
+                    executor_ensure_op!(kv_repo.write(batch));
+
+                    let mut batch = WriteBatch::default();
+
+                    let mut term_hashes_sorted = ctx.terms.keys().copied().collect::<Vec<_>>();
+
+                    // PERF: Sort terms by hash so they’re already sorted in the
+                    //   `WriteBatch`. By leveraging `memtable_insert_hint_per_batch`,
+                    //   we can reduce the skiplist load by ~1/3, and the total
+                    //   amount of computation per channel by ~14%.
+                    term_hashes_sorted.sort_by_key(crate::store::encoding::encode_term_hash);
+
+                    for term_hash in term_hashes_sorted.iter() {
                         // Link IID to term
-                        kv_repo.add_term_to_iid(&mut batch, *term_hash, iid);
+                        kv_repo.add_term_to_iid(&mut batch, term_hash, iid);
                     }
 
                     // Link terms to IID
                     if is_new {
-                        kv_repo.set_iid_to_terms(&mut batch, iid, ctx.terms.keys().copied());
+                        kv_repo.set_iid_to_terms(&mut batch, iid, term_hashes_sorted.iter());
                     } else {
-                        kv_repo.add_iid_to_terms(&mut batch, iid, ctx.terms.keys().copied());
+                        kv_repo.add_iid_to_terms(&mut batch, iid, term_hashes_sorted.iter());
                     }
 
                     executor_ensure_op!(kv_repo.write(batch));
@@ -274,20 +286,33 @@ impl super::Executor {
                         &self.last_assumed_new_oid,
                     )?;
 
-                    for token in &mut tokens {
-                        let term_hash = token.hash();
+                    executor_ensure_op!(kv_repo.write(batch));
 
+                    let mut batch = WriteBatch::default();
+
+                    let mut term_hashes_sorted = Vec::with_capacity(input.tokens().len());
+
+                    for token in &mut tokens {
+                        term_hashes_sorted.push(token.hash());
+                        terms.push(token.into_normalized());
+                    }
+
+                    // PERF: Sort terms by hash so they’re already sorted in the
+                    //   `WriteBatch`. By leveraging `memtable_insert_hint_per_batch`,
+                    //   we can reduce the skiplist load by ~1/3, and the total
+                    //   amount of computation per channel by ~14%.
+                    term_hashes_sorted.sort_by_key(crate::store::encoding::encode_term_hash);
+
+                    for term_hash in term_hashes_sorted.iter() {
                         // Link IID to term
                         kv_repo.add_term_to_iid(&mut batch, term_hash, iid);
-
-                        terms.push(token.into_normalized());
                     }
 
                     // Link terms to IID
                     if is_new {
-                        kv_repo.set_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());
+                        kv_repo.set_iid_to_terms(&mut batch, iid, term_hashes_sorted.iter());
                     } else {
-                        kv_repo.add_iid_to_terms(&mut batch, iid, tokens.seen().iter().copied());
+                        kv_repo.add_iid_to_terms(&mut batch, iid, term_hashes_sorted.iter());
                     }
 
                     executor_ensure_op!(kv_repo.write(batch));

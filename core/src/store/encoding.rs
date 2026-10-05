@@ -60,7 +60,7 @@ pub(super) const fn try_decode_iid(bytes: &[u8]) -> Result<StoreObjectIid, ()> {
 }
 
 #[inline]
-pub(super) const fn encode_term_hash(value: StoreTermHash) -> [u8; 4] {
+pub(crate) const fn encode_term_hash(value: &StoreTermHash) -> [u8; 4] {
     value.into_inner().to_le_bytes()
 }
 
@@ -99,7 +99,9 @@ fn decode_u32_list_mapped<T>(encoded: &[u8], decode: fn([u8; 4]) -> T) -> Result
 }
 
 #[inline]
-pub(super) fn encode_terms_list(terms: impl ExactSizeIterator<Item = StoreTermHash>) -> Vec<u8> {
+pub(super) fn encode_terms_list<'t>(
+    terms: impl ExactSizeIterator<Item = &'t StoreTermHash>,
+) -> Vec<u8> {
     encode_u32_list_mapped(terms, encode_term_hash)
 }
 
