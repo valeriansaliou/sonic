@@ -88,7 +88,7 @@ impl FstStorePool {
                 let bucket_entry = bucket_entry?;
 
                 // Actual bucket found?
-                let file_type = collection_entry.file_type()?;
+                let file_type = bucket_entry.file_type()?;
                 if !file_type.is_file() {
                     tracing::trace!(
                         ?file_type,
@@ -97,7 +97,7 @@ impl FstStorePool {
                     continue 'buckets;
                 }
 
-                let file_name = collection_entry.file_name();
+                let file_name = bucket_entry.file_name();
                 let Some(bucket_file_name) = file_name.to_str() else {
                     tracing::warn!(
                         file_name_bytes = ?file_name.as_encoded_bytes(),
