@@ -107,7 +107,7 @@ main() {
   #   (unless ran with `source`, which one shouldn’t do).
   cd "${REPOSITORY_ROOT:?}"
 
-  cargo build --target "${TARGET_TRIPLE:?}" --locked --profile "${BUILD_PROFILE:?}" $CARGO_BUILD_ARGS
+  cargo build --bin sonic --target "${TARGET_TRIPLE:?}" --locked --profile "${BUILD_PROFILE:?}" $CARGO_BUILD_ARGS
 
   rm -rf ./sonic/
   mkdir -p ./sonic
