@@ -22,6 +22,12 @@ max_open_files = 10
 
 min_level_to_compress = 1
 
+# log_level = "info"
+# stats_dump_period_sec = 5
+# db_log_dir = "/tmp/bench-logs"
+# keep_log_file_num = 10
+# max_log_file_size = 67_108_864 # 64MiB
+
 [store.object.database]
 # Merge medium-sized memtables into large L0 SSTs.
 write_buffer_size = 65_536 # 64MiB

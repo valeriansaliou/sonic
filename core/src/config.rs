@@ -278,6 +278,19 @@ pub struct RocksDbDatabaseConfig {
 
     #[serde(default)]
     pub enable_blob_gc: Option<bool>,
+
+    #[serde(default)]
+    #[serde(deserialize_with = "to_rocksdb_log_level_opt")]
+    pub log_level: Option<rocksdb::LogLevel>,
+
+    #[serde(default)]
+    pub db_log_dir: Option<PathBuf>,
+
+    #[serde(default)]
+    pub keep_log_file_num: Option<usize>,
+
+    #[serde(default)]
+    pub max_log_file_size: Option<usize>,
 }
 
 fn default_write_buffer_size() -> Option<usize> {
@@ -356,6 +369,29 @@ where
 {
     let str: Option<String> = Deserialize::deserialize(deserializer)?;
     str.map(|s| parse_rocksdb_recovery_mode(&s)).transpose()
+}
+
+fn parse_rocksdb_log_level<E: serde::de::Error>(str: &str) -> Result<rocksdb::LogLevel, E> {
+    match str.to_ascii_lowercase().as_str() {
+        "debug" => Ok(rocksdb::LogLevel::Debug),
+        "info" => Ok(rocksdb::LogLevel::Info),
+        "warn" => Ok(rocksdb::LogLevel::Warn),
+        "error" => Ok(rocksdb::LogLevel::Error),
+        "fatal" => Ok(rocksdb::LogLevel::Fatal),
+        "header" => Ok(rocksdb::LogLevel::Header),
+        _ => Err(serde::de::Error::unknown_variant(
+            str,
+            &["debug", "info", "warn", "error", "fatal", "header"],
+        )),
+    }
+}
+
+fn to_rocksdb_log_level_opt<'de, D>(deserializer: D) -> Result<Option<rocksdb::LogLevel>, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    let str: Option<String> = Deserialize::deserialize(deserializer)?;
+    str.map(|s| parse_rocksdb_log_level(&s)).transpose()
 }
 
 #[derive(Debug, Deserialize)]
