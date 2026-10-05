@@ -18,6 +18,7 @@ _Refer to sections below to interact with Sonic._
 
 1. Each command sent must be terminated with a new line character (`\n`) as to commit the command to the server;
 2. Upon starting a Sonic Channel session, your library should read the `buffer(20000)` parameter in the `STARTED` response, and use this value (in bytes) as to know when a command data should be truncated and split in multiple sub-commands (to avoid buffer overflows, ie. sending too much data in a single command);
+3. The `<collection>`, `<bucket>` and `<object>` values of any command must be 1 to 128 ASCII characters long, otherwise the command is rejected with `ERR invalid_argument(InvalidCollection)`, `ERR invalid_argument(InvalidBucket)` or `ERR invalid_argument(InvalidObject)`;
 
 ---
 
@@ -44,8 +45,8 @@ _The Sonic Channel Search mode is used for querying the search index. Once in th
 
 **⏩ Syntax terminology:**
 
-* `<collection>`: index collection (ie. what you search in, eg. `messages`, `products`, etc.);
-* `<bucket>`: index bucket name (ie. user-specific search classifier in the collection if you have any eg. `user-1, user-2, ..`, otherwise use a common bucket name eg. `generic, default, common, ..`);
+* `<collection>`: index collection (ie. what you search in, eg. `messages`, `products`, etc.), 1 to 128 ASCII characters long;
+* `<bucket>`: index bucket name (ie. user-specific search classifier in the collection if you have any eg. `user-1, user-2, ..`, otherwise use a common bucket name eg. `generic, default, common, ..`), 1 to 128 ASCII characters long;
 * `<terms>`: text for search terms (between quotes);
 * `<count>`: a positive integer number; set within allowed maximum & minimum limits;
 * `<locale>`: an ISO 639-3 locale code eg. `eng` for English (if set, the locale must be a valid ISO 639-3 code; if set to `none`, lexing will be disabled; if not set, the locale will be guessed from text);
@@ -120,9 +121,9 @@ Note that Sonic doesn’t provide an `UPDATE` command, because of the lossy natu
 
 **⏩ Syntax terminology:**
 
-* `<collection>`: index collection (ie. what you search in, eg. `messages`, `products`, etc.);
-* `<bucket>`: index bucket name (ie. user-specific search classifier in the collection if you have any eg. `user-1, user-2, ..`, otherwise use a common bucket name eg. `generic, default, common, ..`);
-* `<object>`: object identifier that refers to an entity in an external database, where the searched object is stored (eg. you use Sonic to index CRM contacts by name; full CRM contact data is stored in a MySQL database; in this case the object identifier in Sonic will be the MySQL primary key for the CRM contact);
+* `<collection>`: index collection (ie. what you search in, eg. `messages`, `products`, etc.), 1 to 128 ASCII characters long;
+* `<bucket>`: index bucket name (ie. user-specific search classifier in the collection if you have any eg. `user-1, user-2, ..`, otherwise use a common bucket name eg. `generic, default, common, ..`), 1 to 128 ASCII characters long;
+* `<object>`: object identifier that refers to an entity in an external database, where the searched object is stored (eg. you use Sonic to index CRM contacts by name; full CRM contact data is stored in a MySQL database; in this case the object identifier in Sonic will be the MySQL primary key for the CRM contact), 1 to 128 ASCII characters long;
 * `<text>`: search text to be indexed (can be a single word, or a longer text; within maximum length safety limits; should be quoted using `"` quotes; internal quotes should be escaped using `\"`);
 * `<locale>`: an ISO 639-3 locale code eg. `eng` for English (if set, the locale must be a valid ISO 639-3 code; if set to `none`, lexing will be disabled; if not set, the locale will be guessed from text);
 * `<manual>`: help manual to be shown (available manuals: `commands`);

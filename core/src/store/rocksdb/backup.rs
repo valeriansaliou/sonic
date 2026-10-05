@@ -6,6 +6,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use std::path::Path;
+use std::sync::Arc;
 use std::{fs, io};
 
 use rocksdb::backup::{
@@ -27,6 +28,12 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
 
         // Create backup directory (full path)
         fs::create_dir_all(path)?;
+
+        // NOTE: The KV store directory gets created when the first KV store
+        //   is opened, so there is nothing to back up until then.
+        if !self.kv_store_config.path.exists() {
+            return Ok(());
+        }
 
         // Proceed dump action (backup)
         self.dump_action(
@@ -110,10 +117,6 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         // Create backup folder for collection
         fs::create_dir_all(backup_path.join(collection_hash))?;
 
-        let origin_kv = self
-            .open(&store_id, |_| {})
-            .map_err(|_| io::Error::other("database open failure"))?;
-
         // Initialize KV database backup engine
         let kv_backup_options = DBBackupEngineOptions::new(&kv_backup_path)
             .map_err(|_| io::Error::other("backup engine options acquire failure"))?;
@@ -124,9 +127,23 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
             .map_err(|_| io::Error::other("backup engine failure"))?;
 
         // Proceed actual KV database backup
-        kv_backup_engine
-            .create_new_backup(&origin_kv)
-            .map_err(|_| io::Error::other("database backup failure"))?;
+        // NOTE: RocksDB refuses to open a database which is already open in
+        //   this process (its `LOCK` file is held), so back up the pooled
+        //   store if there is one. Flush it first, as its memtables may hold
+        //   writes not persisted yet (e.g. if the write-ahead log is disabled).
+        let pooled_store = self.read().unwrap().get(&store_id).map(Arc::clone);
+
+        match pooled_store {
+            Some(store) => kv_backup_engine.create_new_backup_flush(store.database(), true),
+            None => {
+                let origin_kv = self
+                    .open(&store_id, |_| {})
+                    .map_err(|_| io::Error::other("database open failure"))?;
+
+                kv_backup_engine.create_new_backup(&origin_kv)
+            }
+        }
+        .map_err(|_| io::Error::other("database backup failure"))?;
 
         tracing::info!("{kind} store {store_id} backed up to path: {kv_backup_path:?}");
 
