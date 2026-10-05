@@ -16,6 +16,7 @@ enable_blob_files = true
 min_blob_size = 4096 # 1024 u32
 blob_file_size = 16_777_216 # 16MiB
 enable_blob_gc = true
+blob_compression_type = "none"
 
 max_open_files = 200
 

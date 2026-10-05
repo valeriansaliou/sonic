@@ -209,6 +209,11 @@ pub struct RocksDbDatabaseConfig {
     pub wal_compression_type: Option<rocksdb::DBCompressionType>,
 
     #[serde(default)]
+    #[serde(alias = "blob_compression")]
+    #[serde(deserialize_with = "to_rocksdb_compression_type_opt")]
+    pub blob_compression_type: Option<rocksdb::DBCompressionType>,
+
+    #[serde(default)]
     pub wal_ttl_seconds: Option<u64>,
 
     #[serde(default)]

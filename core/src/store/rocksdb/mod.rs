@@ -142,6 +142,7 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
             min_blob_size,
             blob_file_size,
             enable_blob_gc,
+            blob_compression_type,
         } = config;
 
         // Make database options
@@ -191,7 +192,6 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
             });
         }
         if_some!(db_options.set_compression_type(compression_type));
-        if_some!(db_options.set_blob_compression_type(compression_type));
         if let Some(compression_level) = compression_level {
             db_options.set_compression_options(
                 -14,
@@ -221,6 +221,7 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
         if_some!(db_options.set_min_blob_size(min_blob_size));
         if_some!(db_options.set_blob_file_size(blob_file_size));
         if_some!(db_options.set_enable_blob_gc(enable_blob_gc));
+        if_some!(db_options.set_blob_compression_type(blob_compression_type));
 
         let mut max_background_jobs = *max_background_jobs;
 

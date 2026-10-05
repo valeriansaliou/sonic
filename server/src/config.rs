@@ -67,6 +67,7 @@ pub fn defaults_toml() -> &'static str {
     database.min_blob_size = 0
     database.blob_file_size = 134_217_728 # 128MiB
     database.enable_blob_gc = true
+    database.blob_compression_type = "zstd"
     "#
 }
 

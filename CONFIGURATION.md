@@ -126,6 +126,7 @@ Under `[store.kv]` and `[store.object]`:
 * `database.min_blob_size` (type: _integer_ (optional), allowed: `≥0`, default: none) — Minimum threshold value at or above which will be written to blob files during flush or compaction
 * `database.blob_file_size` (type: _integer_ (optional), allowed: `≥0`, default: none) — Size limit for blob files
 * `database.enable_blob_gc` (type: _boolean_ (optional), allowed: `true`, `false`, default: none) — If this is set to `true`, RocksDB will actively relocate valid blobs from the oldest blob files as they are encountered during compaction
+* `database.blob_compression_type` (type: _string_, allowed: `"none"`, `"zstd"`, default: `"zstd"`) — How blobs should be compressed (use `"none"` for no compression)
 
 Deprecations:
 
