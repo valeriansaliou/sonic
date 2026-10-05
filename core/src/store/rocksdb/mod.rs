@@ -208,14 +208,19 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
 
         if_some!(db_options.set_max_open_files(max_open_files));
 
-        // db_options.set_block_cache_size();
-        // db_options.set_cache_index_and_filter_blocks();
-
-        if let Some(block_cache_size) = block_cache_size {
-            let cache = rocksdb::Cache::new_lru_cache((*block_cache_size as usize) * 1024 * 1024);
+        // Configure block-based file storage.
+        {
             let mut block_opts = rocksdb::BlockBasedOptions::default();
-            block_opts.set_block_cache(&cache);
+
+            // block_opts.set_block_size(16 * 1024); // 16 KiB instead of the 4 KiB default
+
+            if let Some(block_cache_size) = block_cache_size {
+                let cache = rocksdb::Cache::new_lru_cache((*block_cache_size as usize) * 1024 * 1024);
+                block_opts.set_block_cache(&cache);
+            }
+
             if_some!(block_opts.set_cache_index_and_filter_blocks(cache_index_and_filter_blocks));
+
             db_options.set_block_based_table_factory(&block_opts);
         }
 
