@@ -9,23 +9,26 @@ pub(super) type Hash = u32;
 
 // MARK: IID
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd)]
 #[repr(transparent)]
 pub struct StoreObjectIid(u64);
 
 impl_primitive_wrapper_utils!(StoreObjectIid(u64));
 
 impl StoreObjectIid {
-    #[inline]
-    pub const fn saturating_add(self, rhs: u64) -> Self {
-        Self(self.0.saturating_add(rhs))
-    }
-
     // NOTE: We went for `into_inner` here instead of marking `.0` `pub(super)`
     //   so it’s easier to identify call sites and keep constuction via `From`.
     #[inline]
     pub(super) const fn into_inner(self) -> u64 {
         self.0
+    }
+}
+
+impl std::fmt::Display for StoreObjectIid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(n) = self;
+
+        write!(f, "{n}")
     }
 }
 
@@ -52,12 +55,6 @@ impl<'a> StoreObjectOid<'a> {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Bucket<'a>(StoreItemPart<'a>);
-
-impl<'a> Bucket<'a> {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        self.as_bytes().to_vec()
-    }
-}
 
 crate::util::impl_transparent_wrapper_utils!(Deref for Bucket<'a>(StoreItemPart<'a>));
 crate::util::impl_transparent_wrapper_utils!(From for Bucket<'a>(StoreItemPart<'a>));
@@ -123,6 +120,14 @@ impl From<&str> for StoreTermHash {
         hasher.write(term.as_bytes());
 
         Self(hasher.finish() as u32)
+    }
+}
+
+impl std::fmt::Display for StoreTermHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self(n) = self;
+
+        write!(f, "<{n:x}>")
     }
 }
 
@@ -253,6 +258,38 @@ impl StoreItemBuilder {
     }
 }
 
+// MARK: IIDIncr counter
+
+#[derive(Clone, Copy, Default, PartialEq, PartialOrd)]
+#[repr(transparent)]
+pub(super) struct IidIncr(pub(super) StoreObjectIid);
+
+impl IidIncr {
+    #[inline]
+    pub(super) const fn increment(&mut self) {
+        self.0.0 = self.0.0.saturating_add(1);
+    }
+}
+
+crate::util::impl_transparent_wrapper_utils!(Debug for IidIncr(StoreObjectIid));
+
+// MARK: ObjectCount counter
+
+#[derive(Default)]
+#[repr(transparent)]
+pub(super) struct ObjectCount(pub(super) i64);
+
+impl ObjectCount {
+    #[inline]
+    pub(super) const fn saturating_add(self, rhs: Self) -> Self {
+        Self(self.0.saturating_add(rhs.0))
+    }
+}
+
+crate::util::impl_transparent_wrapper_utils!(Debug for ObjectCount(i64));
+
+// MARK: - Tests
+
 #[cfg(test)]
 mod tests_store_item_builder {
     use super::*;
@@ -378,12 +415,6 @@ macro_rules! impl_primitive_wrapper_utils {
         impl From<$wrapped> for $t {
             fn from(value: $wrapped) -> Self {
                 Self(value)
-            }
-        }
-
-        impl From<$t> for $wrapped {
-            fn from(value: $t) -> Self {
-                value.0
             }
         }
 

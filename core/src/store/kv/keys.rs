@@ -5,59 +5,111 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use crate::store::encoding::*;
 use crate::store::generic::KEY_SEPARATOR;
 use crate::store::types::*;
 
-use self::constants::*;
+use super::encoding::*;
 
-// WARN: Don’t update values here, it would break the index! Only add new cases.
-pub(super) mod constants {
-    pub(in crate::store::kv) const META_TO_VALUE: u8 = 0;
-    pub(in crate::store::kv) const TERM_TO_IIDS: u8 = 1;
-    pub(in crate::store::kv) const OID_TO_IID: u8 = 2;
-    pub(in crate::store::kv) const IID_TO_OID: u8 = 3;
-    pub(in crate::store::kv) const IID_TO_TERMS: u8 = 4;
-}
+use KvStoreKeyDiscriminator as D;
+
+// WARN: Don’t change values here, it would break the index! Only add new cases.
+impl_int_enum!(pub(super) KvStoreKeyDiscriminator(u8):
+    MetaToValue (META_TO_VALUE) = 0,
+    TermToIids (TERM_TO_IIDS) = 1,
+    OidToIid (OID_TO_IID) = 2,
+    IidToOid (IID_TO_OID) = 3,
+    IidToTerms (IID_TO_TERMS) = 4,
+);
+
+// WARN: Don’t change values here, it would break the index! Only add new cases.
+impl_int_enum!(pub StoreMetaKey(u32):
+    IIDIncr (IID_INCR) = 0,
+    ObjectCount (OBJECT_COUNT) = 1,
+);
 
 #[derive(Clone, PartialEq, Eq)]
 #[repr(transparent)]
 pub(super) struct KvStoreKey(Vec<u8>);
 
 impl KvStoreKey {
-    pub(super) fn meta_to_value(bucket: &Bucket, meta: &StoreMetaKey) -> KvStoreKey {
-        Self::make(META_TO_VALUE, bucket, &encode_kv_key_part(meta.as_u32()))
+    #[inline]
+    const fn new(value: Vec<u8>) -> Self {
+        debug_assert!(value.len() > 6);
+        Self(value)
+    }
+}
+
+pub(super) struct KvStoreKeyParts<'a> {
+    pub(super) bucket: &'a [u8],
+    pub(super) discriminator: u8,
+    pub(super) route: &'a [u8],
+}
+
+impl<'a> TryFrom<&'a [u8]> for KvStoreKeyParts<'a> {
+    type Error = &'static str;
+
+    fn try_from(bytes: &'a [u8]) -> Result<Self, Self::Error> {
+        if bytes.is_empty() {
+            return Err("key empty");
+        }
+
+        // TODO: Move this logic near `Bucket` key encoding.
+        let Some(prefix_len) = bytes.iter().position(|c| *c == KEY_SEPARATOR) else {
+            return Err("missing separator after bucket part");
+        };
+
+        if bytes.len() < prefix_len + 2 {
+            return Err("key missing route");
+        };
+
+        Ok(Self {
+            bucket: &bytes[..prefix_len],
+            discriminator: bytes[prefix_len + 1],
+            route: &bytes[(prefix_len + 2)..],
+        })
+    }
+}
+
+impl KvStoreKey {
+    pub(super) fn meta_to_value(bucket: &Bucket, meta: StoreMetaKey) -> KvStoreKey {
+        Self::make(D::MetaToValue, bucket, meta)
     }
 
     pub(super) fn term_to_iids(bucket: &Bucket, term_hash: &StoreTermHash) -> KvStoreKey {
-        Self::make(TERM_TO_IIDS, bucket, &encode_term_hash_key(term_hash))
+        Self::make(D::TermToIids, bucket, term_hash)
     }
 
     pub(super) fn oid_to_iid(bucket: &Bucket, oid: StoreObjectOid) -> KvStoreKey {
-        Self::make(OID_TO_IID, bucket, oid.as_bytes())
+        Self::make(D::OidToIid, bucket, &oid)
     }
 
     pub(super) fn iid_to_oid(bucket: &Bucket, iid: StoreObjectIid) -> KvStoreKey {
-        Self::make(IID_TO_OID, bucket, &encode_kv_key_part_long(iid.into()))
+        Self::make(D::IidToOid, bucket, iid)
     }
 
     pub(super) fn iid_to_terms(bucket: &Bucket, iid: StoreObjectIid) -> KvStoreKey {
-        Self::make(IID_TO_TERMS, bucket, &encode_kv_key_part_long(iid.into()))
+        Self::make(D::IidToTerms, bucket, iid)
     }
 
-    /// Key format: `[bucket<?B> | separator<1B> | idx<1B> | route<?B>]`
-    fn make(idx: u8, bucket: &Bucket, route: &[u8]) -> KvStoreKey {
-        // Encode key bucket + key route from u32 to array of u8 (i.e. binary).
-        let bucket_bytes = bucket.as_bytes();
+    /// Key format: `[bucket<?B> | discriminator<1B> | route<?B>]`
+    fn make(
+        idx: KvStoreKeyDiscriminator,
+        bucket: impl ToKvKeyPart,
+        route: impl ToKvKeyPart,
+    ) -> KvStoreKey {
+        let bucket_repr = bucket.to_kv_key_part();
+        let bucket_bytes = bucket_repr.as_ref();
 
-        let mut key_bytes = Vec::with_capacity(bucket_bytes.len() + 6);
+        let route_repr = route.to_kv_key_part();
+        let route_bytes = route_repr.as_ref();
 
-        key_bytes.extend_from_slice(bucket_bytes); // [bucket<?B>]
-        key_bytes.push(KEY_SEPARATOR); // [separator<1B>]
-        key_bytes.push(idx); // [idx<1B>]
-        key_bytes.extend_from_slice(route); // [route<?B>]
+        let mut key_bytes = Vec::with_capacity(bucket_bytes.len() + 1 + route_bytes.len());
 
-        KvStoreKey::from(key_bytes)
+        key_bytes.extend_from_slice(bucket_bytes);
+        key_bytes.push(idx as u8);
+        key_bytes.extend_from_slice(route_bytes);
+
+        KvStoreKey::new(key_bytes)
     }
 
     pub(super) fn prefix_range(bucket: &Bucket) -> std::ops::Range<Vec<u8>> {
@@ -75,12 +127,7 @@ impl KvStoreKey {
     }
 }
 
-impl From<Vec<u8>> for KvStoreKey {
-    fn from(value: Vec<u8>) -> Self {
-        debug_assert!(value.len() > 6);
-        Self(value)
-    }
-}
+// MARK: Boilerplate
 
 impl AsRef<[u8]> for KvStoreKey {
     fn as_ref(&self) -> &[u8] {
@@ -92,45 +139,37 @@ impl std::fmt::Display for KvStoreKey {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let Self(bytes) = self;
 
-        // WARN: `splitn` is important as `KEY_SEPARATOR` might appear later as a normal byte.
-        let mut splits = bytes.splitn(2, |c| *c == KEY_SEPARATOR);
+        let KvStoreKeyParts {
+            bucket,
+            discriminator,
+            route,
+        } = KvStoreKeyParts::try_from(bytes.as_slice()).unwrap();
 
-        let bucket_bytes = splits.next().unwrap();
-        let key_bucket = str::from_utf8(bucket_bytes).unwrap();
+        let bucket_str = str::from_utf8(bucket).unwrap();
 
-        let rest = splits.next().unwrap();
-        debug_assert!(rest.len() >= 2);
-        debug_assert!(splits.next().is_none());
+        let discriminator = D::try_from(discriminator).unwrap();
 
-        let key_idx = rest[0];
+        match discriminator {
+            D::MetaToValue => {
+                let meta = StoreMetaKey::try_from_kv_key_part(route).unwrap();
 
-        let route_bytes = &rest[1..];
-        if matches!(key_idx, META_TO_VALUE | TERM_TO_IIDS) && route_bytes.len() == 4 {
-            let key_route = decode_kv_key_part([
-                route_bytes[0],
-                route_bytes[1],
-                route_bytes[2],
-                route_bytes[3],
-            ]);
+                write!(f, "{bucket_str:?}:{discriminator}:{meta}")
+            }
+            D::TermToIids => {
+                let term_hash = StoreTermHash::try_from_kv_key_part(route).unwrap();
 
-            write!(f, "{key_bucket:?}:{key_idx}:{key_route:x}")
-        } else if matches!(key_idx, IID_TO_OID | IID_TO_TERMS) && route_bytes.len() == 8 {
-            let key_route = decode_kv_key_part_long([
-                route_bytes[0],
-                route_bytes[1],
-                route_bytes[2],
-                route_bytes[3],
-                route_bytes[4],
-                route_bytes[5],
-                route_bytes[6],
-                route_bytes[7],
-            ]);
+                write!(f, "{bucket_str:?}:{discriminator}:{term_hash}")
+            }
+            D::OidToIid => {
+                let route_str = str::from_utf8(route).unwrap();
 
-            write!(f, "{key_bucket:?}:{key_idx}:{key_route:x}")
-        } else {
-            let key_route = str::from_utf8(route_bytes).unwrap();
+                write!(f, "{bucket_str:?}:{discriminator}:{route_str:?}")
+            }
+            D::IidToOid | D::IidToTerms => {
+                let iid = StoreObjectIid::from_kv_key_part(*route.first_chunk().unwrap());
 
-            write!(f, "{key_bucket:?}:{key_idx}:{key_route:?}")
+                write!(f, "{bucket_str:?}:{discriminator}:{iid}")
+            }
         }
     }
 }
@@ -142,20 +181,41 @@ impl std::fmt::Debug for KvStoreKey {
     }
 }
 
-pub enum StoreMetaKey {
-    IIDIncr,
-    ObjectCount,
-}
+macro_rules! impl_int_enum {
+    (
+        $vis:vis $t:ident($repr:ty):
+        $($case:ident ($const:ident) = $value:expr),+ $(,)?
+    ) => {
+        $(const $const: $repr = $value;)+
 
-impl StoreMetaKey {
-    pub const fn as_u32(&self) -> u32 {
-        // WARN: Don’t update values here, it would break the index! Only add new cases.
-        match self {
-            StoreMetaKey::IIDIncr => 0,
-            StoreMetaKey::ObjectCount => 1,
+        #[repr($repr)]
+        $vis enum $t {
+            $($case = $const,)+
         }
-    }
+
+        impl std::fmt::Display for $t {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    $(Self::$case => f.write_str(stringify!($const)),)+
+                }
+            }
+        }
+
+        impl TryFrom<$repr> for $t {
+            type Error = String;
+
+            fn try_from(value: $repr) -> Result<Self, Self::Error> {
+                match value {
+                    $($const => Ok(Self::$case),)+
+                    n => Err(format!("Invalid `{ty}`: {n}", ty = std::any::type_name::<$t>())),
+                }
+            }
+        }
+    };
 }
+use impl_int_enum;
+
+// MARK: - Tests
 
 #[cfg(test)]
 mod tests {
@@ -164,7 +224,7 @@ mod tests {
     #[test]
     fn it_keys_meta_to_value() {
         assert_eq!(
-            KvStoreKey::meta_to_value(&"b:1".into(), &StoreMetaKey::IIDIncr).0,
+            KvStoreKey::meta_to_value(&"b:1".into(), StoreMetaKey::IIDIncr).0,
             [b'b', b':', b'1', KEY_SEPARATOR, 0, 0, 0, 0, 0]
         );
     }
@@ -232,14 +292,14 @@ mod tests {
                 "{}",
                 KvStoreKey::term_to_iids(&"b:6".into(), &72137347.into())
             ),
-            r#""b:6":1:83ba4c04"#
+            r#""b:6":TERM_TO_IIDS:<44cba83>"#
         );
         assert_eq!(
             &format!(
                 "{}",
-                KvStoreKey::meta_to_value(&"b:6".into(), &StoreMetaKey::IIDIncr)
+                KvStoreKey::meta_to_value(&"b:6".into(), StoreMetaKey::IIDIncr)
             ),
-            r#""b:6":0:0"#
+            r#""b:6":META_TO_VALUE:IID_INCR"#
         );
     }
 
@@ -250,6 +310,8 @@ mod tests {
         assert_eq!(range.end, &[b'A', b'B', b'C', KEY_SEPARATOR + 1]);
     }
 }
+
+// MARK: - Benchmarks
 
 #[cfg(all(feature = "benchmark", test))]
 mod benches {

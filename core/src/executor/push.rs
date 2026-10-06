@@ -14,6 +14,7 @@ use crate::executor::MultipartPushContext;
 use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::kv::KvRepositoryReadWrite;
+use crate::store::kv::encoding::ToKvKeyPart;
 use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreObjectOid, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
 
@@ -216,7 +217,7 @@ impl super::Executor {
                     //   `WriteBatch`. By leveraging `memtable_insert_hint_per_batch`,
                     //   we can reduce the skiplist load by ~1/3, and the total
                     //   amount of computation per channel by ~14%.
-                    term_hashes_sorted.sort_by_key(crate::store::encoding::encode_term_hash_key);
+                    term_hashes_sorted.sort_by_key(|term_hash| term_hash.to_kv_key_part());
 
                     for term_hash in term_hashes_sorted.iter() {
                         // Link IID to term
@@ -301,7 +302,7 @@ impl super::Executor {
                     //   `WriteBatch`. By leveraging `memtable_insert_hint_per_batch`,
                     //   we can reduce the skiplist load by ~1/3, and the total
                     //   amount of computation per channel by ~14%.
-                    term_hashes_sorted.sort_by_key(crate::store::encoding::encode_term_hash_key);
+                    term_hashes_sorted.sort_by_key(|term_hash| term_hash.to_kv_key_part());
 
                     for term_hash in term_hashes_sorted.iter() {
                         // Link IID to term

@@ -6,7 +6,6 @@
 
 mod generic;
 
-pub(crate) mod encoding;
 pub mod fst;
 pub mod kv;
 pub mod object;

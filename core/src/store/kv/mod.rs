@@ -5,6 +5,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+pub(crate) mod encoding;
 mod keys;
 mod merge;
 
@@ -20,8 +21,7 @@ use crate::store::rocksdb::GenericRocksDbStore;
 pub use crate::store::rocksdb::pool::{GenericKvStorePool, KvStoreId};
 use crate::store::types::*;
 
-use super::encoding::*;
-
+use self::encoding::*;
 use self::keys::KvStoreKey;
 pub use self::keys::StoreMetaKey;
 
@@ -41,7 +41,7 @@ pub struct KvStore {
     /// have bad read performance.
     ///
     /// In benchmarks, we saw a `~23%` throughput increase after this change.
-    iid_incr_per_bucket: RwLock<HashMap<Vec<u8>, StoreObjectIid>>,
+    iid_incr_per_bucket: RwLock<HashMap<Vec<u8>, IidIncr>>,
 }
 
 pub struct KvRepositoryReadOnly<'a> {
@@ -62,19 +62,19 @@ impl KvStore {
     ) -> Result<StoreObjectIid, Box<dyn std::error::Error>> {
         let mut write_guard = self.iid_incr_per_bucket.write().unwrap();
 
-        let cache_key = bucket.to_bytes();
-        let iid = *write_guard
+        let cache_key = bucket.to_kv_key_part();
+        let iid_incr = *write_guard
             .entry(cache_key)
-            .and_modify(|iid| *iid = iid.saturating_add(1))
-            .or_insert(StoreObjectIid::from(0));
+            .and_modify(IidIncr::increment)
+            .or_default();
 
         // Early release lock.
         drop(write_guard);
 
-        let store_key = KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
-        batch.merge(store_key, encode_u64_counter(iid.into()));
+        let store_key = KvStoreKey::meta_to_value(&bucket, StoreMetaKey::IIDIncr);
+        batch.merge(store_key, iid_incr.to_kv_value());
 
-        Ok(iid)
+        Ok(iid_incr.0)
     }
 }
 
@@ -134,7 +134,7 @@ impl GenericRocksDbStore for KvStore {
     }
 
     fn on_batch_erase_bucket(&self, bucket: &Bucket) {
-        (self.iid_incr_per_bucket.write().unwrap()).remove(&bucket.to_bytes());
+        (self.iid_incr_per_bucket.write().unwrap()).remove(&bucket.to_kv_key_part());
     }
 }
 
@@ -162,7 +162,7 @@ impl<'a> KvRepositoryReadOnly<'a> {
         &self,
         meta: StoreMetaKey,
     ) -> Result<Option<T>, ()> {
-        let store_key = KvStoreKey::meta_to_value(&self.bucket, &meta);
+        let store_key = KvStoreKey::meta_to_value(&self.bucket, meta);
 
         tracing::debug!("store get meta-to-value: {store_key}");
 
@@ -190,17 +190,17 @@ impl<'a> KvRepositoryReadOnly<'a> {
     pub fn get_object_count(&self) -> Result<u64, Box<dyn std::error::Error>> {
         let bucket = self.bucket;
 
-        let store_key = KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::ObjectCount);
+        let store_key = KvStoreKey::meta_to_value(&bucket, StoreMetaKey::ObjectCount);
         let value = self.store.database.get(&store_key)?;
 
         match value {
             Some(bytes) => match bytes.split_first_chunk::<8>() {
                 Some((chunk, [])) => {
-                    let count = decode_i64_counter(*chunk);
+                    let count = ObjectCount::from_kv_value(*chunk);
 
                     tracing::debug!(?bucket, ?count, "Read ObjectCount from database");
 
-                    match u64::try_from(count) {
+                    match u64::try_from(count.0) {
                         Ok(count) => Ok(count),
                         Err(error) => Err(Box::new(io::Error::other(format!(
                             "Invalid ObjectCount value in bucket {bucket:?}: {error:?}",
@@ -239,13 +239,20 @@ impl<'a> KvRepositoryReadOnly<'a> {
             Ok(Some(value)) => {
                 tracing::debug!("got term-to-iids: {store_key} with encoded value: {value:?}");
 
-                decode_iids_list(&value).map(|value_decoded| {
-                    tracing::debug!(
-                        "got term-to-iids: {store_key} with decoded value: {value_decoded:?}"
-                    );
+                match Vec::<StoreObjectIid>::try_from_kv_value(&value) {
+                    Ok(value_decoded) => {
+                        tracing::debug!(
+                            "got term-to-iids: {store_key} with decoded value: {value_decoded:?}"
+                        );
 
-                    Some(value_decoded)
-                })
+                        Ok(Some(value_decoded))
+                    }
+                    Err(error) => {
+                        tracing::error!(?store_key, "invalid term-to-iids: {error}");
+
+                        Err(())
+                    }
+                }
             }
             Ok(None) => {
                 tracing::debug!("no term-to-iids found: {store_key}");
@@ -272,13 +279,20 @@ impl<'a> KvRepositoryReadOnly<'a> {
             Ok(Some(value)) => {
                 tracing::debug!("got oid-to-iid: {store_key} with encoded value: {value:?}");
 
-                try_decode_iid(&value).map(|value_decoded| {
-                    tracing::debug!(
-                        "got oid-to-iid: {store_key} with decoded value: {value_decoded:?}"
-                    );
+                match StoreObjectIid::try_from_kv_value(&value) {
+                    Ok(value_decoded) => {
+                        tracing::debug!(
+                            "got oid-to-iid: {store_key} with decoded value: {value_decoded:?}"
+                        );
 
-                    Some(value_decoded)
-                })
+                        Ok(Some(value_decoded))
+                    }
+                    Err(error) => {
+                        tracing::error!(?store_key, "invalid oid-to-iid: {error}");
+
+                        Err(())
+                    }
+                }
             }
             Ok(None) => {
                 tracing::debug!("no oid-to-iid found: {store_key}");
@@ -332,20 +346,29 @@ impl<'a> KvRepositoryReadOnly<'a> {
             Ok(Some(value)) => {
                 tracing::debug!("got iid-to-terms: {store_key} with encoded value: {value:?}");
 
-                decode_terms_list(&value).map(|value_decoded| {
-                    tracing::debug!(
-                        "got iid-to-terms: {store_key} with decoded value: {value_decoded:?}"
-                    );
+                match Vec::<StoreTermHash>::try_from_kv_value(&value) {
+                    Ok(value_decoded) => {
+                        tracing::debug!(
+                            "got iid-to-terms: {store_key} with decoded value: {value_decoded:?}"
+                        );
 
-                    // TODO: Do not map empty to `None`, as it has a different
-                    //   meaning. Let handlers do what they want. Also this
-                    //   creates a discrepancy with `get_term_to_iids`.
-                    if !value_decoded.is_empty() {
-                        Some(value_decoded)
-                    } else {
-                        None
+                        // TODO: Do not map empty to `None`, as it has a different
+                        //   meaning. Let handlers do what they want. Also this
+                        //   creates a discrepancy with `get_term_to_iids`.
+                        let value_decoded = if !value_decoded.is_empty() {
+                            Some(value_decoded)
+                        } else {
+                            None
+                        };
+
+                        Ok(value_decoded)
                     }
-                })
+                    Err(error) => {
+                        tracing::error!(?store_key, "invalid iid-to-terms: {error}");
+
+                        Err(())
+                    }
+                }
             }
             Ok(None) => {
                 tracing::debug!("no iid-to-terms found: {store_key}");
@@ -386,7 +409,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         meta: StoreMetaKey,
         value: impl ToString,
     ) {
-        let store_key = KvStoreKey::meta_to_value(&self.bucket, &meta);
+        let store_key = KvStoreKey::meta_to_value(&self.bucket, meta);
 
         tracing::debug!("store set meta-to-value: {store_key}");
 
@@ -400,7 +423,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
 
     #[inline]
     fn add_object_count(&self, batch: &mut WriteBatch, diff: i64) {
-        let store_key = KvStoreKey::meta_to_value(&self.bucket, &StoreMetaKey::ObjectCount);
+        let store_key = KvStoreKey::meta_to_value(&self.bucket, StoreMetaKey::ObjectCount);
 
         tracing::trace!(
             ?store_key,
@@ -408,7 +431,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
             &self.bucket
         );
 
-        batch.merge(store_key, encode_i64_counter(diff));
+        batch.merge(store_key, ObjectCount(diff).to_kv_value());
     }
 
     pub fn get_new_iid(
@@ -444,7 +467,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         tracing::debug!("store set term-to-iids: {store_key}");
 
         // Encode IID list into storage serialized format
-        let iids_encoded = encode_iids_list(iids);
+        let iids_encoded = iids.to_kv_value();
 
         tracing::debug!("store set term-to-iids: {store_key} with encoded value: {iids_encoded:?}");
 
@@ -461,7 +484,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
 
         tracing::debug!("store add term-to-iids: {store_key}");
 
-        batch.merge(&store_key, encode_iid(iid));
+        batch.merge(&store_key, iid.to_kv_value());
     }
 
     pub fn delete_term_to_iids(&self, batch: &mut WriteBatch, term_hash: &StoreTermHash) {
@@ -485,7 +508,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         tracing::debug!("store set oid-to-iid: {store_key}");
 
         // Encode IID
-        let iid_encoded = encode_iid(iid);
+        let iid_encoded = iid.to_kv_value();
 
         tracing::debug!("store set oid-to-iid: {store_key} with encoded value: {iid_encoded:?}");
 
@@ -541,7 +564,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         tracing::debug!("store set iid-to-terms: {store_key}");
 
         // Encode term list into storage serialized format
-        let terms_hashes_encoded = encode_terms_list(terms_hashes);
+        let terms_hashes_encoded = terms_hashes.to_kv_value();
 
         tracing::debug!(
             "store set iid-to-terms: {store_key} with encoded value: {terms_hashes_encoded:?}"
@@ -561,7 +584,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         tracing::debug!("store add iid-to-terms: {store_key}");
 
         for term_hash in terms_hashes {
-            batch.merge(&store_key, encode_term_hash_value(term_hash));
+            batch.merge(&store_key, term_hash.to_kv_value());
         }
     }
 

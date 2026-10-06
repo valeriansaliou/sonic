@@ -6,8 +6,9 @@
 
 use hashbrown::HashSet;
 
-use crate::store::{encoding::*, generic::KEY_SEPARATOR};
+use crate::store::types::*;
 
+use super::encoding::*;
 use super::keys::StoreMetaKey;
 
 pub(super) fn kv_merge_operator(
@@ -15,22 +16,31 @@ pub(super) fn kv_merge_operator(
     existing_val: Option<&[u8]>,
     operands: &rocksdb::MergeOperands,
 ) -> Option<Vec<u8>> {
-    use super::keys::constants::*;
+    use super::keys::KvStoreKeyDiscriminator as D;
+    use super::keys::KvStoreKeyParts;
 
-    let prefix_len = key.iter().position(|c| *c == KEY_SEPARATOR)?;
+    let KvStoreKeyParts {
+        bucket: _,
+        discriminator,
+        route,
+    } = KvStoreKeyParts::try_from(key).ok()?;
 
-    match key[prefix_len + 1] {
-        META_TO_VALUE => match &key[(prefix_len + 2)..] {
-            v if v == encode_kv_key_part(StoreMetaKey::IIDIncr.as_u32()) => {
-                u64_max(existing_val, operands)
-            }
-            v if v == encode_kv_key_part(StoreMetaKey::ObjectCount.as_u32()) => {
-                i64_counter(existing_val, operands)
-            }
-            v => panic!("Unrecognized meta key: {v:?}"),
+    let discriminator = D::try_from(discriminator)
+        .inspect_err(|error| tracing::error!("kv_merge_operator: Invalid discriminator: {error}"))
+        .ok()?;
+
+    match discriminator {
+        D::MetaToValue => match StoreMetaKey::try_from_kv_key_part(route) {
+            Ok(StoreMetaKey::IIDIncr) => merge_int_max::<8, IidIncr>(existing_val, operands),
+            Ok(StoreMetaKey::ObjectCount) => merge_int_counter::<8, ObjectCount>(
+                existing_val,
+                operands,
+                ObjectCount::saturating_add,
+            ),
+            Err(error) => panic!("Unrecognized meta key: {error}"),
         },
-        TERM_TO_IIDS => prepend_int_list::<8>(existing_val, operands),
-        IID_TO_TERMS => prepend_int_list::<4>(existing_val, operands),
+        D::TermToIids => prepend_int_list::<8>(existing_val, operands),
+        D::IidToTerms => prepend_int_list::<4>(existing_val, operands),
         _ => unreachable!(),
     }
 }
@@ -91,26 +101,31 @@ fn prepend_int_list<const WORD_LEN: usize>(
     Some(res)
 }
 
-/// This keeps only the maximum `u64`.
+/// This keeps only the maximum integer.
 ///
 /// It’s used for `IIDIncr`, where we can’t guarantee the order in which
 /// incremental values will effectively be written.
-fn u64_max(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -> Option<Vec<u8>> {
-    const WORD_LEN: usize = 8;
-
+fn merge_int_max<const WORD_LEN: usize, T>(
+    existing_val: Option<&[u8]>,
+    operands: &rocksdb::MergeOperands,
+) -> Option<Vec<u8>>
+where
+    T: ToKvValue<Repr = [u8; WORD_LEN]> + FromKvValue + TryFromKvValue + Default + PartialOrd,
+    <T as TryFromKvValue>::Err: std::fmt::Display,
+{
     let mut res = match existing_val {
-        Some(bytes) => match bytes.split_first_chunk::<WORD_LEN>() {
-            Some((chunk, remainder)) if remainder.is_empty() => decode_u64_counter(*chunk),
-            _ => panic!("u64_max: initial value isn’t a u64"),
+        Some(bytes) => match T::try_from_kv_value(bytes) {
+            Ok(initial_value) => initial_value,
+            Err(error) => panic!("merge_int_max: Invalid initial value: {error}"),
         },
         None if operands.is_empty() => return None,
-        None => 0,
+        None => T::default(),
     };
 
     for op in operands {
-        let (chunks, remainder) = op.as_chunks::<WORD_LEN>();
+        let (chunks, remainder) = op.as_chunks();
 
-        const ERROR: &str = "u64_max received incorrect operand: remainder not empty.";
+        const ERROR: &str = "merge_int_max received incorrect operand: Remainder not empty.";
         debug_assert!(remainder.is_empty(), "{ERROR}");
 
         if !remainder.is_empty() {
@@ -119,7 +134,7 @@ fn u64_max(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -> Op
         }
 
         for chunk in chunks {
-            let new_val = decode_u64_counter(*chunk);
+            let new_val = T::from_kv_value(*chunk);
 
             if new_val > res {
                 res = new_val;
@@ -127,7 +142,7 @@ fn u64_max(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -> Op
         }
     }
 
-    Some(encode_u64_counter(res).to_vec())
+    Some(res.to_kv_value().to_vec())
 }
 
 /// This implements a counter (as `i64`).
@@ -143,35 +158,41 @@ fn u64_max(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -> Op
 /// way to know that they’re now encoded as `u64`. In addition, if one merge
 /// operation gets `(None, [-1, -1])` and another `(None, [1, 1, 1])`, the
 /// final counter value would be `3`; which is incorrect (expected: `1`).
-fn i64_counter(existing_val: Option<&[u8]>, operands: &rocksdb::MergeOperands) -> Option<Vec<u8>> {
-    const WORD_LEN: usize = 8;
-
+fn merge_int_counter<const WORD_LEN: usize, T>(
+    existing_val: Option<&[u8]>,
+    operands: &rocksdb::MergeOperands,
+    saturating_add: fn(T, T) -> T,
+) -> Option<Vec<u8>>
+where
+    T: ToKvValue<Repr = [u8; WORD_LEN]> + FromKvValue + TryFromKvValue + Default,
+    <T as TryFromKvValue>::Err: std::fmt::Display,
+{
     let mut res = match existing_val {
-        Some(bytes) => match bytes.split_first_chunk::<WORD_LEN>() {
-            Some((chunk, remainder)) if remainder.is_empty() => decode_i64_counter(*chunk),
-            _ => panic!("i64_counter: initial value isn’t a i64"),
+        Some(bytes) => match T::try_from_kv_value(bytes) {
+            Ok(initial_value) => initial_value,
+            Err(error) => panic!("merge_int_counter: Invalid initial value: {error}"),
         },
         None if operands.is_empty() => return None,
-        None => 0,
+        None => T::default(),
     };
 
     for op in operands {
-        let (chunks, remainder) = op.as_chunks::<WORD_LEN>();
+        let (chunks, remainder) = op.as_chunks();
 
-        const ERROR: &str = "i64_counter received incorrect operand: remainder not empty.";
+        const ERROR: &str = "merge_int_counter received incorrect operand: Remainder not empty.";
         debug_assert!(remainder.is_empty(), "{ERROR}");
 
         if !remainder.is_empty() {
-            tracing::error!("{ERROR} Ignoring.");
-            continue;
+            tracing::error!("{ERROR}");
+            return None;
         }
 
         for chunk in chunks {
-            let diff = decode_i64_counter(*chunk);
+            let diff = T::from_kv_value(*chunk);
 
-            res = res.saturating_add(diff);
+            res = saturating_add(res, diff);
         }
     }
 
-    Some(encode_i64_counter(res).to_vec())
+    Some(res.to_kv_value().to_vec())
 }
