@@ -17,14 +17,14 @@ impl_u32_wrapper_utils!(StoreObjectIid);
 
 impl StoreObjectIid {
     #[inline]
-    pub const fn saturating_add(self, rhs: Hash) -> Self {
+    pub const fn saturating_add(self, rhs: u32) -> Self {
         Self(self.0.saturating_add(rhs))
     }
 
     // NOTE: We went for `into_inner` here instead of marking `.0` `pub(super)`
     //   so it’s easier to identify call sites and keep constuction via `From`.
     #[inline]
-    pub(super) const fn into_inner(self) -> Hash {
+    pub(super) const fn into_inner(self) -> u32 {
         self.0
     }
 }
