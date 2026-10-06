@@ -76,7 +76,7 @@ impl super::Executor {
 
         let document_count = kv_repo
             .get_object_count()
-            .map_err(|error| tracing::warn!("{error:?}"))? as u64;
+            .map_err(|error| tracing::warn!("{error:?}"))?;
 
         if document_count < idf_min_doc_count {
             tracing::debug!(

@@ -11,20 +11,20 @@ pub(super) type Hash = u32;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct StoreObjectIid(u32);
+pub struct StoreObjectIid(u64);
 
-impl_u32_wrapper_utils!(StoreObjectIid);
+impl_primitive_wrapper_utils!(StoreObjectIid(u64));
 
 impl StoreObjectIid {
     #[inline]
-    pub const fn saturating_add(self, rhs: u32) -> Self {
+    pub const fn saturating_add(self, rhs: u64) -> Self {
         Self(self.0.saturating_add(rhs))
     }
 
     // NOTE: We went for `into_inner` here instead of marking `.0` `pub(super)`
     //   so it’s easier to identify call sites and keep constuction via `From`.
     #[inline]
-    pub(super) const fn into_inner(self) -> u32 {
+    pub(super) const fn into_inner(self) -> u64 {
         self.0
     }
 }
@@ -102,7 +102,7 @@ impl std::str::FromStr for BucketOwned {
 #[repr(transparent)]
 pub struct StoreTermHash(u32);
 
-impl_u32_wrapper_utils!(StoreTermHash);
+impl_primitive_wrapper_utils!(StoreTermHash(u32));
 
 impl StoreTermHash {
     // NOTE: We went for `into_inner` here instead of marking `.0` `pub(super)`
@@ -367,37 +367,37 @@ impl std::fmt::Debug for CollectionHash {
 
 // MARK: - Helpers
 
-macro_rules! impl_u32_wrapper_utils {
-    ($t:ident) => {
+macro_rules! impl_primitive_wrapper_utils {
+    ($t:ident($wrapped:ident)) => {
         impl $t {
-            pub const fn new(value: u32) -> Self {
+            pub const fn new(value: $wrapped) -> Self {
                 Self(value)
             }
         }
 
-        impl From<u32> for $t {
-            fn from(value: u32) -> Self {
+        impl From<$wrapped> for $t {
+            fn from(value: $wrapped) -> Self {
                 Self(value)
             }
         }
 
-        impl From<$t> for u32 {
+        impl From<$t> for $wrapped {
             fn from(value: $t) -> Self {
                 value.0
             }
         }
 
-        impl From<&$t> for u32 {
+        impl From<&$t> for $wrapped {
             fn from(value: &$t) -> Self {
                 value.0
             }
         }
 
-        crate::util::impl_transparent_wrapper_utils!(Deref for $t(u32));
-        crate::util::impl_transparent_wrapper_utils!(Debug for $t(u32));
-        crate::util::impl_transparent_wrapper_utils!(FromStr for $t(u32));
+        crate::util::impl_transparent_wrapper_utils!(Deref for $t($wrapped));
+        crate::util::impl_transparent_wrapper_utils!(Debug for $t($wrapped));
+        crate::util::impl_transparent_wrapper_utils!(FromStr for $t($wrapped));
     };
 }
-use impl_u32_wrapper_utils;
+use impl_primitive_wrapper_utils;
 
 use crate::store::generic::KEY_SEPARATOR;

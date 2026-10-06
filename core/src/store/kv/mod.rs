@@ -72,7 +72,7 @@ impl KvStore {
         drop(write_guard);
 
         let store_key = KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::IIDIncr);
-        batch.merge(store_key, encode_u32_counter(iid.into()));
+        batch.merge(store_key, encode_u64_counter(iid.into()));
 
         Ok(iid)
     }
@@ -185,34 +185,35 @@ impl<'a> KvRepositoryReadOnly<'a> {
         }
     }
 
-    /// Note that because of the underlying use of `i32`, the max value is
-    /// `i32::MAX` (hence `u32::MAX / 2`).
-    pub fn get_object_count(&self) -> Result<u32, Box<dyn std::error::Error>> {
+    /// Note that because of the underlying use of `i64`, the max value is
+    /// `i64::MAX` (hence `u64::MAX / 2`).
+    pub fn get_object_count(&self) -> Result<u64, Box<dyn std::error::Error>> {
         let bucket = self.bucket;
 
         let store_key = KvStoreKey::meta_to_value(&bucket, &StoreMetaKey::ObjectCount);
         let value = self.store.database.get(&store_key)?;
 
         match value {
-            Some(bytes) if bytes.len() == 4 => {
-                // SAFETY: `bytes` is guaranteed to be 4 bytes long.
-                let count = decode_i32_counter([bytes[0], bytes[1], bytes[2], bytes[3]]);
+            Some(bytes) => match bytes.split_first_chunk::<8>() {
+                Some((chunk, [])) => {
+                    let count = decode_i64_counter(*chunk);
 
-                tracing::debug!(?bucket, ?count, "Read ObjectCount from database");
+                    tracing::debug!(?bucket, ?count, "Read ObjectCount from database");
 
-                match u32::try_from(count) {
-                    Ok(count) => Ok(count),
-                    Err(error) => Err(Box::new(io::Error::other(format!(
-                        "Invalid ObjectCount value in bucket {bucket:?}: {error:?}",
-                    )))),
+                    match u64::try_from(count) {
+                        Ok(count) => Ok(count),
+                        Err(error) => Err(Box::new(io::Error::other(format!(
+                            "Invalid ObjectCount value in bucket {bucket:?}: {error:?}",
+                        )))),
+                    }
                 }
-            }
-            Some(_bytes) => {
-                tracing::error!(?bucket, "Invalid ObjectCount in database");
-                Err(Box::new(io::Error::other(format!(
-                    "Invalid ObjectCount value in bucket {bucket:?}"
-                ))))
-            }
+                Some(_) => Err(Box::new(io::Error::other(format!(
+                    "Invalid ObjectCount value in bucket {bucket:?}: too many bytes",
+                )))),
+                None => Err(Box::new(io::Error::other(format!(
+                    "Invalid ObjectCount value in bucket {bucket:?}: missing bytes",
+                )))),
+            },
             None => {
                 tracing::debug!(
                     ?bucket,
@@ -393,12 +394,12 @@ impl<'a> KvRepositoryReadWrite<'a> {
     }
 
     #[inline]
-    pub fn get_object_count(&self) -> Result<u32, Box<dyn std::error::Error>> {
+    pub fn get_object_count(&self) -> Result<u64, Box<dyn std::error::Error>> {
         self.as_read_only().get_object_count()
     }
 
     #[inline]
-    fn add_object_count(&self, batch: &mut WriteBatch, diff: i32) {
+    fn add_object_count(&self, batch: &mut WriteBatch, diff: i64) {
         let store_key = KvStoreKey::meta_to_value(&self.bucket, &StoreMetaKey::ObjectCount);
 
         tracing::trace!(
@@ -407,7 +408,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
             &self.bucket
         );
 
-        batch.merge(store_key, encode_i32_counter(diff));
+        batch.merge(store_key, encode_i64_counter(diff));
     }
 
     pub fn get_new_iid(

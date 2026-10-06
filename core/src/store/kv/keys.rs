@@ -38,11 +38,11 @@ impl KvStoreKey {
     }
 
     pub(super) fn iid_to_oid(bucket: &Bucket, iid: StoreObjectIid) -> KvStoreKey {
-        Self::make(IID_TO_OID, bucket, &encode_kv_key_part(iid.into()))
+        Self::make(IID_TO_OID, bucket, &encode_kv_key_part_long(iid.into()))
     }
 
     pub(super) fn iid_to_terms(bucket: &Bucket, iid: StoreObjectIid) -> KvStoreKey {
-        Self::make(IID_TO_TERMS, bucket, &encode_kv_key_part(iid.into()))
+        Self::make(IID_TO_TERMS, bucket, &encode_kv_key_part_long(iid.into()))
     }
 
     /// Key format: `[bucket<?B> | separator<1B> | idx<1B> | route<?B>]`
@@ -105,12 +105,25 @@ impl std::fmt::Display for KvStoreKey {
         let key_idx = rest[0];
 
         let route_bytes = &rest[1..];
-        if route_bytes.len() == 4 {
+        if matches!(key_idx, META_TO_VALUE | TERM_TO_IIDS) && route_bytes.len() == 4 {
             let key_route = decode_kv_key_part([
                 route_bytes[0],
                 route_bytes[1],
                 route_bytes[2],
                 route_bytes[3],
+            ]);
+
+            write!(f, "{key_bucket:?}:{key_idx}:{key_route:x}")
+        } else if matches!(key_idx, IID_TO_OID | IID_TO_TERMS) && route_bytes.len() == 8 {
+            let key_route = decode_kv_key_part_long([
+                route_bytes[0],
+                route_bytes[1],
+                route_bytes[2],
+                route_bytes[3],
+                route_bytes[4],
+                route_bytes[5],
+                route_bytes[6],
+                route_bytes[7],
             ]);
 
             write!(f, "{key_bucket:?}:{key_idx}:{key_route:x}")
@@ -179,9 +192,10 @@ mod tests {
 
     #[test]
     fn it_keys_iid_to_oid() {
+        #[rustfmt::skip]
         assert_eq!(
             KvStoreKey::iid_to_oid(&"b:4".into(), 10292198.into()).0,
-            [b'b', b':', b'4', KEY_SEPARATOR, 3, 0, 157, 11, 230]
+            [b'b', b':', b'4', KEY_SEPARATOR, 3, 0, 0, 0, 0, 0, 157, 11, 230]
         );
     }
 
@@ -197,11 +211,11 @@ mod tests {
     fn it_keys_iid_to_terms() {
         assert_eq!(
             KvStoreKey::iid_to_terms(&"b:5".into(), 1.into()).0,
-            [b'b', b':', b'5', KEY_SEPARATOR, 4, 0, 0, 0, 1]
+            [b'b', b':', b'5', KEY_SEPARATOR, 4, 0, 0, 0, 0, 0, 0, 0, 1]
         );
         assert_eq!(
             KvStoreKey::iid_to_terms(&"b:5".into(), 20.into()).0,
-            [b'b', b':', b'5', KEY_SEPARATOR, 4, 0, 0, 0, 20]
+            [b'b', b':', b'5', KEY_SEPARATOR, 4, 0, 0, 0, 0, 0, 0, 0, 20]
         );
     }
 

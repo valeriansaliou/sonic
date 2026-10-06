@@ -52,7 +52,7 @@ impl super::Executor {
     }
 
     /// Count objects in bucket (from KV store).
-    pub fn countb(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u32, ()> {
+    pub fn countb(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u64, ()> {
         let kv_store = self.kv_pool.acquire(false, collection, None, |_| {})?;
 
         let Some(kv_store) = kv_store else {
