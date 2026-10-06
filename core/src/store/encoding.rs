@@ -60,12 +60,23 @@ pub(super) const fn try_decode_iid(bytes: &[u8]) -> Result<StoreObjectIid, ()> {
 }
 
 #[inline]
-pub(crate) const fn encode_term_hash(value: &StoreTermHash) -> [u8; 4] {
+pub(crate) const fn encode_term_hash_key(value: &StoreTermHash) -> [u8; 4] {
+    value.into_inner().to_le_bytes()
+}
+
+#[allow(dead_code)]
+#[inline]
+pub(super) const fn decode_term_hash_key(bytes: [u8; 4]) -> StoreTermHash {
+    StoreTermHash::new(u32::from_le_bytes(bytes))
+}
+
+#[inline]
+pub(crate) const fn encode_term_hash_value(value: &StoreTermHash) -> [u8; 4] {
     value.into_inner().to_le_bytes()
 }
 
 #[inline]
-pub(super) const fn decode_term_hash(bytes: [u8; 4]) -> StoreTermHash {
+pub(super) const fn decode_term_hash_value(bytes: [u8; 4]) -> StoreTermHash {
     StoreTermHash::new(u32::from_le_bytes(bytes))
 }
 
@@ -102,12 +113,12 @@ fn decode_u32_list_mapped<T>(encoded: &[u8], decode: fn([u8; 4]) -> T) -> Result
 pub(super) fn encode_terms_list<'t>(
     terms: impl ExactSizeIterator<Item = &'t StoreTermHash>,
 ) -> Vec<u8> {
-    encode_u32_list_mapped(terms, encode_term_hash)
+    encode_u32_list_mapped(terms, encode_term_hash_value)
 }
 
 #[inline]
 pub(super) fn decode_terms_list(encoded: &[u8]) -> Result<Vec<StoreTermHash>, ()> {
-    decode_u32_list_mapped(encoded, decode_term_hash)
+    decode_u32_list_mapped(encoded, decode_term_hash_value)
 }
 
 #[inline]

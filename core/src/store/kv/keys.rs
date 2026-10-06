@@ -30,7 +30,7 @@ impl KvStoreKey {
     }
 
     pub(super) fn term_to_iids(bucket: &Bucket, term_hash: &StoreTermHash) -> KvStoreKey {
-        Self::make(TERM_TO_IIDS, bucket, &encode_term_hash(term_hash))
+        Self::make(TERM_TO_IIDS, bucket, &encode_term_hash_key(term_hash))
     }
 
     pub(super) fn oid_to_iid(bucket: &Bucket, oid: StoreObjectOid) -> KvStoreKey {

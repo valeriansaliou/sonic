@@ -216,7 +216,7 @@ impl super::Executor {
                     //   `WriteBatch`. By leveraging `memtable_insert_hint_per_batch`,
                     //   we can reduce the skiplist load by ~1/3, and the total
                     //   amount of computation per channel by ~14%.
-                    term_hashes_sorted.sort_by_key(crate::store::encoding::encode_term_hash);
+                    term_hashes_sorted.sort_by_key(crate::store::encoding::encode_term_hash_key);
 
                     for term_hash in term_hashes_sorted.iter() {
                         // Link IID to term
@@ -301,7 +301,7 @@ impl super::Executor {
                     //   `WriteBatch`. By leveraging `memtable_insert_hint_per_batch`,
                     //   we can reduce the skiplist load by ~1/3, and the total
                     //   amount of computation per channel by ~14%.
-                    term_hashes_sorted.sort_by_key(crate::store::encoding::encode_term_hash);
+                    term_hashes_sorted.sort_by_key(crate::store::encoding::encode_term_hash_key);
 
                     for term_hash in term_hashes_sorted.iter() {
                         // Link IID to term

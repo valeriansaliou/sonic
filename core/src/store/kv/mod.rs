@@ -560,7 +560,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         tracing::debug!("store add iid-to-terms: {store_key}");
 
         for term_hash in terms_hashes {
-            batch.merge(&store_key, encode_term_hash(term_hash));
+            batch.merge(&store_key, encode_term_hash_value(term_hash));
         }
     }
 
