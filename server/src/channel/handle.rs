@@ -112,7 +112,7 @@ impl ChannelHandle {
                 #[cfg(feature = "experimental-api")]
                 write!(
                     stream,
-                    " caps(dynamic-config,push-capacity,push-new,push-multipart,trigger-compact,trigger-flush)"
+                    " caps(dynamic-config,info-reset,push-capacity,push-new,push-multipart,trigger-compact,trigger-flush)"
                 )
                 .expect("write failed");
 

@@ -50,4 +50,10 @@ impl ChannelStatistics {
             fst_consolidate_count: fst_count.1,
         }
     }
+
+    #[cfg(feature = "experimental-api")]
+    pub fn reset() {
+        *COMMAND_LATENCY_BEST.write().unwrap() = 0;
+        *COMMAND_LATENCY_WORST.write().unwrap() = 0;
+    }
 }

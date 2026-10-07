@@ -210,6 +210,7 @@ impl<'this> ChannelMessageMode for ChannelMessageModeControl<'this> {
         gen_channel_message_mode_handle!(message, COMMANDS_MODE_CONTROL, self, {
             "TRIGGER" => ChannelCommandControl::dispatch_trigger,
             "INFO" => ChannelCommandControl::dispatch_info,
+            #[cfg(feature = "experimental-api")] "INFO_RESET" => ChannelCommandControl::dispatch_info_reset,
             #[cfg(feature = "experimental-api")] "CONFIG" => ChannelCommandControl::dispatch_config,
             "HELP" => ChannelCommandControl::dispatch_help,
         })

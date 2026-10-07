@@ -92,6 +92,7 @@ pub static COMMANDS_MODE_INGEST: &[&str] = &[
 #[rustfmt::skip]
 pub static COMMANDS_MODE_CONTROL: &[&str] = &[
     "TRIGGER", "INFO",
+    #[cfg(feature = "experimental-api")] "INFO_RESET",
     #[cfg(feature = "experimental-api")] "CONFIG",
     "PING", "HELP", "QUIT"
 ];
@@ -1349,6 +1350,21 @@ impl ChannelCommandControl {
                     kv_open_count({kv_open_count}) \
                     fst_open_count({fst_open_count}) fst_consolidate_count({fst_consolidate_count})"
                 ))])
+            }
+            _ => Err(ChannelCommandError::InvalidFormat("INFO")),
+        }
+    }
+
+    #[cfg(feature = "experimental-api")]
+    pub fn dispatch_info_reset(
+        mut parts: SplitWhitespace,
+        _ctx: &ChannelMessageModeControl,
+    ) -> ChannelResult {
+        match parts.next() {
+            None => {
+                ChannelStatistics::reset();
+
+                Ok(vec![ChannelCommandResponse::Ok])
             }
             _ => Err(ChannelCommandError::InvalidFormat("INFO")),
         }
