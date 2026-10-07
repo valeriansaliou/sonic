@@ -31,6 +31,9 @@ sonic_client = { version = "=0.6.0", path = "../client", features = ["sync", "tr
 tracing = { version = "=0.1.44", default-features = false }
 tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["std", "fmt", "ansi", "env-filter"] }
 
+[features]
+experimental-api = [] # Just for rust-analyzer to stop crashing
+
 [[bench]]
 name = "wikipedia"
 harness = false
