@@ -12,16 +12,16 @@ use std::hint::black_box;
 use std::ops::DerefMut as _;
 use std::path::Path;
 use std::process::Command;
-use std::sync::atomic::{self, AtomicU64, AtomicUsize};
+use std::sync::atomic::{self, AtomicBool, AtomicU64, AtomicUsize};
 use std::sync::{Arc, Barrier, LazyLock, Mutex, Once, RwLock, mpsc};
 use std::thread::{JoinHandle, Thread};
 use std::time::{Duration, Instant};
 
 use criterion::BenchmarkId;
-use sonic_client::SonicMultiplexer;
 use sonic_client::control::SonicChannelControlBlocking;
 use sonic_client::ingest::SonicChannelIngestBlocking;
 use sonic_client::search::SonicChannelSearchBlocking;
+use sonic_client::{SonicMultiplexer, make_command};
 
 use crate::common::client_helpers::trigger_compact;
 use crate::common::client_helpers::trigger_flush;
@@ -163,6 +163,58 @@ pub fn ingest_parallel<T: Ingestable>(
     let ingested_count: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
     let ingested_bytes: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
 
+    let print_stats = Arc::new(AtomicBool::new(true));
+    let stats_handle = std::thread::Builder::new()
+        .name("stats-ticker".to_owned())
+        .spawn({
+            let multiplexer = Arc::clone(&multiplexer);
+            let print_stats = Arc::clone(&print_stats);
+
+            move || {
+                let control =
+                    SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer)
+                        .unwrap();
+
+                let get_stats = move || {
+                    let stats = control.info().unwrap();
+
+                    if (control.channel_info().caps).contains(&Box::from("info-reset")) {
+                        control
+                            .send(
+                                make_command!("INFO_RESET"),
+                                sonic_client::control::Discriminant::Ok,
+                                |_data| Ok(()),
+                            )
+                            .unwrap();
+                    }
+
+                    stats
+                };
+
+                let mut next = Instant::now();
+                'main: while print_stats.load(atomic::Ordering::Relaxed) {
+                    tracing::info!("Stats: {:?}", get_stats());
+
+                    // Sleep in smaller loops, so we don’t wait too much while
+                    // joining this thread.
+                    let interval = Duration::from_secs(5);
+                    let flag_polling_latency = Duration::from_millis(100);
+                    let loop_count = interval.as_millis() / flag_polling_latency.as_millis();
+                    for _ in 0..loop_count {
+                        next = next + flag_polling_latency;
+
+                        std::thread::sleep(next.duration_since(Instant::now()));
+
+                        if !print_stats.load(atomic::Ordering::Relaxed) {
+                            tracing::info!("Stats: {:?}", get_stats());
+                            break 'main;
+                        }
+                    }
+                }
+            }
+        })
+        .unwrap();
+
     let mut ingest_duration = (0..nchannels)
         .map(|i| {
             std::thread::Builder::new().name(format!("thread-{i}")).spawn({
@@ -244,6 +296,10 @@ pub fn ingest_parallel<T: Ingestable>(
         .into_iter()
         .map(|h| h.join().expect("thread panicked"))
         .fold(Duration::ZERO, |a, b| a + b);
+
+    print_stats.store(false, atomic::Ordering::Relaxed);
+    // Wait for last stats log to print.
+    stats_handle.join().unwrap();
 
     let ingested_count = Arc::into_inner(ingested_count).unwrap().into_inner();
     let ingested_bytes = Arc::into_inner(ingested_bytes).unwrap().into_inner();
