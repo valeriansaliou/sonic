@@ -67,7 +67,7 @@ in [“Sonic’s experimental APIs”][x-api].
 
    ```txt
    CONFIG <collection> SET rocksdb.disable_auto_compactions rocksdb.unordered_write
-   CONFIG <collection> SET sonic.disable_janitor_tasks sonic.disable_fst_consolidate_task sonic.disable_kv_flush_task
+   CONFIG <collection> SET sonic.disable_all_task
    ```
 0. Ingest data without wasting compute.
 
@@ -155,7 +155,7 @@ condition to serve requests. It’s useless during a bulk ingestion and even get
 in our way, so you should disable it:
 
 ```txt
-CONFIG <collection> SET sonic.disable_janitor_tasks sonic.disable_fst_consolidate_task sonic.disable_kv_flush_task
+CONFIG <collection> SET sonic.disable_all_task
 ```
 
 ### `PUSH` with `NEW`
