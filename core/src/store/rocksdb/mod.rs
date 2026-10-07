@@ -276,9 +276,6 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
                 max_background_jobs = Some(max_subcompactions.unwrap_or(1) as i32 + max_flushes);
             }
 
-            #[allow(deprecated)]
-            db_options.set_max_background_flushes(*max_flushes);
-
             // Update threads configuration otherwise RocksDB only uses 1/4 for flushes by default.
             env.set_high_priority_background_threads(*max_flushes); // HIGH pool = flushes (default)
             env.set_low_priority_background_threads(max_background_jobs.map_or(1i32, |n| (n - max_flushes).max(1i32))); // LOW pool = compactions (default)

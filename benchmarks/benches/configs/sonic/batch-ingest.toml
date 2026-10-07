@@ -6,9 +6,8 @@ max_write_buffer_number = 64 # Do not stop writes while a flush is in progress (
 
 # Allow RocksDB to use a total of 10 threads for background jobs.
 parallelism = 10
-max_background_jobs = 12
+max_background_jobs = 11
 max_subcompactions = 10
-max_flushes = 2
 
 write_ahead_log = false
 
@@ -36,9 +35,8 @@ max_write_buffer_number = 16 # Do not stop writes while a flush is in progress (
 
 # Allow RocksDB to use a total of 10 threads for background jobs.
 parallelism = 10
-max_background_jobs = 12
+max_background_jobs = 11
 max_subcompactions = 10
-max_flushes = 2
 
 write_ahead_log = false
 
