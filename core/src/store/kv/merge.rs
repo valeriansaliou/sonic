@@ -40,7 +40,7 @@ pub(super) fn kv_merge_operator(
             Err(error) => panic!("Unrecognized meta key: {error}"),
         },
         D::TermToIids => prepend_int_list::<8>(existing_val, operands),
-        D::IidToTerms => prepend_int_list::<4>(existing_val, operands),
+        D::IidToTerms => unique_int_list::<4>(existing_val, operands),
         _ => unreachable!(),
     }
 }
@@ -89,6 +89,45 @@ fn prepend_int_list<const WORD_LEN: usize>(
         // See reason in <https://github.com/valeriansaliou/sonic/issues/389#issuecomment-5374968203>.
         if !seen.contains(existing as &[u8]) {
             res.extend_from_slice(existing);
+        }
+    }
+
+    assert!(
+        !res.is_empty(),
+        "{existing_val:?}, {operands:?}",
+        operands = operands.iter().collect::<Vec<_>>()
+    );
+
+    Some(res)
+}
+
+/// This efficiently adds new values to an existing slice, removing duplicates
+/// along the way.
+fn unique_int_list<const WORD_LEN: usize>(
+    existing_val: Option<&[u8]>,
+    operands: &rocksdb::MergeOperands,
+) -> Option<Vec<u8>> {
+    let current: &[u8] = existing_val.unwrap_or_default();
+
+    let operands_total_len = operands.iter().fold(0, |acc, op| acc + op.len());
+
+    let mut res: Vec<u8> = Vec::with_capacity(current.len() + operands_total_len);
+
+    // PERF: Assume values are already unique, to `memcpy` only once.
+    res.extend_from_slice(current);
+
+    let mut seen: HashSet<&[u8]> = HashSet::with_capacity(operands_total_len / WORD_LEN);
+
+    for chunk in current.as_chunks::<WORD_LEN>().0 {
+        seen.insert(chunk);
+    }
+
+    for op in operands {
+        for chunk in op.as_chunks::<WORD_LEN>().0 {
+            // Filter duplicate operands.
+            if seen.insert(chunk) {
+                res.extend_from_slice(chunk);
+            }
         }
     }
 
