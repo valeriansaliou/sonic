@@ -41,9 +41,8 @@ in [“Sonic’s experimental APIs”][x-api].
    
    # Allow RocksDB to use more threads for background jobs.
    parallelism = # Number of performance cores available to Sonic (server-side).
-   max_background_jobs = # parallelism + 2 (max_flushes)
+   max_background_jobs = # parallelism + 1 (max_flushes)
    max_subcompactions = # parallelism
-   max_flushes = 2 # 1 for KV store, 1 for Object store
    
    write_ahead_log = false
    
@@ -57,9 +56,8 @@ in [“Sonic’s experimental APIs”][x-api].
    
    # Allow RocksDB to use more threads for background jobs.
    parallelism = # Number of performance cores available to Sonic (server-side).
-   max_background_jobs = # parallelism + 2 (max_flushes)
+   max_background_jobs = # parallelism + 1 (max_flushes)
    max_subcompactions = # parallelism
-   max_flushes = 2 # 1 for KV store, 1 for Object store
    
    write_ahead_log = false
    
