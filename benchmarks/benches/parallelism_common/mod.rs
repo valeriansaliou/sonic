@@ -12,6 +12,7 @@ use std::hint::black_box;
 use std::ops::DerefMut as _;
 use std::path::Path;
 use std::process::Command;
+use std::sync::atomic::{self, AtomicU64, AtomicUsize};
 use std::sync::{Arc, Barrier, LazyLock, Mutex, Once, RwLock, mpsc};
 use std::thread::{JoinHandle, Thread};
 use std::time::{Duration, Instant};
@@ -159,11 +160,16 @@ pub fn ingest_parallel<T: Ingestable>(
 
     let articles = Arc::new(Mutex::new(articles_iter));
 
-    let (mut ingest_duration, ingested_count, ingested_bytes) = (0..nchannels)
+    let ingested_count: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
+    let ingested_bytes: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+
+    let mut ingest_duration = (0..nchannels)
         .map(|i| {
             std::thread::Builder::new().name(format!("thread-{i}")).spawn({
                 let articles = Arc::clone(&articles);
                 let multiplexer = Arc::clone(&multiplexer);
+                let ingested_count = Arc::clone(&ingested_count);
+                let ingested_bytes = Arc::clone(&ingested_bytes);
 
                 move || {
                     let mut channel = SonicChannelIngestBlocking::connect(
@@ -175,9 +181,6 @@ pub fn ingest_parallel<T: Ingestable>(
 
                     // Ensure Sonic is running fine.
                     channel.ping().unwrap();
-
-                    let mut ingested_count = 0usize;
-                    let mut ingested_bytes = 0u64;
 
                     /// Helper function which returns the next iterator element without keeping the lock guard alive.
                     /// When put on a single line (e.g. in a `while` loop), the lock guard stays alive all the time,
@@ -205,8 +208,15 @@ pub fn ingest_parallel<T: Ingestable>(
                                     eprint!("{}", T::size_char(len));
                                 }
 
-                                ingested_count += 1;
-                                ingested_bytes += len as u64;
+                                let ingested_count = ingested_count.fetch_add(1, atomic::Ordering::Relaxed);
+                                let ingested_bytes = ingested_bytes.fetch_add(len as u64, atomic::Ordering::Relaxed);
+
+                                if ingested_count.is_multiple_of(10_000) {
+                                    tracing::info!(
+                                        "{ingested_count}/{articles_count} ({ingested_bytes:.2})",
+                                        ingested_bytes = HumanBytes::from(ingested_bytes),
+                                    );
+                                }
                             }
                             Err(err) => {
                                 panic!(
@@ -214,7 +224,8 @@ pub fn ingest_parallel<T: Ingestable>(
                                     title = object.title(),
                                     id = object.id(),
                                     len = HumanBytes::from(len as u64),
-                                    ingested_bytes = HumanBytes::from(ingested_bytes),
+                                    ingested_count = ingested_count.load(atomic::Ordering::Relaxed),
+                                    ingested_bytes = HumanBytes::from(ingested_bytes.load(atomic::Ordering::Relaxed)),
                                 );
                             }
                         };
@@ -224,7 +235,7 @@ pub fn ingest_parallel<T: Ingestable>(
                     channel.quit().unwrap();
                     drop(channel);
 
-                    (elapsed, ingested_count, ingested_bytes)
+                    elapsed
                 }
             }).unwrap()
         })
@@ -232,9 +243,10 @@ pub fn ingest_parallel<T: Ingestable>(
         .collect::<Vec<_>>()
         .into_iter()
         .map(|h| h.join().expect("thread panicked"))
-        .fold((Duration::ZERO, 0, 0), |(a, b, c), (x, y, z)| {
-            (a + x, b + y, c + z)
-        });
+        .fold(Duration::ZERO, |a, b| a + b);
+
+    let ingested_count = Arc::into_inner(ingested_count).unwrap().into_inner();
+    let ingested_bytes = Arc::into_inner(ingested_bytes).unwrap().into_inner();
 
     ingest_duration = ingest_duration / (nchannels as u32);
 
