@@ -1331,21 +1331,23 @@ impl ChannelCommandControl {
     ) -> ChannelResult {
         match parts.next() {
             None => {
-                let statistics =
-                    ChannelStatistics::gather(&ctx.executor.kv_pool, &ctx.executor.fst_pool);
+                let ChannelStatistics {
+                    uptime,
+                    clients_connected,
+                    commands_total,
+                    command_latency_best,
+                    command_latency_worst,
+                    kv_open_count,
+                    fst_open_count,
+                    fst_consolidate_count,
+                } = ChannelStatistics::gather(&ctx.executor.kv_pool, &ctx.executor.fst_pool);
 
                 Ok(vec![ChannelCommandResponse::Result(format!(
-                    "uptime({}) clients_connected({}) commands_total({}) \
-                     command_latency_best({}) command_latency_worst({}) \
-                     kv_open_count({}) fst_open_count({}) fst_consolidate_count({})",
-                    statistics.uptime,
-                    statistics.clients_connected,
-                    statistics.commands_total,
-                    statistics.command_latency_best,
-                    statistics.command_latency_worst,
-                    statistics.kv_open_count,
-                    statistics.fst_open_count,
-                    statistics.fst_consolidate_count
+                    "uptime({uptime}) clients_connected({clients_connected}) \
+                    commands_total({commands_total}) \
+                    command_latency_best({command_latency_best}) command_latency_worst({command_latency_worst}) \
+                    kv_open_count({kv_open_count}) \
+                    fst_open_count({fst_open_count}) fst_consolidate_count({fst_consolidate_count})"
                 ))])
             }
             _ => Err(ChannelCommandError::InvalidFormat("INFO")),
