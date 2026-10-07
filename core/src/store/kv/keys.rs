@@ -7,6 +7,7 @@
 
 use crate::store::generic::KEY_SEPARATOR;
 use crate::store::types::*;
+use crate::util::impl_int_enum;
 
 use super::encoding::*;
 
@@ -180,40 +181,6 @@ impl std::fmt::Debug for KvStoreKey {
         write!(f, "'{self}' {bytes:?}")
     }
 }
-
-macro_rules! impl_int_enum {
-    (
-        $vis:vis $t:ident($repr:ty):
-        $($case:ident ($const:ident) = $value:expr),+ $(,)?
-    ) => {
-        $(const $const: $repr = $value;)+
-
-        #[repr($repr)]
-        $vis enum $t {
-            $($case = $const,)+
-        }
-
-        impl std::fmt::Display for $t {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    $(Self::$case => f.write_str(stringify!($const)),)+
-                }
-            }
-        }
-
-        impl TryFrom<$repr> for $t {
-            type Error = String;
-
-            fn try_from(value: $repr) -> Result<Self, Self::Error> {
-                match value {
-                    $($const => Ok(Self::$case),)+
-                    n => Err(format!("Invalid `{ty}`: {n}", ty = std::any::type_name::<$t>())),
-                }
-            }
-        }
-    };
-}
-use impl_int_enum;
 
 // MARK: - Tests
 

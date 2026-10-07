@@ -15,6 +15,7 @@ use crate::store::generic::*;
 use crate::store::rocksdb::GenericRocksDbStore;
 pub use crate::store::rocksdb::pool::{GenericKvStorePool, KvStoreId};
 use crate::store::types::*;
+use crate::util::impl_int_enum;
 
 pub type ObjectStorePool = GenericKvStorePool<ObjectStore>;
 
@@ -86,6 +87,16 @@ impl GenericRocksDbStore for ObjectStore {
     }
 }
 
+// MARK: Key
+
+// WARN: Don’t change values here, it would break the index! Only add new cases.
+// NOTE: There’s only one case for now, but it’s there to future-proof the
+//   Object store index structure. It’s considered the source of truth in
+//   Sonic v2, we must keep it backward compatible.
+impl_int_enum!(pub(super) ObjectStoreKeyDiscriminator(u8):
+    Object (OBJECT) = 0,
+);
+
 // MARK: - Repository
 
 #[derive(Debug)]
@@ -149,6 +160,8 @@ mod keys {
     use crate::store::generic::KEY_SEPARATOR;
     use crate::store::{Bucket, StoreObjectOid};
 
+    use super::ObjectStoreKeyDiscriminator as D;
+
     pub(super) fn prefix_range(bucket: &Bucket) -> std::ops::Range<Vec<u8>> {
         let bucket_bytes = bucket.as_bytes();
 
@@ -164,10 +177,12 @@ mod keys {
     }
 
     pub(super) fn object_key(bucket: &Bucket, oid: StoreObjectOid) -> Vec<u8> {
-        let mut key = Vec::with_capacity(bucket.len() + 1 + oid.len());
+        let mut key = Vec::with_capacity(bucket.len() + 3 + oid.len());
 
         key.extend_from_slice(bucket.as_bytes());
         key.push(KEY_SEPARATOR);
+
+        key.push(D::Object as u8);
 
         key.extend_from_slice(oid.as_bytes());
 

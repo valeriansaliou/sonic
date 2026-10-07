@@ -67,3 +67,37 @@ macro_rules! impl_transparent_wrapper_utils {
     };
 }
 pub(crate) use impl_transparent_wrapper_utils;
+
+macro_rules! impl_int_enum {
+    (
+        $vis:vis $t:ident($repr:ty):
+        $($case:ident ($const:ident) = $value:expr),+ $(,)?
+    ) => {
+        $(const $const: $repr = $value;)+
+
+        #[repr($repr)]
+        $vis enum $t {
+            $($case = $const,)+
+        }
+
+        impl std::fmt::Display for $t {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    $(Self::$case => f.write_str(stringify!($const)),)+
+                }
+            }
+        }
+
+        impl TryFrom<$repr> for $t {
+            type Error = String;
+
+            fn try_from(value: $repr) -> Result<Self, Self::Error> {
+                match value {
+                    $($const => Ok(Self::$case),)+
+                    n => Err(format!("Invalid `{ty}`: {n}", ty = std::any::type_name::<$t>())),
+                }
+            }
+        }
+    };
+}
+pub(crate) use impl_int_enum;
