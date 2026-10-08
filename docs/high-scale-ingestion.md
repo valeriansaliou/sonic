@@ -36,8 +36,6 @@ in [“Sonic’s experimental APIs”][x-api].
    [store.kv.database]
    # Merge medium-sized memtables into medium L0 SSTs.
    write_buffer_size = 16_384 # 16MiB
-   min_write_buffer_number_to_merge = 4 # L0 SST ⪅ 64MiB
-   max_write_buffer_number = 64 # Do not stop writes while a flush is in progress (max 1GiB RAM usage).
    
    # Allow RocksDB to use more threads for background jobs.
    parallelism = # Number of performance cores available to Sonic (server-side).
@@ -51,8 +49,6 @@ in [“Sonic’s experimental APIs”][x-api].
    [store.object.database]
    # Merge medium-sized memtables into large L0 SSTs.
    write_buffer_size = 65_536 # 64MiB
-   min_write_buffer_number_to_merge = 4 # L0 SST ⪅ 256MiB
-   max_write_buffer_number = 16 # Do not stop writes while a flush is in progress (max 1GiB RAM usage).
    
    # Allow RocksDB to use more threads for background jobs.
    parallelism = # Number of performance cores available to Sonic (server-side).
