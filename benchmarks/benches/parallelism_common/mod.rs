@@ -325,6 +325,7 @@ pub fn ingest_parallel<T: Ingestable>(
                 let control =
                     SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer)
                         .unwrap();
+                black_box(trigger_flush(&control)).unwrap();
                 black_box(trigger_compact(&control, &[COLLECTION])).unwrap();
 
                 let compact_duration = start.elapsed();
