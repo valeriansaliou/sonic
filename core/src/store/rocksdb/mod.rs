@@ -180,6 +180,10 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
             blob_file_size,
             enable_blob_gc,
             blob_compression_type,
+            log_level,
+            db_log_dir,
+            keep_log_file_num,
+            max_log_file_size,
         } = config;
 
         // Make database options
@@ -272,9 +276,6 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
                 max_background_jobs = Some(max_subcompactions.unwrap_or(1) as i32 + max_flushes);
             }
 
-            #[allow(deprecated)]
-            db_options.set_max_background_flushes(*max_flushes);
-
             // Update threads configuration otherwise RocksDB only uses 1/4 for flushes by default.
             env.set_high_priority_background_threads(*max_flushes); // HIGH pool = flushes (default)
             env.set_low_priority_background_threads(max_background_jobs.map_or(1i32, |n| (n - max_flushes).max(1i32))); // LOW pool = compactions (default)
@@ -283,6 +284,10 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
         if_some!(db_options.set_max_background_jobs(max_background_jobs.as_ref()));
         if_some!(db_options.set_max_subcompactions(max_subcompactions));
 
+        if_some!(db_options.set_log_level(log_level));
+        if_some!(db_options.set_db_log_dir(db_log_dir.as_ref().as_ref()));
+        if_some!(db_options.set_keep_log_file_num(keep_log_file_num));
+        if_some!(db_options.set_max_log_file_size(max_log_file_size));
         if_some!(db_options.set_stats_dump_period_sec(stats_dump_period_sec));
 
         if_some!(db_options.increase_parallelism(parallelism));

@@ -1444,6 +1444,12 @@ fn config_set(
                 config.sonic.disable_kv_flush_task =
                     Some(parse_bool(value).ok_or_else(invalid_meta_value)?);
             }
+            "sonic.disable_all_tasks" => {
+                let val = Some(parse_bool(value).ok_or_else(invalid_meta_value)?);
+                config.sonic.disable_janitor_tasks = val;
+                config.sonic.disable_fst_consolidate_task = val;
+                config.sonic.disable_kv_flush_task = val;
+            }
             "rocksdb.disable_auto_compactions" => {
                 config.rocksdb.disable_auto_compactions =
                     Some(parse_bool(value).ok_or_else(invalid_meta_value)?);
@@ -1502,9 +1508,10 @@ fn config_reset(
             .unwrap_or_default();
 
         macro_rules! match_reset {
-            ($key:ident => $($($path:ident).+),+) => {
+            ($key:ident =>  $($val:literal => $block:block),* $($($path:ident).+),+ $(,)?) => {
                 match $key {
                     $(stringify!($($path).+) => new_conf.$($path).+ = None,)+
+                    $($val => $block,)*
                     key => {
                         tracing::warn!("Unknown dynamic configuration key: {key:?}");
                         return Err(ChannelCommandError::NotFound);
@@ -1515,12 +1522,17 @@ fn config_reset(
 
         for key in parts {
             match_reset!(key =>
+                "sonic.disable_all_tasks" => {
+                    new_conf.sonic.disable_janitor_tasks = None;
+                    new_conf.sonic.disable_fst_consolidate_task = None;
+                    new_conf.sonic.disable_kv_flush_task = None;
+                }
                 sonic.disable_janitor_tasks,
                 sonic.disable_fst_consolidate_task,
                 sonic.disable_kv_flush_task,
                 rocksdb.disable_auto_compactions,
                 rocksdb.unordered_write,
-                rocksdb.memtable
+                rocksdb.memtable,
             );
         }
 

@@ -36,40 +36,34 @@ in [“Sonic’s experimental APIs”][x-api].
    [store.kv.database]
    # Merge medium-sized memtables into medium L0 SSTs.
    write_buffer_size = 16_384 # 16MiB
-   min_write_buffer_number_to_merge = 4 # L0 SST ⪅ 64MiB
-   max_write_buffer_number = 64 # Do not stop writes while a flush is in progress (max 1GiB RAM usage).
    
    # Allow RocksDB to use more threads for background jobs.
    parallelism = # Number of performance cores available to Sonic (server-side).
-   max_background_jobs = # parallelism + 2 (max_flushes)
+   max_background_jobs = # parallelism + 1 (max_flushes)
    max_subcompactions = # parallelism
-   max_flushes = 2 # 1 for KV store, 1 for Object store
    
    write_ahead_log = false
    
-   max_open_files = 20 # Or anything < `ulimit -n`.
+   max_open_files = 20 # Or anything < `ulimit -n` / (2 * ncollections).
    
    [store.object.database]
    # Merge medium-sized memtables into large L0 SSTs.
    write_buffer_size = 65_536 # 64MiB
-   min_write_buffer_number_to_merge = 4 # L0 SST ⪅ 256MiB
-   max_write_buffer_number = 16 # Do not stop writes while a flush is in progress (max 1GiB RAM usage).
    
    # Allow RocksDB to use more threads for background jobs.
    parallelism = # Number of performance cores available to Sonic (server-side).
-   max_background_jobs = # parallelism + 2 (max_flushes)
+   max_background_jobs = # parallelism + 1 (max_flushes)
    max_subcompactions = # parallelism
-   max_flushes = 2 # 1 for KV store, 1 for Object store
    
    write_ahead_log = false
    
-   max_open_files = 20 # Or anything < `ulimit -n`.
+   max_open_files = 20 # Or anything < `ulimit -n` / (2 * ncollections).
    ```
 0. Prepare for bulk ingestion:
 
    ```txt
    CONFIG <collection> SET rocksdb.disable_auto_compactions rocksdb.unordered_write
-   CONFIG <collection> SET sonic.disable_janitor_tasks sonic.disable_fst_consolidate_task sonic.disable_kv_flush_task
+   CONFIG <collection> SET sonic.disable_all_task
    ```
 0. Ingest data without wasting compute.
 
@@ -157,7 +151,7 @@ condition to serve requests. It’s useless during a bulk ingestion and even get
 in our way, so you should disable it:
 
 ```txt
-CONFIG <collection> SET sonic.disable_janitor_tasks sonic.disable_fst_consolidate_task sonic.disable_kv_flush_task
+CONFIG <collection> SET sonic.disable_all_task
 ```
 
 ### `PUSH` with `NEW`
@@ -289,5 +283,28 @@ very easy to reach `ulimit -n`.
 Since we don’t read during a bulk ingestion, you can set `max_open_files = 20`
 under **both** `[store.kv.database]` **and** `[store.object.database]`.
 
-You can set it to anything lower than `ulimit -n`, but using `20` won’t slow
-you down so don’t bother finding a good value.
+Each Sonic collection will open two RocksDB instances (KV store and Object store),
+which means you must keep `max_open_files` lower than `ulimit -n / (2 * ncollections)`.
+<!-- NOTE: `max_open_files` **might** have a minimum value of `10` because of
+  RocksDB implementation details:
+
+  According to Claude Sonnet 5.5 Medium, 2026-10-08:
+  The table cache is sized as `max_open_files - 10`. RocksDB reserves about
+  10 for non-table files (from memory, `kNumNonTableCacheFiles` in `DBImpl`),
+  so 10 gives a table cache capacity of roughly 0. Every read has to open its
+  SST, and files are closed again as soon as nothing references them.
+
+  Later:
+  A correction first. Earlier I said `max_open_files = 10` gives a table cache
+  of roughly 0. From memory, RocksDB's option sanitizing clips finite values to
+  a minimum of 20, so your 10 was probably already 20 internally. The cache is
+  then about 10 entries (20 minus the ~10 reserved), which matches your picture
+  of rotation. Also, the table cache is sharded (`table_cache_numshardbits`,
+  default 6). With a capacity this tiny, per-shard rounding can let the real
+  total run above 10, though probably not past a few dozen.
+
+  -->
+
+You must also consider other files Sonic will open, like FST store files, so
+aim low. Using `20` won’t slow you down during ingestion so don’t bother
+finding a good value.

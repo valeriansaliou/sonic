@@ -135,12 +135,10 @@ pub fn ingest_parallel<T: Ingestable>(
     {
         tracing::info!("Setting dynamic configuration…");
 
-        let mut args: Vec<String> = Vec::with_capacity(6);
+        let mut args: Vec<String> = Vec::with_capacity(4);
 
         // Temporarily disable background tasks so they don’t interfere with the batch ingestion.
-        args.push("sonic.disable_janitor_tasks".to_owned());
-        args.push("sonic.disable_fst_consolidate_task".to_owned());
-        args.push("sonic.disable_kv_flush_task".to_owned());
+        args.push("sonic.disable_all_tasks".to_owned());
 
         args.push(format!(
             "rocksdb.disable_auto_compactions={}",

@@ -1,14 +1,13 @@
 [store.kv.database]
 # Merge medium-sized memtables into medium L0 SSTs.
 write_buffer_size = 16_384 # 16MiB
-min_write_buffer_number_to_merge = 4 # L0 SST ⪅ 64MiB
-max_write_buffer_number = 64 # Do not stop writes while a flush is in progress (max 1GiB RAM usage).
+# min_write_buffer_number_to_merge = 4 # L0 SST ⪅ 64MiB
+# max_write_buffer_number = 64 # Do not stop writes while a flush is in progress (max 1GiB RAM usage).
 
 # Allow RocksDB to use a total of 10 threads for background jobs.
 parallelism = 10
-max_background_jobs = 12
+max_background_jobs = 11
 max_subcompactions = 10
-max_flushes = 2
 
 write_ahead_log = false
 
@@ -18,21 +17,26 @@ write_ahead_log = false
 # enable_blob_gc = true
 # blob_compression_type = "none"
 
-max_open_files = 10
+max_open_files = 20
 
 min_level_to_compress = 1
+
+# log_level = "info"
+# stats_dump_period_sec = 5
+# db_log_dir = "/tmp/bench-logs"
+# keep_log_file_num = 10
+# max_log_file_size = 67_108_864 # 64MiB
 
 [store.object.database]
 # Merge medium-sized memtables into large L0 SSTs.
 write_buffer_size = 65_536 # 64MiB
-min_write_buffer_number_to_merge = 4 # L0 SST ⪅ 256MiB
-max_write_buffer_number = 16 # Do not stop writes while a flush is in progress (max 1GiB RAM usage).
+# min_write_buffer_number_to_merge = 4 # L0 SST ⪅ 256MiB
+# max_write_buffer_number = 16 # Do not stop writes while a flush is in progress (max 1GiB RAM usage).
 
 # Allow RocksDB to use a total of 10 threads for background jobs.
 parallelism = 10
-max_background_jobs = 12
+max_background_jobs = 11
 max_subcompactions = 10
-max_flushes = 2
 
 write_ahead_log = false
 
@@ -41,6 +45,6 @@ min_blob_size = 0
 blob_file_size = 134_217_728 # 128MiB
 enable_blob_gc = true
 
-max_open_files = 10
+max_open_files = 20
 
 min_level_to_compress = 1
