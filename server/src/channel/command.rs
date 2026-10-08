@@ -1267,16 +1267,11 @@ impl ChannelCommandControl {
                             None
                         };
 
-                        // Force a KV compaction
-                        let object_compact = std::thread::spawn({
-                            let object_store_pool = object_store_pool.clone();
-
-                            move || {
-                                object_store_pool.compact(None);
-                            }
-                        });
+                        // Force a KV store compaction
                         kv_pool.compact(collections.as_deref());
-                        object_compact.join().unwrap();
+
+                        // Force an Object store compaction
+                        object_store_pool.compact(None);
 
                         Ok(vec![ChannelCommandResponse::Ok])
                     }
