@@ -34,10 +34,10 @@ in [“Sonic’s experimental APIs”][x-api].
 
    ```toml
    [store.kv.database]
-   # Merge medium-sized memtables into medium L0 SSTs.
+   # Merge small-sized memtables into large L0 SSTs.
    write_buffer_size = 16_384 # 16MiB
-   min_write_buffer_number_to_merge = 4 # L0 SST ⪅ 64MiB
-   max_write_buffer_number = 64 # Do not stop writes while a flush is in progress (max 1GiB RAM usage).
+   min_write_buffer_number_to_merge = # Anything > (total_bytes / write_buffer_size) / (`ulimit -n`).
+   max_write_buffer_number = # Anything ⪆ min_write_buffer_number_to_merge * 1.5. Note that you’ll need at least `write_buffer_size * min_write_buffer_number` of RAM during ingestion.
    
    # Allow RocksDB to use more threads for background jobs.
    parallelism = # Number of performance cores available to Sonic (server-side).
@@ -49,10 +49,10 @@ in [“Sonic’s experimental APIs”][x-api].
    max_open_files = 20 # Or anything < `ulimit -n`.
    
    [store.object.database]
-   # Merge medium-sized memtables into large L0 SSTs.
+   # Merge medium-sized memtables into medium L0 SSTs.
    write_buffer_size = 65_536 # 64MiB
    min_write_buffer_number_to_merge = 4 # L0 SST ⪅ 256MiB
-   max_write_buffer_number = 16 # Do not stop writes while a flush is in progress (max 1GiB RAM usage).
+   max_write_buffer_number = 8 # Do not stop writes while a flush is in progress (max 512MiB RAM usage).
    
    # Allow RocksDB to use more threads for background jobs.
    parallelism = # Number of performance cores available to Sonic (server-side).
@@ -260,16 +260,16 @@ increase RocksDB’s buffer sizes. We found this to be a good fit:
 
 ```toml
 [store.kv.database]
-# Merge medium-sized memtables into medium L0 SSTs.
+# Merge small-sized memtables into large L0 SSTs.
 write_buffer_size = 16_384 # 16MiB
-min_write_buffer_number_to_merge = 4 # L0 SST ⪅ 64MiB
-max_write_buffer_number = 64 # Do not stop writes while a flush is in progress (max 1GiB RAM usage).
+min_write_buffer_number_to_merge = 64 # L0 SST ⪅ 1GiB
+max_write_buffer_number = 128 # Do not stop writes while a flush is in progress (max 2GiB RAM usage).
 
 [store.object.database]
-# Merge medium-sized memtables into large L0 SSTs.
+# Merge medium-sized memtables into medium L0 SSTs.
 write_buffer_size = 65_536 # 64MiB
 min_write_buffer_number_to_merge = 4 # L0 SST ⪅ 256MiB
-max_write_buffer_number = 16 # Do not stop writes while a flush is in progress (max 1GiB RAM usage).
+max_write_buffer_number = 8 # Do not stop writes while a flush is in progress (max 512MiB RAM usage).
 ```
 
 ### Ingest buckets in lexicographically sorted order
