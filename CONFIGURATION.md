@@ -115,6 +115,7 @@ Under `[store.kv]` and `[store.object]`:
 * `database.level_zero_file_num_compaction_trigger` (type: _integer_, default: RocksDB default (`4`)) — Number of level-0 files that triggers a compaction
 * `database.level_zero_slowdown_writes_trigger` (type: _integer_, default: RocksDB default (`20`)) — Number of level-0 files at which writes start being throttled to let compaction catch up
 * `database.level_zero_stop_writes_trigger` (type: _integer_, default: RocksDB default (`24`)) — Number of level-0 files at which writes are stopped entirely until compaction catches up
+* `database.level_zero_compression_type` (type: _string_, allowed: `"none"`, `"zstd"`, default: `"none"`) — How level-0 files should be compressed (use `"none"` for no compression)
 * `database.max_bytes_for_level_base` (type: _integer_, allowed: `≥0`, default: RocksDB default (`0x10000000` (256MiB))) — Target total size in bytes of level-1 of the LSM-tree (the target size of each subsequent level is derived from this and `max_bytes_for_level_multiplier`)
 * `database.max_bytes_for_level_multiplier` (type: _float_, allowed: `>0`, default: RocksDB default (`10`)) — Factor by which the target size of each LSM-tree level grows over the previous one (eg. with the default of `10`, level-2 targets 10x the size of level-1)
 * `database.target_file_size_base` (type: _u64_, allowed: `0`, default: RocksDB default (`0x4000000` (64MiB)) — Target size in bytes of an individual SST file at level-1 (file sizes at later levels scale up using the same growth factor as `max_bytes_for_level_multiplier`)

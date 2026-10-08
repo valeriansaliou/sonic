@@ -234,6 +234,11 @@ pub struct RocksDbDatabaseConfig {
     pub min_level_to_compress: Option<std::ffi::c_int>,
 
     #[serde(default)]
+    #[serde(alias = "level0_compression_type")]
+    #[serde(deserialize_with = "to_rocksdb_compression_type_opt")]
+    pub level_zero_compression_type: Option<rocksdb::DBCompressionType>,
+
+    #[serde(default)]
     #[serde(alias = "level0_file_num_compaction_trigger")]
     pub level_zero_file_num_compaction_trigger: Option<i32>,
 

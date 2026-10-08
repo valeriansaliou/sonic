@@ -166,6 +166,7 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
             wal_recovery_mode,
             compression_level,
             min_level_to_compress,
+            level_zero_compression_type,
             level_zero_file_num_compaction_trigger,
             level_zero_slowdown_writes_trigger,
             level_zero_stop_writes_trigger,
@@ -228,16 +229,31 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
             db_options.set_block_based_table_factory(&block_opts);
         }
 
+        let mut compression_type = *compression_type;
+
         // NOTE: `compress` is a legacy shorthand for `compression_type`, it
-        //   will get overriden if `compression_type` is also specified.
-        if let Some(compress) = compress {
-            db_options.set_compression_type(if *compress {
+        //   gets overriden if `compression_type` is also specified.
+        if compression_type.is_none() && let Some(compress) = compress {
+            compression_type = Some(if *compress {
                 rocksdb::DBCompressionType::Zstd
             } else {
                 rocksdb::DBCompressionType::None
             });
         }
-        if_some!(db_options.set_compression_type(compression_type));
+
+        if let Some(l0_compression) = level_zero_compression_type {
+            let default_compression = compression_type.unwrap_or(rocksdb::DBCompressionType::None);
+            db_options.set_compression_per_level(&[
+                *l0_compression,
+                default_compression,
+                default_compression,
+                default_compression,
+                default_compression,
+            ]);
+        } else {
+            if_some!(db_options.set_compression_type(compression_type.as_ref()));
+        }
+
         if let Some(compression_level) = compression_level {
             db_options.set_compression_options(
                 -14,
