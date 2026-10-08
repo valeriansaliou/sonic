@@ -531,13 +531,23 @@ fn split_on_whitespace(s: &str, n: usize) -> (&str, &str) {
     // Make sure we slice at a char boundary.
     let end = s.ceil_char_boundary(n);
 
+    let start = (s.char_indices())
+        .take_while(|(_, c)| c.is_ascii_whitespace())
+        .last()
+        .map_or(0, |(i, c)| i + c.len_utf8());
+
     // Search backward for the last whitespace.
-    if let Some(i) = (s[..end].char_indices())
-        .rev()
-        .find_map(|(i, ch)| ch.is_ascii_whitespace().then_some(i))
+    let chars = || s[start..end].char_indices().rev();
+    if let Some(i) = (chars().skip(1))
+        .zip(chars())
+        .find_map(|((i1, c1), (i2, c2))| match (c1, c2) {
+            ('\\', 'n' | 'r') => Some(i1),
+            _ if c2.is_ascii_whitespace() => Some(i2),
+            _ => None,
+        })
     {
         // Split before the whitespace.
-        let (a, b) = s.split_at(i);
+        let (a, b) = s.split_at(start + i);
 
         // Skip whitespace in second slice.
         (a, b)
@@ -586,5 +596,20 @@ mod tests {
         //   ASCII space only, but if we don’t find an ASCII space we split on
         //   whatever UTF-8 boundary we find.
         assert_eq!(split_on_whitespace("300 km². ", 4), ("300", " km². "));
+
+        // When some text is longer than `buffer_size` but contains no space except at
+        // the start of it, there used to be a bug where `sonic_client` would end up
+        // in an infinite loop. This test ensures the issue is gone for good.
+        //
+        // This is a non-regression test.
+        assert_eq!(split_on_whitespace(" abcdefgh", 4), (" ab", "cdefgh"));
+
+        // Split on escaped newlines (`escape_str` is ran before `split_on_whitespace`).
+        let text = r"A list:\n\nAcaciapora\nAcalepha\nAcanthastrea\nAcanthocyathus";
+        #[rustfmt::skip]
+        assert_eq!(
+            split_on_whitespace(text, 27),
+            (r"A list:\n\nAcaciapora", r"\nAcalepha\nAcanthastrea\nAcanthocyathus")
+        );
     }
 }
