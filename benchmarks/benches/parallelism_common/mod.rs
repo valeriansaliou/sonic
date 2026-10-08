@@ -265,7 +265,8 @@ pub fn ingest_parallel<T: Ingestable>(
 
                                 if ingested_count.is_multiple_of(10_000) {
                                     tracing::info!(
-                                        "{ingested_count}/{articles_count} ({ingested_bytes:.2})",
+                                        "{elapsed:.3?}: {ingested_count}/{articles_count} ({ingested_bytes:.2})",
+                                        elapsed = start.elapsed(),
                                         ingested_bytes = HumanBytes::from(ingested_bytes),
                                     );
                                 }
