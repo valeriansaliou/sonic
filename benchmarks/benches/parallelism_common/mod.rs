@@ -273,12 +273,19 @@ pub fn ingest_parallel<T: Ingestable>(
                             }
                             Err(err) => {
                                 panic!(
-                                    "Failed ingesting {title:?} (id={id:?}, len={len:.2}) after {ingested_count} success(es) ({ingested_bytes:.2}): {err}",
+                                    "Failed ingesting {title:?} (id={id:?}, len={len:.2}, text={text:?}) after {ingested_count} success(es) ({ingested_bytes:.2}): {err}",
                                     title = object.title(),
                                     id = object.id(),
                                     len = HumanBytes::from(len as u64),
                                     ingested_count = ingested_count.load(atomic::Ordering::Relaxed),
                                     ingested_bytes = HumanBytes::from(ingested_bytes.load(atomic::Ordering::Relaxed)),
+                                    text = {
+                                        let mut snippet = String::with_capacity(2 * 30 + 2);
+                                        snippet.push_str(&object.data()[..30]);
+                                        snippet.push_str("..");
+                                        snippet.push_str(&object.data()[(object.data().len() - 30)..]);
+                                        snippet
+                                    }
                                 );
                             }
                         };
