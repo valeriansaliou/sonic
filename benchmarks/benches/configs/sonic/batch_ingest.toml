@@ -21,6 +21,7 @@ write_ahead_log = false
 max_open_files = 20
 
 min_level_to_compress = 1
+# level_zero_compression_type = "lz4"
 
 # log_level = "info"
 # stats_dump_period_sec = 5

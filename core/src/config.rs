@@ -312,9 +312,10 @@ fn parse_rocksdb_compression_type<E: serde::de::Error>(
         // "snappy" => Ok(rocksdb::DBCompressionType::Snappy),
         // "zlib" => Ok(rocksdb::DBCompressionType::Zlib),
         // "bz2" => Ok(rocksdb::DBCompressionType::Bz2),
-        // "lz4" => Ok(rocksdb::DBCompressionType::Lz4),
-        // "lz4hc" => Ok(rocksdb::DBCompressionType::Lz4hc),
+        "lz4" => Ok(rocksdb::DBCompressionType::Lz4),
+        "lz4hc" => Ok(rocksdb::DBCompressionType::Lz4hc),
         "zstd" => Ok(rocksdb::DBCompressionType::Zstd),
+        #[rustfmt::skip]
         _ => Err(serde::de::Error::unknown_variant(
             str,
             &[
@@ -322,8 +323,8 @@ fn parse_rocksdb_compression_type<E: serde::de::Error>(
                 // "snappy",
                 // "zlib",
                 // "bz2",
-                // "lz4",
-                // "lz4hc",
+                "lz4",
+                "lz4hc",
                 "zstd",
             ],
         )),

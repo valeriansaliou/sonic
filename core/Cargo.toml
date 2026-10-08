@@ -23,7 +23,7 @@ caseless = { version = "0.2", default-features = false }
 tracing = { version = "0.1", default-features = false }
 serde = { version = "1", default-features = false, features = ["derive", "rc", "std"] }
 unicode-segmentation = { version = "1", default-features = false }
-rocksdb = { version = "0.25", default-features = false, features = ["bindgen-runtime", "zstd"] }
+rocksdb = { version = "0.25", default-features = false, features = ["bindgen-runtime", "zstd", "lz4"] }
 fst = { version = "0.3", default-features = false }
 fst-levenshtein = { version = "0.3", default-features = false }
 fst-regex = { version = "0.3", default-features = false }
