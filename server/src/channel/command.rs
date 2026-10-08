@@ -1271,7 +1271,7 @@ impl ChannelCommandControl {
                         kv_pool.compact(collections.as_deref());
 
                         // Force an Object store compaction
-                        object_store_pool.compact(None);
+                        object_store_pool.compact(collections.as_deref());
 
                         Ok(vec![ChannelCommandResponse::Ok])
                     }
