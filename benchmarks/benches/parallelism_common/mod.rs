@@ -314,6 +314,8 @@ pub fn ingest_parallel<T: Ingestable>(
         size = HumanBytes::from(ingested_bytes)
     );
 
+    sonic.print_index_size_if_enabled();
+
     let (compact_duration, consolidate_duration) = {
         let compact_handle = std::thread::spawn({
             let multiplexer = Arc::clone(&multiplexer);

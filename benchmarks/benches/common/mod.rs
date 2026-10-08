@@ -171,12 +171,15 @@ pub struct RunContext {
     data_guard: PathGuard,
 }
 
-impl Drop for RunContext {
-    fn drop(&mut self) {
-        static SHOW_STORE_SIZE: LazyLock<bool> =
-            LazyLock::new(|| std::env::var("SHOW_STORE_SIZE").is_ok());
+impl RunContext {
+    pub fn print_index_size_if_enabled(&self) {
+        static SHOW_INDEX_SIZE: LazyLock<bool> = LazyLock::new(|| {
+            std::env::var("SHOW_INDEX_SIZE")
+                .or_else(|_e| std::env::var("SHOW_STORE_SIZE"))
+                .is_ok()
+        });
 
-        if *SHOW_STORE_SIZE {
+        if *SHOW_INDEX_SIZE {
             println!("Index size:");
 
             // Print size of all store files at the end of each benchmark.
@@ -187,6 +190,12 @@ impl Drop for RunContext {
                 .status()
                 .unwrap();
         }
+    }
+}
+
+impl Drop for RunContext {
+    fn drop(&mut self) {
+        self.print_index_size_if_enabled();
 
         // let data_path = std::mem::take(&mut self.data_guard.0);
         // println!("Data path: {data_path:?}");
