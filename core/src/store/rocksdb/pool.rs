@@ -340,7 +340,10 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         );
     }
 
-    pub fn compact(&self, collections_opt: Option<&[StoreItemPart]>) {
+    pub fn compact(
+        &self,
+        collections_opt: Option<&[StoreItemPart]>,
+    ) -> Result<(), Vec<(KvStoreId, rocksdb::Error)>> {
         match collections_opt {
             Some(collections) => tracing::debug!("Compacting {collections:?}…"),
             None => tracing::debug!("Compacting all collections…"),
@@ -362,6 +365,8 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
             }
         };
 
+        let mut errors = Vec::new();
+
         for store_id in store_ids.iter() {
             let pool_guard = self.pool.write().unwrap();
 
@@ -376,6 +381,12 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
             // Compact whole range of keys (we can hardly predict the range here).
             store.database().compact_range::<&[u8], &[u8]>(None, None);
 
+            let wait_opts = rocksdb::WaitForCompactOptions::default();
+
+            if let Err(error) = store.database().wait_for_compact(&wait_opts) {
+                errors.push((*store_id, error));
+            }
+
             // Give a bit of time to other threads before continuing
             // PERF: Compactions can take a very long time, and collections are
             //   likely to be very few, so it’s better to yield between runs.
@@ -383,6 +394,12 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         }
 
         tracing::info!("Done compacting {store_ids:?}");
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 
     pub fn erase(&self, collection: StoreItemPart, bucket: Option<Bucket>) -> Result<u32, ()> {

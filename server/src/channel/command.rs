@@ -1267,13 +1267,36 @@ impl ChannelCommandControl {
                             None
                         };
 
+                        let mut errors = Vec::new();
+
+                        macro_rules! extend_errors {
+                            ($store_kind:literal, $res:expr) => {
+                                errors.extend(
+                                    $res.err()
+                                        .into_iter()
+                                        .flatten()
+                                        .map(|(store_id, error)| ($store_kind, store_id, error)),
+                                );
+                            };
+                        }
+
                         // Force a KV store compaction
-                        kv_pool.compact(collections.as_deref());
+                        extend_errors!("KV", kv_pool.compact(collections.as_deref()));
 
                         // Force an Object store compaction
-                        object_store_pool.compact(collections.as_deref());
+                        extend_errors!("Object", object_store_pool.compact(collections.as_deref()));
 
-                        Ok(vec![ChannelCommandResponse::Ok])
+                        if errors.is_empty() {
+                            Ok(vec![ChannelCommandResponse::Ok])
+                        } else {
+                            for (store_kind, store_id, error) in errors {
+                                tracing::error!(
+                                    "Error while compacting {store_kind} store {store_id}: {error}"
+                                );
+                            }
+
+                            Err(ChannelCommandError::InternalError)
+                        }
                     }
                     "backup" => {
                         match (data_part, last_part) {
