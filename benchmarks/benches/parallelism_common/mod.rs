@@ -335,6 +335,10 @@ pub fn ingest_parallel<T: Ingestable>(
                 let control =
                     SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer)
                         .unwrap();
+
+                // Compaction can take a very long time. We have to bump the timeout.
+                control.set_recv_timeout(Duration::from_hours(1));
+
                 black_box(trigger_compact(&control, &[COLLECTION])).unwrap();
 
                 let compact_duration = start.elapsed();
