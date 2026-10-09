@@ -6,6 +6,8 @@
 
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::RwLock;
+use std::time::Duration;
 
 use crate::SEND_TIMEOUT;
 use crate::SonicMultiplexer;
@@ -56,6 +58,9 @@ pub struct SonicChannel<Mode: ChannelMode> {
     dispatcher_tx: crossbeam_channel::Sender<connection::Task<Mode::Discriminant>>,
     poll_waker: Arc<mio::Waker>,
     is_closed: bool,
+
+    /// Safety timeout when reading events from channels.
+    pub(crate) recv_timeout: RwLock<Duration>,
 }
 
 impl<Mode: ChannelMode + 'static> SonicChannel<Mode> {
@@ -102,6 +107,11 @@ impl<Mode: ChannelMode + 'static> SonicChannel<Mode> {
             dispatcher_tx: tx,
             poll_waker: Arc::clone(&multiplexer.poll_waker),
             is_closed: false,
+            // This timeout has to take into account TCP packets travel time,
+            // parsing and processing, hence why it’s so high. It should not
+            // be reached (except on edge cases like bulk ingest compactions),
+            // but it’s there as a safety precaution.
+            recv_timeout: RwLock::new(Duration::from_secs(30)),
         })
     }
 

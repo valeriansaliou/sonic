@@ -132,9 +132,19 @@ macro_rules! impl_channel_structs {
                 &self.inner.channel_info
             }
 
+            #[inline]
+            pub fn recv_timeout(&self) -> std::time::Duration {
+                *self.inner.recv_timeout.read().unwrap()
+            }
+
+            #[inline]
+            pub fn set_recv_timeout(&self, timeout: std::time::Duration) {
+                *self.inner.recv_timeout.write().unwrap() = timeout
+            }
+
             fn quit_blocking_(&mut self) -> std::io::Result<()> {
                 self.quit()?
-                    .recv_timeout($crate::RECV_TIMEOUT)
+                    .recv_timeout(self.recv_timeout())
                     .map_err(|error| std::io::Error::new(std::io::ErrorKind::BrokenPipe, error))?
             }
         }
@@ -191,6 +201,16 @@ macro_rules! impl_channel_structs {
             pub fn channel_info(&self) -> &crate::events::ChannelInfo {
                 self.inner.channel_info()
             }
+
+            #[inline]
+            pub fn recv_timeout(&self) -> std::time::Duration {
+                self.inner.recv_timeout()
+            }
+
+            #[inline]
+            pub fn set_recv_timeout(&self, timeout: std::time::Duration) {
+                self.inner.set_recv_timeout(timeout)
+            }
         }
 
         #[cfg(feature = "async")]
@@ -235,6 +255,16 @@ macro_rules! impl_channel_structs {
             pub fn channel_info(&self) -> &crate::events::ChannelInfo {
                 self.inner.channel_info()
             }
+
+            #[inline]
+            pub fn recv_timeout(&self) -> std::time::Duration {
+                self.inner.recv_timeout()
+            }
+
+            #[inline]
+            pub fn set_recv_timeout(&self, timeout: std::time::Duration) {
+                self.inner.set_recv_timeout(timeout)
+            }
         }
     };
 }
@@ -268,7 +298,7 @@ macro_rules! impl_fns {
                 $($arg_name: $arg_ty,)*
             ) -> $ret_ty {
                 $self.inner.$fn($($arg_name),*)?
-                    .recv_timeout($crate::RECV_TIMEOUT)
+                    .recv_timeout($self.inner.recv_timeout())
                     .map_err(|error| std::io::Error::new(std::io::ErrorKind::BrokenPipe, error))?
             }
         }
@@ -318,7 +348,7 @@ macro_rules! impl_fns {
             $(where $($where)+)?
             {
                 $self.inner.$fn($($arg_name),*)?
-                    .recv_timeout($crate::RECV_TIMEOUT)
+                    .recv_timeout($self.inner.recv_timeout())
                     .map_err(|error| std::io::Error::new(std::io::ErrorKind::BrokenPipe, error))?
             }
         }
