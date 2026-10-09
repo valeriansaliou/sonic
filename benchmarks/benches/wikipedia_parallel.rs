@@ -103,7 +103,13 @@ fn criterion_benchmark(c: &mut Criterion) {
                 b.iter_custom(|iters| {
                     let mut elapsed_total = Duration::ZERO;
 
-                    for _i in 0..iters {
+                    let iters_custom = if is_quick {
+                        1
+                    } else {
+                        iters
+                    };
+
+                    for _i in 0..iters_custom {
                         let stats = ingest_parallel(&bench_name, &config, sonic_conf_path, nchannels, articles(), articles_count);
 
                         elapsed_total += stats.elapsed_total;
@@ -122,7 +128,11 @@ fn criterion_benchmark(c: &mut Criterion) {
                         ).unwrap();
                     }
 
-                    elapsed_total
+                    if is_quick {
+                        elapsed_total * u32::try_from(iters).unwrap()
+                    } else {
+                        elapsed_total
+                    }
                 });
             });
         }
