@@ -6,6 +6,7 @@
 
 #![allow(dead_code)]
 
+use std::borrow::Cow;
 use std::cell::LazyCell;
 use std::collections::HashMap;
 use std::hint::black_box;
@@ -66,6 +67,17 @@ pub static NCHANNELS: LazyLock<usize> = LazyLock::new(|| {
     }, |s| s.parse().unwrap())
 });
 
+pub static BUCKET_COUNT: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("BUCKET_COUNT").map_or_else(
+        |_err| {
+            let default = 1;
+            tracing::info!("`BUCKET_COUNT` not configured, using {default:?} as default.");
+            default
+        },
+        |s| s.parse::<usize>().unwrap(),
+    )
+});
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -112,7 +124,6 @@ pub fn ingest_parallel<T: Ingestable>(
     articles_count: usize,
 ) -> IngestStats {
     const COLLECTION: &str = "wikipedia";
-    const BUCKET: &str = "default";
 
     let show_progress = *SHOW_PROGRESS;
     let push_use_new = *PUSH_USE_NEW;
@@ -155,13 +166,6 @@ pub fn ingest_parallel<T: Ingestable>(
 
         control.config_set(COLLECTION, &args).unwrap();
     }
-
-    tracing::info!("Ingesting…");
-
-    let articles = Arc::new(Mutex::new(articles_iter));
-
-    let ingested_count: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
-    let ingested_bytes: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
 
     let print_stats = Arc::new(AtomicBool::new(true));
     let stats_handle = std::thread::Builder::new()
@@ -215,6 +219,23 @@ pub fn ingest_parallel<T: Ingestable>(
         })
         .unwrap();
 
+    tracing::info!("Ingesting…");
+
+    let articles = Arc::new(Mutex::new(articles_iter.enumerate()));
+
+    let ingested_count: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
+    let ingested_bytes: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
+
+    /// Pretend data is split across multiple buckets. It’s just for realism.
+    fn bucket<'a>(index: usize, total_count: usize, bucket_count: usize) -> Cow<'a, str> {
+        if bucket_count < 2 {
+            Cow::Borrowed("default")
+        } else {
+            let bucket_id = index / (total_count / bucket_count);
+            Cow::Owned(format!("bucket:{bucket_id}"))
+        }
+    }
+
     let mut ingest_duration = (0..nchannels)
         .map(|i| {
             std::thread::Builder::new().name(format!("thread-{i}")).spawn({
@@ -251,10 +272,12 @@ pub fn ingest_parallel<T: Ingestable>(
                     }
 
                     let start = Instant::now();
-                    while let Some(object) = next(&articles) {
+                    while let Some((object_index, object)) = next(&articles) {
                         let len = object.data().as_bytes().len();
 
-                        match black_box(channel.push_with_options(COLLECTION, BUCKET, object.id(), object.data(), push_options.as_slice())) {
+                        let bucket = bucket(object_index, articles_count, *BUCKET_COUNT);
+
+                        match black_box(channel.push_with_options(COLLECTION, bucket, object.id(), object.data(), push_options.as_slice())) {
                             Ok(()) => {
                                 if show_progress {
                                     eprint!("{}", T::size_char(len));
@@ -339,7 +362,7 @@ pub fn ingest_parallel<T: Ingestable>(
                 // Compaction can take a very long time. We have to bump the timeout.
                 control.set_recv_timeout(Duration::from_hours(1));
 
-                black_box(trigger_compact(&control, &[COLLECTION])).unwrap();
+                black_box(trigger_compact(&control, &[])).unwrap();
 
                 let compact_duration = start.elapsed();
 
@@ -384,10 +407,10 @@ pub fn ingest_parallel<T: Ingestable>(
         control.config_reset_all(COLLECTION).unwrap();
     }
 
-    {
+    if *BUCKET_COUNT < 2 {
         tracing::info!("Ensuring documents have 1:1 matching IIDs…");
 
-        let count = ingest.countb(COLLECTION, BUCKET).unwrap();
+        let count = ingest.countb(COLLECTION, "default").unwrap();
         if count != articles_count {
             // NOTE: Do not `panic` as some versions of Sonic had this bug and it
             //   would render benchmark comparison impossible for no good reason.
@@ -395,6 +418,8 @@ pub fn ingest_parallel<T: Ingestable>(
                 "Data was indexed as more IIDs than there are articles (actual: {count}, expected: {articles_count})"
             )
         }
+    } else {
+        tracing::warn!("Did not check document count: Multiple buckets (set `BUCKET_COUNT=1`)");
     }
 
     // let search = SonicChannelSearchBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
