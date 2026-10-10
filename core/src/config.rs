@@ -120,6 +120,11 @@ pub struct SearchConfig {
     pub list_limit_default: u16,
 
     pub list_limit_maximum: u16,
+
+    /// Word lengths from which one more typo is allowed when correcting words
+    /// (e.g. `[4, 7, 10]` allows 1 typo from 4 letters, 2 typos from 7 letters
+    /// and 3 typos from 10 letters). Empty means no typo correction.
+    pub typo_factor_word_lengths: Vec<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -386,6 +391,7 @@ pub(crate) mod tests {
         suggest_limit_maximum = 20
         list_limit_default = 100
         list_limit_maximum = 500
+        typo_factor_word_lengths = [4, 7, 10]
 
         [store.kv]
         path = "./data/store/kv/"

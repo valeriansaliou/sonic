@@ -209,7 +209,10 @@ impl super::Executor {
                     continue 'terms;
                 }
 
-                let max_typo_factor = typo_factor(original_word_len);
+                let max_typo_factor = typo_factor(
+                    original_word_len,
+                    &self.app_conf.search.typo_factor_word_lengths,
+                );
                 let mut typo_factor = 1u32;
 
                 // TODO: Rework the Levenshtein query feature to avoid repeating

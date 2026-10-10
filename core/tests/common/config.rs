@@ -59,6 +59,7 @@ pub fn defaults_toml() -> String {
         suggest_limit_maximum = 20
         list_limit_default = 100
         list_limit_maximum = 500
+        typo_factor_word_lengths = [4, 7, 10]
 
         [store.kv]
         path = {kv_store_path:?}

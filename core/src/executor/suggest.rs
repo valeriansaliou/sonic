@@ -8,6 +8,7 @@
 use super::types::QuerySearchLimit;
 use crate::lexer::preprocessor::PreprocessorOutput;
 use crate::store::StoreItemPart;
+use crate::store::fst::typo_factor;
 
 impl super::Executor {
     pub fn suggest(
@@ -27,10 +28,12 @@ impl super::Executor {
             if let (Some(token), None) = (tokens.next(), tokens.next()) {
                 let len = token.as_original().len();
                 let term = token.into_normalized();
+                let max_typo_factor =
+                    typo_factor(len, &self.app_conf.search.typo_factor_word_lengths);
 
                 tracing::debug!("running suggest on word: {term:?}");
 
-                return match fst_store.suggest_words(term, len, limit as usize, None) {
+                return match fst_store.suggest_words(term, len, limit as usize, max_typo_factor) {
                     Some(words) => Ok(Some(words.map(|(k, _)| k))),
                     None => Ok(None),
                 };

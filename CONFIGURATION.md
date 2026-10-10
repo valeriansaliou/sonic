@@ -98,6 +98,7 @@ Under `[search]`:
 * `suggest_limit_maximum` (type: _integer_, allowed: numbers, default: `20`) — Maximum suggested words limit for a suggest command (if the LIMIT command modifier is being used when issuing a SUGGEST command)
 * `list_limit_default` (type: _integer_, allowed: numbers, default: `100`) — Default listed words limit for a list command (if the LIMIT command modifier is not used when issuing a LIST command)
 * `list_limit_maximum` (type: _integer_, allowed: numbers, default: `500`) — Maximum listed words limit for a list command (if the LIMIT command modifier is being used when issuing a LIST command)
+* `typo_factor_word_lengths` (type: _array_, allowed: word lengths in bytes, default: `[4, 7, 10]`) — Word lengths from which one more typo is corrected in query and suggest commands (the default allows no typo up to 3 letters, 1 typo from 4 letters, 2 typos from 7 letters and 3 typos from 10 letters; typo correction can be slow and yield unexpected results, remove values to allow fewer typos or use `[]` to disable it)
 
 ### KV store configuration
 
