@@ -72,6 +72,8 @@ fn query(query, app_config) -> [doc] {
             if update_score(results_matrix, doc, score, index, len(normalized(query))):
               alternates_try -= 1
 
+  // Thresholds are configured by `search.typo_factor_word_lengths`
+  // (shown with the default value: `[4, 7, 10]`).
   fn typo_factor(word_len) -> u32 {
     if      word_len <= 3: return 0
     else if word_len <= 6: return 1

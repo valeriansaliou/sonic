@@ -126,6 +126,31 @@ macro_rules! exec {
             .expect("QUERY should succeed")
     }};
 
+    ($executor:ident -> SUGGEST $collection:tt $bucket:tt $word:tt $(LANG($lang:expr))?) => {{
+        #[rustfmt::skip]
+        $executor.log(format!(
+            "SUGGEST {:?} {:?} {:?}{}",
+            $collection, $bucket, $word, exec!(internal_ lang_txt $($lang)?)
+        ));
+        let (c, b) = crate::common::bucket_ref!($collection, $bucket);
+        let preprocessor = sonic::lexer::preprocessor::Preprocessor::new(
+            $executor.app_conf.tokenization,
+            $executor.app_conf.normalization,
+            $executor.app_conf.stopwords.clone(),
+            false,
+            false,
+        );
+        $executor
+            .suggest(
+                c, b,
+                preprocessor.preprocess($word, exec!(internal_ lang $($lang)?)),
+                $executor.app_conf.search.suggest_limit_default,
+            )
+            .expect("SUGGEST should succeed")
+            .map(|words| words.collect::<Vec<String>>())
+            .unwrap_or_default()
+    }};
+
     ($executor:ident -> LIST $collection:tt $bucket:tt $(LIMIT($limit:expr))?) => {{
         $executor.log(format!("LIST {:?} {:?}", $collection, $bucket));
         let (c, b) = crate::common::bucket_ref!($collection, $bucket);
