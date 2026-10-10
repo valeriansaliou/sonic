@@ -9,7 +9,7 @@ mod generic;
 pub mod fst;
 pub mod kv;
 pub mod object;
-mod rocksdb;
+pub mod rocksdb;
 mod types;
 
 pub use self::types::*;

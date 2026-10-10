@@ -2438,6 +2438,7 @@ dependencies = [
  "serde_json",
  "sonic-core",
  "sonic_client",
+ "thiserror 2.0.21",
  "tikv-jemallocator",
  "tracing",
  "tracing-subscriber",

@@ -11,6 +11,15 @@ use crate::store::types::*;
 use super::encoding::*;
 use super::keys::StoreMetaKey;
 
+/// This is an empirical value, which represents the average
+/// amount of compression KV merge operations result to.
+///
+/// Don’t use it; it’s only used by Sonic Server to do some niche experimental
+/// computation.
+///
+/// We just put it here hoping it’ll stay in sync with its related code.
+pub const AVERAGE_MERGE_RATIO: u8 = 4;
+
 pub(super) fn kv_merge_operator(
     key: &[u8],
     existing_val: Option<&[u8]>,

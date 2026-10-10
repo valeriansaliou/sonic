@@ -11,6 +11,7 @@ use rand::distr::Alphanumeric;
 use sonic::lexer::preprocessor::Preprocessor;
 use sonic::lexer::to_rework::TokenLexerMode;
 use sonic::store::StoreItemBuilder;
+use sonic::store::kv::AVERAGE_MERGE_RATIO;
 use std::fmt;
 use std::path::Path;
 use std::str::{self, SplitWhitespace};
@@ -1422,6 +1423,263 @@ impl ChannelCommandControl {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+struct DynamicConfig {
+    bulk_load_preset_options: Option<BulkLoadPresetOptions>,
+    sonic: DynamicConfigSonic,
+    rocksdb: DynamicConfigRocksDb,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct DynamicConfigSonic {
+    disable_janitor_tasks: Option<bool>,
+    disable_fst_consolidate_task: Option<bool>,
+    disable_kv_flush_task: Option<bool>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct DynamicConfigRocksDb {
+    disable_auto_compactions: Option<bool>,
+    unordered_write: Option<bool>,
+    memtable: Option<RocksDbMemtable>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RocksDbMemtable {
+    Default,
+    Vector,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum BulkLoadConstraint {
+    DiskSpace,
+    CpuTime,
+}
+
+const MEGA: u8 = 6;
+const TERA: u8 = 12;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(serde::Deserialize)]
+struct BulkLoadPresetOptions {
+    cores: u16,
+
+    #[serde(with = "crate::util::serde::byte_amount")]
+    l2_cache_size: crate::util::serde::byte_amount::ByteAmount<MEGA, u32>,
+
+    fd_limit: u64,
+
+    #[serde(with = "crate::util::serde::byte_amount")]
+    total_bytes: crate::util::serde::byte_amount::ByteAmount<TERA, u64>,
+
+    #[serde(default, with = "sonic::util::serde::none_string_as_none")]
+    constraint: Option<BulkLoadConstraint>,
+
+    #[serde(default)]
+    write_ahead_log: Option<bool>,
+}
+
+impl sonic::executor::DynamicConfig for DynamicConfig {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn are_janitor_tasks_enabled(&self) -> bool {
+        !matches!(self.sonic.disable_janitor_tasks, Some(false))
+    }
+
+    fn is_fst_consolidate_task_enabled(&self) -> bool {
+        !matches!(self.sonic.disable_fst_consolidate_task, Some(false))
+    }
+
+    fn is_kv_flush_task_enabled(&self) -> bool {
+        !matches!(self.sonic.disable_kv_flush_task, Some(false))
+    }
+
+    fn update_kv_store_options(
+        &self,
+        options: &mut sonic::rocksdb::Options,
+        config: &sonic::config::RocksDbDatabaseConfig,
+    ) {
+        let Self {
+            bulk_load_preset_options,
+            rocksdb,
+            sonic: _,
+        } = self;
+
+        if let Some(BulkLoadPresetOptions {
+            cores,
+            l2_cache_size,
+            fd_limit,
+            total_bytes,
+            constraint,
+            write_ahead_log: _,
+        }) = bulk_load_preset_options
+        {
+            options.set_disable_auto_compactions(true);
+            options.set_unordered_write(true);
+
+            // SAFETY: This ensures the following `as usize` cast is lossless.
+            const _: () = assert!(u32::BITS <= usize::BITS);
+
+            let write_buffer_size: u32 = l2_cache_size.value() / 2;
+            options.set_write_buffer_size(write_buffer_size as usize);
+
+            let max_l0_files = (fd_limit - 48)
+                // Add room for error. Ideally this would be ~1.5 but we’re
+                // working with integers so 2 will do.
+                .saturating_div(2)
+                .max(1);
+            options.set_max_open_files(20);
+            let min_write_buffer_number_to_merge: i32 = i32::try_from(
+                ((total_bytes.value() / max_l0_files) / u64::from(write_buffer_size))
+                    .saturating_mul(AVERAGE_MERGE_RATIO as u64),
+            )
+            .unwrap_or(i32::MAX);
+            options.set_min_write_buffer_number_to_merge(min_write_buffer_number_to_merge);
+            options.set_max_write_buffer_number(min_write_buffer_number_to_merge.saturating_mul(2));
+            options.increase_parallelism(i32::from(*cores));
+            options.set_max_background_jobs(i32::from(*cores) + config.max_flushes.unwrap_or(1));
+            options.set_max_subcompactions(u32::from(*cores));
+
+            let compression_type = sonic::store::rocksdb::apply_compress_fallback(
+                &config.compression_type,
+                &config.compress,
+            );
+            let default_compression =
+                compression_type.unwrap_or(sonic::rocksdb::DBCompressionType::None);
+
+            match constraint {
+                Some(BulkLoadConstraint::DiskSpace) => {
+                    options.set_compression_per_level(&[
+                        sonic::rocksdb::DBCompressionType::Zstd,
+                        default_compression,
+                        default_compression,
+                        default_compression,
+                        default_compression,
+                    ]);
+                }
+                Some(BulkLoadConstraint::CpuTime) => {
+                    options.set_min_level_to_compress(1);
+                }
+                None => {
+                    options.set_compression_per_level(&[
+                        sonic::rocksdb::DBCompressionType::Lz4,
+                        default_compression,
+                        default_compression,
+                        default_compression,
+                        default_compression,
+                    ]);
+                }
+            }
+        }
+
+        let DynamicConfigRocksDb {
+            disable_auto_compactions,
+            unordered_write,
+            memtable,
+        } = rocksdb;
+
+        macro_rules! if_some {
+            ($opts:ident.$set_fn:ident($value:expr)) => {
+                if let Some(value) = $value {
+                    $opts.$set_fn(*value);
+                }
+            };
+        }
+
+        if_some!(options.set_disable_auto_compactions(disable_auto_compactions));
+
+        if_some!(options.set_unordered_write(unordered_write));
+
+        match memtable {
+            Some(RocksDbMemtable::Vector) => {
+                // Use the vector-based memtable instead of the default skiplist.
+                options.set_memtable_factory(sonic::rocksdb::MemtableFactory::Vector);
+
+                // Vector memtables don't support concurrent inserts, so this must be false.
+                options.set_allow_concurrent_memtable_write(false);
+            }
+            None | Some(RocksDbMemtable::Default) => {}
+        }
+    }
+
+    fn update_object_store_options(
+        &self,
+        options: &mut sonic::rocksdb::Options,
+        config: &sonic::config::RocksDbDatabaseConfig,
+    ) {
+        let Self {
+            bulk_load_preset_options,
+            sonic: _,
+            rocksdb,
+        } = self;
+
+        if let Some(BulkLoadPresetOptions {
+            cores,
+            l2_cache_size: _,
+            fd_limit: _,
+            total_bytes: _,
+            constraint: _,
+            write_ahead_log: _,
+        }) = bulk_load_preset_options
+        {
+            options.set_disable_auto_compactions(true);
+            options.set_unordered_write(true);
+
+            options.set_max_open_files(20);
+            options.set_write_buffer_size(64 * 1024 * 1024); // 64MiB
+            options.set_min_write_buffer_number_to_merge(4); // L0 SST ⪅ 256MiB
+            options.set_max_write_buffer_number(8); // Do not stop writes while a flush is in progress (max 512MiB RAM usage).
+            options.increase_parallelism(i32::from(*cores));
+            options.set_max_background_jobs(i32::from(*cores) + config.max_flushes.unwrap_or(1));
+            options.set_max_subcompactions(u32::from(*cores));
+        }
+
+        let DynamicConfigRocksDb {
+            disable_auto_compactions,
+            unordered_write,
+            memtable,
+        } = rocksdb;
+
+        macro_rules! if_some {
+            ($opts:ident.$set_fn:ident($value:expr)) => {
+                if let Some(value) = $value {
+                    $opts.$set_fn(*value);
+                }
+            };
+        }
+
+        if_some!(options.set_disable_auto_compactions(disable_auto_compactions));
+
+        if_some!(options.set_unordered_write(unordered_write));
+
+        match memtable {
+            Some(RocksDbMemtable::Vector) => {
+                // Use the vector-based memtable instead of the default skiplist.
+                options.set_memtable_factory(sonic::rocksdb::MemtableFactory::Vector);
+
+                // Vector memtables don't support concurrent inserts, so this must be false.
+                options.set_allow_concurrent_memtable_write(false);
+            }
+            None | Some(RocksDbMemtable::Default) => {}
+        }
+    }
+
+    fn update_write_options_builder(
+        &self,
+        builder: &mut sonic::store::rocksdb::RocksDbWriteOptionsBuilder,
+    ) {
+        if let Some(opts) = self.bulk_load_preset_options {
+            if let Some(write_ahead_log) = opts.write_ahead_log {
+                builder.is_wal_enabled = write_ahead_log;
+            }
+        }
+    }
+}
+
 #[cfg(feature = "experimental-api")]
 // TODO: Use proper parsing to add support for quoted values (with spaces).
 fn config_set(
@@ -1429,7 +1687,9 @@ fn config_set(
     ctx: &ChannelMessageModeControl,
     collection: sonic::store::StoreItemPart,
 ) -> ChannelResult {
-    use sonic::executor::{DynamicConfig, RocksDbMemtable};
+    use std::sync::Arc;
+
+    use sonic::store::CollectionHash;
 
     fn parse_bool(str: &str) -> Option<bool> {
         match str {
@@ -1439,7 +1699,7 @@ fn config_set(
         }
     }
 
-    // TODO: Maybe replace this by a proper deserializer? (If so, make sure to suport duplicate keys)
+    // TODO: Maybe replace this by a proper deserializer? (If so, make sure to support duplicate keys)
     fn merge(
         config: &mut DynamicConfig,
         key: &str,
@@ -1450,6 +1710,19 @@ fn config_set(
 
         // WARN: Think about updating `CONFIG RESET` when adding new keys here!
         match key {
+            "preset.bulk_load" => {
+                let options =
+                    serde_json::from_str::<BulkLoadPresetOptions>(value).map_err(|error| {
+                        tracing::warn!("{error}");
+                        invalid_meta_value()
+                    })?;
+
+                config.bulk_load_preset_options = Some(options);
+
+                config.sonic.disable_janitor_tasks = Some(true);
+                config.sonic.disable_fst_consolidate_task = Some(true);
+                config.sonic.disable_kv_flush_task = Some(true);
+            }
             "sonic.disable_janitor_tasks" => {
                 config.sonic.disable_janitor_tasks =
                     Some(parse_bool(value).ok_or_else(invalid_meta_value)?);
@@ -1490,13 +1763,26 @@ fn config_set(
         Ok(())
     }
 
-    let mut config = (ctx.executor.dynamic_conf_store)
-        .get(collection)
-        .unwrap_or_default();
+    let mut config = (ctx.executor.dynamic_conf_store.read())
+        .get(&CollectionHash::from_part(collection))
+        .map_or_else(DynamicConfig::default, |boxed| {
+            // SAFETY: Sonic never writes any other value; we know it’s our type.
+            *boxed.as_any().downcast_ref::<DynamicConfig>().unwrap()
+        });
 
     for part in parts {
-        match part.split_once("=") {
-            Some((key, value)) => merge(&mut config, key, value)?,
+        match part.split_once(|c| matches!(c, '=' | '(')) {
+            Some((key, mut value)) => {
+                // This isn’t very correct, but for now it’s a good way to check
+                // if the syntax is `key=value` or `fn(value)`. No value should
+                // end with `)` (for string values it would be `"`) so it’s a
+                // good discriminator.
+                if value.ends_with(')') {
+                    value = &value[..value.len() - 1];
+                }
+
+                merge(&mut config, key, value)?
+            }
 
             // If key is passed alone, consider it a boolean.
             None => merge(&mut config, part, "true")?,
@@ -1504,7 +1790,7 @@ fn config_set(
     }
 
     // NOTE: `set_dynamic_conf` updates `dynamic_conf_store` on success.
-    match ctx.executor.set_dynamic_conf(collection, config) {
+    match ctx.executor.set_dynamic_conf(collection, Arc::new(config)) {
         Ok(()) => Ok(vec![ChannelCommandResponse::Ok]),
         Err(error) => {
             tracing::error!("{error:?}");
@@ -1519,14 +1805,21 @@ fn config_reset(
     ctx: &ChannelMessageModeControl,
     collection: sonic::store::StoreItemPart,
 ) -> ChannelResult {
+    use std::sync::Arc;
+
     let mut parts = parts.peekable();
     let new_conf = if parts.peek().is_some() {
-        let mut new_conf = (ctx.executor.dynamic_conf_store)
-            .get(collection)
-            .unwrap_or_default();
+        use sonic::store::CollectionHash;
+
+        let mut new_conf = (ctx.executor.dynamic_conf_store.read())
+            .get(&CollectionHash::from_part(collection))
+            .map_or_else(DynamicConfig::default, |boxed| {
+                // SAFETY: Sonic never writes any other value; we know it’s our type.
+                *boxed.as_any().downcast_ref::<DynamicConfig>().unwrap()
+            });
 
         macro_rules! match_reset {
-            ($key:ident =>  $($val:literal => $block:block),* $($($path:ident).+),+ $(,)?) => {
+            ($key:ident => $($val:literal => $block:block,)* $($($path:ident).+),+ $(,)?) => {
                 match $key {
                     $(stringify!($($path).+) => new_conf.$($path).+ = None,)+
                     $($val => $block,)*
@@ -1540,11 +1833,17 @@ fn config_reset(
 
         for key in parts {
             match_reset!(key =>
+                "preset.bulk_load" => {
+                    new_conf.bulk_load_preset_options = None;
+                    new_conf.sonic.disable_janitor_tasks = None;
+                    new_conf.sonic.disable_fst_consolidate_task = None;
+                    new_conf.sonic.disable_kv_flush_task = None;
+                },
                 "sonic.disable_all_tasks" => {
                     new_conf.sonic.disable_janitor_tasks = None;
                     new_conf.sonic.disable_fst_consolidate_task = None;
                     new_conf.sonic.disable_kv_flush_task = None;
-                }
+                },
                 sonic.disable_janitor_tasks,
                 sonic.disable_fst_consolidate_task,
                 sonic.disable_kv_flush_task,
@@ -1557,10 +1856,13 @@ fn config_reset(
         new_conf
     } else {
         // If no argument was provided, reset the whole configuration.
-        sonic::DynamicConfig::default()
+        DynamicConfig::default()
     };
 
-    match ctx.executor.set_dynamic_conf(collection, new_conf) {
+    match ctx
+        .executor
+        .set_dynamic_conf(collection, Arc::new(new_conf))
+    {
         Ok(()) => Ok(vec![ChannelCommandResponse::Ok]),
         Err(error) => {
             tracing::error!("{error:?}");

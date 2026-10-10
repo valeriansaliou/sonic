@@ -10,6 +10,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use sonic::executor::DynamicConfigStore;
+use sonic::store::AsCollectionHash as _;
 use sonic::store::fst::FstStorePool;
 use sonic::store::kv::KvStorePool;
 use sonic::store::object::ObjectStorePool;
@@ -77,10 +78,10 @@ impl Tasker {
             let disabled = dynamic_conf_store_read_guard
                 .iter()
                 .filter_map(|(&collection, dynamic_conf)| {
-                    if dynamic_conf.sonic.disable_janitor_tasks.unwrap_or(false) {
-                        Some(collection)
-                    } else {
+                    if dynamic_conf.are_janitor_tasks_enabled() {
                         None
+                    } else {
+                        Some(collection)
                     }
                 })
                 .collect::<Vec<_>>();
@@ -116,38 +117,32 @@ impl Tasker {
 
         // #2: Others
         self.kv_pool.flush(false, |store_id| {
-            let skip = dynamic_conf_store_read_guard
-                .get(store_id.as_collection_hash())
-                .and_then(|conf| conf.sonic.disable_kv_flush_task)
-                .unwrap_or(false);
-            if skip {
+            let is_enabled = (dynamic_conf_store_read_guard.get(store_id))
+                .map_or(true, |conf| conf.is_kv_flush_task_enabled());
+            if !is_enabled {
                 tracing::info!("Not running flush task for KV store {store_id:?}: {TASK_DISABLED}");
             }
-            !skip
+            is_enabled
         });
         self.fst_pool.consolidate(false, |store_id| {
-            let skip = dynamic_conf_store_read_guard
-                .get(store_id.as_collection_hash())
-                .and_then(|conf| conf.sonic.disable_fst_consolidate_task)
-                .unwrap_or(false);
-            if skip {
+            let is_enabled = (dynamic_conf_store_read_guard.get(store_id))
+                .map_or(true, |conf| conf.is_fst_consolidate_task_enabled());
+            if !is_enabled {
                 tracing::info!(
                     "Not running consolidate task for FST store {store_id:?}: {TASK_DISABLED}"
                 );
             }
-            !skip
+            is_enabled
         });
         self.object_store_pool.flush(false, |store_id| {
-            let skip = dynamic_conf_store_read_guard
-                .get(store_id.as_collection_hash())
-                .and_then(|conf| conf.sonic.disable_kv_flush_task)
-                .unwrap_or(false);
-            if skip {
+            let is_enabled = (dynamic_conf_store_read_guard.get(store_id))
+                .map_or(true, |conf| conf.is_kv_flush_task_enabled());
+            if !is_enabled {
                 tracing::info!(
                     "Not running flush task for Object store {store_id:?}: {TASK_DISABLED}"
                 );
             }
-            !skip
+            is_enabled
         });
     }
 }

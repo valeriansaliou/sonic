@@ -39,7 +39,9 @@ impl Config {
         }
 
         // Check 'flush_after' for KV
-        if self.store.kv.database.flush_after >= self.store.kv.pool.inactive_after {
+        if (self.store.kv.database.flush_after)
+            .is_some_and(|n| n >= self.store.kv.pool.inactive_after)
+        {
             panic!("flush_after for kv must be strictly lower than inactive_after");
         }
 
@@ -158,9 +160,11 @@ pub struct StorePoolConfig {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RocksDbDatabaseConfig {
-    pub flush_after: u64,
+    #[serde(default)]
+    pub flush_after: Option<u64>,
 
-    pub write_ahead_log: bool,
+    #[serde(default)]
+    pub write_ahead_log: Option<bool>,
 
     /// Whether or not to compress.
     ///

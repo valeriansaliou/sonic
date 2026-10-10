@@ -6,14 +6,14 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use std::fmt;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 use std::time::Instant;
 
 use hashbrown::HashMap;
 
 use crate::store::generic::*;
-use crate::store::rocksdb::GenericRocksDbStore;
 pub use crate::store::rocksdb::pool::{GenericKvStorePool, KvStoreId};
+use crate::store::rocksdb::{GenericRocksDbStore, RocksDbWriteOptionsBuilder};
 use crate::store::types::*;
 use crate::util::impl_int_enum;
 
@@ -26,7 +26,7 @@ pub struct ObjectStore {
     last_used: RwLock<Instant>,
     last_flushed: RwLock<Instant>,
     pub lock: RwLock<()>,
-    kv_store_config: Arc<crate::config::KvStoreConfig>,
+    write_options_builder: RocksDbWriteOptionsBuilder,
 
     /// Cache of `IIDIncr` per bucket, removing the need for countless reads
     /// while ingesting new data.
@@ -49,7 +49,7 @@ impl GenericStore for ObjectStore {
 }
 
 impl GenericRocksDbStore for ObjectStore {
-    fn new(db: rocksdb::DB, config: Arc<crate::config::KvStoreConfig>) -> Self {
+    fn new(db: rocksdb::DB, write_options_builder: RocksDbWriteOptionsBuilder) -> Self {
         let now = Instant::now();
 
         Self {
@@ -57,7 +57,7 @@ impl GenericRocksDbStore for ObjectStore {
             last_used: RwLock::new(now),
             last_flushed: RwLock::new(now),
             lock: RwLock::new(()),
-            kv_store_config: config,
+            write_options_builder,
             iid_incr_per_bucket: RwLock::new(HashMap::new()),
         }
     }
@@ -70,8 +70,16 @@ impl GenericRocksDbStore for ObjectStore {
         &self.database
     }
 
-    fn config(&self) -> &crate::config::KvStoreConfig {
-        &self.kv_store_config
+    fn override_options(
+        config: &crate::config::RocksDbDatabaseConfig,
+        dyn_config: &dyn crate::DynamicConfig,
+        options: &mut rocksdb::Options,
+    ) {
+        dyn_config.update_object_store_options(options, config)
+    }
+
+    fn write_options_builder(&self) -> &RocksDbWriteOptionsBuilder {
+        &self.write_options_builder
     }
 
     fn last_flushed(&self) -> &RwLock<Instant> {
@@ -237,9 +245,9 @@ impl fmt::Debug for ObjectStore {
             last_used,
             last_flushed,
             lock,
+            write_options_builder,
             // NOTE: We don’t care about the configuration,
             //   we can see it elsewhere if needed.
-            kv_store_config: _kv_store_config,
             iid_incr_per_bucket,
         } = self;
 
@@ -248,6 +256,7 @@ impl fmt::Debug for ObjectStore {
             .field("last_used", &AsPrettyRwLock(last_used))
             .field("last_flushed", &AsPrettyRwLock(last_flushed))
             .field("lock", &AsPrettyRwLock(lock))
+            .field("write_options_builder", write_options_builder)
             .field("iid_incr_per_bucket", &AsPrettyRwLock(iid_incr_per_bucket))
             .finish_non_exhaustive()
     }

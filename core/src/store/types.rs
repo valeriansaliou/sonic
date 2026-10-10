@@ -374,9 +374,20 @@ impl CollectionHash {
     pub fn to_hex(&self) -> String {
         format!("{:x}", self.0.to_le())
     }
+}
 
-    // NOTE: This is just a helper to avoid having to create a `KvStoreId` wrapper.
-    pub fn as_collection_hash(&self) -> &Hash {
+pub trait AsCollectionHash {
+    fn as_collection_hash(&self) -> &Hash;
+}
+
+impl<T: AsCollectionHash> AsCollectionHash for &T {
+    fn as_collection_hash(&self) -> &Hash {
+        (*self).as_collection_hash()
+    }
+}
+
+impl AsCollectionHash for CollectionHash {
+    fn as_collection_hash(&self) -> &Hash {
         &self.0
     }
 }

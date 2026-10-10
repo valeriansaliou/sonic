@@ -27,6 +27,7 @@ serde_json = { optional = true, version = "=1.0.151", default-features = false, 
 rand = { version = "=0.10.3", default-features = false, features = ["std", "thread_rng"] }
 hashbrown = { version = "=0.17.1", default-features = false, features = ["default-hasher", "allocator-api2", "inline-more"] }
 config = { version = "=0.15.27", default-features = false, features = ["toml"] }
+thiserror = { version = "=2.0.21", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 sonic_client = { version = "=0.6.0", path = "../client", features = ["sync", "tracing", "raw-api", "experimental-api"] }

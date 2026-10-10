@@ -29,7 +29,7 @@ impl super::Executor {
         let _fst_read_guard = self.fst_pool.lock_read_access();
 
         if let (Ok(kv_store), Ok(fst_store)) = (
-            self.kv_pool.acquire(false, collection, None, |_| {}),
+            self.kv_pool.acquire(false, collection, None),
             self.fst_pool.acquire(collection, bucket),
         ) {
             let Some(kv_store) = kv_store else {

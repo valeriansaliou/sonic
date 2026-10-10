@@ -118,9 +118,9 @@ impl super::Executor {
         let _fst_read_guard = self.fst_pool.lock_read_access();
         let _object_read_guard = self.object_store_pool.lock_read_access();
 
-        let kv_store = self.kv_pool.acquire(true, collection, None, |_| {})?;
+        let kv_store = self.kv_pool.acquire(true, collection, None)?;
         let fst_store = self.fst_pool.acquire(collection, bucket)?;
-        let object_store = (self.object_store_pool).acquire(true, collection, None, |_| {})?;
+        let object_store = (self.object_store_pool).acquire(true, collection, None)?;
 
         debug_assert!(kv_store.is_some());
         let Some(kv_store) = kv_store else {
