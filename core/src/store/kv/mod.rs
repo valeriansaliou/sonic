@@ -81,8 +81,17 @@ impl KvStore {
 
 impl<'a> KvRepositoryReadWrite<'a> {
     #[inline]
+    pub fn write_opt(
+        &self,
+        batch: WriteBatch,
+        options: crate::store::rocksdb::WriteOptions,
+    ) -> Result<(), rocksdb::Error> {
+        self.store.write(batch, options)
+    }
+
+    #[inline]
     pub fn write(&self, batch: WriteBatch) -> Result<(), rocksdb::Error> {
-        self.store.write(batch)
+        self.write_opt(batch, Default::default())
     }
 }
 

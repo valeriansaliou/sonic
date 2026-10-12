@@ -125,7 +125,7 @@ impl ObjectStore {
 impl<'a> ObjectRepository<'a> {
     #[inline]
     pub fn write(&self, batch: rocksdb::WriteBatch) -> Result<(), rocksdb::Error> {
-        self.store.write(batch)
+        self.store.write(batch, Default::default())
     }
 
     pub fn put_object_original(

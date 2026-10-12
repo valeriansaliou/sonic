@@ -15,6 +15,7 @@ use crate::lexer::itertools::UniqueBy;
 use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::kv::KvRepositoryReadWrite;
 use crate::store::kv::encoding::ToKvKeyPart;
+use crate::store::rocksdb::WriteOptions;
 use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreObjectOid, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
 
@@ -231,7 +232,9 @@ impl super::Executor {
                         kv_repo.add_iid_to_terms(&mut batch, iid, term_hashes_sorted.iter());
                     }
 
-                    executor_ensure_op!(kv_repo.write(batch));
+                    executor_ensure_op!(
+                        kv_repo.write_opt(batch, WriteOptions { is_ordered: true })
+                    );
 
                     is_new
                 };
@@ -316,7 +319,9 @@ impl super::Executor {
                         kv_repo.add_iid_to_terms(&mut batch, iid, term_hashes_sorted.iter());
                     }
 
-                    executor_ensure_op!(kv_repo.write(batch));
+                    executor_ensure_op!(
+                        kv_repo.write_opt(batch, WriteOptions { is_ordered: true })
+                    );
 
                     is_new
                 };

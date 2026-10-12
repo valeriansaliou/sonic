@@ -47,7 +47,11 @@ pub(super) trait GenericRocksDbStore: GenericStore {
 
     fn lock(&self) -> &RwLock<()>;
 
-    fn write(&self, batch: rocksdb::WriteBatch) -> Result<(), rocksdb::Error> {
+    fn write(
+        &self,
+        batch: rocksdb::WriteBatch,
+        options: WriteOptions,
+    ) -> Result<(), rocksdb::Error> {
         //         struct LogHandler;
         //
         //         static COUNTER: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
@@ -86,7 +90,7 @@ pub(super) trait GenericRocksDbStore: GenericStore {
         //         drop(lock);
 
         // Configure this write
-        let write_options = self.write_options_builder().build();
+        let write_options = self.write_options_builder().build(options);
 
         // Commit this write
         self.database().write_opt(batch, &write_options)
@@ -108,7 +112,7 @@ pub(super) trait GenericRocksDbStore: GenericStore {
         batch.delete_range(&key_range.start, &key_range.end);
 
         // Commit operation to database.
-        match self.write(batch) {
+        match self.write(batch, WriteOptions { is_ordered: false }) {
             Ok(()) => {
                 self.on_batch_erase_bucket(bucket);
                 tracing::debug!("succeeded in store batch erase bucket: {bucket}");
@@ -146,10 +150,12 @@ impl RocksDbWriteOptionsBuilder {
         }
     }
 
-    fn build(&self) -> rocksdb::WriteOptions {
+    fn build(&self, options: WriteOptions) -> rocksdb::WriteOptions {
+        let WriteOptions { is_ordered } = options;
+
         let mut write_options = rocksdb::WriteOptions::default();
 
-        write_options.set_memtable_insert_hint_per_batch(true);
+        write_options.set_memtable_insert_hint_per_batch(is_ordered);
 
         // WAL enabled?
         if self.is_wal_enabled {
