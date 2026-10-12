@@ -17,7 +17,7 @@ use fst::Streamer as _;
 use hashbrown::{DefaultHashBuilder, HashMap, HashSet};
 
 use crate::store::fst::PendingAction;
-use crate::store::{Bucket, CollectionHash, Hash, StoreItemPart};
+use crate::store::{AsCollectionHash, Bucket, CollectionHash, Hash, StoreItemPart};
 use crate::store::{BucketOwned, generic::*};
 
 use super::util::*;
@@ -673,8 +673,10 @@ impl FstStoreId {
 
         Ok(Self::new(collection_hash, bucket_name))
     }
+}
 
-    pub fn as_collection_hash(&self) -> &Hash {
+impl AsCollectionHash for FstStoreId {
+    fn as_collection_hash(&self) -> &Hash {
         self.collection_hash.as_collection_hash()
     }
 }

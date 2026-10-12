@@ -90,6 +90,9 @@ pub struct ParallelBenchmarkConfig {
 
     #[serde(default)]
     pub rocksdb_memtable: Option<String>,
+
+    #[serde(default)]
+    pub preset_bulk_load: Option<serde_json::Value>,
 }
 
 impl ParallelBenchmarkConfig {
@@ -122,6 +125,7 @@ pub fn ingest_parallel<T: Ingestable>(
     nchannels: usize,
     articles_iter: impl Iterator<Item = T> + Send + 'static,
     articles_count: usize,
+    total_bytes: u64,
 ) -> IngestStats {
     const COLLECTION: &str = "wikipedia";
 
@@ -146,12 +150,10 @@ pub fn ingest_parallel<T: Ingestable>(
     {
         tracing::info!("Setting dynamic configuration…");
 
-        let mut args: Vec<String> = Vec::with_capacity(6);
+        let mut args: Vec<String> = Vec::with_capacity(4);
 
         // Temporarily disable background tasks so they don’t interfere with the batch ingestion.
-        args.push("sonic.disable_janitor_tasks".to_owned());
-        args.push("sonic.disable_fst_consolidate_task".to_owned());
-        args.push("sonic.disable_kv_flush_task".to_owned());
+        args.push("sonic.disable_all_tasks".to_owned());
 
         args.push(format!(
             "rocksdb.disable_auto_compactions={}",
@@ -162,6 +164,21 @@ pub fn ingest_parallel<T: Ingestable>(
         }
         if let Some(ref memtable) = config.rocksdb_memtable {
             args.push(format!("rocksdb.memtable={memtable}"));
+        }
+        if let Some(ref preset_bulk_load) = config.preset_bulk_load {
+            assert!((control.channel_info().caps).contains(&Box::from("preset-bulk-load")));
+
+            let mut config = preset_bulk_load.clone();
+
+            let dyn_config = serde_json::json!({ "total_bytes": total_bytes });
+
+            (config.as_object_mut().unwrap())
+                .extend(dyn_config.as_object().unwrap().clone().into_iter());
+
+            args.push(format!(
+                "preset.bulk_load({})",
+                serde_json::to_string(&config).unwrap()
+            ));
         }
 
         control.config_set(COLLECTION, &args).unwrap();

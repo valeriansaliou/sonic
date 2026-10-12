@@ -40,7 +40,7 @@ impl super::Executor {
         let _fst_read_guard = self.fst_pool.lock_read_access();
 
         let (Ok(kv_store), Ok(fst_store)) = (
-            self.kv_pool.acquire(false, collection, None, |_| {}),
+            self.kv_pool.acquire(false, collection, None),
             self.fst_pool.acquire(collection, bucket),
         ) else {
             return Err(());
@@ -344,9 +344,7 @@ impl super::Executor {
     ) -> Result<Vec<MatchWithSnippets>, ()> {
         let (oids, mut scoring_matrix) = self.query_(collection, bucket, input, options)?;
 
-        let object_store_pool = self
-            .object_store_pool
-            .acquire(false, collection, None, |_| {})?;
+        let object_store_pool = self.object_store_pool.acquire(false, collection, None)?;
 
         let Some(object_store_pool) = object_store_pool else {
             tracing::debug!(

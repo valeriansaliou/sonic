@@ -9,7 +9,7 @@ pub(crate) mod encoding;
 mod keys;
 mod merge;
 
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 use std::time::Instant;
 use std::{fmt, io};
 
@@ -17,13 +17,14 @@ use hashbrown::HashMap;
 use rocksdb::{DB, WriteBatch};
 
 use crate::store::generic::*;
-use crate::store::rocksdb::GenericRocksDbStore;
 pub use crate::store::rocksdb::pool::{GenericKvStorePool, KvStoreId};
+use crate::store::rocksdb::{GenericRocksDbStore, RocksDbWriteOptionsBuilder};
 use crate::store::types::*;
 
 use self::encoding::*;
 use self::keys::KvStoreKey;
 pub use self::keys::StoreMetaKey;
+pub use self::merge::AVERAGE_MERGE_RATIO;
 
 pub type KvStorePool = GenericKvStorePool<KvStore>;
 
@@ -32,7 +33,7 @@ pub struct KvStore {
     last_used: RwLock<Instant>,
     last_flushed: RwLock<Instant>,
     pub lock: RwLock<()>,
-    kv_store_config: Arc<crate::config::KvStoreConfig>,
+    write_options_builder: RocksDbWriteOptionsBuilder,
 
     /// Cache of `IIDIncr` per bucket, removing the need for countless reads
     /// while ingesting new data.
@@ -80,8 +81,17 @@ impl KvStore {
 
 impl<'a> KvRepositoryReadWrite<'a> {
     #[inline]
+    pub fn write_opt(
+        &self,
+        batch: WriteBatch,
+        options: crate::store::rocksdb::WriteOptions,
+    ) -> Result<(), rocksdb::Error> {
+        self.store.write(batch, options)
+    }
+
+    #[inline]
     pub fn write(&self, batch: WriteBatch) -> Result<(), rocksdb::Error> {
-        self.store.write(batch)
+        self.write_opt(batch, Default::default())
     }
 }
 
@@ -96,7 +106,7 @@ impl GenericStore for KvStore {
 }
 
 impl GenericRocksDbStore for KvStore {
-    fn new(db: DB, config: Arc<crate::config::KvStoreConfig>) -> Self {
+    fn new(db: DB, write_options_builder: RocksDbWriteOptionsBuilder) -> Self {
         let now = Instant::now();
 
         Self {
@@ -104,7 +114,7 @@ impl GenericRocksDbStore for KvStore {
             last_used: RwLock::new(now),
             last_flushed: RwLock::new(now),
             lock: RwLock::new(()),
-            kv_store_config: config,
+            write_options_builder,
             iid_incr_per_bucket: RwLock::new(HashMap::new()),
         }
     }
@@ -117,8 +127,16 @@ impl GenericRocksDbStore for KvStore {
         &self.database
     }
 
-    fn config(&self) -> &crate::config::KvStoreConfig {
-        &self.kv_store_config
+    fn override_options(
+        config: &crate::config::RocksDbDatabaseConfig,
+        dyn_config: &dyn crate::DynamicConfig,
+        options: &mut rocksdb::Options,
+    ) {
+        dyn_config.update_kv_store_options(options, config)
+    }
+
+    fn write_options_builder(&self) -> &RocksDbWriteOptionsBuilder {
+        &self.write_options_builder
     }
 
     fn last_flushed(&self) -> &RwLock<Instant> {
@@ -645,6 +663,8 @@ impl<'a> KvRepositoryReadWrite<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
 
     #[test]
@@ -652,11 +672,7 @@ mod tests {
         let kv_store_config = test_kv_store_config();
         let kv_pool = KvStorePool::new(kv_store_config);
 
-        assert!(
-            kv_pool
-                .acquire(true, "c:test:1".into(), None, |_| {})
-                .is_ok()
-        );
+        assert!(kv_pool.acquire(true, "c:test:1".into(), None).is_ok());
     }
 
     #[test]
@@ -673,7 +689,7 @@ mod tests {
         let kv_pool = KvStorePool::new(kv_store_config);
 
         let store = kv_pool
-            .acquire(true, "c:test:3".into(), None, |_| {})
+            .acquire(true, "c:test:3".into(), None)
             .unwrap()
             .unwrap();
         let action = store.to_repository_read_write("b:test:3".into());
@@ -774,9 +790,9 @@ impl fmt::Debug for KvStore {
             last_used,
             last_flushed,
             lock,
+            write_options_builder,
             // NOTE: We don’t care about the configuration,
             //   we can see it elsewhere if needed.
-            kv_store_config: _kv_store_config,
             iid_incr_per_bucket,
         } = self;
 
@@ -785,6 +801,7 @@ impl fmt::Debug for KvStore {
             .field("last_used", &AsPrettyRwLock(last_used))
             .field("last_flushed", &AsPrettyRwLock(last_flushed))
             .field("lock", &AsPrettyRwLock(lock))
+            .field("write_options_builder", write_options_builder)
             .field("iid_incr_per_bucket", &AsPrettyRwLock(iid_incr_per_bucket))
             .finish_non_exhaustive()
     }

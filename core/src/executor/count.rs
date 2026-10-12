@@ -19,7 +19,7 @@ impl super::Executor {
         //   prevents the database from being erased while using it in this block.
         let _kv_read_guard = self.kv_pool.lock_read_access();
 
-        if let Ok(kv_store) = self.kv_pool.acquire(false, collection, None, |_| {}) {
+        if let Ok(kv_store) = self.kv_pool.acquire(false, collection, None) {
             let Some(kv_store) = kv_store else {
                 tracing::debug!(
                     "collection store does not exist, consider {bucket:?} from {collection:?} empty"
@@ -53,7 +53,7 @@ impl super::Executor {
 
     /// Count objects in bucket (from KV store).
     pub fn countb(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u64, ()> {
-        let kv_store = self.kv_pool.acquire(false, collection, None, |_| {})?;
+        let kv_store = self.kv_pool.acquire(false, collection, None)?;
 
         let Some(kv_store) = kv_store else {
             tracing::debug!(

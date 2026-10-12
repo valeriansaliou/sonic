@@ -30,47 +30,42 @@ in [“Sonic’s experimental APIs”][x-api].
 
 (Each point is detailed later in this guide, this is a summary.)
 
-0. Adjust your configuration
-
-   ```toml
-   [store.kv.database]
-   # Merge medium-sized memtables into medium L0 SSTs.
-   write_buffer_size = 16_384 # 16MiB
-   min_write_buffer_number_to_merge = 4 # L0 SST ⪅ 64MiB
-   max_write_buffer_number = 64 # Do not stop writes while a flush is in progress (max 1GiB RAM usage).
-   
-   # Allow RocksDB to use more threads for background jobs.
-   parallelism = # Number of performance cores available to Sonic (server-side).
-   max_background_jobs = # parallelism + 1 (max_flushes)
-   max_subcompactions = # parallelism
-   
-   write_ahead_log = false
-   
-   max_open_files = 20 # Or anything < `ulimit -n`.
-   
-   [store.object.database]
-   # Merge medium-sized memtables into large L0 SSTs.
-   write_buffer_size = 65_536 # 64MiB
-   min_write_buffer_number_to_merge = 4 # L0 SST ⪅ 256MiB
-   max_write_buffer_number = 16 # Do not stop writes while a flush is in progress (max 1GiB RAM usage).
-   
-   # Allow RocksDB to use more threads for background jobs.
-   parallelism = # Number of performance cores available to Sonic (server-side).
-   max_background_jobs = # parallelism + 1 (max_flushes)
-   max_subcompactions = # parallelism
-   
-   write_ahead_log = false
-   
-   max_open_files = 20 # Or anything < `ulimit -n`.
-   ```
 0. Prepare for bulk ingestion:
 
    ```txt
-   CONFIG <collection> SET rocksdb.disable_auto_compactions rocksdb.unordered_write
-   CONFIG <collection> SET sonic.disable_janitor_tasks sonic.disable_fst_consolidate_task sonic.disable_kv_flush_task
+   CONFIG <collection> SET preset.bulk_load({ "cores" = 10, "l2_cache_size" = "16MiB", "fd_limit" = 256, "total_bytes" = "5GiB", "constraint": "disk_space", write_ahead_log = false })
    ```
-0. Ingest data without wasting compute.
 
+   * `cores` is the number of performance cores available to the Sonic server.
+   * `l2_cache_size` is, unsurprisingly, the L2 cache size of one of those cores.
+   * `fd_limit` is the maximum number of files Sonic can open at a time (`ulimit -n`).
+   * `total_bytes` is the total amount of data you’ll be ingesting. If you don’t know
+     the exact value upfront (e.g. if data is decompressed on the fly), aim higher.
+   * `constraint` can be `"disk_space"`, `"cpu_time"` or `null`.
+     * `"disk_space"` compresses L0 using Zstd. You’ll use less disk space during ingestion,
+       but more compute.
+     * `"cpu_time"` avoids compressing L0. Consequently, disk usage will be
+       high during ingestion, but you’ll waste less compute.
+       Use only if you have `1.5 * total_bytes` of free space available.
+     * `null` compresses L0 using LZ4. It’s a sweet spot, you should generally use it.
+   * `write_ahead_log` indicates if you want to enable the RocksDB WAL during ingestion.
+     It doesn’t have a huge impact on ingestion throughput (<10%), but you can disable
+     it if you want to save some compute.
+   * Byte amounts support passing the number of bytes as a JSON number, or as a JSON string
+     using one of those scale suffixes: `B`, `KB`, `KiB`, `MB`, `MiB`, `GB`, `GiB`, `TB`, `TiB`.
+     * Note that it doesn’t support non-integer values. For `"4.5MiB"`, use `"4500KiB"` or `4500000`.
+
+   The formula Sonic uses internally relies on heuristics, and it’s not guaranteed
+   to work every time. It _should_, but we can’t guarantee a successful ingestion.
+   Benchmarks show that no issue should happen during ingestion, no matter the scale,
+   but a wrong calculation might lead to having too many L0 SSTs, causing compaction
+   to fail.
+
+   If you end up in that state and can afford re-ingesting, increase `total_bytes`
+   or decrease `fd_limit`, then retry. If you can’t, then you should find a way to
+   merge SST files “by hand”, as the `rocksdb` crate can’t.
+
+0. Ingest data without wasting compute.
    * Use experimental flags with `PUSH`
 
      ```txt
@@ -104,7 +99,7 @@ in [“Sonic’s experimental APIs”][x-api].
 * Reset Sonic’s dynamic configuration to go back to normal operation:
 
   ```txt
-  CONFIG <collection> RESET
+  CONFIG <collection> RESET preset.bulk_load
   ```
 * (Optional) Restart Sonic with your usual production configuration.
 
@@ -155,7 +150,7 @@ condition to serve requests. It’s useless during a bulk ingestion and even get
 in our way, so you should disable it:
 
 ```txt
-CONFIG <collection> SET sonic.disable_janitor_tasks sonic.disable_fst_consolidate_task sonic.disable_kv_flush_task
+CONFIG <collection> SET sonic.disable_all_task
 ```
 
 ### `PUSH` with `NEW`
@@ -260,16 +255,16 @@ increase RocksDB’s buffer sizes. We found this to be a good fit:
 
 ```toml
 [store.kv.database]
-# Merge medium-sized memtables into medium L0 SSTs.
+# Merge small-sized memtables into large L0 SSTs.
 write_buffer_size = 16_384 # 16MiB
-min_write_buffer_number_to_merge = 4 # L0 SST ⪅ 64MiB
-max_write_buffer_number = 64 # Do not stop writes while a flush is in progress (max 1GiB RAM usage).
+min_write_buffer_number_to_merge = 64 # L0 SST ⪅ 1GiB
+max_write_buffer_number = 128 # Do not stop writes while a flush is in progress (max 2GiB RAM usage).
 
 [store.object.database]
-# Merge medium-sized memtables into large L0 SSTs.
+# Merge medium-sized memtables into medium L0 SSTs.
 write_buffer_size = 65_536 # 64MiB
 min_write_buffer_number_to_merge = 4 # L0 SST ⪅ 256MiB
-max_write_buffer_number = 16 # Do not stop writes while a flush is in progress (max 1GiB RAM usage).
+max_write_buffer_number = 8 # Do not stop writes while a flush is in progress (max 512MiB RAM usage).
 ```
 
 ### Ingest buckets in lexicographically sorted order
@@ -287,5 +282,30 @@ very easy to reach `ulimit -n`.
 Since we don’t read during a bulk ingestion, you can set `max_open_files = 20`
 under **both** `[store.kv.database]` **and** `[store.object.database]`.
 
-You can set it to anything lower than `ulimit -n`, but using `20` won’t slow
-you down so don’t bother finding a good value.
+Each Sonic collection will open two RocksDB instances (KV store and Object store),
+which means you must keep `max_open_files` lower than `ulimit -n / (2 * ncollections)`.
+<!-- NOTE: `max_open_files` **might** have a minimum value of `10` because of
+  RocksDB implementation details:
+
+  According to Claude Sonnet 5.5 Medium, 2026-10-08:
+  The table cache is sized as `max_open_files - 10`. RocksDB reserves about
+  10 for non-table files (from memory, `kNumNonTableCacheFiles` in `DBImpl`),
+  so 10 gives a table cache capacity of roughly 0. Every read has to open its
+  SST, and files are closed again as soon as nothing references them.
+
+  Later:
+  A correction first. Earlier I said `max_open_files = 10` gives a table cache
+  of roughly 0. From memory, RocksDB's option sanitizing clips finite values to
+  a minimum of 20, so your 10 was probably already 20 internally. The cache is
+  then about 10 entries (20 minus the ~10 reserved), which matches your picture
+  of rotation. Also, the table cache is sharded (`table_cache_numshardbits`,
+  default 6). With a capacity this tiny, per-shard rounding can let the real
+  total run above 10, though probably not past a few dozen.
+
+  -->
+
+You must also consider other files Sonic will open, like FST store files, so
+aim low. Using `20` won’t slow you down during ingestion so don’t bother
+finding a good value.
+
+### TODO: min_level_to_compress

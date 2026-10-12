@@ -12,8 +12,9 @@ use std::{fmt, fs};
 
 use hashbrown::{DefaultHashBuilder, HashMap};
 
+use crate::DynamicConfig;
 use crate::store::generic::*;
-use crate::store::rocksdb::GenericRocksDbStore;
+use crate::store::rocksdb::{GenericRocksDbStore, RocksDbWriteOptionsBuilder};
 use crate::store::types::*;
 
 // MARK: - Store pool
@@ -25,6 +26,7 @@ pub type KvStoreId = CollectionHash;
 pub struct GenericKvStorePool<Store> {
     pool: Arc<RwLock<HashMap<KvStoreId, Arc<Store>>>>,
     pub(super) kv_store_config: Arc<crate::config::KvStoreConfig>,
+    pub(crate) dynamic_configs: Arc<RwLock<HashMap<KvStoreId, Arc<dyn DynamicConfig>>>>,
     pub(super) store_access_lock: Arc<RwLock<()>>,
     store_acquire_lock: Arc<Mutex<()>>,
     store_flush_lock: Arc<Mutex<()>>,
@@ -35,6 +37,7 @@ impl<Store> GenericKvStorePool<Store> {
         Self {
             pool: Arc::default(),
             kv_store_config,
+            dynamic_configs: Arc::default(),
             store_access_lock: Arc::default(),
             store_acquire_lock: Arc::default(),
             store_flush_lock: Arc::default(),
@@ -112,16 +115,14 @@ impl<Store: GenericRocksDbStore> GenericStorePool for GenericKvStorePool<Store> 
     }
 
     fn proceed_erase_bucket(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u32, ()> {
-        let kv_store = self
-            .acquire(false, collection, None, |_| {})
-            .map_err(|()| {
-                tracing::error!(
-                    ?collection,
-                    ?bucket,
-                    "Failed opening {} store for bucket erasure",
-                    Self::kind()
-                )
-            })?;
+        let kv_store = self.acquire(false, collection, None).map_err(|()| {
+            tracing::error!(
+                ?collection,
+                ?bucket,
+                "Failed opening {} store for bucket erasure",
+                Self::kind()
+            )
+        })?;
 
         let Some(kv_store) = kv_store else {
             tracing::debug!(
@@ -162,7 +163,6 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         create_if_missing: bool,
         collection: StoreItemPart,
         write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<KvStoreId, Arc<Store>>>>,
-        override_options: impl FnOnce(&mut rocksdb::Options),
     ) -> Result<Option<Arc<Store>>, ()> {
         let store_id = KvStoreId::from_part(collection);
 
@@ -198,21 +198,29 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         }
 
         // Open KV database.
-        self.proceed_acquire_open(
-            store_id,
-            |pool, store_id| pool.build(store_id, override_options),
-            write_guard,
-        )
-        .map(Some)
+        self.proceed_acquire_open(store_id, |pool, store_id| pool.build(store_id), write_guard)
+            .map(Some)
     }
 
-    fn build(
-        &self,
-        store_id: &KvStoreId,
-        override_options: impl FnOnce(&mut rocksdb::Options),
-    ) -> Result<Store, ()> {
-        match self.open(store_id, override_options) {
-            Ok(db) => Ok(Store::new(db, Arc::clone(&self.kv_store_config))),
+    fn build(&self, store_id: &KvStoreId) -> Result<Store, ()> {
+        let dyn_confs = self.dynamic_configs.read().unwrap();
+        let dyn_conf_opt = dyn_confs.get(store_id);
+
+        match self.open(store_id, |opts| {
+            if let Some(dyn_conf_opt) = dyn_conf_opt {
+                Store::override_options(&self.kv_store_config.database, dyn_conf_opt.as_ref(), opts)
+            }
+        }) {
+            Ok(db) => {
+                let mut write_options_builder =
+                    RocksDbWriteOptionsBuilder::new(&self.kv_store_config.database);
+
+                if let Some(dyn_conf) = dyn_conf_opt {
+                    dyn_conf.update_write_options_builder(&mut write_options_builder);
+                }
+
+                Ok(Store::new(db, write_options_builder))
+            }
             Err(error) => {
                 tracing::error!("Failed opening {} store {store_id}: {error}", Self::kind());
 
@@ -278,7 +286,10 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         for (store_id, store) in store_pool_read.iter().filter(|(k, _)| filter(k)) {
             let not_flushed_for = store.last_flushed().read().unwrap().elapsed();
 
-            if force || not_flushed_for.as_secs() >= self.kv_store_config.database.flush_after {
+            if force
+                || (self.kv_store_config.database.flush_after)
+                    .is_some_and(|n| not_flushed_for.as_secs() >= n)
+            {
                 tracing::debug!(
                     "{} store {store_id} not flushed for {not_flushed_for:.0?}, may flush",
                     Self::kind()
@@ -431,6 +442,7 @@ impl<Store> Clone for GenericKvStorePool<Store> {
         Self {
             pool: Arc::clone(&self.pool),
             kv_store_config: Arc::clone(&self.kv_store_config),
+            dynamic_configs: Arc::clone(&self.dynamic_configs),
             store_access_lock: Arc::clone(&self.store_access_lock),
             store_acquire_lock: Arc::clone(&self.store_acquire_lock),
             store_flush_lock: Arc::clone(&self.store_flush_lock),
@@ -445,6 +457,7 @@ impl<Store: fmt::Debug> fmt::Debug for GenericKvStorePool<Store> {
         // NOTE: Deconstructing to future-proof this function.
         let Self {
             pool,
+            dynamic_configs,
             store_access_lock,
             store_acquire_lock,
             store_flush_lock,
@@ -455,6 +468,7 @@ impl<Store: fmt::Debug> fmt::Debug for GenericKvStorePool<Store> {
 
         f.debug_struct("KvStorePool")
             .field("pool", &AsPrettyRwLock(pool))
+            .field("dynamic_configs", &AsPrettyRwLock(dynamic_configs))
             .field("store_access_lock", &AsPrettyRwLock(store_access_lock))
             .field("store_acquire_lock", &AsPrettyMutex(store_acquire_lock))
             .field("store_flush_lock", &AsPrettyMutex(store_flush_lock))

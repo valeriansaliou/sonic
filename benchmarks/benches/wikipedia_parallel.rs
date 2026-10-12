@@ -110,7 +110,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     };
 
                     for _i in 0..iters_custom {
-                        let stats = ingest_parallel(&bench_name, &config, sonic_conf_path, nchannels, articles(), articles_count);
+                        let stats = ingest_parallel(&bench_name, &config, sonic_conf_path, nchannels, articles(), articles_count, total_bytes);
 
                         elapsed_total += stats.elapsed_total;
 

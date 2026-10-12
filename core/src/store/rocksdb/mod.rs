@@ -9,15 +9,15 @@ mod backup;
 pub(crate) mod pool;
 
 use std::ops::Range;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 use std::time::Instant;
 
-use crate::config::{KvStoreConfig, RocksDbDatabaseConfig};
+use crate::config::RocksDbDatabaseConfig;
 use crate::store::Bucket;
 use crate::store::generic::GenericStore;
 
 pub(super) trait GenericRocksDbStore: GenericStore {
-    fn new(db: rocksdb::DB, config: Arc<KvStoreConfig>) -> Self;
+    fn new(db: rocksdb::DB, write_options_builder: RocksDbWriteOptionsBuilder) -> Self;
 
     #[allow(
         unused_variables,
@@ -35,18 +35,23 @@ pub(super) trait GenericRocksDbStore: GenericStore {
 
     fn database(&self) -> &rocksdb::DB;
 
-    fn config(&self) -> &KvStoreConfig;
+    fn override_options(
+        config: &RocksDbDatabaseConfig,
+        dyn_config: &dyn crate::DynamicConfig,
+        options: &mut rocksdb::Options,
+    );
+
+    fn write_options_builder(&self) -> &RocksDbWriteOptionsBuilder;
 
     fn last_flushed(&self) -> &RwLock<Instant>;
 
     fn lock(&self) -> &RwLock<()>;
 
-    fn write(&self, batch: rocksdb::WriteBatch) -> Result<(), rocksdb::Error> {
-        // Configure this write
-        let mut write_options = rocksdb::WriteOptions::default();
-
-        write_options.set_memtable_insert_hint_per_batch(true);
-
+    fn write(
+        &self,
+        batch: rocksdb::WriteBatch,
+        options: WriteOptions,
+    ) -> Result<(), rocksdb::Error> {
         //         struct LogHandler;
         //
         //         static COUNTER: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
@@ -84,16 +89,8 @@ pub(super) trait GenericRocksDbStore: GenericStore {
         //         );
         //         drop(lock);
 
-        // WAL disabled?
-        if !self.config().database.write_ahead_log {
-            tracing::trace!("Ignoring WAL for {} write", Self::kind());
-
-            write_options.disable_wal(true);
-        } else {
-            tracing::trace!("Using WAL for {} write", Self::kind());
-
-            write_options.disable_wal(false);
-        }
+        // Configure this write
+        let write_options = self.write_options_builder().build(options);
 
         // Commit this write
         self.database().write_opt(batch, &write_options)
@@ -115,7 +112,7 @@ pub(super) trait GenericRocksDbStore: GenericStore {
         batch.delete_range(&key_range.start, &key_range.end);
 
         // Commit operation to database.
-        match self.write(batch) {
+        match self.write(batch, WriteOptions { is_ordered: false }) {
             Ok(()) => {
                 self.on_batch_erase_bucket(bucket);
                 tracing::debug!("succeeded in store batch erase bucket: {bucket}");
@@ -138,6 +135,64 @@ pub(super) trait GenericRocksDbStore: GenericStore {
 
         // Perform flush (in blocking mode)
         self.database().flush_opt(&flush_options)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RocksDbWriteOptionsBuilder {
+    pub is_wal_enabled: bool,
+}
+
+impl RocksDbWriteOptionsBuilder {
+    pub fn new(config: &RocksDbDatabaseConfig) -> Self {
+        Self {
+            is_wal_enabled: config.write_ahead_log.unwrap_or(true),
+        }
+    }
+
+    fn build(&self, options: WriteOptions) -> rocksdb::WriteOptions {
+        let WriteOptions { is_ordered } = options;
+
+        let mut write_options = rocksdb::WriteOptions::default();
+
+        write_options.set_memtable_insert_hint_per_batch(is_ordered);
+
+        // WAL enabled?
+        if self.is_wal_enabled {
+            tracing::trace!("Using WAL");
+
+            write_options.disable_wal(false);
+        } else {
+            tracing::trace!("Ignoring WAL");
+
+            write_options.disable_wal(true);
+        }
+
+        write_options
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct WriteOptions {
+    pub is_ordered: bool,
+}
+
+pub fn apply_compress_fallback(
+    compression_type: &Option<rocksdb::DBCompressionType>,
+    compress: &Option<bool>,
+) -> Option<rocksdb::DBCompressionType> {
+    // NOTE: `compress` is a legacy shorthand for `compression_type`, it
+    //   gets overriden if `compression_type` is also specified.
+    if compression_type.is_none()
+        && let Some(compress) = compress
+    {
+        Some(if *compress {
+            rocksdb::DBCompressionType::Zstd
+        } else {
+            rocksdb::DBCompressionType::None
+        })
+    } else {
+        *compression_type
     }
 }
 
@@ -166,6 +221,7 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
             wal_recovery_mode,
             compression_level,
             min_level_to_compress,
+            level_zero_compression_type,
             level_zero_file_num_compaction_trigger,
             level_zero_slowdown_writes_trigger,
             level_zero_stop_writes_trigger,
@@ -180,6 +236,10 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
             blob_file_size,
             enable_blob_gc,
             blob_compression_type,
+            log_level,
+            db_log_dir,
+            keep_log_file_num,
+            max_log_file_size,
         } = config;
 
         // Make database options
@@ -224,16 +284,21 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
             db_options.set_block_based_table_factory(&block_opts);
         }
 
-        // NOTE: `compress` is a legacy shorthand for `compression_type`, it
-        //   will get overriden if `compression_type` is also specified.
-        if let Some(compress) = compress {
-            db_options.set_compression_type(if *compress {
-                rocksdb::DBCompressionType::Zstd
-            } else {
-                rocksdb::DBCompressionType::None
-            });
+        let compression_type = apply_compress_fallback(compression_type, compress);
+
+        if let Some(l0_compression) = level_zero_compression_type {
+            let default_compression = compression_type.unwrap_or(rocksdb::DBCompressionType::None);
+            db_options.set_compression_per_level(&[
+                *l0_compression,
+                default_compression,
+                default_compression,
+                default_compression,
+                default_compression,
+            ]);
+        } else {
+            if_some!(db_options.set_compression_type(compression_type.as_ref()));
         }
-        if_some!(db_options.set_compression_type(compression_type));
+
         if let Some(compression_level) = compression_level {
             db_options.set_compression_options(
                 -14,
@@ -280,6 +345,10 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
         if_some!(db_options.set_max_background_jobs(max_background_jobs.as_ref()));
         if_some!(db_options.set_max_subcompactions(max_subcompactions));
 
+        if_some!(db_options.set_log_level(log_level));
+        if_some!(db_options.set_db_log_dir(db_log_dir.as_ref().as_ref()));
+        if_some!(db_options.set_keep_log_file_num(keep_log_file_num));
+        if_some!(db_options.set_max_log_file_size(max_log_file_size));
         if_some!(db_options.set_stats_dump_period_sec(stats_dump_period_sec));
 
         if_some!(db_options.increase_parallelism(parallelism));

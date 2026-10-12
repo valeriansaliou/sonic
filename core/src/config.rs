@@ -39,7 +39,9 @@ impl Config {
         }
 
         // Check 'flush_after' for KV
-        if self.store.kv.database.flush_after >= self.store.kv.pool.inactive_after {
+        if (self.store.kv.database.flush_after)
+            .is_some_and(|n| n >= self.store.kv.pool.inactive_after)
+        {
             panic!("flush_after for kv must be strictly lower than inactive_after");
         }
 
@@ -158,9 +160,11 @@ pub struct StorePoolConfig {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RocksDbDatabaseConfig {
-    pub flush_after: u64,
+    #[serde(default)]
+    pub flush_after: Option<u64>,
 
-    pub write_ahead_log: bool,
+    #[serde(default)]
+    pub write_ahead_log: Option<bool>,
 
     /// Whether or not to compress.
     ///
@@ -234,6 +238,11 @@ pub struct RocksDbDatabaseConfig {
     pub min_level_to_compress: Option<std::ffi::c_int>,
 
     #[serde(default)]
+    #[serde(alias = "level0_compression_type")]
+    #[serde(deserialize_with = "to_rocksdb_compression_type_opt")]
+    pub level_zero_compression_type: Option<rocksdb::DBCompressionType>,
+
+    #[serde(default)]
     #[serde(alias = "level0_file_num_compaction_trigger")]
     pub level_zero_file_num_compaction_trigger: Option<i32>,
 
@@ -278,6 +287,19 @@ pub struct RocksDbDatabaseConfig {
 
     #[serde(default)]
     pub enable_blob_gc: Option<bool>,
+
+    #[serde(default)]
+    #[serde(deserialize_with = "to_rocksdb_log_level_opt")]
+    pub log_level: Option<rocksdb::LogLevel>,
+
+    #[serde(default)]
+    pub db_log_dir: Option<PathBuf>,
+
+    #[serde(default)]
+    pub keep_log_file_num: Option<usize>,
+
+    #[serde(default)]
+    pub max_log_file_size: Option<usize>,
 }
 
 fn default_write_buffer_size() -> Option<usize> {
@@ -294,9 +316,10 @@ fn parse_rocksdb_compression_type<E: serde::de::Error>(
         // "snappy" => Ok(rocksdb::DBCompressionType::Snappy),
         // "zlib" => Ok(rocksdb::DBCompressionType::Zlib),
         // "bz2" => Ok(rocksdb::DBCompressionType::Bz2),
-        // "lz4" => Ok(rocksdb::DBCompressionType::Lz4),
-        // "lz4hc" => Ok(rocksdb::DBCompressionType::Lz4hc),
+        "lz4" => Ok(rocksdb::DBCompressionType::Lz4),
+        "lz4hc" => Ok(rocksdb::DBCompressionType::Lz4hc),
         "zstd" => Ok(rocksdb::DBCompressionType::Zstd),
+        #[rustfmt::skip]
         _ => Err(serde::de::Error::unknown_variant(
             str,
             &[
@@ -304,8 +327,8 @@ fn parse_rocksdb_compression_type<E: serde::de::Error>(
                 // "snappy",
                 // "zlib",
                 // "bz2",
-                // "lz4",
-                // "lz4hc",
+                "lz4",
+                "lz4hc",
                 "zstd",
             ],
         )),
@@ -356,6 +379,29 @@ where
 {
     let str: Option<String> = Deserialize::deserialize(deserializer)?;
     str.map(|s| parse_rocksdb_recovery_mode(&s)).transpose()
+}
+
+fn parse_rocksdb_log_level<E: serde::de::Error>(str: &str) -> Result<rocksdb::LogLevel, E> {
+    match str.to_ascii_lowercase().as_str() {
+        "debug" => Ok(rocksdb::LogLevel::Debug),
+        "info" => Ok(rocksdb::LogLevel::Info),
+        "warn" => Ok(rocksdb::LogLevel::Warn),
+        "error" => Ok(rocksdb::LogLevel::Error),
+        "fatal" => Ok(rocksdb::LogLevel::Fatal),
+        "header" => Ok(rocksdb::LogLevel::Header),
+        _ => Err(serde::de::Error::unknown_variant(
+            str,
+            &["debug", "info", "warn", "error", "fatal", "header"],
+        )),
+    }
+}
+
+fn to_rocksdb_log_level_opt<'de, D>(deserializer: D) -> Result<Option<rocksdb::LogLevel>, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    let str: Option<String> = Deserialize::deserialize(deserializer)?;
+    str.map(|s| parse_rocksdb_log_level(&s)).transpose()
 }
 
 #[derive(Debug, Deserialize)]

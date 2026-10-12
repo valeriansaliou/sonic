@@ -91,6 +91,7 @@ pub(super) trait StoreGenericPoolExt: GenericStorePool {
 
                 tracing::debug!("opened and cached {kind} store {store_id}");
 
+                // TODO: Debug assert no previous value.
                 store_pool_write.insert(store_id, Arc::clone(&store_box));
 
                 Ok(store_box)

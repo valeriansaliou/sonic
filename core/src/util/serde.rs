@@ -5,10 +5,10 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-pub(crate) mod none_string_as_none {
+pub mod none_string_as_none {
     use serde::{Deserialize, Deserializer, de::IntoDeserializer as _};
 
-    pub(crate) fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
     where
         D: Deserializer<'de>,
         T: Deserialize<'de>,
