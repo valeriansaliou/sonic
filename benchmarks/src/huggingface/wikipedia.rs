@@ -6,7 +6,7 @@
 
 use arrow_array::StringArray;
 
-use crate::common::huggingface::load::{HuggingfaceItem, str_col};
+use super::load::{HuggingfaceItem, str_col};
 
 #[allow(dead_code)]
 pub struct WikipediaArticle {

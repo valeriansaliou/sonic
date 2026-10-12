@@ -5,10 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 mod common;
-#[path = "common/huggingface/wikipedia.rs"]
-mod huggingface_wikipedia;
 mod parallelism_common;
-mod wikipedia_common;
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -16,13 +13,13 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use sonic_benchmarks::huggingface::NSHARDS;
+use sonic_benchmarks::huggingface::download::download_shards;
+use sonic_benchmarks::huggingface::load::iter_shard;
+use sonic_benchmarks::huggingface::wikipedia::WikipediaArticle;
+use sonic_benchmarks::prelude::*;
+use sonic_benchmarks::util::logging::{CompactThousands, HumanBytes};
 
-use crate::common::huggingface::NSHARDS;
-use crate::common::huggingface::download::download_shards;
-use crate::common::huggingface::load::iter_shard;
-use crate::common::logging::{CompactThousands, HumanBytes};
-use crate::common::prelude::*;
-use crate::huggingface_wikipedia::WikipediaArticle;
 use crate::parallelism_common::*;
 
 static SHARD_PATHS: LazyLock<Vec<PathBuf>> =

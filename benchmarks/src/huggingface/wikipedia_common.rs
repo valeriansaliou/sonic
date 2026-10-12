@@ -12,9 +12,8 @@ use std::process::Command;
 use std::sync::{LazyLock, RwLock};
 use std::time::Instant;
 
-use crate::common::spawn_guard::SpawnGuard;
-use crate::common::{Ingestable, prelude::*};
-use crate::huggingface_wikipedia::WikipediaArticle;
+use super::wikipedia::WikipediaArticle;
+use crate::prelude::*;
 
 impl Ingestable for WikipediaArticle {
     fn id(&self) -> &str {
@@ -78,11 +77,14 @@ pub struct NormalizationConfig {
 }
 
 pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
+    ctx: &mut RunContext,
+    data_path: &Path,
+    password: String,
     multiplexer: &SonicMultiplexer,
     normalization_config: NormalizationConfig,
     update_command: impl for<'a> FnOnce(&'a mut Command) -> &'a mut Command,
     articles: fn() -> Articles,
-) -> SpawnGuard {
+) {
     fn apply_normalization(
         normalization_config: NormalizationConfig,
         command: &mut Command,
@@ -109,9 +111,9 @@ pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
     let path = paths
         .entry(normalization_config)
         .or_insert_with(|| {
-            let data_path = Path::new(SONIC_DATA_PATH).join("prepopulated");
+            let data_path = data_path.join("prepopulated");
 
-            let sonic = start_sonic(None, &data_path, |command| {
+            ctx.start_sonic(&data_path, String::clone(&password), |command| {
                 apply_normalization(normalization_config, command)
             });
 
@@ -120,8 +122,8 @@ pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
                 // PUSH
                 {
                     let mut channel = SonicChannelIngestBlocking::connect(
-                        ADDR,
-                        SONIC_PASSWORD,
+                        ctx.addr,
+                        &ctx.password,
                         &multiplexer,
                     ).unwrap();
                     // println!("Opened Sonic channel");
@@ -169,7 +171,7 @@ pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
 
                 // TRIGGER consolidate
                 {
-                    let mut channel = SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
+                    let mut channel = SonicChannelControlBlocking::connect(ctx.addr, &ctx.password, &multiplexer).unwrap();
 
                     let start = Instant::now();
 
@@ -184,15 +186,15 @@ pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
                 }
             }
 
-            drop(sonic);
+            drop(ctx.sonic.take().unwrap());
 
             data_path
         })
         .as_path();
 
-    start_sonic(None, path, |command| {
+    ctx.start_sonic(path, password, |command| {
         update_command(apply_normalization(normalization_config, command))
-    })
+    });
 }
 
 pub fn size_char(len: usize) -> char {

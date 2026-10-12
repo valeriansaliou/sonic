@@ -10,6 +10,8 @@ use std::sync::LazyLock;
 
 pub mod download;
 pub mod load;
+pub mod wikipedia;
+pub mod wikipedia_common;
 
 pub static NSHARDS: LazyLock<usize> = LazyLock::new(|| {
     std::env::var("NSHARDS").map_or_else(
