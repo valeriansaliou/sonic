@@ -1,0 +1,1 @@
+preset_bulk_load = { "cores" = 10, "l2_cache_size" = "16MiB", "fd_limit" = 256, write_ahead_log = false }

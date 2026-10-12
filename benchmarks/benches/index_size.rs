@@ -48,6 +48,9 @@ fn main() {
         // .take(20000)
     };
 
+    let total_bytes = articles()
+        .map(|article| article.text.len() as u64)
+        .sum::<u64>();
     let articles_count = articles().count();
 
     let nchannels = *NCHANNELS;
@@ -70,6 +73,7 @@ fn main() {
                 nchannels,
                 articles(),
                 articles_count,
+                total_bytes,
             );
         }
     }

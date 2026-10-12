@@ -1,8 +1,14 @@
+# [normalization]
+# unicode_normalization = "none"
+
 [store.kv.database]
 # Merge small-sized memtables into large L0 SSTs.
-write_buffer_size = 16_384 # 16MiB
-min_write_buffer_number_to_merge = 2 # L0 SST ⪅ 1GiB
-max_write_buffer_number = 128 # Do not stop writes while a flush is in progress (max 2GiB RAM usage).
+write_buffer_size = 8_192 # 8MiB
+# NOTE: Merge operations have a ratio of roughly 4×.
+# NOTE: ((4.4GiB/((256-48)/2))/8MiB)*4 ⪅ 22
+min_write_buffer_number_to_merge = 22 # L0 SST ⪅ 1GiB
+# min_write_buffer_number = 2
+max_write_buffer_number = 44 # Do not stop writes while a flush is in progress (max 2GiB RAM usage).
 
 # Allow RocksDB to use a total of 10 threads for background jobs.
 parallelism = 10
@@ -20,8 +26,8 @@ write_ahead_log = false
 
 max_open_files = 20
 
-min_level_to_compress = 1
-# level_zero_compression_type = "lz4"
+# min_level_to_compress = 1
+level_zero_compression_type = "lz4"
 
 # log_level = "info"
 # stats_dump_period_sec = 5
@@ -43,10 +49,9 @@ max_subcompactions = 10
 
 write_ahead_log = false
 
-enable_blob_files = true
-min_blob_size = 0
-blob_file_size = 134_217_728 # 128MiB
-enable_blob_gc = true
+# min_blob_size = 0
+# blob_file_size = 134_217_728 # 128MiB
+# blob_compression_type = "lz4"
 
 max_open_files = 20
 
