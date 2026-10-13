@@ -214,7 +214,7 @@ pub fn ingest_parallel<T: Ingestable>(
 
                 let mut next = Instant::now();
                 'main: while print_stats.load(atomic::Ordering::Relaxed) {
-                    tracing::info!("Stats: {:?}", get_stats());
+                    tracing::info!("Stats: {}", get_stats());
 
                     // Sleep in smaller loops, so we don’t wait too much while
                     // joining this thread.
@@ -227,7 +227,7 @@ pub fn ingest_parallel<T: Ingestable>(
                         std::thread::sleep(next.duration_since(Instant::now()));
 
                         if !print_stats.load(atomic::Ordering::Relaxed) {
-                            tracing::info!("Stats: {:?}", get_stats());
+                            tracing::info!("Stats: {}", get_stats());
                             break 'main;
                         }
                     }
