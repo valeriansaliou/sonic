@@ -45,6 +45,7 @@ logging-std = []
 log = ["dep:log"]
 tracing = ["dep:tracing"]
 experimental-api = []
+auto-newline = []
 
 [[example]]
 name = "search_concurrent_async"

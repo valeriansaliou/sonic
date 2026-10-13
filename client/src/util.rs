@@ -19,7 +19,7 @@ macro_rules! make_command {
         $crate::Command::from($command)
     }};
 
-    ($format:literal $(, $arg:ident)* $(; text: $text:ident)? $(; options: $options:ident)?) => {{
+    ($format:literal $(, $arg:ident)* $(; text: $text:ident $(+ $suffix:expr)?)? $(; options: $options:ident)?) => {{
         use std::fmt::Write as _;
 
         $(let $arg: &str = $arg.as_ref();)*
@@ -54,6 +54,8 @@ macro_rules! make_command {
             prefix_len = message.len();
 
             message.push_str($crate::util::escape_str($text).as_str());
+
+            $(message.push_str($suffix);)?
 
             suffix_start = message.len();
             message.push('"');
