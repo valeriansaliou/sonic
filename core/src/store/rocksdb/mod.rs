@@ -21,17 +21,17 @@ pub trait GenericRocksDbStorePub {
 }
 
 pub(super) trait GenericRocksDbStore: GenericStore + GenericRocksDbStorePub {
+    fn open(
+        store_id: &pool::KvStoreId,
+        config: &crate::config::KvStoreConfig,
+        dyn_config: Option<&dyn crate::DynamicConfig>,
+    ) -> Result<rocksdb::DB, rocksdb::Error>;
+
     fn new(
         db: rocksdb::DB,
         write_options_builder: RocksDbWriteOptionsBuilder,
         pool_stats: Arc<Self::PoolStats>,
     ) -> Self;
-
-    #[allow(
-        unused_variables,
-        reason = "Underscoring would affect what’s generated when implementing"
-    )]
-    fn configure(db_options: &mut rocksdb::Options) {}
 
     fn bucket_key_range(bucket: &Bucket) -> Range<Vec<u8>>;
 
@@ -42,12 +42,6 @@ pub(super) trait GenericRocksDbStore: GenericStore + GenericRocksDbStorePub {
     fn on_batch_erase_bucket(&self, bucket: &Bucket) {}
 
     fn database(&self) -> &rocksdb::DB;
-
-    fn override_options(
-        config: &RocksDbDatabaseConfig,
-        dyn_config: &dyn crate::DynamicConfig,
-        options: &mut rocksdb::Options,
-    );
 
     fn write_options_builder(&self) -> &RocksDbWriteOptionsBuilder;
 

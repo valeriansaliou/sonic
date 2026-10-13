@@ -117,6 +117,26 @@ impl GenericRocksDbStorePub for KvStore {
 }
 
 impl GenericRocksDbStore for KvStore {
+    fn open(
+        store_id: &KvStoreId,
+        config: &crate::config::KvStoreConfig,
+        dyn_config: Option<&dyn crate::DynamicConfig>,
+    ) -> Result<DB, rocksdb::Error> {
+        tracing::debug!("Opening KV store {store_id}");
+
+        // Configure database options.
+        let mut db_options = rocksdb::Options::from(&config.database);
+
+        db_options.set_merge_operator_associative("kv_merge", merge::kv_merge_operator);
+
+        if let Some(dyn_config) = dyn_config {
+            dyn_config.update_kv_store_options(&mut db_options, &config.database);
+        }
+
+        // Open database connection.
+        DB::open(&db_options, config.store_path(&store_id))
+    }
+
     fn new(
         db: DB,
         write_options_builder: RocksDbWriteOptionsBuilder,
@@ -135,20 +155,8 @@ impl GenericRocksDbStore for KvStore {
         }
     }
 
-    fn configure(db_options: &mut rocksdb::Options) {
-        db_options.set_merge_operator_associative("kv_merge", merge::kv_merge_operator);
-    }
-
     fn database(&self) -> &DB {
         &self.database
-    }
-
-    fn override_options(
-        config: &crate::config::RocksDbDatabaseConfig,
-        dyn_config: &dyn crate::DynamicConfig,
-        options: &mut rocksdb::Options,
-    ) {
-        dyn_config.update_kv_store_options(options, config)
     }
 
     fn write_options_builder(&self) -> &RocksDbWriteOptionsBuilder {

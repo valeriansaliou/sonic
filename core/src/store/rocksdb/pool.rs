@@ -208,13 +208,9 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
 
     fn build(&self, store_id: &KvStoreId) -> Result<Store, ()> {
         let dyn_confs = self.dynamic_configs.read().unwrap();
-        let dyn_conf_opt = dyn_confs.get(store_id);
+        let dyn_conf_opt = dyn_confs.get(store_id).map(Arc::as_ref);
 
-        match self.open(store_id, |opts| {
-            if let Some(dyn_conf_opt) = dyn_conf_opt {
-                Store::override_options(&self.kv_store_config.database, dyn_conf_opt.as_ref(), opts)
-            }
-        }) {
+        match Store::open(store_id, &self.kv_store_config, dyn_conf_opt) {
             Ok(db) => {
                 let mut write_options_builder =
                     RocksDbWriteOptionsBuilder::new(&self.kv_store_config.database);
@@ -235,24 +231,6 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
                 Err(())
             }
         }
-    }
-
-    pub(super) fn open(
-        &self,
-        store_id: &KvStoreId,
-        override_options: impl FnOnce(&mut rocksdb::Options),
-    ) -> Result<rocksdb::DB, rocksdb::Error> {
-        tracing::debug!("Opening {} store {store_id}", Self::kind());
-
-        // Configure database options.
-        let mut db_options = rocksdb::Options::from(&self.kv_store_config.database);
-
-        Store::configure(&mut db_options);
-
-        override_options(&mut db_options);
-
-        // Open database connection.
-        rocksdb::DB::open(&db_options, self.kv_store_config.store_path(store_id))
     }
 
     pub fn close<'a>(
@@ -430,7 +408,7 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
 
 impl crate::config::KvStoreConfig {
     #[inline]
-    pub(super) fn store_path(&self, id: &KvStoreId) -> PathBuf {
+    pub(crate) fn store_path(&self, id: &KvStoreId) -> PathBuf {
         self.path.join(id.to_hex())
     }
 }

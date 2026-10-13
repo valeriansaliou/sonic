@@ -136,9 +136,13 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         match pooled_store {
             Some(store) => kv_backup_engine.create_new_backup_flush(store.database(), true),
             None => {
-                let origin_kv = self
-                    .open(&store_id, |_| {})
+                let dyn_confs = self.dynamic_configs.read().unwrap();
+                let dyn_conf_opt = dyn_confs.get(&store_id).map(Arc::as_ref);
+
+                let origin_kv = Store::open(&store_id, &self.kv_store_config, dyn_conf_opt)
                     .map_err(|_| io::Error::other("database open failure"))?;
+
+                drop(dyn_confs);
 
                 kv_backup_engine.create_new_backup(&origin_kv)
             }
