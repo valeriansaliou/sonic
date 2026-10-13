@@ -4,10 +4,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use std::str::FromStr;
-
 use crate::channel::{ChannelMode, SonicChannel};
-use crate::logging::log_warn;
 use crate::util::errors::io_error_invalid_data;
 use crate::util::{impl_channel_structs, impl_fns, make_command};
 
@@ -94,153 +91,13 @@ impl_fns!(
 
 // MARK: INFO
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ServerStats {
-    pub uptime: u32,
-    pub clients_connected: u32,
-    pub commands_total: u32,
-    pub command_latency_best: u32,
-    pub command_latency_worst: u32,
-    pub kv_open_count: u32,
-    pub fst_open_count: u32,
-    pub fst_consolidate_count: u32,
-}
-
-impl std::str::FromStr for ServerStats {
-    type Err = std::io::Error;
-
-    /// ```
-    /// use std::str::FromStr as _;
-    ///
-    /// use sonic_client::control::ServerStats;
-    ///
-    /// // Parsing works.
-    /// assert_eq!(
-    ///     ServerStats::from_str("uptime(20868) clients_connected(1) commands_total(189) command_latency_best(1) command_latency_worst(6) kv_open_count(0) fst_open_count(0) fst_consolidate_count(0)").unwrap(),
-    ///     ServerStats {
-    ///         uptime: 20868,
-    ///         clients_connected: 1,
-    ///         commands_total: 189,
-    ///         command_latency_best: 1,
-    ///         command_latency_worst: 6,
-    ///         kv_open_count: 0,
-    ///         fst_open_count: 0,
-    ///         fst_consolidate_count: 0,
-    ///     }
-    /// );
-    ///
-    /// // Missing keys raise errors.
-    /// assert!(ServerStats::from_str("uptime(20868)").is_err());
-    ///
-    /// // Unknown keys do not raise errors.
-    /// assert_eq!(
-    ///     ServerStats::from_str("uptime(20868) clients_connected(1) commands_total(189) command_latency_best(1) command_latency_worst(6) kv_open_count(0) fst_open_count(0) fst_consolidate_count(0) foo(bar)").unwrap(),
-    ///     ServerStats {
-    ///         uptime: 20868,
-    ///         clients_connected: 1,
-    ///         commands_total: 189,
-    ///         command_latency_best: 1,
-    ///         command_latency_worst: 6,
-    ///         kv_open_count: 0,
-    ///         fst_open_count: 0,
-    ///         fst_consolidate_count: 0,
-    ///     }
-    /// );
-    /// ```
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut uptime: Option<u32> = None;
-        let mut clients_connected: Option<u32> = None;
-        let mut commands_total: Option<u32> = None;
-        let mut command_latency_best: Option<u32> = None;
-        let mut command_latency_worst: Option<u32> = None;
-        let mut kv_open_count: Option<u32> = None;
-        let mut fst_open_count: Option<u32> = None;
-        let mut fst_consolidate_count: Option<u32> = None;
-
-        for arg in s.split(' ') {
-            let Some(stripped) = arg.strip_suffix(')') else {
-                return Err(io_error_invalid_data(format!(
-                    "Arg does not end with ')': {arg:?}"
-                )));
-            };
-
-            let Some((key, value)) = stripped.split_once('(') else {
-                return Err(io_error_invalid_data(format!(
-                    "Arg does not contain '(': {arg:?}"
-                )));
-            };
-
-            /// Parses the given value using `FromStr` and stores the result in
-            /// the given optional. If a value was already present, print a
-            /// warning (or panic in debug mode) as this shouldn’t happen.
-            macro_rules! update {
-                ($store:ident with $value:ident) => {{
-                    let new_value = $value.parse().map_err(io_error_invalid_data)?;
-                    let old_value = $store.replace(new_value);
-
-                    if let Some(old_value) = old_value {
-                        eprintln!("{key:?} was provided multiple times, using new value (old: {old_value}, new: {new_value}).");
-                    }
-                }};
-            }
-
-            match (key, value) {
-                ("uptime", v) => update!(uptime with v),
-                ("clients_connected", v) => update!(clients_connected with v),
-                ("commands_total", v) => update!(commands_total with v),
-                ("command_latency_best", v) => update!(command_latency_best with v),
-                ("command_latency_worst", v) => update!(command_latency_worst with v),
-                ("kv_open_count", v) => update!(kv_open_count with v),
-                ("fst_open_count", v) => update!(fst_open_count with v),
-                ("fst_consolidate_count", v) => update!(fst_consolidate_count with v),
-                _ => log_warn!("Unknown info: {arg:?}"),
-            }
-        }
-
-        macro_rules! info_not_found {
-            ($key:expr) => {
-                io_error_invalid_data(format!("Key {key:?} not found in {s:?}", key = $key))
-            };
-        }
-
-        macro_rules! ensure_defined {
-            ($val:ident) => {
-                let Some($val) = $val else {
-                    return Err(info_not_found!(stringify!($val)));
-                };
-            };
-        }
-
-        ensure_defined!(uptime);
-        ensure_defined!(clients_connected);
-        ensure_defined!(commands_total);
-        ensure_defined!(command_latency_best);
-        ensure_defined!(command_latency_worst);
-        ensure_defined!(kv_open_count);
-        ensure_defined!(fst_open_count);
-        ensure_defined!(fst_consolidate_count);
-
-        Ok(Self {
-            uptime,
-            clients_connected,
-            commands_total,
-            command_latency_best,
-            command_latency_worst,
-            kv_open_count,
-            fst_open_count,
-            fst_consolidate_count,
-        })
-    }
-}
-
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn info(&self) -> std::io::Result<ServerStats> {
-        self.inner.send(
-            make_command!("INFO"),
-            Discriminant::Result,
-            ServerStats::from_str,
-        )
+    fn info(&self) -> std::io::Result<String> {
+        self.inner
+            .send(make_command!("INFO"), Discriminant::Result, |s| {
+                Ok(s.to_owned())
+            })
     }
 );
 

@@ -18,5 +18,5 @@ fn info() {
         SonicChannelControlBlocking::connect(ctx.addr, "SecretPassword", &multiplexer).unwrap();
 
     let res = control.info().unwrap();
-    assert_eq!(res.commands_total, 2);
+    assert!(res.contains("commands_total(2)"));
 }

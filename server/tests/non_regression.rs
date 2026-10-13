@@ -52,5 +52,5 @@ fn pull_403() {
 
     let stats = control.info().unwrap();
 
-    assert_eq!(stats.clients_connected, 1);
+    assert!(stats.contains("clients_connected(1)"));
 }
