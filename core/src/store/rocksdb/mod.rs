@@ -16,6 +16,8 @@ use crate::config::RocksDbDatabaseConfig;
 use crate::store::Bucket;
 use crate::store::generic::GenericStore;
 
+pub(super) const CF_CREATED_ON_OPEN: &str = "Column families should be created on database open";
+
 pub trait GenericRocksDbStorePub {
     type PoolStats: Default;
 }
@@ -33,7 +35,7 @@ pub(super) trait GenericRocksDbStore: GenericStore + GenericRocksDbStorePub {
         pool_stats: Arc<Self::PoolStats>,
     ) -> Self;
 
-    fn bucket_key_range(bucket: &Bucket) -> Range<Vec<u8>>;
+    fn bucket_key_ranges(bucket: &Bucket) -> Vec<(Option<&'static str>, Range<Vec<u8>>)>;
 
     #[allow(
         unused_variables,
@@ -103,7 +105,7 @@ pub(super) trait GenericRocksDbStore: GenericStore + GenericRocksDbStorePub {
 
         // Generate start and end prefix for batch delete (in other words,
         // the minimum key value possible, and the highest key value possible).
-        let key_range = Self::bucket_key_range(&bucket);
+        let key_ranges = Self::bucket_key_ranges(&bucket);
 
         let mut batch = rocksdb::WriteBatch::default();
 
@@ -111,7 +113,17 @@ pub(super) trait GenericRocksDbStore: GenericStore + GenericRocksDbStorePub {
         // NOTE: RocksDB excludes end key, but Rust ranges are exclusive too
         //   ([as they should](https://devblog.remibardon.name/til/dijkstra-ranges/))
         //   so all keys will be deleted.
-        batch.delete_range(&key_range.start, &key_range.end);
+        for (cf_opt, key_range) in key_ranges {
+            if let Some(cf_name) = cf_opt {
+                let cf_handle = (self.database())
+                    .cf_handle(cf_name)
+                    .expect(CF_CREATED_ON_OPEN);
+
+                batch.delete_range_cf(cf_handle, &key_range.start, &key_range.end);
+            } else {
+                batch.delete_range(&key_range.start, &key_range.end);
+            }
+        }
 
         // Commit operation to database.
         match self.write(batch, WriteOptions { is_ordered: false }) {

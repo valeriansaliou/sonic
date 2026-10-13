@@ -96,8 +96,8 @@ impl GenericRocksDbStore for ObjectStore {
         &self.lock
     }
 
-    fn bucket_key_range(bucket: &Bucket) -> std::ops::Range<Vec<u8>> {
-        keys::prefix_range(bucket)
+    fn bucket_key_ranges(bucket: &Bucket) -> Vec<(Option<&'static str>, std::ops::Range<Vec<u8>>)> {
+        vec![(None, keys::prefix_range(bucket))]
     }
 }
 
