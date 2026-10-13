@@ -23,7 +23,7 @@ doc = true
 bytes = { version = "1", default-features = false }
 crossbeam-channel = { version = "0.5", default-features = false, features = ["std"] }
 mio = { version = "1", default-features = false, features = ["net", "os-poll"] }
-oneshot = { version = "0.2", default-features = false }
+oneshot = { version = "0.2", default-features = false, features = ["std"] }
 slab = { version = "0.4", default-features = false }
 
 # Optional dependencies
@@ -38,7 +38,7 @@ default = ["ingest", "control", "search", "sync"]
 ingest = []
 control = []
 search = []
-sync = ["oneshot/std"]
+sync = []
 async = ["oneshot/async"]
 raw-api = []
 logging-std = []
