@@ -141,6 +141,8 @@ tasks:
   util:git-add-worktree:
     internal: true
     cmds:
-      - cmd: git worktree add {{ shellQuote .WORKTREE_PATH }} {{ shellQuote .GIT_REF }}
+      - cmd: git worktree add {{ shellQuote .WORKTREE_PATH }} {{ shellQuote .GIT_HASH }}
         if: test ! -d {{ shellQuote .WORKTREE_PATH }}
-      - git -C {{ shellQuote .WORKTREE_PATH }} switch --detach {{ shellQuote .GIT_REF }}
+      - git -C {{ shellQuote .WORKTREE_PATH }} switch --detach {{ shellQuote .GIT_HASH }}
+    vars:
+      GIT_HASH: { sh: 'git rev-parse {{ shellQuote .GIT_REF }}' }
