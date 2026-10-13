@@ -18,7 +18,7 @@ use super::command::{
     ChannelCommandResponseArgs, ChannelCommandSearch,
 };
 use super::listen::CHANNEL_AVAILABLE;
-use super::statistics::{COMMAND_LATENCY_BEST, COMMAND_LATENCY_WORST, COMMANDS_TOTAL};
+use super::statistics::*;
 use crate::LINE_FEED;
 
 pub struct ChannelMessage;
@@ -159,6 +159,7 @@ pub trait ChannelMessageMode {
 
             // Increment total commands
             *COMMANDS_TOTAL.write().unwrap() += 1;
+            *COMMANDS_NEW.write().unwrap() += 1;
         }
 
         result

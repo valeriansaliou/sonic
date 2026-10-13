@@ -1353,6 +1353,7 @@ impl ChannelCommandControl {
                 let ChannelStatistics {
                     uptime,
                     clients_connected,
+                    commands_new,
                     commands_total,
                     command_latency_best,
                     command_latency_worst,
@@ -1363,7 +1364,7 @@ impl ChannelCommandControl {
 
                 Ok(vec![ChannelCommandResponse::Result(format!(
                     "uptime({uptime}) clients_connected({clients_connected}) \
-                    commands_total({commands_total}) \
+                    commands_new({commands_new}) commands_total({commands_total}) \
                     command_latency_best({command_latency_best}) command_latency_worst({command_latency_worst}) \
                     kv_open_count({kv_open_count}) \
                     fst_open_count({fst_open_count}) fst_consolidate_count({fst_consolidate_count})"

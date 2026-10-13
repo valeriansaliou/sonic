@@ -14,6 +14,7 @@ use sonic::store::kv::KvStorePool;
 static START_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
 
 pub static CLIENTS_CONNECTED: RwLock<u32> = RwLock::new(0);
+pub static COMMANDS_NEW: RwLock<u64> = RwLock::new(0);
 pub static COMMANDS_TOTAL: RwLock<u64> = RwLock::new(0);
 pub static COMMAND_LATENCY_BEST: RwLock<u32> = RwLock::new(0);
 pub static COMMAND_LATENCY_WORST: RwLock<u32> = RwLock::new(0);
@@ -22,6 +23,7 @@ pub static COMMAND_LATENCY_WORST: RwLock<u32> = RwLock::new(0);
 pub struct ChannelStatistics {
     pub uptime: u64,
     pub clients_connected: u32,
+    pub commands_new: u64,
     pub commands_total: u64,
     pub command_latency_best: u32,
     pub command_latency_worst: u32,
@@ -42,6 +44,7 @@ impl ChannelStatistics {
         ChannelStatistics {
             uptime: START_TIME.elapsed().as_secs(),
             clients_connected: *CLIENTS_CONNECTED.read().unwrap(),
+            commands_new: *COMMANDS_NEW.read().unwrap(),
             commands_total: *COMMANDS_TOTAL.read().unwrap(),
             command_latency_best: *COMMAND_LATENCY_BEST.read().unwrap(),
             command_latency_worst: *COMMAND_LATENCY_WORST.read().unwrap(),
@@ -53,6 +56,7 @@ impl ChannelStatistics {
 
     #[cfg(feature = "experimental-api")]
     pub fn reset() {
+        *COMMANDS_NEW.write().unwrap() = 0;
         *COMMAND_LATENCY_BEST.write().unwrap() = 0;
         *COMMAND_LATENCY_WORST.write().unwrap() = 0;
     }
