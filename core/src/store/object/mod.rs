@@ -9,8 +9,6 @@ use std::fmt;
 use std::sync::RwLock;
 use std::time::Instant;
 
-use hashbrown::HashMap;
-
 use crate::store::generic::*;
 pub use crate::store::rocksdb::pool::{GenericKvStorePool, KvStoreId};
 use crate::store::rocksdb::{GenericRocksDbStore, RocksDbWriteOptionsBuilder};
@@ -27,15 +25,6 @@ pub struct ObjectStore {
     last_flushed: RwLock<Instant>,
     pub lock: RwLock<()>,
     write_options_builder: RocksDbWriteOptionsBuilder,
-
-    /// Cache of `IIDIncr` per bucket, removing the need for countless reads
-    /// while ingesting new data.
-    ///
-    /// This cache is particularly effective with large memtables, which often
-    /// have bad read performance.
-    ///
-    /// In benchmarks, we saw a `~23%` throughput increase after this change.
-    iid_incr_per_bucket: RwLock<HashMap<Vec<u8>, StoreObjectIid>>,
 }
 
 impl GenericStore for ObjectStore {
@@ -58,7 +47,6 @@ impl GenericRocksDbStore for ObjectStore {
             last_flushed: RwLock::new(now),
             lock: RwLock::new(()),
             write_options_builder,
-            iid_incr_per_bucket: RwLock::new(HashMap::new()),
         }
     }
 
@@ -246,9 +234,6 @@ impl fmt::Debug for ObjectStore {
             last_flushed,
             lock,
             write_options_builder,
-            // NOTE: We don’t care about the configuration,
-            //   we can see it elsewhere if needed.
-            iid_incr_per_bucket,
         } = self;
 
         f.debug_struct("ObjectStore")
@@ -257,7 +242,6 @@ impl fmt::Debug for ObjectStore {
             .field("last_flushed", &AsPrettyRwLock(last_flushed))
             .field("lock", &AsPrettyRwLock(lock))
             .field("write_options_builder", write_options_builder)
-            .field("iid_incr_per_bucket", &AsPrettyRwLock(iid_incr_per_bucket))
             .finish_non_exhaustive()
     }
 }
