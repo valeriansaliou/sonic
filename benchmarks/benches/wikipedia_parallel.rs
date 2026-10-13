@@ -31,7 +31,7 @@ fn articles_iter() -> impl Iterator<Item = WikipediaArticle> {
 
 fn criterion_benchmark(c: &mut Criterion) {
     init_logging(
-        None,
+        Some(concat!(env!("CARGO_CRATE_NAME"), "=info")),
         LoggingOptions {
             default_log_level: tracing::Level::WARN,
             with_target: true,
