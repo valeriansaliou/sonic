@@ -19,7 +19,8 @@ use rocksdb::{DB, WriteBatch};
 use crate::store::generic::*;
 pub use crate::store::rocksdb::pool::{GenericKvStorePool, KvStoreId};
 use crate::store::rocksdb::{
-    GenericRocksDbStore, GenericRocksDbStorePub, RocksDbWriteOptionsBuilder,
+    CF_CREATED_ON_OPEN, DEFAULT_CF_NAME, GenericRocksDbStore, GenericRocksDbStorePub,
+    RocksDbWriteOptionsBuilder,
 };
 use crate::store::types::*;
 
@@ -27,6 +28,11 @@ use self::encoding::*;
 use self::keys::KvStoreKey;
 pub use self::keys::StoreMetaKey;
 pub use self::merge::AVERAGE_MERGE_RATIO;
+
+/// A column family for data which need fast access during Ingest too, not just
+/// Search. During a bulk ingestion, this column family is still flushed and
+/// compacted normally, for faster access.
+pub const READ_ON_PUSH_CF_NAME: &str = "read_on_push";
 
 pub type KvStorePool = GenericKvStorePool<KvStore>;
 
@@ -124,17 +130,57 @@ impl GenericRocksDbStore for KvStore {
     ) -> Result<DB, rocksdb::Error> {
         tracing::debug!("Opening KV store {store_id}");
 
-        // Configure database options.
-        let mut db_options = rocksdb::Options::from(&config.database);
+        let base_options = rocksdb::Options::from(&config.database);
 
-        db_options.set_merge_operator_associative("kv_merge", merge::kv_merge_operator);
+        // Configure Column Families.
+        let cf_descriptors = {
+            let cf_names = [DEFAULT_CF_NAME, READ_ON_PUSH_CF_NAME];
+
+            let mut cf_descriptors = Vec::with_capacity(1);
+
+            for cf_name in cf_names {
+                let mut cf_options = base_options.clone();
+
+                if let Some(dyn_config) = dyn_config {
+                    dyn_config.update_kv_store_cf_options(
+                        cf_name,
+                        &mut cf_options,
+                        &config.database,
+                    );
+                }
+
+                match cf_name {
+                    DEFAULT_CF_NAME => {
+                        cf_options
+                            .set_merge_operator_associative("kv_merge", merge::kv_merge_operator);
+                    }
+                    READ_ON_PUSH_CF_NAME => {
+                        // Never disable auto-compactions for this CF.
+                        cf_options.set_disable_auto_compactions(false);
+
+                        // Never delay flushes.
+                        cf_options.set_write_buffer_size(8 * 1024 * 1024);
+                        cf_options.set_min_write_buffer_number_to_merge(1);
+                        cf_options.set_max_write_buffer_number(8);
+                    }
+                    _ => {}
+                }
+
+                cf_descriptors.push(rocksdb::ColumnFamilyDescriptor::new(cf_name, cf_options));
+            }
+
+            cf_descriptors
+        };
+
+        // Configure database options.
+        let mut db_options = base_options;
 
         if let Some(dyn_config) = dyn_config {
             dyn_config.update_kv_store_options(&mut db_options, &config.database);
         }
 
         // Open database connection.
-        DB::open(&db_options, config.store_path(&store_id))
+        DB::open_cf_descriptors(&db_options, config.store_path(&store_id), cf_descriptors)
     }
 
     fn new(
@@ -172,7 +218,10 @@ impl GenericRocksDbStore for KvStore {
     }
 
     fn bucket_key_ranges(bucket: &Bucket) -> Vec<(Option<&'static str>, std::ops::Range<Vec<u8>>)> {
-        vec![(None, KvStoreKey::prefix_range(bucket))]
+        vec![
+            (None, KvStoreKey::prefix_range(bucket)),
+            (Some(READ_ON_PUSH_CF_NAME), KvStoreKey::prefix_range(bucket)),
+        ]
     }
 
     fn on_batch_erase_bucket(&self, bucket: &Bucket) {
@@ -317,7 +366,11 @@ impl<'a> KvRepositoryReadOnly<'a> {
 
         tracing::debug!("store get oid-to-iid: {store_key}");
 
-        match self.store.database.get(&store_key) {
+        let cf_handle = (self.store.database)
+            .cf_handle(READ_ON_PUSH_CF_NAME)
+            .expect(CF_CREATED_ON_OPEN);
+
+        match self.store.database.get_cf(cf_handle, &store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got oid-to-iid: {store_key} with encoded value: {value:?}");
 
@@ -554,7 +607,11 @@ impl<'a> KvRepositoryReadWrite<'a> {
 
         tracing::debug!("store set oid-to-iid: {store_key} with encoded value: {iid_encoded:?}");
 
-        batch.put(store_key, &iid_encoded)
+        let cf_handle = (self.store.database)
+            .cf_handle(READ_ON_PUSH_CF_NAME)
+            .expect(CF_CREATED_ON_OPEN);
+
+        batch.put_cf(cf_handle, store_key, &iid_encoded)
     }
 
     pub fn delete_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOid) {
@@ -562,7 +619,11 @@ impl<'a> KvRepositoryReadWrite<'a> {
 
         tracing::debug!("store delete oid-to-iid: {store_key}");
 
-        batch.delete(store_key)
+        let cf_handle = (self.store.database)
+            .cf_handle(READ_ON_PUSH_CF_NAME)
+            .expect(CF_CREATED_ON_OPEN);
+
+        batch.delete_cf(cf_handle, store_key)
     }
 
     /// IID-to-OID mapper

@@ -16,6 +16,7 @@ use crate::config::RocksDbDatabaseConfig;
 use crate::store::Bucket;
 use crate::store::generic::GenericStore;
 
+pub const DEFAULT_CF_NAME: &str = "default";
 pub(super) const CF_CREATED_ON_OPEN: &str = "Column families should be created on database open";
 
 pub trait GenericRocksDbStorePub {
@@ -273,6 +274,7 @@ impl From<&RocksDbDatabaseConfig> for rocksdb::Options {
         db_options.create_if_missing(true);
         db_options.set_use_fsync(false);
         db_options.set_compaction_style(rocksdb::DBCompactionStyle::Level);
+        db_options.create_missing_column_families(true);
 
         // Set dynamic options
         if_some!(db_options.set_write_buffer_size(write_buffer_size.map(|n| n * 1024).as_ref()));

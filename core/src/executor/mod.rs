@@ -158,6 +158,13 @@ pub trait DynamicConfig: std::fmt::Debug + std::any::Any + Send + Sync {
         config: &crate::config::RocksDbDatabaseConfig,
     );
 
+    fn update_kv_store_cf_options(
+        &self,
+        cf_name: &'static str,
+        options: &mut rocksdb::Options,
+        config: &crate::config::RocksDbDatabaseConfig,
+    );
+
     fn update_object_store_options(
         &self,
         options: &mut rocksdb::Options,

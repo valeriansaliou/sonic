@@ -1615,6 +1615,15 @@ impl sonic::executor::DynamicConfig for DynamicConfig {
         }
     }
 
+    fn update_kv_store_cf_options(
+        &self,
+        _cf_name: &'static str,
+        options: &mut sonic::rocksdb::Options,
+        config: &sonic::config::RocksDbDatabaseConfig,
+    ) {
+        self.update_kv_store_options(options, config);
+    }
+
     fn update_object_store_options(
         &self,
         options: &mut sonic::rocksdb::Options,
@@ -1802,7 +1811,7 @@ fn config_set(
     match ctx.executor.set_dynamic_conf(collection, Arc::new(config)) {
         Ok(()) => Ok(vec![ChannelCommandResponse::Ok]),
         Err(error) => {
-            tracing::error!("{error:?}");
+            tracing::error!("Error setting dynamic config: {error}");
             Err(ChannelCommandError::InternalError)
         }
     }
@@ -1874,7 +1883,7 @@ fn config_reset(
     {
         Ok(()) => Ok(vec![ChannelCommandResponse::Ok]),
         Err(error) => {
-            tracing::error!("{error:?}");
+            tracing::error!("Error resetting dynamic config: {error:?}");
             Err(ChannelCommandError::InternalError)
         }
     }
