@@ -1377,11 +1377,11 @@ impl ChannelCommandControl {
     #[cfg(feature = "experimental-api")]
     pub fn dispatch_info_reset(
         mut parts: SplitWhitespace,
-        _ctx: &ChannelMessageModeControl,
+        ctx: &ChannelMessageModeControl,
     ) -> ChannelResult {
         match parts.next() {
             None => {
-                ChannelStatistics::reset();
+                ChannelStatistics::reset(&ctx.executor);
 
                 Ok(vec![ChannelCommandResponse::Ok])
             }

@@ -14,7 +14,9 @@ use hashbrown::{DefaultHashBuilder, HashMap};
 
 use crate::DynamicConfig;
 use crate::store::generic::*;
-use crate::store::rocksdb::{GenericRocksDbStore, RocksDbWriteOptionsBuilder};
+use crate::store::rocksdb::{
+    GenericRocksDbStore, GenericRocksDbStorePub, RocksDbWriteOptionsBuilder,
+};
 use crate::store::types::*;
 
 // MARK: - Store pool
@@ -23,16 +25,17 @@ pub type KvStoreId = CollectionHash;
 
 // NOTE: This type cannot be generic over a lifetime as spawning threads would
 //   force it to be `'static`.
-pub struct GenericKvStorePool<Store> {
+pub struct GenericKvStorePool<Store: GenericRocksDbStorePub> {
     pool: Arc<RwLock<HashMap<KvStoreId, Arc<Store>>>>,
     pub(super) kv_store_config: Arc<crate::config::KvStoreConfig>,
     pub(crate) dynamic_configs: Arc<RwLock<HashMap<KvStoreId, Arc<dyn DynamicConfig>>>>,
     pub(super) store_access_lock: Arc<RwLock<()>>,
     store_acquire_lock: Arc<Mutex<()>>,
     store_flush_lock: Arc<Mutex<()>>,
+    pub stats: Arc<Store::PoolStats>,
 }
 
-impl<Store> GenericKvStorePool<Store> {
+impl<Store: GenericRocksDbStorePub> GenericKvStorePool<Store> {
     pub fn new(kv_store_config: Arc<crate::config::KvStoreConfig>) -> Self {
         Self {
             pool: Arc::default(),
@@ -41,6 +44,7 @@ impl<Store> GenericKvStorePool<Store> {
             store_access_lock: Arc::default(),
             store_acquire_lock: Arc::default(),
             store_flush_lock: Arc::default(),
+            stats: Arc::default(),
         }
     }
 
@@ -219,7 +223,11 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
                     dyn_conf.update_write_options_builder(&mut write_options_builder);
                 }
 
-                Ok(Store::new(db, write_options_builder))
+                Ok(Store::new(
+                    db,
+                    write_options_builder,
+                    Arc::clone(&self.stats),
+                ))
             }
             Err(error) => {
                 tracing::error!("Failed opening {} store {store_id}: {error}", Self::kind());
@@ -429,7 +437,7 @@ impl crate::config::KvStoreConfig {
 
 // MARK: - Boilerplate
 
-impl<Store> std::ops::Deref for GenericKvStorePool<Store> {
+impl<Store: GenericRocksDbStorePub> std::ops::Deref for GenericKvStorePool<Store> {
     type Target = RwLock<HashMap<KvStoreId, Arc<Store>>>;
 
     fn deref(&self) -> &Self::Target {
@@ -437,7 +445,7 @@ impl<Store> std::ops::Deref for GenericKvStorePool<Store> {
     }
 }
 
-impl<Store> Clone for GenericKvStorePool<Store> {
+impl<Store: GenericRocksDbStorePub> Clone for GenericKvStorePool<Store> {
     fn clone(&self) -> Self {
         Self {
             pool: Arc::clone(&self.pool),
@@ -446,11 +454,15 @@ impl<Store> Clone for GenericKvStorePool<Store> {
             store_access_lock: Arc::clone(&self.store_access_lock),
             store_acquire_lock: Arc::clone(&self.store_acquire_lock),
             store_flush_lock: Arc::clone(&self.store_flush_lock),
+            stats: Arc::clone(&self.stats),
         }
     }
 }
 
-impl<Store: fmt::Debug> fmt::Debug for GenericKvStorePool<Store> {
+impl<Store: GenericRocksDbStorePub + fmt::Debug> fmt::Debug for GenericKvStorePool<Store>
+where
+    Store::PoolStats: fmt::Debug,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use crate::util::fmt::{AsPrettyMutex, AsPrettyRwLock};
 
@@ -461,6 +473,7 @@ impl<Store: fmt::Debug> fmt::Debug for GenericKvStorePool<Store> {
             store_access_lock,
             store_acquire_lock,
             store_flush_lock,
+            stats,
             // NOTE: We don’t care about the configuration,
             //   we can see it elsewhere if needed.
             kv_store_config: _kv_store_config,
@@ -472,6 +485,7 @@ impl<Store: fmt::Debug> fmt::Debug for GenericKvStorePool<Store> {
             .field("store_access_lock", &AsPrettyRwLock(store_access_lock))
             .field("store_acquire_lock", &AsPrettyMutex(store_acquire_lock))
             .field("store_flush_lock", &AsPrettyMutex(store_flush_lock))
+            .field("stats", &stats)
             .finish_non_exhaustive()
     }
 }

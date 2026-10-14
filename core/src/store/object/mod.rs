@@ -6,12 +6,14 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use std::fmt;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use crate::store::generic::*;
 pub use crate::store::rocksdb::pool::{GenericKvStorePool, KvStoreId};
-use crate::store::rocksdb::{GenericRocksDbStore, RocksDbWriteOptionsBuilder};
+use crate::store::rocksdb::{
+    GenericRocksDbStore, GenericRocksDbStorePub, RocksDbWriteOptionsBuilder,
+};
 use crate::store::types::*;
 use crate::util::impl_int_enum;
 
@@ -37,8 +39,16 @@ impl GenericStore for ObjectStore {
     }
 }
 
+impl GenericRocksDbStorePub for ObjectStore {
+    type PoolStats = ();
+}
+
 impl GenericRocksDbStore for ObjectStore {
-    fn new(db: rocksdb::DB, write_options_builder: RocksDbWriteOptionsBuilder) -> Self {
+    fn new(
+        db: rocksdb::DB,
+        write_options_builder: RocksDbWriteOptionsBuilder,
+        _pool_stats: Arc<Self::PoolStats>,
+    ) -> Self {
         let now = Instant::now();
 
         Self {

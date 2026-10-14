@@ -9,7 +9,7 @@ pub(crate) mod encoding;
 mod keys;
 mod merge;
 
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use std::{fmt, io};
 
@@ -18,7 +18,9 @@ use rocksdb::{DB, WriteBatch};
 
 use crate::store::generic::*;
 pub use crate::store::rocksdb::pool::{GenericKvStorePool, KvStoreId};
-use crate::store::rocksdb::{GenericRocksDbStore, RocksDbWriteOptionsBuilder};
+use crate::store::rocksdb::{
+    GenericRocksDbStore, GenericRocksDbStorePub, RocksDbWriteOptionsBuilder,
+};
 use crate::store::types::*;
 
 use self::encoding::*;
@@ -27,6 +29,9 @@ pub use self::keys::StoreMetaKey;
 pub use self::merge::AVERAGE_MERGE_RATIO;
 
 pub type KvStorePool = GenericKvStorePool<KvStore>;
+
+#[derive(Debug, Default)]
+pub struct KvStorePoolStats {}
 
 pub struct KvStore {
     database: DB,
@@ -43,6 +48,8 @@ pub struct KvStore {
     ///
     /// In benchmarks, we saw a `~23%` throughput increase after this change.
     iid_incr_per_bucket: RwLock<HashMap<Vec<u8>, IidIncr>>,
+
+    pool_stats: Arc<KvStorePoolStats>,
 }
 
 pub struct KvRepositoryReadOnly<'a> {
@@ -105,8 +112,16 @@ impl GenericStore for KvStore {
     }
 }
 
+impl GenericRocksDbStorePub for KvStore {
+    type PoolStats = KvStorePoolStats;
+}
+
 impl GenericRocksDbStore for KvStore {
-    fn new(db: DB, write_options_builder: RocksDbWriteOptionsBuilder) -> Self {
+    fn new(
+        db: DB,
+        write_options_builder: RocksDbWriteOptionsBuilder,
+        pool_stats: Arc<Self::PoolStats>,
+    ) -> Self {
         let now = Instant::now();
 
         Self {
@@ -116,6 +131,7 @@ impl GenericRocksDbStore for KvStore {
             lock: RwLock::new(()),
             write_options_builder,
             iid_incr_per_bucket: RwLock::new(HashMap::new()),
+            pool_stats,
         }
     }
 
@@ -794,6 +810,7 @@ impl fmt::Debug for KvStore {
             // NOTE: We don’t care about the configuration,
             //   we can see it elsewhere if needed.
             iid_incr_per_bucket,
+            pool_stats,
         } = self;
 
         f.debug_struct("KvStore")
@@ -803,6 +820,7 @@ impl fmt::Debug for KvStore {
             .field("lock", &AsPrettyRwLock(lock))
             .field("write_options_builder", write_options_builder)
             .field("iid_incr_per_bucket", &AsPrettyRwLock(iid_incr_per_bucket))
+            .field("pool_stats", &pool_stats)
             .finish_non_exhaustive()
     }
 }

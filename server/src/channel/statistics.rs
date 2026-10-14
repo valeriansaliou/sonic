@@ -55,7 +55,7 @@ impl ChannelStatistics {
     }
 
     #[cfg(feature = "experimental-api")]
-    pub fn reset() {
+    pub fn reset(_executor: &sonic::Executor) {
         *COMMANDS_NEW.write().unwrap() = 0;
         *COMMAND_LATENCY_BEST.write().unwrap() = 0;
         *COMMAND_LATENCY_WORST.write().unwrap() = 0;

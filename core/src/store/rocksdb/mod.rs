@@ -9,15 +9,23 @@ mod backup;
 pub(crate) mod pool;
 
 use std::ops::Range;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use crate::config::RocksDbDatabaseConfig;
 use crate::store::Bucket;
 use crate::store::generic::GenericStore;
 
-pub(super) trait GenericRocksDbStore: GenericStore {
-    fn new(db: rocksdb::DB, write_options_builder: RocksDbWriteOptionsBuilder) -> Self;
+pub trait GenericRocksDbStorePub {
+    type PoolStats: Default;
+}
+
+pub(super) trait GenericRocksDbStore: GenericStore + GenericRocksDbStorePub {
+    fn new(
+        db: rocksdb::DB,
+        write_options_builder: RocksDbWriteOptionsBuilder,
+        pool_stats: Arc<Self::PoolStats>,
+    ) -> Self;
 
     #[allow(
         unused_variables,
