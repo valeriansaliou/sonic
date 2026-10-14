@@ -41,6 +41,12 @@ pub const READ_ON_PUSH_CF_NAME: &str = "read_on_push";
 /// See [Issue #435 “perf: Store `IID-To-Terms` in a separate column family with no compression”](https://github.com/valeriansaliou/sonic/issues/435) for context.
 pub const INCOMPRESSIBLE_CF_NAME: &str = "incompressible";
 
+const CF_NAMES: &[&str] = &[
+    DEFAULT_CF_NAME,
+    READ_ON_PUSH_CF_NAME,
+    INCOMPRESSIBLE_CF_NAME,
+];
+
 pub type KvStorePool = GenericKvStorePool<KvStore>;
 
 #[derive(Debug, Default)]
@@ -141,15 +147,9 @@ impl GenericRocksDbStore for KvStore {
 
         // Configure Column Families.
         let cf_descriptors = {
-            let cf_names = [
-                DEFAULT_CF_NAME,
-                READ_ON_PUSH_CF_NAME,
-                INCOMPRESSIBLE_CF_NAME,
-            ];
-
             let mut cf_descriptors = Vec::with_capacity(1);
 
-            for cf_name in cf_names {
+            for &cf_name in CF_NAMES {
                 let mut cf_options = base_options.clone();
 
                 if let Some(dyn_config) = dyn_config {
@@ -237,13 +237,12 @@ impl GenericRocksDbStore for KvStore {
         &self.lock
     }
 
-    #[rustfmt::skip]
     fn bucket_key_ranges(bucket: &Bucket) -> Vec<(Option<&'static str>, std::ops::Range<Vec<u8>>)> {
-        vec![
-            (None, KvStoreKey::prefix_range(bucket)),
-            (Some(READ_ON_PUSH_CF_NAME), KvStoreKey::prefix_range(bucket)),
-            (Some(INCOMPRESSIBLE_CF_NAME), KvStoreKey::prefix_range(bucket)),
-        ]
+        let prefix_range = KvStoreKey::prefix_range(bucket);
+
+        (CF_NAMES.iter())
+            .map(|&cf_name| (Some(cf_name), prefix_range.clone()))
+            .collect::<Vec<_>>()
     }
 
     fn on_batch_erase_bucket(&self, bucket: &Bucket) {
