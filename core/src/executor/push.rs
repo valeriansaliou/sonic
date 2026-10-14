@@ -27,7 +27,7 @@ impl super::Executor {
         &self,
         collection: StoreItemPart,
         bucket: Bucket,
-        oid: StoreObjectOid,
+        object_oid: StoreObjectOid,
         input: PreprocessorOutput,
         options: PushOptions,
     ) -> Result<(), ()> {
@@ -58,7 +58,7 @@ impl super::Executor {
                 }
 
                 *multipart_context = Some(MultipartPushContext {
-                    oid: oid.to_string(),
+                    oid: object_oid.to_string(),
                     terms,
                     capacity: options.capacity,
                     original_text,
@@ -71,7 +71,7 @@ impl super::Executor {
             None => {}
 
             // Received multipart chunk: update multipart context.
-            Some(ref mut ctx) if ctx.oid.as_str() == oid.as_str() => {
+            Some(ref mut ctx) if ctx.oid.as_str() == object_oid.as_str() => {
                 if ctx.capacity.is_none() {
                     ctx.terms.reserve(input.tokens().len());
                     ctx.terms.reserve(input.tokens().len());
@@ -143,7 +143,7 @@ impl super::Executor {
             Some(ref ctx) => {
                 // Update KV store
                 let is_new = {
-                    let (iid, is_new) = (kv_repo.get_or_assign_iid(oid))
+                    let (iid, is_new) = (kv_repo.get_or_assign_iid(object_oid))
                         .map_err(|error| tracing::error!("Error getting IID: {error}"))?;
 
                     let mut batch = WriteBatch::default();
@@ -182,9 +182,13 @@ impl super::Executor {
 
                     // Store original text
                     if is_new {
-                        object_repo.put_object_original(oid, &ctx.original_text, &mut batch);
+                        object_repo.put_object_original(object_oid, &ctx.original_text, &mut batch);
                     } else {
-                        object_repo.push_object_original(oid, &ctx.original_text, &mut batch);
+                        object_repo.push_object_original(
+                            object_oid,
+                            &ctx.original_text,
+                            &mut batch,
+                        );
                     }
 
                     executor_ensure_op!(object_repo.write(batch));
@@ -211,7 +215,7 @@ impl super::Executor {
 
                 // Update KV store
                 let is_new = {
-                    let (iid, is_new) = (kv_repo.get_or_assign_iid(oid))
+                    let (iid, is_new) = (kv_repo.get_or_assign_iid(object_oid))
                         .map_err(|error| tracing::error!("Error getting IID: {error}"))?;
 
                     let mut batch = WriteBatch::default();
@@ -263,9 +267,17 @@ impl super::Executor {
 
                     // Store original text
                     if is_new {
-                        object_repo.put_object_original(oid, input.original_text(), &mut batch);
+                        object_repo.put_object_original(
+                            object_oid,
+                            input.original_text(),
+                            &mut batch,
+                        );
                     } else {
-                        object_repo.push_object_original(oid, input.original_text(), &mut batch);
+                        object_repo.push_object_original(
+                            object_oid,
+                            input.original_text(),
+                            &mut batch,
+                        );
                     }
 
                     executor_ensure_op!(object_repo.write(batch));
