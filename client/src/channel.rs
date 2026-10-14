@@ -470,7 +470,11 @@ fn split_on_whitespace(s: &str, n: usize) -> (&str, &str) {
     if let Some(i) = (chars().skip(1))
         .zip(chars())
         .find_map(|((i1, c1), (i2, c2))| match (c1, c2) {
-            ('\\', 'n' | 'r') => Some(i1),
+            // FIX: Do not split before an escaped newline at the very start of `s`,
+            //   as it would yield an empty head (and cause callers to loop forever).
+            ('\\', 'n' | 'r') if start + i1 > 0 => Some(i1),
+            // FIX: Do not break escape sequences.
+            ('\\', _) => None,
             _ if c2.is_ascii_whitespace() => Some(i2),
             _ => None,
         })
@@ -532,6 +536,14 @@ mod tests {
         //
         // This is a non-regression test.
         assert_eq!(split_on_whitespace(" abcdefgh", 4), (" ab", "cdefgh"));
+
+        // This is also a non-regression test, as the above test wasn’t
+        // sufficient to catch a bug caused by newline escaping.
+        assert_eq!(split_on_whitespace(r"\nabcdefgh", 5), (r"\nab", "cdefgh"));
+
+        // Also make sure escapes stay with their escape sequence, even if it’s
+        // a whitespace.
+        assert_eq!(split_on_whitespace(r"\ abcdefgh", 5), (r"\ ab", "cdefgh"));
 
         // Split on escaped newlines (`escape_str` is ran before `split_on_whitespace`).
         let text = r"A list:\n\nAcaciapora\nAcalepha\nAcanthastrea\nAcanthocyathus";
