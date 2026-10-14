@@ -31,7 +31,7 @@ impl super::Executor {
         &self,
         collection: StoreItemPart,
         bucket: Bucket,
-        oid: StoreObjectOid,
+        object_oid: StoreObjectOid,
         input: PreprocessorOutput,
         options: PushOptions,
     ) -> Result<(), ()> {
@@ -59,7 +59,7 @@ impl super::Executor {
                 }
 
                 *multipart_context = Some(MultipartPushContext {
-                    oid: oid.to_string(),
+                    oid: object_oid.to_string(),
                     // `NEW` in any multipart chunk is considered `NEW` on commit.
                     assume_new: options.assume_new,
                     terms,
@@ -74,7 +74,7 @@ impl super::Executor {
             None => {}
 
             // Received multipart chunk: update multipart context.
-            Some(ref mut ctx) if ctx.oid.as_str() == oid.as_str() => {
+            Some(ref mut ctx) if ctx.oid.as_str() == object_oid.as_str() => {
                 // `NEW` in any multipart chunk is considered `NEW` on commit.
                 ctx.assume_new |= options.assume_new;
 
@@ -201,7 +201,7 @@ impl super::Executor {
                     let mut batch = WriteBatch::default();
 
                     let (iid, is_new) = get_iid(
-                        oid,
+                        object_oid,
                         ctx.assume_new,
                         &kv_repo,
                         &mut batch,
@@ -245,9 +245,13 @@ impl super::Executor {
 
                     // Store original text
                     if is_new {
-                        object_repo.put_object_original(oid, &ctx.original_text, &mut batch);
+                        object_repo.put_object_original(object_oid, &ctx.original_text, &mut batch);
                     } else {
-                        object_repo.push_object_original(oid, &ctx.original_text, &mut batch);
+                        object_repo.push_object_original(
+                            object_oid,
+                            &ctx.original_text,
+                            &mut batch,
+                        );
                     }
 
                     executor_ensure_op!(object_repo.write(batch));
@@ -283,7 +287,7 @@ impl super::Executor {
                     let mut batch = WriteBatch::default();
 
                     let (iid, is_new) = get_iid(
-                        oid,
+                        object_oid,
                         options.assume_new,
                         &kv_repo,
                         &mut batch,
@@ -332,9 +336,17 @@ impl super::Executor {
 
                     // Store original text
                     if is_new {
-                        object_repo.put_object_original(oid, input.original_text(), &mut batch);
+                        object_repo.put_object_original(
+                            object_oid,
+                            input.original_text(),
+                            &mut batch,
+                        );
                     } else {
-                        object_repo.push_object_original(oid, input.original_text(), &mut batch);
+                        object_repo.push_object_original(
+                            object_oid,
+                            input.original_text(),
+                            &mut batch,
+                        );
                     }
 
                     executor_ensure_op!(object_repo.write(batch));
