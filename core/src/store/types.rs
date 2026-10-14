@@ -43,7 +43,7 @@ impl From<u64> for StoreObjectIid {
     }
 }
 
-// MARK: OID
+// MARK: Object OID
 
 #[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -55,6 +55,28 @@ crate::util::impl_transparent_wrapper_utils!(From for StoreObjectOid<'a>(StoreIt
 crate::util::impl_transparent_wrapper_utils!(Debug for StoreObjectOid<'a>(StoreItemPart<'a>));
 
 impl<'a> StoreObjectOid<'a> {
+    #[allow(
+        clippy::should_implement_trait,
+        reason = "FromStr doesn’t support lifetimes"
+    )]
+    pub(crate) fn from_str(part: &'a str) -> Result<Self, ()> {
+        match StoreItemPart::from_str(part) {
+            Ok(part) => Ok(Self(part)),
+            Err(()) => Err(()),
+        }
+    }
+}
+
+// MARK: Fragment OID
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct FragmentOid<'a>(StoreItemPart<'a>);
+
+crate::util::impl_transparent_wrapper_utils!(Deref for FragmentOid<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(From for FragmentOid<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(Debug for FragmentOid<'a>(StoreItemPart<'a>));
+
+impl<'a> FragmentOid<'a> {
     #[allow(
         clippy::should_implement_trait,
         reason = "FromStr doesn’t support lifetimes"
@@ -235,6 +257,7 @@ pub enum StoreItemError {
     InvalidCollection,
     InvalidBucket,
     InvalidObject,
+    InvalidFragment,
 }
 
 impl StoreItemBuilder {
@@ -284,6 +307,30 @@ impl StoreItemBuilder {
             (_, Err(_), _) => Err(StoreItemError::InvalidBucket),
             (_, _, Err(_)) => Err(StoreItemError::InvalidObject),
         }
+    }
+
+    pub fn from_depth_4<'a>(
+        collection: &'a str,
+        bucket: &'a str,
+        object: &'a str,
+        fragment: Option<&'a str>,
+    ) -> Result<
+        (
+            StoreItemPart<'a>,
+            Bucket<'a>,
+            StoreObjectOid<'a>,
+            Option<FragmentOid<'a>>,
+        ),
+        StoreItemError,
+    > {
+        let (collection, bucket, object) = Self::from_depth_3(collection, bucket, object)?;
+
+        let fragment = fragment
+            .map(FragmentOid::from_str)
+            .transpose()
+            .map_err(|()| StoreItemError::InvalidFragment)?;
+
+        Ok((collection, bucket, object, fragment))
     }
 }
 
