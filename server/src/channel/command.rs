@@ -869,11 +869,6 @@ impl ChannelCommandIngest {
                     })
                 }
             }
-            #[cfg(feature = "experimental-api")]
-            _ => Err(ChannelCommandError::InvalidFormat(
-                "PUSH <collection> <bucket> <object> \"<text>\" [LANG(<locale>)]? [NEW]? [INCOMPLETE]? [CAPACITY(<len>)]?",
-            )),
-            #[cfg(not(feature = "experimental-api"))]
             _ => Err(ChannelCommandError::InvalidFormat(
                 "PUSH <collection> <bucket> <object> \"<text>\" [LANG(<locale>)]?",
             )),
