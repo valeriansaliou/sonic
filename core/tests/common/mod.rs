@@ -46,22 +46,19 @@ pub(crate) mod item_ref {
 }
 
 macro_rules! exec {
-    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $(LANG($lang:expr))? NEW) => {
-        exec!(internal_ $executor -> PUSH $collection $bucket $oid $text false true $(LANG($lang))?)
-    };
-    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $(LANG($lang:expr))? INCOMPLETE) => {
-        exec!(internal_ $executor -> PUSH $collection $bucket $oid $text true false $(LANG($lang))?)
-    };
-    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $(LANG($lang:expr))?) => {
-        exec!(internal_ $executor -> PUSH $collection $bucket $oid $text false false $(LANG($lang))?)
-    };
-    (internal_ $executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $assume_new:ident $is_incomplete:ident $(LANG($lang:expr))?) => {{
+    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $(LANG($lang:expr))? $(; $($standalone_meta:ident)+)?) => {{
+        let mut additional_meta = concat!($($(" ", stringify!($standalone_meta),)+)? " ");
+
+        let assume_new = additional_meta.contains(" NEW ");
+        let is_incomplete = additional_meta.contains(" INCOMPLETE ");
+
+        // Remove additional space added for search purposes.
+        additional_meta = &additional_meta[..(additional_meta.len() - 1)];
+
         #[rustfmt::skip]
         $executor.log(format!(
-            "PUSH {:?} {:?} {:?} {:?}{}{}{}",
+            "PUSH {:?} {:?} {:?} {:?}{}{additional_meta}",
             $collection, $bucket, $oid, $text, exec!(internal_ lang_txt $($lang)?),
-            if $assume_new { " NEW" } else { "" },
-            if $is_incomplete { " INCOMPLETE" } else { "" }
         ));
         let (c, b, o) = crate::common::object_ref!($collection, $bucket, $oid);
         let preprocessor = sonic::lexer::preprocessor::Preprocessor::new(
@@ -72,8 +69,8 @@ macro_rules! exec {
             true,
         );
         let options = sonic::executor::PushOptions {
-            assume_new: $assume_new,
-            is_incomplete: $is_incomplete,
+            assume_new,
+            is_incomplete,
             ..Default::default()
         };
 
