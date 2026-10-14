@@ -9,6 +9,7 @@
 pub(crate) mod itertools;
 pub(crate) mod serde;
 
+#[cfg(any(feature = "experimental-api", test))]
 pub(super) fn split_leading_digits(s: &str) -> (&str, &str) {
     let split_index = (s.char_indices())
         .find_map(|(i, c)| (!c.is_ascii_digit()).then_some(i))

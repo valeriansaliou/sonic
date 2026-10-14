@@ -118,7 +118,7 @@ impl Tasker {
         // #2: Others
         self.kv_pool.flush(false, |store_id| {
             let is_enabled = (dynamic_conf_store_read_guard.get(store_id))
-                .map_or(true, |conf| conf.is_kv_flush_task_enabled());
+                .is_none_or(|conf| conf.is_kv_flush_task_enabled());
             if !is_enabled {
                 tracing::info!("Not running flush task for KV store {store_id:?}: {TASK_DISABLED}");
             }
@@ -126,7 +126,7 @@ impl Tasker {
         });
         self.fst_pool.consolidate(false, |store_id| {
             let is_enabled = (dynamic_conf_store_read_guard.get(store_id))
-                .map_or(true, |conf| conf.is_fst_consolidate_task_enabled());
+                .is_none_or(|conf| conf.is_fst_consolidate_task_enabled());
             if !is_enabled {
                 tracing::info!(
                     "Not running consolidate task for FST store {store_id:?}: {TASK_DISABLED}"
@@ -136,7 +136,7 @@ impl Tasker {
         });
         self.object_store_pool.flush(false, |store_id| {
             let is_enabled = (dynamic_conf_store_read_guard.get(store_id))
-                .map_or(true, |conf| conf.is_kv_flush_task_enabled());
+                .is_none_or(|conf| conf.is_kv_flush_task_enabled());
             if !is_enabled {
                 tracing::info!(
                     "Not running flush task for Object store {store_id:?}: {TASK_DISABLED}"

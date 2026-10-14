@@ -11,7 +11,6 @@ use rand::distr::Alphanumeric;
 use sonic::lexer::preprocessor::Preprocessor;
 use sonic::lexer::to_rework::TokenLexerMode;
 use sonic::store::StoreItemBuilder;
-use sonic::store::kv::AVERAGE_MERGE_RATIO;
 use std::fmt;
 use std::path::Path;
 use std::str::{self, SplitWhitespace};
@@ -1423,6 +1422,7 @@ impl ChannelCommandControl {
     }
 }
 
+#[cfg(feature = "experimental-api")]
 #[derive(Debug, Default, Clone, Copy)]
 struct DynamicConfig {
     bulk_load_preset_options: Option<BulkLoadPresetOptions>,
@@ -1430,6 +1430,7 @@ struct DynamicConfig {
     rocksdb: DynamicConfigRocksDb,
 }
 
+#[cfg(feature = "experimental-api")]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct DynamicConfigSonic {
     disable_janitor_tasks: Option<bool>,
@@ -1437,6 +1438,7 @@ struct DynamicConfigSonic {
     disable_kv_flush_task: Option<bool>,
 }
 
+#[cfg(feature = "experimental-api")]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct DynamicConfigRocksDb {
     disable_auto_compactions: Option<bool>,
@@ -1444,12 +1446,14 @@ struct DynamicConfigRocksDb {
     memtable: Option<RocksDbMemtable>,
 }
 
+#[cfg(feature = "experimental-api")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RocksDbMemtable {
     Default,
     Vector,
 }
 
+#[cfg(feature = "experimental-api")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1458,9 +1462,12 @@ enum BulkLoadConstraint {
     CpuTime,
 }
 
+#[cfg(feature = "experimental-api")]
 const MEGA: u8 = 6;
+#[cfg(feature = "experimental-api")]
 const TERA: u8 = 12;
 
+#[cfg(feature = "experimental-api")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[derive(serde::Deserialize)]
 struct BulkLoadPresetOptions {
@@ -1481,6 +1488,7 @@ struct BulkLoadPresetOptions {
     write_ahead_log: Option<bool>,
 }
 
+#[cfg(feature = "experimental-api")]
 impl sonic::executor::DynamicConfig for DynamicConfig {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -1535,7 +1543,7 @@ impl sonic::executor::DynamicConfig for DynamicConfig {
             options.set_max_open_files(20);
             let min_write_buffer_number_to_merge: i32 = i32::try_from(
                 ((total_bytes.value() / max_l0_files) / u64::from(write_buffer_size))
-                    .saturating_mul(AVERAGE_MERGE_RATIO as u64),
+                    .saturating_mul(sonic::store::kv::AVERAGE_MERGE_RATIO as u64),
             )
             .unwrap_or(i32::MAX);
             options.set_min_write_buffer_number_to_merge(min_write_buffer_number_to_merge);

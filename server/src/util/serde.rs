@@ -4,12 +4,11 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use std::str::FromStr;
-
-use serde::Deserialize;
-
+#[cfg(feature = "experimental-api")]
 pub(crate) mod byte_amount {
-    use super::*;
+    use std::str::FromStr;
+
+    use serde::Deserialize;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub(crate) struct ByteAmount<const MAX_SCALE: u8, N>(N);
