@@ -806,73 +806,69 @@ impl ChannelCommandIngest {
         mut parts: SplitWhitespace,
         ctx: &ChannelMessageModeIngest,
     ) -> ChannelResult {
-        match (
-            parts.next(),
-            parts.next(),
-            parts.next(),
-            ChannelCommandBase::parse_text_parts(&mut parts),
-        ) {
-            (Some(collection), Some(bucket), Some(object), Some(text)) => {
-                tracing::debug!(
-                    "dispatching ingest push in collection: {}, bucket: {} and object: {}",
-                    collection,
-                    bucket,
-                    object
-                );
-                tracing::debug!("ingest push has text: {}", text);
+        let invalid_format = || {
+            ChannelCommandError::InvalidFormat(
+                r#"PUSH <collection> <bucket> <object> "<text>" [LANG(<locale>)]?"#,
+            )
+        };
 
-                // Define push parameters
-                let mut push_params = (None, PushOptions::default());
+        let (Some(collection), Some(bucket), Some(object)) =
+            (parts.next(), parts.next(), parts.next())
+        else {
+            return Err(invalid_format());
+        };
 
-                // Parse meta parts (meta comes after text; extract meta parts second)
-                let mut last_meta_err = None;
+        let Some(text) = ChannelCommandBase::parse_text_parts(&mut parts) else {
+            return Err(invalid_format());
+        };
 
-                while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
-                {
-                    if let Err(parse_err) = Self::handle_push_meta(meta_result, &mut push_params) {
-                        last_meta_err = Some(parse_err);
-                    }
-                }
+        tracing::debug!(
+            "dispatching ingest push in collection: {}, bucket: {} and object: {}",
+            collection,
+            bucket,
+            object
+        );
+        tracing::debug!("ingest push has text: {}", text);
 
-                let (push_lang, push_options) = push_params;
+        // Define push parameters
+        let mut push_params = (None, PushOptions::default());
 
-                if let Some(err) = last_meta_err {
-                    Err(err)
-                } else {
-                    tracing::debug!(
-                        "will push for text: {} with hinted locale: <{:?}>",
-                        text,
-                        push_lang
-                    );
+        // Parse meta parts (meta comes after text; extract meta parts second)
+        let mut last_meta_err = None;
 
-                    let (collection, bucket, oid) = StoreItemBuilder::from_depth_3(
-                        collection, bucket, object,
-                    )
-                    .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
-
-                    // Commit 'push' query
-                    ChannelCommandBase::commit_ok_operation(move || {
-                        let should_cleanup =
-                            TokenLexerMode::from_query_lang(&push_lang).should_cleanup();
-                        let preprocessor = Preprocessor::new(
-                            *ctx.tokenization_config,
-                            *ctx.normalization_config,
-                            ctx.stopwords_config.clone(),
-                            should_cleanup,
-                            should_cleanup,
-                        );
-                        let text_lexed = preprocessor
-                            .preprocess(&text, push_lang.and_then(QueryGenericLang::into_lang_opt));
-
-                        ctx.executor
-                            .push(collection, bucket, oid, text_lexed, push_options)
-                    })
-                }
+        while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts) {
+            if let Err(parse_err) = Self::handle_push_meta(meta_result, &mut push_params) {
+                last_meta_err = Some(parse_err);
             }
-            _ => Err(ChannelCommandError::InvalidFormat(
-                "PUSH <collection> <bucket> <object> \"<text>\" [LANG(<locale>)]?",
-            )),
         }
+
+        let (push_lang, push_options) = push_params;
+
+        if let Some(err) = last_meta_err {
+            return Err(err);
+        }
+
+        tracing::trace!("will push for text: {text} with hinted locale: <{push_lang:?}>");
+
+        let (collection, bucket, oid) = StoreItemBuilder::from_depth_3(collection, bucket, object)
+            .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
+
+        // Commit 'push' query
+        ChannelCommandBase::commit_ok_operation(move || {
+            let should_cleanup = TokenLexerMode::from_query_lang(&push_lang).should_cleanup();
+            let preprocessor = Preprocessor::new(
+                *ctx.tokenization_config,
+                *ctx.normalization_config,
+                ctx.stopwords_config.clone(),
+                should_cleanup,
+                should_cleanup,
+            );
+            let text_lexed =
+                preprocessor.preprocess(&text, push_lang.and_then(QueryGenericLang::into_lang_opt));
+
+            ctx.executor
+                .push(collection, bucket, oid, text_lexed, push_options)
+        })
     }
 
     pub fn dispatch_pop(
