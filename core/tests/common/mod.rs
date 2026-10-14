@@ -43,10 +43,26 @@ pub(crate) mod item_ref {
         };
     }
     pub(crate) use object_ref;
+
+    macro_rules! fragment_ref {
+        ($collection:expr, $bucket:expr, $object:expr, $fragment:expr) => {
+            sonic::store::StoreItemBuilder::from_depth_4($collection, $bucket, $object, $fragment)
+                .unwrap()
+        };
+    }
+    pub(crate) use fragment_ref;
 }
 
 macro_rules! exec {
-    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $(LANG($lang:expr))? $(; $($standalone_meta:ident)+)?) => {{
+    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $fragment:tt $text:tt $(LANG($lang:expr))? $(; $($standalone_meta:ident)+)?) => {
+        exec!(internal_ push $executor -> PUSH $collection $bucket $oid {Some($fragment)} $text $(LANG($lang))? $(; $($standalone_meta)+)?)
+    };
+
+    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $(LANG($lang:expr))? $(; $($standalone_meta:ident)+)?) => {
+        exec!(internal_ push $executor -> PUSH $collection $bucket $oid None $text $(LANG($lang))? $(; $($standalone_meta)+)?)
+    };
+
+    (internal_ push $executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $fragment:tt $text:tt $(LANG($lang:expr))? $(; $($standalone_meta:ident)+)?) => {{
         let mut additional_meta = concat!($($(" ", stringify!($standalone_meta),)+)? " ");
 
         let assume_new = additional_meta.contains(" NEW ");
@@ -57,10 +73,10 @@ macro_rules! exec {
 
         #[rustfmt::skip]
         $executor.log(format!(
-            "PUSH {:?} {:?} {:?} {:?}{}{additional_meta}",
-            $collection, $bucket, $oid, $text, exec!(internal_ lang_txt $($lang)?),
+            "PUSH {:?} {:?} {:?}{} {:?}{}{additional_meta}",
+            $collection, $bucket, $oid, exec!(internal_ fragment_txt $fragment), $text, exec!(internal_ lang_txt $($lang)?),
         ));
-        let (c, b, o) = crate::common::object_ref!($collection, $bucket, $oid);
+        let (c, b, o, f) = crate::common::fragment_ref!($collection, $bucket, $oid, $fragment);
         let preprocessor = sonic::lexer::preprocessor::Preprocessor::new(
             $executor.app_conf.tokenization,
             $executor.app_conf.normalization,
@@ -76,7 +92,7 @@ macro_rules! exec {
 
         $executor
             .push(
-                c, b, o,
+                c, b, o, f,
                 preprocessor.preprocess($text, exec!(internal_ lang $($lang)?)),
                 options,
             )
@@ -126,15 +142,16 @@ macro_rules! exec {
             true,
             true,
         );
+
+        let input = preprocessor.preprocess($term, exec!(internal_ lang $($lang)?));
+
+        let query_options = sonic::executor::QueryOptions {
+            limit: exec!(internal_ limit $($limit)?),
+            offset: 0,
+        };
+
         $executor
-            .query(
-                c, b,
-                preprocessor.preprocess($term, exec!(internal_ lang $($lang)?)),
-                sonic::executor::QueryOptions {
-                    limit: exec!(internal_ limit $($limit)?),
-                    offset: 0,
-                }
-            )
+            .query(c, b, input, query_options)
             .expect("QUERY should succeed")
     }};
 
@@ -167,6 +184,9 @@ macro_rules! exec {
         let (c, b, o) = crate::common::object_ref!($collection, $bucket, $oid);
         $executor.flusho(c, b, o).unwrap()
     }};
+
+    (internal_ fragment_txt None) => { "" };
+    (internal_ fragment_txt {Some($fragment:expr)}) => { format!(" {}", $fragment) };
 
     (internal_ lang) => { None };
     (internal_ lang $lang:expr) => { whatlang::Lang::from_code($lang) };

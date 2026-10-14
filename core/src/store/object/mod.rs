@@ -107,8 +107,17 @@ impl GenericRocksDbStore for ObjectStore {
 // NOTE: There’s only one case for now, but it’s there to future-proof the
 //   Object store index structure. It’s considered the source of truth in
 //   Sonic v2, we must keep it backward compatible.
-impl_int_enum!(pub(super) ObjectStoreKeyDiscriminator(u8):
+impl_int_enum!(ObjectStoreKeyDiscriminator(u8):
     Object (OBJECT) = 0,
+);
+
+// WARN: Don’t change values here, it would break the index! Only add new cases.
+// NOTE: There’s only one case for now, but it’s there to future-proof the
+//   Object store index structure. It’s considered the source of truth in
+//   Sonic v2, we must keep it backward compatible.
+impl_int_enum!(ObjectStoreFragmentDiscriminator(u8):
+    Default (DEFAULT) = 0,
+    Fragment (FRAGMENT) = 1,
 );
 
 // MARK: - Repository
@@ -137,10 +146,11 @@ impl<'a> ObjectRepository<'a> {
     pub fn put_object_original(
         &self,
         oid: StoreObjectOid,
+        fragment_oid: Option<FragmentOid>,
         text: impl AsRef<[u8]>,
         batch: &mut rocksdb::WriteBatch,
     ) {
-        let store_key = keys::object_key(&self.bucket, oid);
+        let store_key = keys::object_key(&self.bucket, oid, fragment_oid);
 
         batch.put(&store_key, text);
     }
@@ -152,10 +162,11 @@ impl<'a> ObjectRepository<'a> {
     pub fn push_object_original(
         &self,
         oid: StoreObjectOid,
+        fragment_oid: Option<FragmentOid>,
         text: impl AsRef<[u8]>,
         batch: &mut rocksdb::WriteBatch,
     ) {
-        let store_key = keys::object_key(&self.bucket, oid);
+        let store_key = keys::object_key(&self.bucket, oid, fragment_oid);
 
         batch.merge(&store_key, text);
     }
@@ -163,8 +174,9 @@ impl<'a> ObjectRepository<'a> {
     pub fn get_object_original(
         &self,
         oid: StoreObjectOid,
+        fragment_oid: Option<FragmentOid>,
     ) -> Result<Option<Vec<u8>>, rocksdb::Error> {
-        let store_key = keys::object_key(&self.bucket, oid);
+        let store_key = keys::object_key(&self.bucket, oid, fragment_oid);
 
         self.store.database.get(&store_key)
     }
@@ -172,8 +184,9 @@ impl<'a> ObjectRepository<'a> {
 
 mod keys {
     use crate::store::generic::KEY_SEPARATOR;
-    use crate::store::{Bucket, StoreObjectOid};
+    use crate::store::{Bucket, FragmentOid, StoreObjectOid};
 
+    use super::ObjectStoreFragmentDiscriminator as FragmentDiscriminator;
     use super::ObjectStoreKeyDiscriminator as D;
 
     pub(super) fn prefix_range(bucket: &Bucket) -> std::ops::Range<Vec<u8>> {
@@ -190,8 +203,14 @@ mod keys {
         start..end
     }
 
-    pub(super) fn object_key(bucket: &Bucket, oid: StoreObjectOid) -> Vec<u8> {
-        let mut key = Vec::with_capacity(bucket.len() + 3 + oid.len());
+    pub(super) fn object_key(
+        bucket: &Bucket,
+        oid: StoreObjectOid,
+        fragment_oid: Option<FragmentOid>,
+    ) -> Vec<u8> {
+        let mut key = Vec::with_capacity(
+            bucket.len() + oid.len() + 4 + fragment_oid.map_or(0, |id| id.len() + 1),
+        );
 
         key.extend_from_slice(bucket.as_bytes());
         key.push(KEY_SEPARATOR);
@@ -199,6 +218,16 @@ mod keys {
         key.push(D::Object as u8);
 
         key.extend_from_slice(oid.as_bytes());
+        key.push(KEY_SEPARATOR);
+
+        match fragment_oid {
+            None => key.push(FragmentDiscriminator::Default as u8),
+            Some(fragment) => {
+                key.push(FragmentDiscriminator::Fragment as u8);
+                key.extend_from_slice(fragment.as_bytes());
+                key.push(KEY_SEPARATOR);
+            }
+        }
 
         key
     }

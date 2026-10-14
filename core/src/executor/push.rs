@@ -16,7 +16,9 @@ use crate::lexer::preprocessor::{PreprocessorOutput, Token};
 use crate::store::kv::KvRepositoryReadWrite;
 use crate::store::kv::encoding::ToKvKeyPart;
 use crate::store::rocksdb::WriteOptions;
-use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreObjectOid, StoreTermHash};
+use crate::store::{
+    Bucket, FragmentOid, StoreItemPart, StoreObjectIid, StoreObjectOid, StoreTermHash,
+};
 use crate::util::hash::NoopU32HasherBuilder;
 
 #[derive(Debug, Default)]
@@ -32,6 +34,7 @@ impl super::Executor {
         collection: StoreItemPart,
         bucket: Bucket,
         object_oid: StoreObjectOid,
+        fragment_oid: Option<FragmentOid>,
         input: PreprocessorOutput,
         options: PushOptions,
     ) -> Result<(), ()> {
@@ -245,10 +248,16 @@ impl super::Executor {
 
                     // Store original text
                     if is_new {
-                        object_repo.put_object_original(object_oid, &ctx.original_text, &mut batch);
+                        object_repo.put_object_original(
+                            object_oid,
+                            fragment_oid,
+                            &ctx.original_text,
+                            &mut batch,
+                        );
                     } else {
                         object_repo.push_object_original(
                             object_oid,
+                            fragment_oid,
                             &ctx.original_text,
                             &mut batch,
                         );
@@ -338,12 +347,14 @@ impl super::Executor {
                     if is_new {
                         object_repo.put_object_original(
                             object_oid,
+                            fragment_oid,
                             input.original_text(),
                             &mut batch,
                         );
                     } else {
                         object_repo.push_object_original(
                             object_oid,
+                            fragment_oid,
                             input.original_text(),
                             &mut batch,
                         );

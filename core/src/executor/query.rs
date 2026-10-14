@@ -369,7 +369,8 @@ impl super::Executor {
         for (oid, iid) in oids {
             let oid_parsed = StoreObjectOid::from_str(&oid)?;
 
-            let original = object_repo.get_object_original(oid_parsed);
+            let todo = "Match fragments";
+            let original = object_repo.get_object_original(oid_parsed, None);
 
             // Push a new entry no matter if we find the orignal object or even
             // any snippet. All matching objects must be returned, snippets list

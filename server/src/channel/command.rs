@@ -176,7 +176,7 @@ impl ChannelCommandBase {
         }
     }
 
-    pub fn parse_text_parts(parts: &mut SplitWhitespace) -> Option<String> {
+    pub fn parse_text_parts<'a>(parts: impl Iterator<Item = &'a str>) -> Option<String> {
         // Parse text parts and nest them together
         let mut text_raw = String::new();
 
@@ -264,7 +264,7 @@ impl ChannelCommandBase {
     }
 
     pub fn parse_next_meta_parts<'a>(
-        parts: &'a mut SplitWhitespace,
+        mut parts: impl Iterator<Item = &'a str>,
     ) -> Option<MetaPartsResult<'a>> {
         if let Some(part) = parts.next() {
             // Parse meta (with format: 'KEY(VALUE)'; no '(' or ')' is allowed in KEY and VALUE)
@@ -808,7 +808,7 @@ impl ChannelCommandIngest {
     ) -> ChannelResult {
         let invalid_format = || {
             ChannelCommandError::InvalidFormat(
-                r#"PUSH <collection> <bucket> <object> "<text>" [LANG(<locale>)]?"#,
+                r#"PUSH <collection> <bucket> <object>[ <fragment>]? "<text>" [LANG(<locale>)]?"#,
             )
         };
 
@@ -818,7 +818,20 @@ impl ChannelCommandIngest {
             return Err(invalid_format());
         };
 
-        let Some(text) = ChannelCommandBase::parse_text_parts(&mut parts) else {
+        let mut peekable_parts = parts.peekable();
+
+        let Some(next) = peekable_parts.peek() else {
+            return Err(invalid_format());
+        };
+
+        let fragment = if next.starts_with(TEXT_PART_BOUNDARY) {
+            None
+        } else {
+            // Advance 1 part (we had only peeked).
+            peekable_parts.next()
+        };
+
+        let Some(text) = ChannelCommandBase::parse_text_parts(&mut peekable_parts) else {
             return Err(invalid_format());
         };
 
@@ -836,7 +849,8 @@ impl ChannelCommandIngest {
         // Parse meta parts (meta comes after text; extract meta parts second)
         let mut last_meta_err = None;
 
-        while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts) {
+        while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut peekable_parts)
+        {
             if let Err(parse_err) = Self::handle_push_meta(meta_result, &mut push_params) {
                 last_meta_err = Some(parse_err);
             }
@@ -850,8 +864,9 @@ impl ChannelCommandIngest {
 
         tracing::trace!("will push for text: {text} with hinted locale: <{push_lang:?}>");
 
-        let (collection, bucket, oid) = StoreItemBuilder::from_depth_3(collection, bucket, object)
-            .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
+        let (collection, bucket, oid, fragment) =
+            StoreItemBuilder::from_depth_4(collection, bucket, object, fragment)
+                .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
 
         // Commit 'push' query
         ChannelCommandBase::commit_ok_operation(move || {
@@ -867,7 +882,7 @@ impl ChannelCommandIngest {
                 preprocessor.preprocess(&text, push_lang.and_then(QueryGenericLang::into_lang_opt));
 
             ctx.executor
-                .push(collection, bucket, oid, text_lexed, push_options)
+                .push(collection, bucket, oid, fragment, text_lexed, push_options)
         })
     }
 
