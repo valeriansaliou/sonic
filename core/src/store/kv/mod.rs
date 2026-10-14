@@ -34,6 +34,13 @@ pub use self::merge::AVERAGE_MERGE_RATIO;
 /// compacted normally, for faster access.
 pub const READ_ON_PUSH_CF_NAME: &str = "read_on_push";
 
+/// A column family whose data is never compressed. It’s used to avoid wasting
+/// compute trying to compress IID-To-Terms for example, whose values consist
+/// exclusively of hashed data.
+///
+/// See [Issue #435 “perf: Store `IID-To-Terms` in a separate column family with no compression”](https://github.com/valeriansaliou/sonic/issues/435) for context.
+pub const INCOMPRESSIBLE_CF_NAME: &str = "incompressible";
+
 pub type KvStorePool = GenericKvStorePool<KvStore>;
 
 #[derive(Debug, Default)]
@@ -134,7 +141,11 @@ impl GenericRocksDbStore for KvStore {
 
         // Configure Column Families.
         let cf_descriptors = {
-            let cf_names = [DEFAULT_CF_NAME, READ_ON_PUSH_CF_NAME];
+            let cf_names = [
+                DEFAULT_CF_NAME,
+                READ_ON_PUSH_CF_NAME,
+                INCOMPRESSIBLE_CF_NAME,
+            ];
 
             let mut cf_descriptors = Vec::with_capacity(1);
 
@@ -162,6 +173,15 @@ impl GenericRocksDbStore for KvStore {
                         cf_options.set_write_buffer_size(8 * 1024 * 1024);
                         cf_options.set_min_write_buffer_number_to_merge(1);
                         cf_options.set_max_write_buffer_number(8);
+                    }
+                    INCOMPRESSIBLE_CF_NAME => {
+                        cf_options
+                            .set_merge_operator_associative("kv_merge", merge::kv_merge_operator);
+
+                        // Never compress this CF.
+                        cf_options.set_compression_type(rocksdb::DBCompressionType::None);
+                        cf_options.set_wal_compression_type(rocksdb::DBCompressionType::None);
+                        cf_options.set_blob_compression_type(rocksdb::DBCompressionType::None);
                     }
                     _ => {}
                 }
@@ -217,10 +237,12 @@ impl GenericRocksDbStore for KvStore {
         &self.lock
     }
 
+    #[rustfmt::skip]
     fn bucket_key_ranges(bucket: &Bucket) -> Vec<(Option<&'static str>, std::ops::Range<Vec<u8>>)> {
         vec![
             (None, KvStoreKey::prefix_range(bucket)),
             (Some(READ_ON_PUSH_CF_NAME), KvStoreKey::prefix_range(bucket)),
+            (Some(INCOMPRESSIBLE_CF_NAME), KvStoreKey::prefix_range(bucket)),
         ]
     }
 
@@ -437,7 +459,11 @@ impl<'a> KvRepositoryReadOnly<'a> {
 
         tracing::debug!("store get iid-to-terms: {store_key}");
 
-        match self.store.database.get(&store_key) {
+        let cf_handle = (self.store.database)
+            .cf_handle(INCOMPRESSIBLE_CF_NAME)
+            .expect(CF_CREATED_ON_OPEN);
+
+        match self.store.database.get_cf(cf_handle, &store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got iid-to-terms: {store_key} with encoded value: {value:?}");
 
@@ -673,7 +699,11 @@ impl<'a> KvRepositoryReadWrite<'a> {
             "store set iid-to-terms: {store_key} with encoded value: {terms_hashes_encoded:?}"
         );
 
-        batch.put(store_key, &terms_hashes_encoded)
+        let cf_handle = (self.store.database)
+            .cf_handle(INCOMPRESSIBLE_CF_NAME)
+            .expect(CF_CREATED_ON_OPEN);
+
+        batch.put_cf(cf_handle, store_key, &terms_hashes_encoded)
     }
 
     pub fn add_iid_to_terms<'t>(
@@ -686,8 +716,12 @@ impl<'a> KvRepositoryReadWrite<'a> {
 
         tracing::debug!("store add iid-to-terms: {store_key}");
 
+        let cf_handle = (self.store.database)
+            .cf_handle(INCOMPRESSIBLE_CF_NAME)
+            .expect(CF_CREATED_ON_OPEN);
+
         for term_hash in terms_hashes {
-            batch.merge(&store_key, term_hash.to_kv_value());
+            batch.merge_cf(cf_handle, &store_key, term_hash.to_kv_value());
         }
     }
 
@@ -696,7 +730,11 @@ impl<'a> KvRepositoryReadWrite<'a> {
 
         tracing::debug!("store delete iid-to-terms: {store_key}");
 
-        batch.delete(store_key)
+        let cf_handle = (self.store.database)
+            .cf_handle(INCOMPRESSIBLE_CF_NAME)
+            .expect(CF_CREATED_ON_OPEN);
+
+        batch.delete_cf(cf_handle, store_key)
     }
 
     pub fn batch_flush_bucket(
