@@ -168,6 +168,221 @@ impl FstStore {
     }
 }
 
+#[derive(Debug, Default)]
+pub(super) struct ConsolidateStats {
+    pub(super) count_moved: usize,
+    pub(super) count_pushed: usize,
+    pub(super) count_popped: usize,
+}
+
+impl FstStore {
+    pub(super) fn consolidate(&self, stats: &mut ConsolidateStats) -> Result<bool, ()> {
+        use std::collections::{HashSet, VecDeque};
+        use std::fs::{self, File};
+        use std::io;
+
+        // Acquire write reference to pending actions.
+        let mut pending = self.pending.lock().unwrap();
+
+        // Do consolidate? (any change committed)
+        // NOTE: If pending set is empty do not consolidate as there may have been
+        //   a push then a pop of this push, nulling out any committed change.
+        if pending.is_empty() {
+            (self.should_consolidate).store(false, atomic::Ordering::Release);
+            return Ok(false);
+        }
+
+        // Read old FST (or default to empty FST).
+        let old_fst = FstStore::open(&self.target, &self.config)
+            .map_err(|error| tracing::error!("Error opening old fst: {error:?}"))?;
+
+        // Initialize the new FST (temporary).
+        let bucket_tmp_path = (self.config).store_path(&self.target, FstStorePathMode::Temporary);
+
+        let bucket_tmp_path_parent = bucket_tmp_path.parent().unwrap();
+
+        fs::create_dir_all(&bucket_tmp_path_parent).map_err(|error| tracing::error!(
+            "Error initializing temporary fst directory at path {bucket_tmp_path_parent:?}: {error:?}"
+        ))?;
+
+        // Erase any previously-existing temporary FST (e.g. process stopped while
+        // writing the temporary FST); there is no guarantee this succeeds.
+        fs::remove_file(&bucket_tmp_path).ok();
+
+        let tmp_fst_file = File::create(&bucket_tmp_path).map_err(|error| {
+            tracing::error!(
+                "Error initializing temporary fst at path {bucket_tmp_path:?}: {error:?}"
+            )
+        })?;
+
+        let tmp_fst_writer = io::BufWriter::new(tmp_fst_file);
+
+        // Create a builder that can be used to insert new key-value pairs.
+        let mut tmp_fst_builder = fst::SetBuilder::new(tmp_fst_writer).map_err(|error| {
+            tracing::error!(
+                "Error starting building temporary fst at path {bucket_tmp_path:?}: {error:?}"
+            )
+        })?;
+
+        // Convert push keys to an ordered vector.
+        // NOTE: We must go from a `Vec` to a `VecDeque` to sort values,
+        //   which is a requirement for FST insertions.
+        let mut ordered_push_vec: Vec<&[u8]> = Vec::with_capacity(pending.len());
+        let mut to_pop: HashSet<&[u8]> = HashSet::with_capacity(pending.len());
+
+        for (item, action) in pending.iter() {
+            match action {
+                PendingAction::Push => {
+                    ordered_push_vec.push(item.as_ref());
+                }
+                PendingAction::Pop => {
+                    to_pop.insert(item.as_ref());
+                }
+            }
+        }
+
+        ordered_push_vec.sort();
+
+        let mut ordered_push: VecDeque<&[u8]> = VecDeque::from_iter(ordered_push_vec);
+
+        // Append words not in pop list to new FST (i.e. old words minus pop words).
+        let mut old_fst_stream = old_fst.stream();
+
+        'old: while let Some(old_fst_word) = old_fst_stream.next() {
+            // Append new words from front? (i.e. push words)
+            // NOTE: As an FST is ordered, inserts would fail if they are
+            //   committed out-of-order. Thus, the only way to check for
+            //   order is there.
+            // NOTE: A quick check is done before engaging in the loop, to
+            //   prevent any de-optimized jump instruction, as we may call
+            //   this code block a lot on large FSTs, and the loop should not
+            //   be engaged that often on stabilized FSTs (i.e. mature FSTs).
+            while let Some(push_front) = ordered_push.pop_front_if(|&mut push_ref| {
+                // Important: stop loop on next front item (always the same).
+                push_ref <= old_fst_word
+            }) {
+                if check_over_limits(
+                    tmp_fst_builder.bytes_written() as usize,
+                    stats.count_pushed + stats.count_moved,
+                    &self.config.graph,
+                ) {
+                    // FST cannot accept more items (limits reached).
+                    tracing::warn!("Limit reached on new from old in fst");
+
+                    // Important: stop the main loop (limit reached).
+                    break 'old;
+                }
+
+                match tmp_fst_builder.insert(push_front) {
+                    // Word inserted in FST.
+                    Ok(()) => stats.count_pushed += 1,
+                    // Could not insert word in FST.
+                    Err(error) => {
+                        tracing::error!("Failed inserting new from old in fst: {error:?}")
+                    }
+                }
+
+                // Continue scanning next word (may also come
+                // before this FST word in order).
+                continue;
+            }
+
+            // Restore old word (if not popped).
+            if to_pop.contains(old_fst_word) {
+                stats.count_popped += 1;
+            } else {
+                if check_over_limits(
+                    tmp_fst_builder.bytes_written() as usize,
+                    stats.count_pushed + stats.count_moved,
+                    &self.config.graph,
+                ) {
+                    // FST cannot accept more items (limits reached).
+                    tracing::warn!("Limit reached on old word in fst");
+
+                    // Important: stop the main loop (limit reached).
+                    break 'old;
+                }
+
+                match tmp_fst_builder.insert(old_fst_word) {
+                    // Word moved to FST.
+                    Ok(()) => stats.count_moved += 1,
+                    // Could not move word to FST.
+                    Err(error) => tracing::error!("Failed inserting old word in fst: {error:?}"),
+                }
+            }
+        }
+
+        // Complete FST with last pushed items.
+        // NOTE: This is necessary if the FST was empty, or if we have push
+        //   items that come after the last ordered word of the FST.
+        while let Some(push_front) = ordered_push.pop_front() {
+            if check_over_limits(
+                tmp_fst_builder.bytes_written() as usize,
+                stats.count_pushed + stats.count_moved,
+                &self.config.graph,
+            ) {
+                // FST cannot accept more items (limits reached).
+                tracing::warn!("Limit reached on new word from complete in fst");
+
+                // Important: stop the main loop (limit reached).
+                break;
+            }
+
+            match tmp_fst_builder.insert(push_front) {
+                // Word inserted in FST.
+                Ok(()) => stats.count_pushed += 1,
+                // Could not insert word in FST.
+                Err(error) => {
+                    tracing::error!("Failed inserting new word from complete in fst: {error:?}")
+                }
+            }
+        }
+
+        // Finish building new FST.
+        let should_close = match tmp_fst_builder.finish() {
+            Ok(()) => {
+                // Replace old FST with new FST (this nukes the old FST).
+                // NOTE: There is no need to re-open the new FST, as it will be
+                //   automatically opened on its next access.
+                let bucket_final_path =
+                    (self.config).store_path(&self.target, FstStorePathMode::Permanent);
+
+                // Proceed temporary FST to final FST path rename?
+                match fs::rename(&bucket_tmp_path, &bucket_final_path) {
+                    Ok(()) => {
+                        tracing::debug!("Done consolidating fst at path {bucket_final_path:?}")
+                    }
+                    Err(error) => tracing::error!(
+                        "Error consolidating fst at path {bucket_final_path:?}: {error:?}"
+                    ),
+                }
+
+                // Should close open store reference to old FST.
+                true
+            }
+            Err(error) => {
+                tracing::error!(
+                    "Error finishing building temporary fst at path {bucket_tmp_path:?}: {error:?}"
+                );
+
+                false
+            }
+        };
+
+        drop(to_pop);
+
+        // Clear pending actions.
+        // TODO(perf): Truncate capacity if too big? Otherwise memory usage
+        //   won’t go down after a batch ingestion. Need to find a sensible
+        //   value though.
+        pending.clear();
+
+        (self.should_consolidate).store(false, atomic::Ordering::Release);
+
+        Ok(should_close)
+    }
+}
+
 impl GenericStore for FstStore {
     fn kind() -> &'static str {
         "FST"
