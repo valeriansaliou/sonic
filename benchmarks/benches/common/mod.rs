@@ -138,7 +138,7 @@ pub mod globals {
 
     pub static SONIC_CONF: LazyLock<String> = LazyLock::new(|| {
         std::env::var("SONIC_CONF").unwrap_or_else(|_err| {
-            let default = "batch_ingest";
+            let default = "frequent_tasks";
             tracing::info!("`SONIC_CONF` not configured, using {default:?} as default.");
             default.to_owned()
         })
