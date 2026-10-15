@@ -18,6 +18,7 @@ use fst::{IntoStreamer as _, Streamer as _};
 use hashbrown::HashMap;
 use regex_syntax::escape as regex_escape;
 
+use crate::config::FstStoreConfig;
 use crate::lexer::ranges::LexerRegexRange;
 
 use super::generic::*;
@@ -27,6 +28,7 @@ use self::util::*;
 
 pub struct FstStore {
     graph: fst::Set,
+    config: Arc<FstStoreConfig>,
     target: FstStoreId,
     pending: Mutex<HashMap<Box<[u8]>, PendingAction>>,
     last_used: Arc<RwLock<Instant>>,
@@ -171,7 +173,6 @@ impl<'a> FstRepository<'a> {
     fn push_word(
         &self,
         word: &str,
-        fst_store_config: &crate::config::FstStoreConfig,
         pending: &mut MutexGuard<'_, HashMap<Box<[u8]>, PendingAction>>,
     ) -> bool {
         // Word over limit? (abort, the FST does not perform well over large words)
@@ -188,14 +189,14 @@ impl<'a> FstRepository<'a> {
             //   stacking words that could never be consolidated to final FST anyway.
             let is_fst_over_limits = {
                 let graph_fst = self.store.graph.as_fst();
-                check_over_limits(graph_fst.size(), graph_fst.len(), &fst_store_config.graph)
+                check_over_limits(graph_fst.size(), graph_fst.len(), &self.store.config.graph)
             };
 
             // PERF: To be correct we’d have to filter to keep only “push” actions,
             //   but in a real-world situation we’d trigger this condition only
             //   during a batch ingestion; when all actions are “push”.
             let has_too_many_pending =
-                (fst_store_config.graph.max_words).is_some_and(|max| pending_len >= max);
+                (self.store.config.graph.max_words).is_some_and(|max| pending_len >= max);
 
             !graph_contains_word && !is_fst_over_limits && !has_too_many_pending
         };
@@ -227,15 +228,11 @@ impl<'a> FstRepository<'a> {
         true
     }
 
-    pub fn push_words<'t>(
-        &self,
-        terms: impl Iterator<Item = &'t str>,
-        fst_store_config: &crate::config::FstStoreConfig,
-    ) {
+    pub fn push_words<'t>(&self, terms: impl Iterator<Item = &'t str>) {
         let mut pending = self.store.pending.lock().unwrap();
 
         for term in terms {
-            if self.push_word(term, fst_store_config, &mut pending) {
+            if self.push_word(term, &mut pending) {
                 tracing::trace!("push term committed to graph: {term}");
             }
         }
@@ -503,7 +500,7 @@ mod tests {
         FstStorePool::new(fst_store_config, Default::default())
     }
 
-    pub(in crate::store::fst) fn test_fst_store_config() -> Arc<crate::config::FstStoreConfig> {
+    pub(in crate::store::fst) fn test_fst_store_config() -> Arc<FstStoreConfig> {
         Arc::new(
             config::Config::builder()
                 .add_source(config::File::from_str(
@@ -512,7 +509,7 @@ mod tests {
                 ))
                 .build()
                 .unwrap()
-                .get::<crate::config::FstStoreConfig>("store.fst")
+                .get::<FstStoreConfig>("store.fst")
                 .unwrap(),
         )
     }
@@ -533,6 +530,9 @@ impl fmt::Debug for FstStore {
             last_consolidated,
             should_consolidate,
             action_config,
+            // NOTE: We don’t care about the configuration,
+            //   we can see it elsewhere if needed.
+            config: _,
         } = self;
 
         f.debug_struct("FstStore")
@@ -543,6 +543,6 @@ impl fmt::Debug for FstStore {
             .field("last_consolidated", &AsPrettyRwLock(last_consolidated))
             .field("should_consolidate", should_consolidate)
             .field("action_config", action_config)
-            .finish()
+            .finish_non_exhaustive()
     }
 }

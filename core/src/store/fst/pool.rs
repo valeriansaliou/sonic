@@ -241,6 +241,7 @@ impl FstStorePool {
 
         Ok(FstStore {
             graph,
+            config: Arc::clone(&self.fst_store_config),
             target: store_id.clone(),
             pending: Default::default(),
             last_used: Arc::new(RwLock::new(now)),

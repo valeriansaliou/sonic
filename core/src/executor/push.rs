@@ -256,10 +256,7 @@ impl super::Executor {
                 // Update FST store
                 {
                     // Push to FST graph
-                    fst_repo.push_words(
-                        ctx.terms.values().map(Box::as_ref),
-                        &self.app_conf.store.fst,
-                    );
+                    fst_repo.push_words(ctx.terms.values().map(Box::as_ref));
                 }
 
                 // Clear multipart context.
@@ -343,7 +340,7 @@ impl super::Executor {
                 // Update FST store
                 {
                     // Push to FST graph
-                    fst_repo.push_words(terms.into_iter(), &self.app_conf.store.fst);
+                    fst_repo.push_words(terms.into_iter());
                 }
 
                 Ok(())
