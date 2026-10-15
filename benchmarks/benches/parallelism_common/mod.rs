@@ -244,7 +244,7 @@ pub fn ingest_parallel<T: Ingestable>(
     let ingested_bytes: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
 
     /// Pretend data is split across multiple buckets. It’s just for realism.
-    fn bucket<'a>(index: usize, total_count: usize, bucket_count: usize) -> Cow<'a, str> {
+    fn bucket(index: usize, total_count: usize, bucket_count: usize) -> Cow<'static, str> {
         if bucket_count < 2 {
             Cow::Borrowed("default")
         } else {
