@@ -40,31 +40,14 @@ static DICTIONARY: LazyLock<Vec<String>> = LazyLock::new(|| {
 });
 
 pub static NCHANNELS: LazyLock<usize> = LazyLock::new(|| {
-    std::env::var("NCHANNELS").map_or_else(|_err| {
-        let bytes = if cfg!(target_os = "macos") {
-            Some(
-                std::process::Command::new("sysctl")
-                    .args(["-n", "hw.perflevel0.logicalcpu"])
-                    .output()
-                    .unwrap()
-                    .stdout,
-            )
-        } else {
-            None
-        };
-
-        if let Some(bytes) = bytes {
-            let res = String::from_utf8(bytes).unwrap().trim_ascii_end().parse::<usize>().unwrap();
-            tracing::info!("`NCHANNELS` not configured, using all available performance cores ({res}) as default.");
-            res
-        } else {
-            // NOTE: Add support for your target OS if you run into this :)
-            tracing::error!(
-                "Could not find how many performance cores your CPU has; defaulting to 4 channels."
-            );
-            4
-        }
-    }, |s| s.parse().unwrap())
+    std::env::var("NCHANNELS").map_or_else(
+        |_err| {
+            let default = 15;
+            tracing::info!("`NCHANNELS` not configured, using {default:?} as default.");
+            default
+        },
+        |s| s.parse::<usize>().unwrap(),
+    )
 });
 
 pub static BUCKET_COUNT: LazyLock<usize> = LazyLock::new(|| {
