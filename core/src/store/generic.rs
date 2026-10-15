@@ -120,22 +120,20 @@ pub(super) trait StoreGenericPoolExt: GenericStorePool {
 
         let store_pool_read = self.read().unwrap();
 
-        for (collection_bucket, store) in store_pool_read.iter().filter(|(key, _)| filter(key)) {
+        for (store_id, store) in store_pool_read.iter().filter(|(key, _)| filter(key)) {
             let last_used_elapsed = store.ref_last_used().read().unwrap().elapsed();
 
             if last_used_elapsed.as_secs() >= self.consider_inactive_after_secs() {
                 tracing::debug!(
-                    "found expired {kind} store pool item: {}; elapsed time: {last_used_elapsed:.1?}",
-                    collection_bucket
+                    "found expired {kind} store pool item: {store_id}; elapsed time: {last_used_elapsed:.1?}",
                 );
 
                 // Notice: the bucket value needs to be cloned, as we cannot reference as value \
                 //   that will outlive referenced value once we remove it from its owner set.
-                removal_register.push(collection_bucket.clone());
+                removal_register.push(store_id.clone());
             } else {
                 tracing::debug!(
-                    "found non-expired {kind} store pool item: {}; elapsed time: {last_used_elapsed:.1?}",
-                    collection_bucket
+                    "found non-expired {kind} store pool item: {store_id}; elapsed time: {last_used_elapsed:.1?}",
                 );
             }
         }
@@ -147,8 +145,8 @@ pub(super) trait StoreGenericPoolExt: GenericStorePool {
 
             let mut store_pool_write = self.write().unwrap();
 
-            for collection_bucket in removal_register.iter() {
-                store_pool_write.remove(collection_bucket);
+            for store_id in removal_register.iter() {
+                store_pool_write.remove(store_id);
             }
 
             RwLockWriteGuard::downgrade(store_pool_write)
