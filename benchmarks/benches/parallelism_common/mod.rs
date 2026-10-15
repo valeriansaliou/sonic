@@ -412,24 +412,27 @@ pub fn ingest_parallel<T: Ingestable>(
         control.config_reset_all(COLLECTION).unwrap();
     }
 
-    let bucket_count = used_buckets.lock().unwrap().len();
-    if bucket_count < 2 {
+    {
         tracing::info!("Ensuring documents have 1:1 matching IIDs…");
 
-        let count = ingest.countb(COLLECTION, "default").unwrap();
+        let used_buckets = used_buckets.lock().unwrap();
+
+        let count = (used_buckets.iter())
+            .map(|bucket| ingest.countb(COLLECTION, bucket).unwrap())
+            .sum::<usize>();
         if count != articles_count {
             // NOTE: Do not `panic` as some versions of Sonic had this bug and it
             //   would render benchmark comparison impossible for no good reason.
             tracing::error!(
-                "Data was indexed as more IIDs than there are articles (actual: {count}, expected: {articles_count})"
+                "Data was indexed as more or fewer IIDs than there are articles (actual: {count}, expected: {articles_count})"
             )
         }
-    } else {
-        tracing::warn!("Did not check document count: Multiple buckets (set `BUCKET_COUNT=1`)");
     }
 
     {
         tracing::info!("Ensuring bucket count is correct…");
+
+        let bucket_count = used_buckets.lock().unwrap().len();
 
         let count = ingest.countc(COLLECTION).unwrap();
         if count != bucket_count {
