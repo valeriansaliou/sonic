@@ -53,7 +53,7 @@ pub static NCHANNELS: LazyLock<usize> = LazyLock::new(|| {
 pub static BUCKET_COUNT: LazyLock<usize> = LazyLock::new(|| {
     std::env::var("BUCKET_COUNT").map_or_else(
         |_err| {
-            let default = 1;
+            let default = 2048;
             tracing::info!("`BUCKET_COUNT` not configured, using {default:?} as default.");
             default
         },
