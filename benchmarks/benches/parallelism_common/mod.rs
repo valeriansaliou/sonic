@@ -248,7 +248,7 @@ pub fn ingest_parallel<T: Ingestable>(
         if bucket_count < 2 {
             Cow::Borrowed("default")
         } else {
-            let bucket_id = index / (total_count / bucket_count);
+            let bucket_id = (index * bucket_count) / total_count;
             Cow::Owned(format!("bucket:{bucket_id}"))
         }
     }
