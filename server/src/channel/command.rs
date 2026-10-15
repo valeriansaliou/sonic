@@ -1496,15 +1496,15 @@ impl sonic::executor::DynamicConfig for DynamicConfig {
     }
 
     fn are_janitor_tasks_enabled(&self) -> bool {
-        !matches!(self.sonic.disable_janitor_tasks, Some(false))
+        !matches!(self.sonic.disable_janitor_tasks, Some(true))
     }
 
     fn is_fst_consolidate_task_enabled(&self) -> bool {
-        !matches!(self.sonic.disable_fst_consolidate_task, Some(false))
+        !matches!(self.sonic.disable_fst_consolidate_task, Some(true))
     }
 
     fn is_kv_flush_task_enabled(&self) -> bool {
-        !matches!(self.sonic.disable_kv_flush_task, Some(false))
+        !matches!(self.sonic.disable_kv_flush_task, Some(true))
     }
 
     fn update_kv_store_options(
