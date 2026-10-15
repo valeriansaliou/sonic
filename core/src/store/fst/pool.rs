@@ -9,7 +9,7 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::path::PathBuf;
 use std::str::FromStr as _;
-use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, atomic};
 use std::time::Instant;
 use std::{fmt, fs, io};
 
@@ -60,7 +60,7 @@ impl FstStorePool {
 
         let open_count = pool.len();
         let consolidate_count = (pool.values())
-            .filter(|store| store.should_consolidate.load(atomic::Ordering::Relaxed))
+            .filter(|store| store.should_consolidate.load(atomic::Ordering::Acquire))
             .count();
 
         (open_count, consolidate_count)
@@ -307,7 +307,7 @@ impl FstStorePool {
             for store in (graph_pool_read.values())
                 // WARN: Filter before doing the read-and-update on `should_consolidate`.
                 .filter(|store| filter(&store.target))
-                .filter(|store| (store.should_consolidate).swap(false, atomic::Ordering::Relaxed))
+                .filter(|store| store.should_consolidate.load(atomic::Ordering::Acquire))
             {
                 let store_id = &store.target;
 
@@ -410,6 +410,7 @@ impl FstStorePool {
         // NOTE: If pending set is empty do not consolidate as there may have been
         //   a push then a pop of this push, nulling out any committed change.
         if pending.is_empty() {
+            (store.should_consolidate).store(false, atomic::Ordering::Release);
             return Ok(false);
         }
 
@@ -598,6 +599,8 @@ impl FstStorePool {
         //   won’t go down after a batch ingestion. Need to find a sensible
         //   value though.
         pending.clear();
+
+        (store.should_consolidate).store(false, atomic::Ordering::Release);
 
         Ok(should_close)
     }

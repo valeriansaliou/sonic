@@ -10,7 +10,7 @@ mod pool;
 mod util;
 
 use std::fmt;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{self, AtomicBool};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::Instant;
 
@@ -134,8 +134,7 @@ impl FstStore {
     }
 
     fn should_consolidate(&self) {
-        self.should_consolidate
-            .store(true, std::sync::atomic::Ordering::Relaxed);
+        (self.should_consolidate).store(true, atomic::Ordering::Release);
 
         // Bump “last consolidated” time, effectively de-bouncing consolidation
         // to a fixed and predictable tick time in the future.
