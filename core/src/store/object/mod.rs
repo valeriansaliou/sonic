@@ -178,8 +178,7 @@ impl<'a> ObjectRepository<'a> {
 }
 
 mod keys {
-    use crate::store::generic::KEY_SEPARATOR;
-    use crate::store::{Bucket, StoreObjectOid};
+    use crate::store::{Bucket, ITEM_PART_MAX_LEN_ERROR, StoreObjectOid};
 
     use super::ObjectStoreKeyDiscriminator as D;
 
@@ -187,12 +186,12 @@ mod keys {
         let bucket_bytes = bucket.as_bytes();
 
         let mut start = Vec::with_capacity(bucket_bytes.len() + 1);
+        start.push(u8::try_from(bucket_bytes.len()).expect(ITEM_PART_MAX_LEN_ERROR));
         start.extend_from_slice(bucket_bytes);
-        start.push(KEY_SEPARATOR);
 
-        let mut end = Vec::with_capacity(bucket_bytes.len() + 1);
-        end.extend_from_slice(bucket_bytes);
-        end.push(KEY_SEPARATOR + 1);
+        let mut end = Vec::clone(&start);
+        // SAFETY: We’ve already pushed at least one byte.
+        *end.last_mut().unwrap() += 1;
 
         start..end
     }
@@ -200,12 +199,15 @@ mod keys {
     pub(super) fn object_key(bucket: &Bucket, oid: StoreObjectOid) -> Vec<u8> {
         let mut key = Vec::with_capacity(bucket.len() + 3 + oid.len());
 
-        key.extend_from_slice(bucket.as_bytes());
-        key.push(KEY_SEPARATOR);
+        let bucket_bytes = bucket.as_bytes();
+        key.push(u8::try_from(bucket_bytes.len()).expect(ITEM_PART_MAX_LEN_ERROR));
+        key.extend_from_slice(bucket_bytes);
 
         key.push(D::Object as u8);
 
-        key.extend_from_slice(oid.as_bytes());
+        let oid_bytes = oid.as_bytes();
+        key.push(u8::try_from(oid_bytes.len()).expect(ITEM_PART_MAX_LEN_ERROR));
+        key.extend_from_slice(oid_bytes);
 
         key
     }

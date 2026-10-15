@@ -5,7 +5,6 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use crate::store::generic::KEY_SEPARATOR;
 use crate::store::types::*;
 use crate::util::impl_int_enum;
 
@@ -50,23 +49,23 @@ impl<'a> TryFrom<&'a [u8]> for KvStoreKeyParts<'a> {
     type Error = &'static str;
 
     fn try_from(bytes: &'a [u8]) -> Result<Self, Self::Error> {
-        if bytes.is_empty() {
-            return Err("key empty");
-        }
-
         // TODO: Move this logic near `Bucket` key encoding.
-        let Some(prefix_len) = bytes.iter().position(|c| *c == KEY_SEPARATOR) else {
-            return Err("missing separator after bucket part");
+        let Some((&bucket_len, rest)) = bytes.split_first() else {
+            return Err("key empty");
         };
 
-        if bytes.len() < prefix_len + 2 {
+        let Some((bucket, rest)) = rest.split_at_checked(usize::from(bucket_len)) else {
+            return Err("key missing bucket");
+        };
+
+        let Some((&discriminator, route)) = rest.split_first() else {
             return Err("key missing route");
         };
 
         Ok(Self {
-            bucket: &bytes[..prefix_len],
-            discriminator: bytes[prefix_len + 1],
-            route: &bytes[(prefix_len + 2)..],
+            bucket,
+            discriminator,
+            route,
         })
     }
 }
@@ -117,12 +116,12 @@ impl KvStoreKey {
         let bucket_bytes = bucket.as_bytes();
 
         let mut start = Vec::with_capacity(bucket_bytes.len() + 1);
+        start.push(u8::try_from(bucket_bytes.len()).expect(ITEM_PART_MAX_LEN_ERROR));
         start.extend_from_slice(bucket_bytes);
-        start.push(KEY_SEPARATOR);
 
-        let mut end = Vec::with_capacity(bucket_bytes.len() + 1);
-        end.extend_from_slice(bucket_bytes);
-        end.push(KEY_SEPARATOR + 1);
+        let mut end = Vec::clone(&start);
+        // SAFETY: We’ve already pushed at least one byte.
+        *end.last_mut().unwrap() += 1;
 
         start..end
     }
@@ -192,7 +191,7 @@ mod tests {
     fn it_keys_meta_to_value() {
         assert_eq!(
             KvStoreKey::meta_to_value(&"b:1".into(), StoreMetaKey::IIDIncr).0,
-            [b'b', b':', b'1', KEY_SEPARATOR, 0, 0, 0, 0, 0]
+            [3, b'b', b':', b'1', 0, 0, 0, 0, 0]
         );
     }
 
@@ -200,11 +199,11 @@ mod tests {
     fn it_keys_term_to_iids() {
         assert_eq!(
             KvStoreKey::term_to_iids(&"b:2".into(), &772137347.into()).0,
-            [b'b', b':', b'2', KEY_SEPARATOR, 1, 131, 225, 5, 46]
+            [3, b'b', b':', b'2', 1, 131, 225, 5, 46]
         );
         assert_eq!(
             KvStoreKey::term_to_iids(&"b:2".into(), &3582484684.into()).0,
-            [b'b', b':', b'2', KEY_SEPARATOR, 1, 204, 96, 136, 213]
+            [3, b'b', b':', b'2', 1, 204, 96, 136, 213]
         );
     }
 
@@ -213,7 +212,7 @@ mod tests {
         #[rustfmt::skip]
         assert_eq!(
             KvStoreKey::oid_to_iid(&"b:3".into(), "conv:6501e83a".into()).0,
-            [b'b', b':', b'3', KEY_SEPARATOR, 2, b'c', b'o', b'n', b'v', b':', b'6', b'5', b'0', b'1', b'e', b'8', b'3', b'a']
+            [3, b'b', b':', b'3', 2, b'c', b'o', b'n', b'v', b':', b'6', b'5', b'0', b'1', b'e', b'8', b'3', b'a']
         );
     }
 
@@ -222,7 +221,7 @@ mod tests {
         #[rustfmt::skip]
         assert_eq!(
             KvStoreKey::iid_to_oid(&"b:4".into(), 10292198.into()).0,
-            [b'b', b':', b'4', KEY_SEPARATOR, 3, 0, 0, 0, 0, 0, 157, 11, 230]
+            [3, b'b', b':', b'4', 3, 0, 0, 0, 0, 0, 157, 11, 230]
         );
     }
 
@@ -238,11 +237,11 @@ mod tests {
     fn it_keys_iid_to_terms() {
         assert_eq!(
             KvStoreKey::iid_to_terms(&"b:5".into(), 1.into()).0,
-            [b'b', b':', b'5', KEY_SEPARATOR, 4, 0, 0, 0, 0, 0, 0, 0, 1]
+            [3, b'b', b':', b'5', 4, 0, 0, 0, 0, 0, 0, 0, 1]
         );
         assert_eq!(
             KvStoreKey::iid_to_terms(&"b:5".into(), 20.into()).0,
-            [b'b', b':', b'5', KEY_SEPARATOR, 4, 0, 0, 0, 0, 0, 0, 0, 20]
+            [3, b'b', b':', b'5', 4, 0, 0, 0, 0, 0, 0, 0, 20]
         );
     }
 
@@ -273,8 +272,8 @@ mod tests {
     #[test]
     fn it_computes_key_ranges() {
         let range = KvStoreKey::prefix_range(&Bucket::from("ABC"));
-        assert_eq!(range.start, &[b'A', b'B', b'C', KEY_SEPARATOR]);
-        assert_eq!(range.end, &[b'A', b'B', b'C', KEY_SEPARATOR + 1]);
+        assert_eq!(range.start, &[3, b'A', b'B', b'C']);
+        assert_eq!(range.end, &[3, b'A', b'B', b'C' + 1]);
     }
 }
 

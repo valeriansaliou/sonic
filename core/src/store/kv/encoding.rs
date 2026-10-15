@@ -4,7 +4,6 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use crate::store::generic::KEY_SEPARATOR;
 use crate::store::types::*;
 
 use super::keys::*;
@@ -234,8 +233,8 @@ impl<'a> ToKvKeyPart for &'a Bucket<'a> {
 
         let mut res = Vec::with_capacity(bytes.len() + 1);
 
+        res.push(u8::try_from(bytes.len()).expect(ITEM_PART_MAX_LEN_ERROR));
         res.extend_from_slice(bytes);
-        res.push(KEY_SEPARATOR);
 
         res
     }

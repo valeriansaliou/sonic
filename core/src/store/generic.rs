@@ -14,14 +14,6 @@ use std::time::Instant;
 
 use crate::store::{Bucket, StoreItemPart};
 
-/// Separator used in key-value stores to separate string components from the
-/// rest of the key.
-///
-/// `"` is used as a UTF-8-valid separator because this character is already
-/// prohibited in places like collection names, because of how Sonic Channel
-/// commands are parsed.
-pub(super) const KEY_SEPARATOR: u8 = b'"';
-
 #[allow(
     drop_bounds,
     reason = "We should implement a `StoreGuard` type or whatever, but this is good enough. \

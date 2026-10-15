@@ -154,17 +154,18 @@ crate::util::impl_transparent_wrapper_utils!(Debug for StoreItemPart<'a>(&'a str
 crate::util::impl_transparent_wrapper_utils!(Display for StoreItemPart<'a>(&'a str));
 
 const STORE_ITEM_PART_LEN_MIN: usize = 1;
+// NOTE: Because of how keys are constructed, this cannot go higher than `u8::MAX` (255).
 const STORE_ITEM_PART_LEN_MAX: usize = 128;
+
+pub(super) const ITEM_PART_MAX_LEN_ERROR: &str =
+    "Item part lengths should always be <= 128 (STORE_ITEM_PART_LEN_MAX).";
 
 impl<'a> StoreItemPart<'a> {
     #[allow(clippy::should_implement_trait)]
     fn from_str(part: &'a str) -> Result<Self, ()> {
         let len = part.len();
 
-        if (STORE_ITEM_PART_LEN_MIN..=STORE_ITEM_PART_LEN_MAX).contains(&len)
-            && part.is_ascii()
-            && !part.contains(char::from(KEY_SEPARATOR))
-        {
+        if (STORE_ITEM_PART_LEN_MIN..=STORE_ITEM_PART_LEN_MAX).contains(&len) && part.is_ascii() {
             Ok(StoreItemPart(part))
         } else {
             Err(())
@@ -441,5 +442,3 @@ macro_rules! impl_primitive_wrapper_utils {
     };
 }
 use impl_primitive_wrapper_utils;
-
-use crate::store::generic::KEY_SEPARATOR;
