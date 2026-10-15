@@ -22,7 +22,12 @@ use crate::store::{Bucket, StoreItemPart};
 /// commands are parsed.
 pub(super) const KEY_SEPARATOR: u8 = b'"';
 
-pub(super) trait GenericStore {
+#[allow(
+    drop_bounds,
+    reason = "We should implement a `StoreGuard` type or whatever, but this is good enough. \
+        We just want rustc to complain if we forget to implement flush on drop for a store."
+)]
+pub(super) trait GenericStore: Drop {
     fn kind() -> &'static str;
 
     fn ref_last_used(&self) -> &RwLock<Instant>;

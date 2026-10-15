@@ -393,6 +393,13 @@ impl GenericStore for FstStore {
     }
 }
 
+impl Drop for FstStore {
+    fn drop(&mut self) {
+        // Flush to disk, to ensure no data is ever lost.
+        self.consolidate(&mut ConsolidateStats::default()).unwrap();
+    }
+}
+
 impl FstStore {
     pub fn to_repository<'a>(&'a self) -> FstRepository<'a> {
         FstRepository {

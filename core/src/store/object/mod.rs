@@ -101,6 +101,13 @@ impl GenericRocksDbStore for ObjectStore {
     }
 }
 
+impl Drop for ObjectStore {
+    fn drop(&mut self) {
+        // Flush to disk, to ensure no data is ever lost.
+        self.flush().unwrap()
+    }
+}
+
 // MARK: Key
 
 // WARN: Don’t change values here, it would break the index! Only add new cases.

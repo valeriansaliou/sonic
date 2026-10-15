@@ -250,6 +250,13 @@ impl GenericRocksDbStore for KvStore {
     }
 }
 
+impl Drop for KvStore {
+    fn drop(&mut self) {
+        // Flush to disk, to ensure no data is ever lost.
+        self.flush().unwrap()
+    }
+}
+
 impl KvStore {
     pub fn to_repository_read_only<'a>(&'a self, bucket: Bucket<'a>) -> KvRepositoryReadOnly<'a> {
         KvRepositoryReadOnly {
