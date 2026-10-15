@@ -317,7 +317,7 @@ impl FstStorePool {
                     || not_consolidated_for.as_secs()
                         >= self.fst_store_config.graph.consolidate_after
                 {
-                    tracing::info!(
+                    tracing::debug!(
                         "fst store {store_id} not consolidated for {not_consolidated_for:.1?}, may consolidate"
                     );
 
@@ -574,7 +574,9 @@ impl FstStorePool {
 
                 // Proceed temporary FST to final FST path rename?
                 match fs::rename(&bucket_tmp_path, &bucket_final_path) {
-                    Ok(()) => tracing::info!("Done consolidate fst at path {bucket_final_path:?}"),
+                    Ok(()) => {
+                        tracing::debug!("Done consolidating fst at path {bucket_final_path:?}")
+                    }
                     Err(error) => tracing::error!(
                         "Error consolidating fst at path {bucket_final_path:?}: {error:?}"
                     ),

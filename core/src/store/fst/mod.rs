@@ -134,13 +134,17 @@ impl FstStore {
     }
 
     fn should_consolidate(&self) {
-        (self.should_consolidate).store(true, atomic::Ordering::Release);
+        let already_scheduled = (self.should_consolidate).swap(true, atomic::Ordering::AcqRel);
 
         // Bump “last consolidated” time, effectively de-bouncing consolidation
         // to a fixed and predictable tick time in the future.
         *self.last_consolidated.write().unwrap() = Instant::now();
 
-        tracing::info!("Graph consolidation scheduled for {}", self.target);
+        if already_scheduled {
+            tracing::trace!("Graph consolidation re-scheduled for {}", self.target);
+        } else {
+            tracing::debug!("Graph consolidation scheduled for {}", self.target);
+        }
     }
 }
 
