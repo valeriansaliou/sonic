@@ -85,6 +85,24 @@ impl Default for FstRepositoryConfig {
 const WORD_LIMIT_LENGTH: usize = 40;
 
 impl FstStore {
+    pub(super) fn open(id: &FstStoreId, config: &FstStoreConfig) -> Result<fst::Set, fst::Error> {
+        tracing::debug!("Opening fst graph for {id}");
+
+        let collection_bucket_path = config.store_path(id, FstStorePathMode::Permanent);
+
+        if collection_bucket_path.exists() {
+            // Open graph at path for collection
+            // SAFETY: This is unsafe, as loaded memory is a memory-mapped file, that cannot be
+            //   guaranteed not to be muted while we own a read handle to it. Though, we use
+            //   higher-level locking mechanisms on all callers of this method, so we are safe.
+            unsafe { fst::Set::from_path(collection_bucket_path) }
+        } else {
+            // FST does not exist on disk; generate an empty FST for now
+            // (until a consolidation task occurs and populates the on-disk FST).
+            fst::Set::from_iter(std::iter::empty::<&str>())
+        }
+    }
+
     fn cardinality(&self) -> usize {
         self.graph.len()
     }

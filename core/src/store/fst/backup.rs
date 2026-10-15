@@ -11,6 +11,8 @@ use std::{fs, io};
 
 use fst::Streamer as _;
 
+use crate::store::fst::FstStore;
+
 use super::{FstStoreId, FstStorePathMode, FstStorePool};
 
 impl FstStorePool {
@@ -168,7 +170,7 @@ impl FstStorePool {
         let backup_fst_file = File::create(&fst_backup_path)?;
         let mut backup_fst_writer = io::BufWriter::new(backup_fst_file);
 
-        let origin_fst = (self.open(&store_id))
+        let origin_fst = FstStore::open(&store_id, &self.fst_store_config)
             .map_err(|error| io::Error::other(format!("Graph open failure: {error:?}")))?;
 
         let mut origin_fst_stream = origin_fst.stream();

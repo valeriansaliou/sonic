@@ -234,7 +234,7 @@ impl FstStorePool {
     }
 
     fn build(&self, store_id: &FstStoreId) -> Result<FstStore, ()> {
-        let graph = (self.open(store_id))
+        let graph = FstStore::open(store_id, &self.fst_store_config)
             .map_err(|error| tracing::error!("Failed opening fst: {error:?}"))?;
 
         let now = Instant::now();
@@ -249,26 +249,6 @@ impl FstStorePool {
             should_consolidate: Default::default(),
             action_config: self.fst_repo_config,
         })
-    }
-
-    pub(super) fn open(&self, id: &FstStoreId) -> Result<fst::Set, fst::Error> {
-        tracing::debug!("Opening fst graph for {id}");
-
-        let collection_bucket_path = self
-            .fst_store_config
-            .store_path(id, FstStorePathMode::Permanent);
-
-        if collection_bucket_path.exists() {
-            // Open graph at path for collection
-            // SAFETY: This is unsafe, as loaded memory is a memory-mapped file, that cannot be
-            //   guaranteed not to be muted while we own a read handle to it. Though, we use
-            //   higher-level locking mechanisms on all callers of this method, so we are safe.
-            unsafe { fst::Set::from_path(collection_bucket_path) }
-        } else {
-            // FST does not exist on disk; generate an empty FST for now
-            // (until a consolidation task occurs and populates the on-disk FST).
-            fst::Set::from_iter(std::iter::empty::<&str>())
-        }
     }
 
     pub(super) fn close(&self, id: &FstStoreId) {
@@ -416,7 +396,7 @@ impl FstStorePool {
         }
 
         // Read old FST (or default to empty FST).
-        let old_fst = (self.open(&store.target))
+        let old_fst = FstStore::open(&store.target, &self.fst_store_config)
             .map_err(|error| tracing::error!("Error opening old fst: {error:?}"))?;
 
         // Initialize the new FST (temporary).
