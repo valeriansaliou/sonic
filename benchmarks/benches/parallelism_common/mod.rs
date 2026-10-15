@@ -8,7 +8,7 @@
 
 use std::borrow::Cow;
 use std::cell::LazyCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hint::black_box;
 use std::ops::DerefMut as _;
 use std::path::Path;
@@ -243,6 +243,8 @@ pub fn ingest_parallel<T: Ingestable>(
     let ingested_count: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
     let ingested_bytes: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
 
+    let used_buckets: Arc<Mutex<HashSet<Cow<'static, str>>>> = Arc::default();
+
     /// Pretend data is split across multiple buckets. It’s just for realism.
     fn bucket(index: usize, total_count: usize, bucket_count: usize) -> Cow<'static, str> {
         if bucket_count < 2 {
@@ -260,6 +262,7 @@ pub fn ingest_parallel<T: Ingestable>(
                 let multiplexer = Arc::clone(&multiplexer);
                 let ingested_count = Arc::clone(&ingested_count);
                 let ingested_bytes = Arc::clone(&ingested_bytes);
+                let used_buckets = Arc::clone(&used_buckets);
 
                 move || {
                     let mut channel = SonicChannelIngestBlocking::connect(
@@ -294,7 +297,7 @@ pub fn ingest_parallel<T: Ingestable>(
 
                         let bucket = bucket(object_index, articles_count, *BUCKET_COUNT);
 
-                        match black_box(channel.push_with_options(COLLECTION, bucket, object.id(), object.data(), push_options.as_slice())) {
+                        match black_box(channel.push_with_options(COLLECTION, &bucket, object.id(), object.data(), push_options.as_slice())) {
                             Ok(()) => {
                                 if show_progress {
                                     eprint!("{}", T::size_char(len));
@@ -302,6 +305,8 @@ pub fn ingest_parallel<T: Ingestable>(
 
                                 let ingested_count = ingested_count.fetch_add(1, atomic::Ordering::Relaxed);
                                 let ingested_bytes = ingested_bytes.fetch_add(len as u64, atomic::Ordering::Relaxed);
+
+                                used_buckets.lock().unwrap().insert(bucket);
 
                                 if ingested_count.is_multiple_of(10_000) {
                                     tracing::info!(
@@ -424,7 +429,8 @@ pub fn ingest_parallel<T: Ingestable>(
         control.config_reset_all(COLLECTION).unwrap();
     }
 
-    if *BUCKET_COUNT < 2 {
+    let bucket_count = used_buckets.lock().unwrap().len();
+    if bucket_count < 2 {
         tracing::info!("Ensuring documents have 1:1 matching IIDs…");
 
         let count = ingest.countb(COLLECTION, "default").unwrap();
@@ -437,6 +443,20 @@ pub fn ingest_parallel<T: Ingestable>(
         }
     } else {
         tracing::warn!("Did not check document count: Multiple buckets (set `BUCKET_COUNT=1`)");
+    }
+
+    {
+        tracing::info!("Ensuring bucket count is correct…");
+
+        let count = ingest.countc(COLLECTION).unwrap();
+        if count != bucket_count {
+            // NOTE: Do not `panic` as some versions of Sonic had this bug and it
+            //   would render benchmark comparison impossible for no good reason.
+            tracing::error!(
+                ?used_buckets,
+                "Data was indexed as fewer buckets than expected (actual: {count}, expected: {bucket_count})"
+            )
+        }
     }
 
     // let search = SonicChannelSearchBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
