@@ -149,6 +149,9 @@ fn main() {
         // Teardown Sonic Channel
         ChannelListen::teardown();
 
+        // Perform an Object store flush (ensures all in-memory changes are synced on-disk before shutdown)
+        object_store_pool.flush(true, |_| true);
+
         // Perform a KV flush (ensures all in-memory changes are synced on-disk before shutdown)
         kv_pool.flush(true, |_| true);
 
