@@ -1,0 +1,11 @@
+[store.kv]
+pool.inactive_after = 10
+database.flush_after = 6
+
+[store.fst]
+pool.inactive_after = 10
+graph.consolidate_after = 6
+
+[store.object]
+pool.inactive_after = 10
+database.flush_after = 6
