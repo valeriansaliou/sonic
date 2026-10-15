@@ -114,7 +114,7 @@ pub mod globals {
 
     pub static BENCH_CONF: LazyLock<String> = LazyLock::new(|| {
         std::env::var("BENCH_CONF").unwrap_or_else(|_err| {
-            let default = "defer_compact-unordered_write";
+            let default = "preset_bulk_load";
             tracing::info!("`BENCH_CONF` not configured, using {default:?} as default.");
             default.to_owned()
         })
