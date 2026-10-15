@@ -104,7 +104,7 @@ pub mod globals {
     pub static PUSH_USE_NEW: LazyLock<bool> = LazyLock::new(|| {
         std::env::var("PUSH_USE_NEW").map_or_else(
             |_err| {
-                let default = true;
+                let default = false;
                 tracing::info!("`PUSH_USE_NEW` not configured, using {default:?} as default.");
                 default
             },
