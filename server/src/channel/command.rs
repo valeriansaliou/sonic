@@ -1737,9 +1737,19 @@ fn config_set(
 
                 config.bulk_load_preset_options = Some(options);
 
-                config.sonic.disable_janitor_tasks = Some(true);
+                // FIX: Do not disable janitor tasks during a bulk ingestion,
+                //   to prevent memory footprint to keep increasing. Dropping
+                //   the stores only cause cheap flush-to-disk operations, so
+                //   it’s okay running those while ingesting.
+                // config.sonic.disable_janitor_tasks = Some(true);
+
+                // However, keep individual consolidate/flush tasks disabled
+                // to only run it if the store has been inactive for a while
+                // (unlikely to be reused).
                 config.sonic.disable_fst_consolidate_task = Some(true);
                 config.sonic.disable_kv_flush_task = Some(true);
+
+                // TODO: increase `inactive_after` so we don’t janitor as often.
             }
             "sonic.disable_janitor_tasks" => {
                 config.sonic.disable_janitor_tasks =
