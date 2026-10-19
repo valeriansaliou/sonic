@@ -54,11 +54,11 @@ pub static NCHANNELS: LazyLock<usize> = LazyLock::new(|| {
     )
 });
 
-pub static BUCKET_COUNT: LazyLock<usize> = LazyLock::new(|| {
-    std::env::var("BUCKET_COUNT").map_or_else(
+pub static NBUCKETS: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("NBUCKETS").map_or_else(
         |_err| {
             let default = 2048;
-            tracing::info!("`BUCKET_COUNT` not configured, using {default:?} as default.");
+            tracing::info!("`NBUCKETS` not configured, using {default:?} as default.");
             default
         },
         |s| s.parse::<usize>().unwrap(),
@@ -293,7 +293,7 @@ pub fn ingest_parallel<T: Ingestable>(
                     while let Some((object_index, object)) = next(&articles) {
                         let len = object.data().as_bytes().len();
 
-                        let bucket = bucket(object_index, articles_count, *BUCKET_COUNT);
+                        let bucket = bucket(object_index, articles_count, *NBUCKETS);
 
                         match black_box(channel.push_with_options(collection, &bucket, object.id(), object.data(), push_options.as_slice())) {
                             Ok(()) => {
