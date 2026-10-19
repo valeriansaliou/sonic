@@ -120,7 +120,7 @@ pub fn ingest_parallel<T: Ingestable>(
 
     let mut elapsed_total = Duration::ZERO;
 
-    let mut ctx = RunContext::new(true);
+    let mut ctx = RunContext::new(*AUTO_CLEANUP);
 
     ctx.start_sonic(
         &new_empty_data_path(BENCH_DATA_PATH, ctx.id),

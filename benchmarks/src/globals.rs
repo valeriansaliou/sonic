@@ -54,6 +54,17 @@ pub static PUSH_USE_NEW: LazyLock<bool> = LazyLock::new(|| {
     )
 });
 
+pub static AUTO_CLEANUP: LazyLock<bool> = LazyLock::new(|| {
+    std::env::var("AUTO_CLEANUP").map_or_else(
+        |_err| {
+            let default = true;
+            tracing::info!("`AUTO_CLEANUP` not configured, using {default:?} as default.");
+            default
+        },
+        |s| matches!(s.as_str(), "1" | "true"),
+    )
+});
+
 pub static BENCH_CONF: LazyLock<String> = LazyLock::new(|| {
     std::env::var("BENCH_CONF").unwrap_or_else(|_err| {
         let default = "preset_bulk_load";
