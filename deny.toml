@@ -71,7 +71,7 @@ allow-build-scripts = [
     "proc-macro2@1.0.107",
     "quote@1.0.47",
     "ring@0.17.14",
-    "rustls@0.23.45",
+    "rustls@0.23.46",
     "rustversion@1.0.23",
     "serde@1.0.229",
     "serde_core@1.0.229",
