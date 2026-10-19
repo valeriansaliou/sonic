@@ -108,13 +108,12 @@ pub fn ingest_parallel<T: Ingestable>(
     bench_name: &str,
     config: &ParallelBenchmarkConfig,
     sonic_conf_path: &Path,
+    collection: &'static str,
     nchannels: usize,
     articles_iter: impl Iterator<Item = T> + Send + 'static,
     articles_count: usize,
     total_bytes: u64,
 ) -> IngestStats {
-    const COLLECTION: &str = "wikipedia";
-
     let show_progress = *SHOW_PROGRESS;
     let push_use_new = *PUSH_USE_NEW;
 
@@ -177,7 +176,7 @@ pub fn ingest_parallel<T: Ingestable>(
             ));
         }
 
-        control.config_set(COLLECTION, &args).unwrap();
+        control.config_set(collection, &args).unwrap();
     }
 
     let print_stats = Arc::new(AtomicBool::new(true));
@@ -295,7 +294,7 @@ pub fn ingest_parallel<T: Ingestable>(
 
                         let bucket = bucket(object_index, articles_count, *BUCKET_COUNT);
 
-                        match black_box(channel.push_with_options(COLLECTION, &bucket, object.id(), object.data(), push_options.as_slice())) {
+                        match black_box(channel.push_with_options(collection, &bucket, object.id(), object.data(), push_options.as_slice())) {
                             Ok(()) => {
                                 if show_progress {
                                     eprint!("{}", T::size_char(len));
@@ -430,7 +429,7 @@ pub fn ingest_parallel<T: Ingestable>(
     if *config != ParallelBenchmarkConfig::default() {
         tracing::info!("Resetting dynamic configuration…");
 
-        control.config_reset_all(COLLECTION).unwrap();
+        control.config_reset_all(collection).unwrap();
     }
 
     {
@@ -439,7 +438,7 @@ pub fn ingest_parallel<T: Ingestable>(
         let used_buckets = used_buckets.lock().unwrap();
 
         let count = (used_buckets.iter())
-            .map(|bucket| ingest.countb(COLLECTION, bucket).unwrap())
+            .map(|bucket| ingest.countb(collection, bucket).unwrap())
             .sum::<usize>();
         if count != articles_count {
             // NOTE: Do not `panic` as some versions of Sonic had this bug and it
@@ -455,7 +454,7 @@ pub fn ingest_parallel<T: Ingestable>(
 
         let bucket_count = used_buckets.lock().unwrap().len();
 
-        let count = ingest.countc(COLLECTION).unwrap();
+        let count = ingest.countc(collection).unwrap();
         if count != bucket_count {
             // NOTE: Do not `panic` as some versions of Sonic had this bug and it
             //   would render benchmark comparison impossible for no good reason.
@@ -487,7 +486,7 @@ pub fn ingest_parallel<T: Ingestable>(
     // }
 
     // {
-    //     let term_count = ingest.legacy_countb(COLLECTION, BUCKET).unwrap();
+    //     let term_count = ingest.legacy_countb(collection, BUCKET).unwrap();
     //     tracing::info!("Final term count: {term_count}");
     // }
 

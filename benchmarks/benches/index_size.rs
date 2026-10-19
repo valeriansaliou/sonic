@@ -19,6 +19,8 @@ use sonic_benchmarks::util::logging::{LoggingOptions, init_logging};
 
 use crate::parallelism_common::*;
 
+const COLLECTION: &str = "wikipedia";
+
 static SHARD_PATHS: LazyLock<Vec<PathBuf>> =
     LazyLock::new(|| download_shards("wikimedia/wikipedia", "20231101.en", Some(*NSHARDS)));
 
@@ -69,6 +71,7 @@ fn main() {
                 &bench_name,
                 &config,
                 sonic_conf_path,
+                COLLECTION,
                 nchannels,
                 articles(),
                 articles_count,

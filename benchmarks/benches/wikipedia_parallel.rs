@@ -22,6 +22,8 @@ use sonic_benchmarks::util::logging::{CompactThousands, HumanBytes};
 
 use crate::parallelism_common::*;
 
+const COLLECTION: &str = "wikipedia";
+
 static SHARD_PATHS: LazyLock<Vec<PathBuf>> =
     LazyLock::new(|| download_shards("wikimedia/wikipedia", "20231101.en", Some(*NSHARDS)));
 
@@ -107,7 +109,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     };
 
                     for _i in 0..iters_custom {
-                        let stats = ingest_parallel(&bench_name, &config, sonic_conf_path, nchannels, articles(), articles_count, total_bytes);
+                        let stats = ingest_parallel(&bench_name, &config, sonic_conf_path, COLLECTION, nchannels, articles(), articles_count, total_bytes);
 
                         elapsed_total += stats.elapsed_total;
 
