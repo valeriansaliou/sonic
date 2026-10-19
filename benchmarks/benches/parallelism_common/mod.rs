@@ -441,14 +441,21 @@ pub fn ingest_parallel_inner<T: Ingestable>(
         }
     }
 
-    // let search = SonicChannelSearchBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &ctx.multiplexer).unwrap();
-
+    // let search =
+    //     SonicChannelSearchBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &ctx.multiplexer)
+    //         .unwrap();
+    //
     // {
+    //     tracing::info!("Testing a query with snippets…");
+    //
+    //     let start = Instant::now();
+    //
     //     let query = "exanple";
+    //     let bucket = used_buckets.lock().unwrap().first().unwrap().clone();
     //     let json = search
     //         .send_async(
     //             sonic_client::Command::new(
-    //                 format!("QUERY {COLLECTION} {BUCKET} {query:?} LIMIT(4) WITH SNIPPETS")
+    //                 format!("QUERY {collection} {bucket} {query:?} LIMIT(4) WITH SNIPPETS")
     //                     .into_boxed_str(),
     //                 0,
     //                 0,
@@ -458,8 +465,11 @@ pub fn ingest_parallel_inner<T: Ingestable>(
     //             |data| Ok(data.to_owned()),
     //         )
     //         .unwrap();
-    //     println!("Got snippets: {json}");
+    //
+    //     tracing::info!(elasped = ?start.elapsed(), "Got snippets: {json}");
     // }
+    //
+    // drop(search);
 
     // {
     //     let term_count = ingest.legacy_countb(collection, BUCKET).unwrap();
