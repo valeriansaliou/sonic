@@ -5,20 +5,21 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 mod common;
-#[path = "common/huggingface/wikipedia.rs"]
-mod huggingface_wikipedia;
 mod parallelism_common;
-mod wikipedia_common;
 
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
-use crate::common::huggingface::NSHARDS;
-use crate::common::huggingface::download::download_shards;
-use crate::common::huggingface::load::iter_shard;
-use crate::common::prelude::*;
-use crate::huggingface_wikipedia::WikipediaArticle;
+use sonic_benchmarks::huggingface::NSHARDS;
+use sonic_benchmarks::huggingface::download::download_shards;
+use sonic_benchmarks::huggingface::load::iter_shard;
+use sonic_benchmarks::huggingface::wikipedia::WikipediaArticle;
+use sonic_benchmarks::prelude::*;
+use sonic_benchmarks::util::logging::{LoggingOptions, init_logging};
+
 use crate::parallelism_common::*;
+
+const COLLECTION: &str = "wikipedia";
 
 static SHARD_PATHS: LazyLock<Vec<PathBuf>> =
     LazyLock::new(|| download_shards("wikimedia/wikipedia", "20231101.en", Some(*NSHARDS)));
@@ -66,10 +67,14 @@ fn main() {
             let bench_name =
                 format!("[bench={bench_conf_name}][sonic={sonic_conf_name}][channels={nchannels}]");
 
+            let mut ctx = RunContext::new(*AUTO_CLEANUP);
+
             ingest_parallel(
+                &mut ctx,
                 &bench_name,
                 &config,
                 sonic_conf_path,
+                COLLECTION,
                 nchannels,
                 articles(),
                 articles_count,

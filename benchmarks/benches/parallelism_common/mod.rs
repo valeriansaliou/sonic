@@ -8,7 +8,7 @@
 
 use std::borrow::Cow;
 use std::cell::LazyCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::hint::black_box;
 use std::ops::DerefMut as _;
 use std::path::Path;
@@ -19,17 +19,21 @@ use std::thread::{JoinHandle, Thread};
 use std::time::{Duration, Instant};
 
 use criterion::BenchmarkId;
+use indexmap::IndexSet;
+use sonic_benchmarks::profiling::PROFILING_MODE;
 use sonic_client::control::SonicChannelControlBlocking;
 use sonic_client::ingest::SonicChannelIngestBlocking;
 use sonic_client::search::SonicChannelSearchBlocking;
 use sonic_client::{SonicMultiplexer, make_command};
 
-use crate::common::client_helpers::trigger_compact;
-use crate::common::client_helpers::trigger_flush;
-use crate::common::logging::HumanBytes;
-use crate::common::logging::LOG_LEVEL;
-use crate::common::random::{SplitMix64, build_dictionary};
-use crate::common::{Ingestable, prelude::*};
+use sonic_benchmarks::prelude::*;
+use sonic_benchmarks::util::client_helpers::trigger_compact;
+use sonic_benchmarks::util::client_helpers::trigger_flush;
+use sonic_benchmarks::util::logging::HumanBytes;
+use sonic_benchmarks::util::logging::LOG_LEVEL;
+use sonic_benchmarks::util::random::{SplitMix64, build_dictionary};
+
+use crate::common::{BENCH_DATA_PATH, SONIC_BENCH_PASSWORD, profiling_output};
 
 static DICTIONARY: LazyLock<Vec<String>> = LazyLock::new(|| {
     build_dictionary(
@@ -50,11 +54,11 @@ pub static NCHANNELS: LazyLock<usize> = LazyLock::new(|| {
     )
 });
 
-pub static BUCKET_COUNT: LazyLock<usize> = LazyLock::new(|| {
-    std::env::var("BUCKET_COUNT").map_or_else(
+pub static NBUCKETS: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("NBUCKETS").map_or_else(
         |_err| {
             let default = 2048;
-            tracing::info!("`BUCKET_COUNT` not configured, using {default:?} as default.");
+            tracing::info!("`NBUCKETS` not configured, using {default:?} as default.");
             default
         },
         |s| s.parse::<usize>().unwrap(),
@@ -92,6 +96,11 @@ impl ParallelBenchmarkConfig {
     }
 }
 
+pub struct IngestResponse {
+    pub stats: IngestStats,
+    pub used_buckets: IndexSet<Cow<'static, str>>,
+}
+
 pub struct IngestStats {
     pub ingest_duration: Duration,
     pub compact_duration: Duration,
@@ -101,33 +110,27 @@ pub struct IngestStats {
     pub ingested_bytes: u64,
 }
 
-pub fn ingest_parallel<T: Ingestable>(
-    bench_name: &str,
+pub fn ingest_parallel_inner<T: Ingestable>(
+    ctx: &RunContext,
     config: &ParallelBenchmarkConfig,
-    sonic_conf_path: &Path,
+    collection: &'static str,
     nchannels: usize,
     articles_iter: impl Iterator<Item = T> + Send + 'static,
     articles_count: usize,
     total_bytes: u64,
-) -> IngestStats {
-    const COLLECTION: &str = "wikipedia";
-
+) -> IngestResponse {
     let show_progress = *SHOW_PROGRESS;
     let push_use_new = *PUSH_USE_NEW;
 
     let mut elapsed_total = Duration::ZERO;
 
-    let sonic = start_sonic_empty(Some(bench_name), |command| {
-        command.arg("-c").arg(sonic_conf_path)
-    });
-
-    let multiplexer = Arc::new(SonicMultiplexer::new().unwrap());
-
     let control = LazyCell::new(|| {
-        SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap()
+        SonicChannelControlBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &ctx.multiplexer)
+            .unwrap()
     });
     let ingest = LazyCell::new(|| {
-        SonicChannelIngestBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap()
+        SonicChannelIngestBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &ctx.multiplexer)
+            .unwrap()
     });
 
     {
@@ -164,19 +167,20 @@ pub fn ingest_parallel<T: Ingestable>(
             ));
         }
 
-        control.config_set(COLLECTION, &args).unwrap();
+        control.config_set(collection, &args).unwrap();
     }
 
     let print_stats = Arc::new(AtomicBool::new(true));
     let stats_handle = std::thread::Builder::new()
         .name("stats-ticker".to_owned())
         .spawn({
-            let multiplexer = Arc::clone(&multiplexer);
+            let addr = ctx.addr;
+            let multiplexer = Arc::clone(&ctx.multiplexer);
             let print_stats = Arc::clone(&print_stats);
 
             move || {
                 let control =
-                    SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer)
+                    SonicChannelControlBlocking::connect(addr, SONIC_BENCH_PASSWORD, &multiplexer)
                         .unwrap();
 
                 let get_stats = move || {
@@ -226,31 +230,21 @@ pub fn ingest_parallel<T: Ingestable>(
     let ingested_count: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
     let ingested_bytes: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
 
-    let used_buckets: Arc<Mutex<HashSet<Cow<'static, str>>>> = Arc::default();
-
-    /// Pretend data is split across multiple buckets. It’s just for realism.
-    fn bucket(index: usize, total_count: usize, bucket_count: usize) -> Cow<'static, str> {
-        if bucket_count < 2 {
-            Cow::Borrowed("default")
-        } else {
-            let bucket_id = (index * bucket_count) / total_count;
-            Cow::Owned(format!("bucket:{bucket_id}"))
-        }
-    }
+    let used_buckets: Arc<Mutex<IndexSet<Cow<'static, str>>>> = Arc::default();
 
     let mut ingest_duration = (0..nchannels)
         .map(|i| {
             std::thread::Builder::new().name(format!("thread-{i}")).spawn({
                 let articles = Arc::clone(&articles);
-                let multiplexer = Arc::clone(&multiplexer);
+                let addr = ctx.addr;
+                let multiplexer = Arc::clone(&ctx.multiplexer);
                 let ingested_count = Arc::clone(&ingested_count);
                 let ingested_bytes = Arc::clone(&ingested_bytes);
                 let used_buckets = Arc::clone(&used_buckets);
 
                 move || {
                     let mut channel = SonicChannelIngestBlocking::connect(
-                        ADDR,
-                        SONIC_PASSWORD,
+                        addr, SONIC_BENCH_PASSWORD,
                         &multiplexer,
                     ).unwrap();
                     // println!("Opened Sonic channel");
@@ -278,9 +272,9 @@ pub fn ingest_parallel<T: Ingestable>(
                     while let Some((object_index, object)) = next(&articles) {
                         let len = object.data().as_bytes().len();
 
-                        let bucket = bucket(object_index, articles_count, *BUCKET_COUNT);
+                        let bucket = bucket(object_index, articles_count, *NBUCKETS);
 
-                        match black_box(channel.push_with_options(COLLECTION, &bucket, object.id(), object.data(), push_options.as_slice())) {
+                        match black_box(channel.push_with_options(collection, &bucket, object.id(), object.data(), push_options.as_slice())) {
                             Ok(()) => {
                                 if show_progress {
                                     eprint!("{}", T::size_char(len));
@@ -349,11 +343,12 @@ pub fn ingest_parallel<T: Ingestable>(
         size = HumanBytes::from(ingested_bytes)
     );
 
-    sonic.print_index_size_if_enabled();
+    ctx.print_index_size_if_enabled();
 
     let (compact_duration, consolidate_duration) = {
         let compact_handle = std::thread::spawn({
-            let multiplexer = Arc::clone(&multiplexer);
+            let addr = ctx.addr;
+            let multiplexer = Arc::clone(&ctx.multiplexer);
 
             move || {
                 tracing::info!("Compacting KV…");
@@ -361,7 +356,7 @@ pub fn ingest_parallel<T: Ingestable>(
                 let start = Instant::now();
 
                 let control =
-                    SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer)
+                    SonicChannelControlBlocking::connect(addr, SONIC_BENCH_PASSWORD, &multiplexer)
                         .unwrap();
 
                 // Compaction can take a very long time. We have to bump the timeout.
@@ -378,7 +373,8 @@ pub fn ingest_parallel<T: Ingestable>(
         });
 
         let consolidate_handle = std::thread::spawn({
-            let multiplexer = Arc::clone(&multiplexer);
+            let addr = ctx.addr;
+            let multiplexer = Arc::clone(&ctx.multiplexer);
 
             move || {
                 tracing::info!("Consolidating FST…");
@@ -386,7 +382,7 @@ pub fn ingest_parallel<T: Ingestable>(
                 let start = Instant::now();
 
                 let control =
-                    SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer)
+                    SonicChannelControlBlocking::connect(addr, SONIC_BENCH_PASSWORD, &multiplexer)
                         .unwrap();
                 black_box(control.trigger_consolidate()).unwrap();
 
@@ -409,7 +405,7 @@ pub fn ingest_parallel<T: Ingestable>(
     if *config != ParallelBenchmarkConfig::default() {
         tracing::info!("Resetting dynamic configuration…");
 
-        control.config_reset_all(COLLECTION).unwrap();
+        control.config_reset_all(collection).unwrap();
     }
 
     {
@@ -418,7 +414,7 @@ pub fn ingest_parallel<T: Ingestable>(
         let used_buckets = used_buckets.lock().unwrap();
 
         let count = (used_buckets.iter())
-            .map(|bucket| ingest.countb(COLLECTION, bucket).unwrap())
+            .map(|bucket| ingest.countb(collection, bucket).unwrap())
             .sum::<usize>();
         if count != articles_count {
             // NOTE: Do not `panic` as some versions of Sonic had this bug and it
@@ -434,7 +430,7 @@ pub fn ingest_parallel<T: Ingestable>(
 
         let bucket_count = used_buckets.lock().unwrap().len();
 
-        let count = ingest.countc(COLLECTION).unwrap();
+        let count = ingest.countc(collection).unwrap();
         if count != bucket_count {
             // NOTE: Do not `panic` as some versions of Sonic had this bug and it
             //   would render benchmark comparison impossible for no good reason.
@@ -445,14 +441,21 @@ pub fn ingest_parallel<T: Ingestable>(
         }
     }
 
-    // let search = SonicChannelSearchBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
-
+    // let search =
+    //     SonicChannelSearchBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &ctx.multiplexer)
+    //         .unwrap();
+    //
     // {
+    //     tracing::info!("Testing a query with snippets…");
+    //
+    //     let start = Instant::now();
+    //
     //     let query = "exanple";
+    //     let bucket = used_buckets.lock().unwrap().first().unwrap().clone();
     //     let json = search
     //         .send_async(
     //             sonic_client::Command::new(
-    //                 format!("QUERY {COLLECTION} {BUCKET} {query:?} LIMIT(4) WITH SNIPPETS")
+    //                 format!("QUERY {collection} {bucket} {query:?} LIMIT(4) WITH SNIPPETS")
     //                     .into_boxed_str(),
     //                 0,
     //                 0,
@@ -462,26 +465,76 @@ pub fn ingest_parallel<T: Ingestable>(
     //             |data| Ok(data.to_owned()),
     //         )
     //         .unwrap();
-    //     println!("Got snippets: {json}");
+    //
+    //     tracing::info!(elasped = ?start.elapsed(), "Got snippets: {json}");
     // }
+    //
+    // drop(search);
 
     // {
-    //     let term_count = ingest.legacy_countb(COLLECTION, BUCKET).unwrap();
+    //     let term_count = ingest.legacy_countb(collection, BUCKET).unwrap();
     //     tracing::info!("Final term count: {term_count}");
     // }
 
     drop(control);
     drop(ingest);
-    // drop(search);
-    drop(sonic);
 
-    IngestStats {
+    let stats = IngestStats {
         ingest_duration,
         compact_duration,
         consolidate_duration,
         elapsed_total,
         ingested_count,
         ingested_bytes,
+    };
+
+    IngestResponse {
+        stats,
+        used_buckets: Mutex::into_inner(Arc::into_inner(used_buckets).unwrap()).unwrap(),
+    }
+}
+
+pub fn ingest_parallel<T: Ingestable>(
+    ctx: &mut RunContext,
+    bench_name: &str,
+    config: &ParallelBenchmarkConfig,
+    sonic_conf_path: &Path,
+    collection: &'static str,
+    nchannels: usize,
+    articles_iter: impl Iterator<Item = T> + Send + 'static,
+    articles_count: usize,
+    total_bytes: u64,
+) -> IngestResponse {
+    ctx.start_sonic(
+        &new_empty_data_path(BENCH_DATA_PATH, ctx.id),
+        SONIC_BENCH_PASSWORD.to_owned(),
+        |command| command.arg("-c").arg(sonic_conf_path),
+    );
+
+    if let Some(profiling_mode) = PROFILING_MODE.as_ref() {
+        ctx.start_profiling(profiling_mode, profiling_output(Some(bench_name)));
+    }
+
+    ctx.wait_until_ready();
+
+    ingest_parallel_inner(
+        &ctx,
+        config,
+        collection,
+        nchannels,
+        articles_iter,
+        articles_count,
+        total_bytes,
+    )
+}
+
+/// Pretend data is split across multiple buckets. It’s just for realism.
+pub fn bucket(index: usize, total_count: usize, bucket_count: usize) -> Cow<'static, str> {
+    if bucket_count < 2 {
+        Cow::Borrowed("default")
+    } else {
+        let bucket_id = (index * bucket_count) / total_count;
+        Cow::Owned(format!("bucket:{bucket_id}"))
     }
 }
 
@@ -494,19 +547,24 @@ pub fn run_bench<const N: usize>(
     actors: impl Fn(&RunContext, &mut bus::Bus<Message>) -> [Box<dyn Actor>; N],
 ) {
     let bench_state = Mutex::new(LazyLock::new(|| {
-        let mut ctx = start_sonic_empty(None, |command| {
-            update_command(command)
-                .env(
-                    "SONIC_SERVER__LOG_LEVEL",
-                    LOG_LEVEL.unwrap_or(tracing::Level::WARN).to_string(),
-                )
-                // Disable background tasks (we’ll run them manually).
-                .env("SONIC_STORE__FST__GRAPH__CONSOLIDATE_AFTER", "3600")
-                .env("SONIC_STORE__FST__POOL__INACTIVE_AFTER", "3700")
-                .env("SONIC_STORE__KV__DATABASE__FLUSH_AFTER", "3600")
-                .env("SONIC_STORE__KV__POOL__INACTIVE_AFTER", "3700")
-                .env("RUST_BACKTRACE", "full")
-        });
+        let mut ctx = RunContext::new(true);
+        ctx.start_sonic(
+            &new_empty_data_path(BENCH_DATA_PATH, ctx.id),
+            SONIC_BENCH_PASSWORD.to_owned(),
+            |command| {
+                update_command(command)
+                    .env(
+                        "SONIC_SERVER__LOG_LEVEL",
+                        LOG_LEVEL.unwrap_or(tracing::Level::WARN).to_string(),
+                    )
+                    // Disable background tasks (we’ll run them manually).
+                    .env("SONIC_STORE__FST__GRAPH__CONSOLIDATE_AFTER", "3600")
+                    .env("SONIC_STORE__FST__POOL__INACTIVE_AFTER", "3700")
+                    .env("SONIC_STORE__KV__DATABASE__FLUSH_AFTER", "3600")
+                    .env("SONIC_STORE__KV__POOL__INACTIVE_AFTER", "3700")
+                    .env("RUST_BACKTRACE", "full")
+            },
+        );
 
         // Pre-populate Sonic.
         prepopulate(&ctx);
@@ -964,7 +1022,8 @@ pub struct PushActor {
 impl Actor for PushActor {
     fn run(&mut self, multiplexer: &SonicMultiplexer) {
         let ingest =
-            SonicChannelIngestBlocking::connect(self.addr, SONIC_PASSWORD, &multiplexer).unwrap();
+            SonicChannelIngestBlocking::connect(self.addr, SONIC_BENCH_PASSWORD, &multiplexer)
+                .unwrap();
 
         run_loop(
             "Push",
@@ -1027,7 +1086,8 @@ pub struct QueryActor {
 impl Actor for QueryActor {
     fn run(&mut self, multiplexer: &SonicMultiplexer) {
         let search =
-            SonicChannelSearchBlocking::connect(self.addr, SONIC_PASSWORD, &multiplexer).unwrap();
+            SonicChannelSearchBlocking::connect(self.addr, SONIC_BENCH_PASSWORD, &multiplexer)
+                .unwrap();
 
         run_loop(
             "Query",
@@ -1076,7 +1136,8 @@ pub struct FlushActor {
 impl Actor for FlushActor {
     fn run(&mut self, multiplexer: &SonicMultiplexer) {
         let control =
-            SonicChannelControlBlocking::connect(self.addr, SONIC_PASSWORD, &multiplexer).unwrap();
+            SonicChannelControlBlocking::connect(self.addr, SONIC_BENCH_PASSWORD, &multiplexer)
+                .unwrap();
 
         run_loop(
             "Flush",
@@ -1117,7 +1178,8 @@ pub struct ConsolidateActor {
 impl Actor for ConsolidateActor {
     fn run(&mut self, multiplexer: &SonicMultiplexer) {
         let control =
-            SonicChannelControlBlocking::connect(self.addr, SONIC_PASSWORD, &multiplexer).unwrap();
+            SonicChannelControlBlocking::connect(self.addr, SONIC_BENCH_PASSWORD, &multiplexer)
+                .unwrap();
 
         run_loop(
             "Consolidate",

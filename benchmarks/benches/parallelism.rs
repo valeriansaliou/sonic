@@ -10,13 +10,11 @@ mod parallelism_common;
 use std::sync::{Arc, RwLock};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use sonic_benchmarks::prepopulate::*;
+use sonic_benchmarks::util::logging::{LoggingOptions, init_logging};
+use sonic_benchmarks::util::random::SplitMix64;
 
-use crate::common::random::SplitMix64;
-use crate::common::{no_prepopulate, prelude::*, prepopulate_gdpr};
-use crate::parallelism_common::{
-    Actor, ConsolidateActor, FlushActor, ParallelismBenchmarkConfig, PushActor, QueryActor,
-    run_bench, run_bench_multi,
-};
+use crate::parallelism_common::*;
 
 criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);

@@ -5,9 +5,6 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 mod common;
-#[path = "common/huggingface/wikipedia.rs"]
-mod huggingface_wikipedia;
-mod wikipedia_common;
 
 use std::hint::black_box;
 use std::path::PathBuf;
@@ -15,12 +12,13 @@ use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use sonic_benchmarks::huggingface::download::download_shards;
+use sonic_benchmarks::huggingface::load::iter_shard;
+use sonic_benchmarks::huggingface::wikipedia::WikipediaArticle;
+use sonic_benchmarks::huggingface::wikipedia_common::*;
+use sonic_benchmarks::prelude::*;
 
-use crate::common::huggingface::download::download_shards;
-use crate::common::huggingface::load::iter_shard;
-use crate::common::prelude::*;
-use crate::huggingface_wikipedia::WikipediaArticle;
-use crate::wikipedia_common::*;
+use crate::common::{BENCH_DATA_PATH, SONIC_BENCH_PASSWORD};
 
 static SHARD_PATHS: LazyLock<Vec<PathBuf>> =
     LazyLock::new(|| download_shards("wikimedia/wikipedia", "20231101.simple", None));
@@ -78,14 +76,16 @@ fn criterion_benchmark(c: &mut Criterion) {
                 let mut elapsed_total = Duration::ZERO;
 
                 for _i in 0..iters {
-                    let sonic = start_sonic_empty(None, |command| config.update_command(command));
+                    let mut ctx = RunContext::new(true);
+                    ctx.start_sonic(&new_empty_data_path(BENCH_DATA_PATH, ctx.id), SONIC_BENCH_PASSWORD.to_owned(), |command| config.update_command(command));
+                    ctx.wait_until_ready();
 
                     let multiplexer = SonicMultiplexer::new().unwrap();
 
                     {
                         let mut channel = SonicChannelIngestBlocking::connect(
-                            ADDR,
-                            SONIC_PASSWORD,
+                            ctx.addr,
+                            SONIC_BENCH_PASSWORD,
                             &multiplexer,
                         ).unwrap();
                         // println!("Opened Sonic channel");
@@ -127,7 +127,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     }
 
                     {
-                        let mut channel = SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
+                        let mut channel = SonicChannelControlBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &multiplexer).unwrap();
 
                         let start = Instant::now();
 
@@ -142,7 +142,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                         println!("Consolidated in {elapsed:.3?}.");
                     }
 
-                    drop(sonic);
+                    drop(ctx);
                 }
 
                 elapsed_total
@@ -163,18 +163,19 @@ fn criterion_benchmark(c: &mut Criterion) {
                 let mut elapsed_total = Duration::ZERO;
 
                 for _i in 0..iters {
-                    let sonic = start_sonic_empty(None, |command| command
+                    let mut ctx = RunContext::new(true);
+                    ctx.start_sonic(&new_empty_data_path(BENCH_DATA_PATH, ctx.id), SONIC_BENCH_PASSWORD.to_owned(), |command| command
                         .env("SONIC_STORE__FST__GRAPH__CONSOLIDATE_AFTER", "3600")
                         .env("SONIC_STORE__FST__POOL__INACTIVE_AFTER", "3700")
                         .env("SONIC_STORE__KV__DATABASE__FLUSH_AFTER", "3600")
                         .env("SONIC_STORE__KV__POOL__INACTIVE_AFTER", "3700"));
+                    ctx.wait_until_ready();
 
                     let multiplexer = SonicMultiplexer::new().unwrap();
 
                     {
                         let mut channel = SonicChannelIngestBlocking::connect(
-                            ADDR,
-                            SONIC_PASSWORD,
+                            ctx.addr, SONIC_BENCH_PASSWORD,
                             &multiplexer,
                         ).unwrap();
                         // println!("Opened Sonic channel");
@@ -215,7 +216,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     }
 
                     {
-                        let mut channel = SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
+                        let mut channel = SonicChannelControlBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &multiplexer).unwrap();
 
                         let start = Instant::now();
 
@@ -230,7 +231,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                         println!("Consolidated in {elapsed:.3?}.");
                     }
 
-                    drop(sonic);
+                    drop(ctx);
                 }
 
                 elapsed_total
@@ -259,7 +260,12 @@ fn criterion_benchmark(c: &mut Criterion) {
             |b, &limit| {
                 let multiplexer = SonicMultiplexer::new().unwrap();
 
-                let sonic = start_sonic_prepopulated(
+                let mut ctx = RunContext::new(true);
+                let data_path = new_empty_data_path(BENCH_DATA_PATH, ctx.id);
+                start_sonic_prepopulated(
+                    &mut ctx,
+                    &data_path,
+                    SONIC_BENCH_PASSWORD.to_owned(),
                     &multiplexer,
                     NormalizationConfig {
                         diacritic_folding_enabled: Some(true),
@@ -267,12 +273,13 @@ fn criterion_benchmark(c: &mut Criterion) {
                     |command| command.env("SONIC_SEARCH__QUERY_LIMIT_DEFAULT", limit.to_string()),
                     || articles_iter(10000),
                 );
+                ctx.wait_until_ready();
 
                 b.iter_custom(|iters| {
                     let mut elapsed_total = Duration::ZERO;
                     for _i in 0..iters {
                         let mut channel =
-                            SonicChannelSearchBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer)
+                            SonicChannelSearchBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &multiplexer)
                                 .unwrap();
                         // println!("Opened Sonic channel");
 
@@ -317,7 +324,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     elapsed_total
                 });
 
-                drop(sonic);
+                drop(ctx);
             },
         );
     }

@@ -18,21 +18,35 @@ autoexamples = false
 autotests = false
 autobenches = false
 
-[dev-dependencies]
-arrow-array = { version = "=60.0.0", default-features = false }
+[dependencies]
 bus = { version = "=2.4.1", default-features = false }
 config = { version = "=0.15.27", default-features = false, features = ["toml"] }
-criterion = { version = "=0.8.2", default-features = false, features = ["html_reports", "plotters"] }
-hf-hub = { version = "=0.5.0", default-features = false, features = ["ureq"] }
-parquet = { version = "=60.0.0", default-features = false, features = ["arrow", "snap"] }
+indexmap = { version = "=2.14.2", default-features = false, features = ["std"] }
 serde = { version = "=1.0.229", default-features = false, features = ["derive", "rc"] }
 serde_json = { version = "=1.0.151", default-features = false, features = ["std"] }
 sonic_client = { version = "=0.6.0", path = "../client", features = ["sync", "tracing", "raw-api", "experimental-api"] }
 tracing = { version = "=0.1.44", default-features = false }
 tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["std", "fmt", "ansi", "env-filter"] }
 
+# Huggingface dependencies.
+arrow-array = { optional = true, version = "=60.0.0", default-features = false }
+hf-hub = { optional = true, version = "=0.5.0", default-features = false, features = ["ureq"] }
+parquet = { optional = true, version = "=60.0.0", default-features = false, features = ["arrow", "snap"] }
+
+[dev-dependencies]
+criterion = { version = "=0.8.2", default-features = false, features = ["html_reports", "plotters"] }
+
 [features]
+default = ["experimental-api", "huggingface", "profiling", "analysis"]
+huggingface = ["dep:hf-hub", "dep:parquet", "dep:arrow-array"]
+profiling = []
+analysis = []
 experimental-api = [] # Just for rust-analyzer to stop crashing
+
+[lib]
+name = "sonic_benchmarks"
+path = "src/lib.rs"
+doc = false
 
 [[bench]]
 name = "wikipedia"
@@ -52,4 +66,8 @@ harness = false
 
 [[bench]]
 name = "index_size"
+harness = false
+
+[[bench]]
+name = "query_time"
 harness = false

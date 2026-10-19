@@ -8,16 +8,15 @@ use std::sync::{LazyLock, Once};
 
 use tracing_subscriber::EnvFilter;
 
-pub(crate) static LOG_LEVEL: LazyLock<Option<tracing::Level>> =
-    LazyLock::new(
-        move || match std::env::var("LOG_LEVEL").map(|s| s.to_ascii_uppercase()) {
-            Ok(level) if level == "TRACE" => Some(tracing::Level::TRACE),
-            Ok(level) if level == "DEBUG" => Some(tracing::Level::DEBUG),
-            Ok(level) if level == "INFO" => Some(tracing::Level::INFO),
-            Ok(level) if level == "WARN" => Some(tracing::Level::WARN),
-            _ => None,
-        },
-    );
+pub static LOG_LEVEL: LazyLock<Option<tracing::Level>> = LazyLock::new(
+    move || match std::env::var("LOG_LEVEL").map(|s| s.to_ascii_uppercase()) {
+        Ok(level) if level == "TRACE" => Some(tracing::Level::TRACE),
+        Ok(level) if level == "DEBUG" => Some(tracing::Level::DEBUG),
+        Ok(level) if level == "INFO" => Some(tracing::Level::INFO),
+        Ok(level) if level == "WARN" => Some(tracing::Level::WARN),
+        _ => None,
+    },
+);
 static INIT_LOGGING: Once = Once::new();
 
 pub fn init_logging(filter: Option<&str>, options: LoggingOptions) {

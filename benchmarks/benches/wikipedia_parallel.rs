@@ -5,10 +5,7 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 mod common;
-#[path = "common/huggingface/wikipedia.rs"]
-mod huggingface_wikipedia;
 mod parallelism_common;
-mod wikipedia_common;
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -16,14 +13,16 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use sonic_benchmarks::huggingface::NSHARDS;
+use sonic_benchmarks::huggingface::download::download_shards;
+use sonic_benchmarks::huggingface::load::iter_shard;
+use sonic_benchmarks::huggingface::wikipedia::WikipediaArticle;
+use sonic_benchmarks::prelude::*;
+use sonic_benchmarks::util::logging::{CompactThousands, HumanBytes};
 
-use crate::common::huggingface::NSHARDS;
-use crate::common::huggingface::download::download_shards;
-use crate::common::huggingface::load::iter_shard;
-use crate::common::logging::{CompactThousands, HumanBytes};
-use crate::common::prelude::*;
-use crate::huggingface_wikipedia::WikipediaArticle;
 use crate::parallelism_common::*;
+
+const COLLECTION: &str = "wikipedia";
 
 static SHARD_PATHS: LazyLock<Vec<PathBuf>> =
     LazyLock::new(|| download_shards("wikimedia/wikipedia", "20231101.en", Some(*NSHARDS)));
@@ -34,7 +33,7 @@ fn articles_iter() -> impl Iterator<Item = WikipediaArticle> {
 
 fn criterion_benchmark(c: &mut Criterion) {
     init_logging(
-        None,
+        Some(concat!(env!("CARGO_CRATE_NAME"), "=info")),
         LoggingOptions {
             default_log_level: tracing::Level::WARN,
             with_target: true,
@@ -110,7 +109,9 @@ fn criterion_benchmark(c: &mut Criterion) {
                     };
 
                     for _i in 0..iters_custom {
-                        let stats = ingest_parallel(&bench_name, &config, sonic_conf_path, nchannels, articles(), articles_count, total_bytes);
+                        let mut ctx = RunContext::new(*AUTO_CLEANUP);
+
+                        let IngestResponse { stats, used_buckets: _ } = ingest_parallel(&mut ctx, &bench_name, &config, sonic_conf_path, COLLECTION, nchannels, articles(), articles_count, total_bytes);
 
                         elapsed_total += stats.elapsed_total;
 
@@ -126,6 +127,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                             thrpt_bytes = HumanBytes::from((stats.ingested_bytes as f32 / stats.elapsed_total.as_secs_f32()) as u64),
                             thrpt_elem = CompactThousands::from((stats.ingested_count as f32 / stats.elapsed_total.as_secs_f32()) as u64)
                         ).unwrap();
+
+                        drop(ctx);
                     }
 
                     if is_quick {

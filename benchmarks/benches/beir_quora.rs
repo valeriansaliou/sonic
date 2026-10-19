@@ -10,15 +10,14 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
+use sonic_benchmarks::huggingface::download::download_files;
+use sonic_benchmarks::prelude::*;
 
-use crate::common::huggingface::download::download_files;
-use crate::common::prelude::*;
-use crate::common::spawn_guard::SpawnGuard;
+use crate::common::*;
 
 const COLLECTION: &str = "beir-quora";
 const BUCKET: &str = "default";
@@ -96,7 +95,9 @@ fn main() {
     let queries = load_queries(&dataset.queries, &qrels);
 
     ensure_index(&dataset.corpus);
-    let _sonic = start_sonic();
+
+    let ctx = start_sonic();
+
     let multiplexer = SonicMultiplexer::new().unwrap();
 
     let mut metrics = Metrics::default();
@@ -105,7 +106,8 @@ fn main() {
 
     {
         let search =
-            SonicChannelSearchBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
+            SonicChannelSearchBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &multiplexer)
+                .unwrap();
 
         for (index, (query_id, query_text)) in queries.iter().enumerate() {
             let query_started_at = Instant::now();
@@ -196,7 +198,7 @@ fn load_queries(
 }
 
 fn ensure_index(corpus_path: &Path) {
-    let data_path = Path::new(SONIC_DATA_PATH);
+    let data_path = Path::new(BENCH_DATA_PATH);
     let ready_path = data_path.join("READY");
     let force_reindex = std::env::var_os("BEIR_REINDEX").is_some();
     let index_config = format!(
@@ -215,7 +217,8 @@ fn ensure_index(corpus_path: &Path) {
     }
     std::fs::create_dir_all(data_path).unwrap();
 
-    let _sonic = start_sonic();
+    let ctx = start_sonic();
+
     let multiplexer = SonicMultiplexer::new().unwrap();
 
     let started_at = Instant::now();
@@ -224,7 +227,8 @@ fn ensure_index(corpus_path: &Path) {
 
     {
         let ingest =
-            SonicChannelIngestBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
+            SonicChannelIngestBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &multiplexer)
+                .unwrap();
 
         const CHUNK_SIZE: usize = 10_000;
         let mut chunk_start = Instant::now();
@@ -260,7 +264,8 @@ fn ensure_index(corpus_path: &Path) {
 
     {
         let control =
-            SonicChannelControlBlocking::connect(ADDR, SONIC_PASSWORD, &multiplexer).unwrap();
+            SonicChannelControlBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &multiplexer)
+                .unwrap();
         control.trigger_consolidate().unwrap();
     }
 
@@ -277,27 +282,23 @@ fn ensure_index(corpus_path: &Path) {
     );
 }
 
-fn start_sonic() -> SpawnGuard {
-    let data_path = Path::new(SONIC_DATA_PATH);
+fn start_sonic() -> RunContext {
+    let data_path = Path::new(BENCH_DATA_PATH);
     eprintln!("Running BEIR Quora using {SONIC_BIN_PATH:?}");
 
-    let child = Command::new(SONIC_BIN_PATH.as_path())
-        .env("SONIC_SERVER__LOG_LEVEL", "WARN")
-        .env("SONIC_SEARCH__QUERY_LIMIT_DEFAULT", QUERY_LIMIT.to_string())
-        .env("SONIC_SEARCH__QUERY_LIMIT_MAXIMUM", QUERY_LIMIT.to_string())
-        .env(
-            "SONIC_SEARCH__QUERY_RETAIN_WORD_OBJECTS",
-            RETAIN_WORD_OBJECTS.to_string(),
-        )
-        .env("SONIC_STORE__KV__PATH", data_path.join("kv"))
-        .env("SONIC_STORE__FST__PATH", data_path.join("fst"))
-        .env("SONIC_STORE__OBJECT__PATH", data_path.join("object"))
-        .spawn()
-        .unwrap();
+    let mut ctx = RunContext::new(true);
+    ctx.start_sonic(data_path, SONIC_BENCH_PASSWORD.to_owned(), |command| {
+        command
+            .env("SONIC_SEARCH__QUERY_LIMIT_DEFAULT", QUERY_LIMIT.to_string())
+            .env("SONIC_SEARCH__QUERY_LIMIT_MAXIMUM", QUERY_LIMIT.to_string())
+            .env(
+                "SONIC_SEARCH__QUERY_RETAIN_WORD_OBJECTS",
+                RETAIN_WORD_OBJECTS.to_string(),
+            )
+    });
+    ctx.wait_until_ready();
 
-    let mut sonic = SpawnGuard::new(child);
-    sonic.wait_until_ready(ADDR);
-    sonic
+    ctx
 }
 
 impl Metrics {
