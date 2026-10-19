@@ -361,8 +361,10 @@ impl<'a> KvRepositoryReadOnly<'a> {
 
                 tracing::debug!("got term-to-iids: {store_key} with encoded value: {value:?}");
 
-                match Vec::<StoreObjectIid>::try_from_kv_value(&value) {
-                    Ok(value_decoded) => {
+                match rev_iter_kv_value(value) {
+                    Ok(iter) => {
+                        let value_decoded: Vec<StoreObjectIid> = iter.collect();
+
                         tracing::debug!(
                             "got term-to-iids: {store_key} with decoded value: {value_decoded:?}"
                         );
@@ -480,8 +482,10 @@ impl<'a> KvRepositoryReadOnly<'a> {
 
                 tracing::debug!("got iid-to-terms: {store_key} with encoded value: {value:?}");
 
-                match Vec::<StoreTermHash>::try_from_kv_value(&value) {
-                    Ok(value_decoded) => {
+                match iter_kv_value(value) {
+                    Ok(iter) => {
+                        let value_decoded: Vec<StoreTermHash> = iter.collect();
+
                         tracing::debug!(
                             "got iid-to-terms: {store_key} with decoded value: {value_decoded:?}"
                         );

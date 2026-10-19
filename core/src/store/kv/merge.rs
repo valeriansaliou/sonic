@@ -48,66 +48,10 @@ pub(super) fn kv_merge_operator(
             ),
             Err(error) => panic!("Unrecognized meta key: {error}"),
         },
-        D::TermToIids => prepend_int_list::<8>(existing_val, operands),
+        D::TermToIids => unique_int_list::<8>(existing_val, operands),
         D::IidToTerms => unique_int_list::<4>(existing_val, operands),
         _ => unreachable!(),
     }
-}
-
-/// This efficiently prepends new integer values to an existing slice, removing
-/// duplicates along the way.
-fn prepend_int_list<const WORD_LEN: usize>(
-    existing_val: Option<&[u8]>,
-    operands: &rocksdb::MergeOperands,
-) -> Option<Vec<u8>> {
-    let current: &[u8] = existing_val.unwrap_or_default();
-
-    let operands_total_len = operands.iter().fold(0, |acc, op| acc + op.len());
-
-    let mut res: Vec<u8> = Vec::with_capacity(current.len() + operands_total_len);
-
-    // PERF: This is just a fancy way to preprend without extra allocation nor
-    //   reverse iteration.
-    let mut cursor = operands_total_len;
-    res.resize(cursor, 0);
-
-    // TODO(perf): We might be able to make this a tiny bit faster by using a
-    //   custom hasher that only maps `&[u8]` to a uint. When there is a high
-    //   chance that values are close to each other (e.g. for IIDs), we could
-    //   use `% capacity` to spread the values better. BENCHMARK THIS ANYWAY!
-    let mut seen: HashSet<&[u8]> = HashSet::with_capacity(operands_total_len / WORD_LEN);
-
-    for op in operands {
-        for chunk in op.as_chunks::<WORD_LEN>().0 {
-            // Filter duplicate operands.
-            // NOTE: In benchmarks, `operands` showed a length of `13761` for
-            //   example, so we _have_ to keep this at most `O(n*log(n))`!
-            if seen.insert(chunk) {
-                let start = cursor.checked_sub(WORD_LEN).unwrap();
-                res[start..cursor].copy_from_slice(chunk);
-                cursor = start;
-            }
-        }
-    }
-
-    // Trim unused bytes at the start (because of duplicate operands).
-    res = res.split_off(cursor);
-
-    for existing in current.as_chunks::<WORD_LEN>().0 {
-        // Skip already inserted operands.
-        // See reason in <https://github.com/valeriansaliou/sonic/issues/389#issuecomment-5374968203>.
-        if !seen.contains(existing as &[u8]) {
-            res.extend_from_slice(existing);
-        }
-    }
-
-    assert!(
-        !res.is_empty(),
-        "{existing_val:?}, {operands:?}",
-        operands = operands.iter().collect::<Vec<_>>()
-    );
-
-    Some(res)
 }
 
 /// This efficiently adds new values to an existing slice, removing duplicates

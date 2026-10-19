@@ -67,26 +67,28 @@ pub(super) trait TryFromKvValue: Sized {
     fn try_from_kv_value(bytes: &[u8]) -> Result<Self, Self::Err>;
 }
 
-impl<const WORD_LEN: usize, T> TryFromKvValue for Vec<T>
+pub(super) fn iter_kv_value<'a, const WORD_LEN: usize, T>(
+    bytes: &'a [u8],
+) -> Result<impl ExactSizeIterator<Item = T> + 'a, &'static str>
 where
     T: FromKvValue<Repr = [u8; WORD_LEN]>,
 {
-    type Err = &'static str;
+    match bytes.as_chunks() {
+        (chunks, []) => Ok(chunks.iter().map(|chunk| T::from_kv_value(*chunk))),
+        (_, _) => Err("Too many bytes"),
+    }
+}
 
-    fn try_from_kv_value(encoded: &[u8]) -> Result<Self, Self::Err> {
-        match encoded.as_chunks() {
-            (chunks, []) => {
-                let mut decoded: Vec<T> = Vec::with_capacity(encoded.len() / WORD_LEN);
-
-                for chunk in chunks {
-                    let decoded_chunk = T::from_kv_value(*chunk);
-                    decoded.push(decoded_chunk);
-                }
-
-                Ok(decoded)
-            }
-            (_, _) => Err("Too many bytes"),
-        }
+pub(super) fn rev_iter_kv_value<'a, const WORD_LEN: usize, T>(
+    bytes: &'a [u8],
+) -> Result<impl ExactSizeIterator<Item = T> + 'a, &'static str>
+where
+    T: FromKvValue<Repr = [u8; WORD_LEN]>,
+{
+    match bytes.as_rchunks() {
+        // NOTE: `chunks` is still ordered, we have to iterate in reverse order.
+        ([], chunks) => Ok(chunks.iter().rev().map(|chunk| T::from_kv_value(*chunk))),
+        (_, _) => Err("Too many bytes"),
     }
 }
 
