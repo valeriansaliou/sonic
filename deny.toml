@@ -8,6 +8,7 @@ feature-depth = 1
 
 [licenses]
 allow = [
+    "CC0-1.0",
     "MIT",
     "Apache-2.0",
     "BSD-2-Clause",
@@ -16,6 +17,7 @@ allow = [
     "ISC",
     "Unicode-3.0",
     "Zlib",
+    "CDLA-Permissive-2.0",
 ]
 confidence-threshold = 0.8
 exceptions = []
