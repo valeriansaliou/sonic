@@ -58,7 +58,7 @@ allow-build-scripts = [
     "getrandom@0.4.3",
     "httparse@1.10.1",
     "iana-time-zone-haiku@0.1.2",
-    "libc@0.2.190",
+    "libc@0.2.191",
     "libm@0.2.16",
     "librocksdb-sys@0.19.0+11.8.1",
     "libz-sys@1.1.29",
@@ -95,11 +95,12 @@ allow-build-scripts = [
     "windows_x86_64_msvc@0.52.6",
     "wit-bindgen@0.51.0",
     "wit-bindgen@0.57.1",
-    "zerocopy@0.8.59",
+    "zerocopy@0.8.63",
     "zmij@1.0.23",
     "zstd-safe@7.3.0",
     "zstd-sys@2.0.16+zstd.1.5.7",
     "zstd-sys@2.1.0+zstd.1.5.7",
+    "zstd-sys@2.1.2+zstd.1.5.7",
 ]
 executables = "allow"
 interpreted = "allow"
