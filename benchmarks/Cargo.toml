@@ -67,3 +67,7 @@ harness = false
 [[bench]]
 name = "index_size"
 harness = false
+
+[[bench]]
+name = "query_time"
+harness = false
