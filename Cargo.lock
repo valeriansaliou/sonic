@@ -2388,6 +2388,7 @@ dependencies = [
  "config",
  "criterion",
  "hf-hub",
+ "indexmap",
  "parquet",
  "serde",
  "serde_json",

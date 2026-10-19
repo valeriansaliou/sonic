@@ -8,7 +8,7 @@
 
 use std::borrow::Cow;
 use std::cell::LazyCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::hint::black_box;
 use std::ops::DerefMut as _;
 use std::path::Path;
@@ -19,6 +19,7 @@ use std::thread::{JoinHandle, Thread};
 use std::time::{Duration, Instant};
 
 use criterion::BenchmarkId;
+use indexmap::IndexSet;
 use sonic_benchmarks::profiling::PROFILING_MODE;
 use sonic_client::control::SonicChannelControlBlocking;
 use sonic_client::ingest::SonicChannelIngestBlocking;
@@ -241,7 +242,7 @@ pub fn ingest_parallel<T: Ingestable>(
     let ingested_count: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
     let ingested_bytes: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
 
-    let used_buckets: Arc<Mutex<HashSet<Cow<'static, str>>>> = Arc::default();
+    let used_buckets: Arc<Mutex<IndexSet<Cow<'static, str>>>> = Arc::default();
 
     /// Pretend data is split across multiple buckets. It’s just for realism.
     fn bucket(index: usize, total_count: usize, bucket_count: usize) -> Cow<'static, str> {

@@ -21,6 +21,7 @@ autobenches = false
 [dependencies]
 bus = { version = "=2.4.1", default-features = false }
 config = { version = "=0.15.27", default-features = false, features = ["toml"] }
+indexmap = { version = "=2.14.2", default-features = false, features = ["std"] }
 serde = { version = "=1.0.229", default-features = false, features = ["derive", "rc"] }
 serde_json = { version = "=1.0.151", default-features = false, features = ["std"] }
 sonic_client = { version = "=0.6.0", path = "../client", features = ["sync", "tracing", "raw-api", "experimental-api"] }
