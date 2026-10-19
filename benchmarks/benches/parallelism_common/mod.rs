@@ -96,6 +96,11 @@ impl ParallelBenchmarkConfig {
     }
 }
 
+pub struct IngestResponse {
+    pub stats: IngestStats,
+    pub used_buckets: IndexSet<Cow<'static, str>>,
+}
+
 pub struct IngestStats {
     pub ingest_duration: Duration,
     pub compact_duration: Duration,
@@ -105,34 +110,19 @@ pub struct IngestStats {
     pub ingested_bytes: u64,
 }
 
-pub fn ingest_parallel<T: Ingestable>(
-    bench_name: &str,
+pub fn ingest_parallel_inner<T: Ingestable>(
+    ctx: &RunContext,
     config: &ParallelBenchmarkConfig,
-    sonic_conf_path: &Path,
     collection: &'static str,
     nchannels: usize,
     articles_iter: impl Iterator<Item = T> + Send + 'static,
     articles_count: usize,
     total_bytes: u64,
-) -> IngestStats {
+) -> IngestResponse {
     let show_progress = *SHOW_PROGRESS;
     let push_use_new = *PUSH_USE_NEW;
 
     let mut elapsed_total = Duration::ZERO;
-
-    let mut ctx = RunContext::new(*AUTO_CLEANUP);
-
-    ctx.start_sonic(
-        &new_empty_data_path(BENCH_DATA_PATH, ctx.id),
-        SONIC_BENCH_PASSWORD.to_owned(),
-        |command| command.arg("-c").arg(sonic_conf_path),
-    );
-
-    if let Some(profiling_mode) = PROFILING_MODE.as_ref() {
-        ctx.start_profiling(profiling_mode, profiling_output(Some(bench_name)));
-    }
-
-    ctx.wait_until_ready();
 
     let control = LazyCell::new(|| {
         SonicChannelControlBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &ctx.multiplexer)
@@ -184,16 +174,14 @@ pub fn ingest_parallel<T: Ingestable>(
     let stats_handle = std::thread::Builder::new()
         .name("stats-ticker".to_owned())
         .spawn({
+            let addr = ctx.addr;
             let multiplexer = Arc::clone(&ctx.multiplexer);
             let print_stats = Arc::clone(&print_stats);
 
             move || {
-                let control = SonicChannelControlBlocking::connect(
-                    ctx.addr,
-                    SONIC_BENCH_PASSWORD,
-                    &multiplexer,
-                )
-                .unwrap();
+                let control =
+                    SonicChannelControlBlocking::connect(addr, SONIC_BENCH_PASSWORD, &multiplexer)
+                        .unwrap();
 
                 let get_stats = move || {
                     let stats = control.info().unwrap();
@@ -244,20 +232,11 @@ pub fn ingest_parallel<T: Ingestable>(
 
     let used_buckets: Arc<Mutex<IndexSet<Cow<'static, str>>>> = Arc::default();
 
-    /// Pretend data is split across multiple buckets. It’s just for realism.
-    fn bucket(index: usize, total_count: usize, bucket_count: usize) -> Cow<'static, str> {
-        if bucket_count < 2 {
-            Cow::Borrowed("default")
-        } else {
-            let bucket_id = (index * bucket_count) / total_count;
-            Cow::Owned(format!("bucket:{bucket_id}"))
-        }
-    }
-
     let mut ingest_duration = (0..nchannels)
         .map(|i| {
             std::thread::Builder::new().name(format!("thread-{i}")).spawn({
                 let articles = Arc::clone(&articles);
+                let addr = ctx.addr;
                 let multiplexer = Arc::clone(&ctx.multiplexer);
                 let ingested_count = Arc::clone(&ingested_count);
                 let ingested_bytes = Arc::clone(&ingested_bytes);
@@ -265,7 +244,7 @@ pub fn ingest_parallel<T: Ingestable>(
 
                 move || {
                     let mut channel = SonicChannelIngestBlocking::connect(
-                        ctx.addr, SONIC_BENCH_PASSWORD,
+                        addr, SONIC_BENCH_PASSWORD,
                         &multiplexer,
                     ).unwrap();
                     // println!("Opened Sonic channel");
@@ -368,6 +347,7 @@ pub fn ingest_parallel<T: Ingestable>(
 
     let (compact_duration, consolidate_duration) = {
         let compact_handle = std::thread::spawn({
+            let addr = ctx.addr;
             let multiplexer = Arc::clone(&ctx.multiplexer);
 
             move || {
@@ -375,12 +355,9 @@ pub fn ingest_parallel<T: Ingestable>(
 
                 let start = Instant::now();
 
-                let control = SonicChannelControlBlocking::connect(
-                    ctx.addr,
-                    SONIC_BENCH_PASSWORD,
-                    &multiplexer,
-                )
-                .unwrap();
+                let control =
+                    SonicChannelControlBlocking::connect(addr, SONIC_BENCH_PASSWORD, &multiplexer)
+                        .unwrap();
 
                 // Compaction can take a very long time. We have to bump the timeout.
                 control.set_recv_timeout(Duration::from_hours(1));
@@ -396,6 +373,7 @@ pub fn ingest_parallel<T: Ingestable>(
         });
 
         let consolidate_handle = std::thread::spawn({
+            let addr = ctx.addr;
             let multiplexer = Arc::clone(&ctx.multiplexer);
 
             move || {
@@ -403,12 +381,9 @@ pub fn ingest_parallel<T: Ingestable>(
 
                 let start = Instant::now();
 
-                let control = SonicChannelControlBlocking::connect(
-                    ctx.addr,
-                    SONIC_BENCH_PASSWORD,
-                    &multiplexer,
-                )
-                .unwrap();
+                let control =
+                    SonicChannelControlBlocking::connect(addr, SONIC_BENCH_PASSWORD, &multiplexer)
+                        .unwrap();
                 black_box(control.trigger_consolidate()).unwrap();
 
                 let consolidate_duration = start.elapsed();
@@ -493,16 +468,63 @@ pub fn ingest_parallel<T: Ingestable>(
 
     drop(control);
     drop(ingest);
-    // drop(search);
-    drop(ctx);
 
-    IngestStats {
+    let stats = IngestStats {
         ingest_duration,
         compact_duration,
         consolidate_duration,
         elapsed_total,
         ingested_count,
         ingested_bytes,
+    };
+
+    IngestResponse {
+        stats,
+        used_buckets: Mutex::into_inner(Arc::into_inner(used_buckets).unwrap()).unwrap(),
+    }
+}
+
+pub fn ingest_parallel<T: Ingestable>(
+    ctx: &mut RunContext,
+    bench_name: &str,
+    config: &ParallelBenchmarkConfig,
+    sonic_conf_path: &Path,
+    collection: &'static str,
+    nchannels: usize,
+    articles_iter: impl Iterator<Item = T> + Send + 'static,
+    articles_count: usize,
+    total_bytes: u64,
+) -> IngestResponse {
+    ctx.start_sonic(
+        &new_empty_data_path(BENCH_DATA_PATH, ctx.id),
+        SONIC_BENCH_PASSWORD.to_owned(),
+        |command| command.arg("-c").arg(sonic_conf_path),
+    );
+
+    if let Some(profiling_mode) = PROFILING_MODE.as_ref() {
+        ctx.start_profiling(profiling_mode, profiling_output(Some(bench_name)));
+    }
+
+    ctx.wait_until_ready();
+
+    ingest_parallel_inner(
+        &ctx,
+        config,
+        collection,
+        nchannels,
+        articles_iter,
+        articles_count,
+        total_bytes,
+    )
+}
+
+/// Pretend data is split across multiple buckets. It’s just for realism.
+pub fn bucket(index: usize, total_count: usize, bucket_count: usize) -> Cow<'static, str> {
+    if bucket_count < 2 {
+        Cow::Borrowed("default")
+    } else {
+        let bucket_id = (index * bucket_count) / total_count;
+        Cow::Owned(format!("bucket:{bucket_id}"))
     }
 }
 

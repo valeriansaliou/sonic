@@ -67,7 +67,10 @@ fn main() {
             let bench_name =
                 format!("[bench={bench_conf_name}][sonic={sonic_conf_name}][channels={nchannels}]");
 
+            let mut ctx = RunContext::new(*AUTO_CLEANUP);
+
             ingest_parallel(
+                &mut ctx,
                 &bench_name,
                 &config,
                 sonic_conf_path,

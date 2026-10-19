@@ -109,7 +109,9 @@ fn criterion_benchmark(c: &mut Criterion) {
                     };
 
                     for _i in 0..iters_custom {
-                        let stats = ingest_parallel(&bench_name, &config, sonic_conf_path, COLLECTION, nchannels, articles(), articles_count, total_bytes);
+                        let mut ctx = RunContext::new(*AUTO_CLEANUP);
+
+                        let IngestResponse { stats, used_buckets: _ } = ingest_parallel(&mut ctx, &bench_name, &config, sonic_conf_path, COLLECTION, nchannels, articles(), articles_count, total_bytes);
 
                         elapsed_total += stats.elapsed_total;
 
@@ -125,6 +127,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                             thrpt_bytes = HumanBytes::from((stats.ingested_bytes as f32 / stats.elapsed_total.as_secs_f32()) as u64),
                             thrpt_elem = CompactThousands::from((stats.ingested_count as f32 / stats.elapsed_total.as_secs_f32()) as u64)
                         ).unwrap();
+
+                        drop(ctx);
                     }
 
                     if is_quick {
