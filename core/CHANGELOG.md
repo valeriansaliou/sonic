@@ -6,7 +6,19 @@
 
 <!-- WARN: Do not move the next line and add changelog entries **under** it.
        It’s used by `task release:*` when updating the changelog. -->
-[Unreleased]: https://github.com/valeriansaliou/sonic/compare/core-v0.4.1...HEAD
+[Unreleased]: https://github.com/valeriansaliou/sonic/compare/core-v0.4.2...HEAD
+
+## [0.4.2] (2026-10-05)
+
+[0.4.2]: https://github.com/valeriansaliou/sonic/compare/core-v0.4.1...core-v0.4.2
+
+### Bug Fixes
+
+* fix(core): Remove debug logs (in `54d43044`)
+* fix(core): Make `TRIGGER backup` work while stores are in use (in `6afa0bb3`)
+* fix(core): Back up and restore FST buckets again (in `31b01504`)
+* fix(config): Fix `unicode_normalization` deserialization (in `890ba78a`)
+* fix(core): Fix `set_low_priority_background_threads` (in `cafce833`)
 
 ## [0.4.1] (2026-09-26)
 
