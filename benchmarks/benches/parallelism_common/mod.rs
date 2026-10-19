@@ -133,13 +133,13 @@ pub fn ingest_parallel<T: Ingestable>(
 
     ctx.wait_until_ready();
 
-    let multiplexer = Arc::new(SonicMultiplexer::new().unwrap());
-
     let control = LazyCell::new(|| {
-        SonicChannelControlBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &multiplexer).unwrap()
+        SonicChannelControlBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &ctx.multiplexer)
+            .unwrap()
     });
     let ingest = LazyCell::new(|| {
-        SonicChannelIngestBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &multiplexer).unwrap()
+        SonicChannelIngestBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &ctx.multiplexer)
+            .unwrap()
     });
 
     {
@@ -183,7 +183,7 @@ pub fn ingest_parallel<T: Ingestable>(
     let stats_handle = std::thread::Builder::new()
         .name("stats-ticker".to_owned())
         .spawn({
-            let multiplexer = Arc::clone(&multiplexer);
+            let multiplexer = Arc::clone(&ctx.multiplexer);
             let print_stats = Arc::clone(&print_stats);
 
             move || {
@@ -257,7 +257,7 @@ pub fn ingest_parallel<T: Ingestable>(
         .map(|i| {
             std::thread::Builder::new().name(format!("thread-{i}")).spawn({
                 let articles = Arc::clone(&articles);
-                let multiplexer = Arc::clone(&multiplexer);
+                let multiplexer = Arc::clone(&ctx.multiplexer);
                 let ingested_count = Arc::clone(&ingested_count);
                 let ingested_bytes = Arc::clone(&ingested_bytes);
                 let used_buckets = Arc::clone(&used_buckets);
@@ -367,7 +367,7 @@ pub fn ingest_parallel<T: Ingestable>(
 
     let (compact_duration, consolidate_duration) = {
         let compact_handle = std::thread::spawn({
-            let multiplexer = Arc::clone(&multiplexer);
+            let multiplexer = Arc::clone(&ctx.multiplexer);
 
             move || {
                 tracing::info!("Compacting KV…");
@@ -395,7 +395,7 @@ pub fn ingest_parallel<T: Ingestable>(
         });
 
         let consolidate_handle = std::thread::spawn({
-            let multiplexer = Arc::clone(&multiplexer);
+            let multiplexer = Arc::clone(&ctx.multiplexer);
 
             move || {
                 tracing::info!("Consolidating FST…");
@@ -465,7 +465,7 @@ pub fn ingest_parallel<T: Ingestable>(
         }
     }
 
-    // let search = SonicChannelSearchBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &multiplexer).unwrap();
+    // let search = SonicChannelSearchBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &ctx.multiplexer).unwrap();
 
     // {
     //     let query = "exanple";

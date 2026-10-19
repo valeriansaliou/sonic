@@ -7,7 +7,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::AtomicU16;
-use std::sync::{LazyLock, atomic};
+use std::sync::{Arc, LazyLock, atomic};
+
+use sonic_client::SonicMultiplexer;
 
 use crate::globals::SONIC_BIN_PATH;
 use crate::util::logging::LOG_LEVEL;
@@ -41,6 +43,7 @@ pub struct RunContext {
     pub seed: LazyLock<u64>,
     pub addr: std::net::SocketAddr,
     pub password: String,
+    pub multiplexer: Arc<SonicMultiplexer>,
     sonic: Option<std::process::Child>,
     xctrace: Option<(std::process::Child, std::path::PathBuf)>,
     data_path: Option<PathBuf>,
@@ -58,6 +61,7 @@ impl RunContext {
             seed: LazyLock::new(util::random::random_seed),
             addr: (std::net::Ipv6Addr::LOCALHOST, 1491 + run_id).into(),
             password: String::new(),
+            multiplexer: Arc::new(SonicMultiplexer::new().unwrap()),
             sonic: None,
             xctrace: None,
             data_path: None,
