@@ -9,6 +9,7 @@ pub(crate) mod encoding;
 mod keys;
 mod merge;
 
+use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use std::{fmt, io};
@@ -285,7 +286,7 @@ impl<'a> KvRepositoryReadOnly<'a> {
 
         tracing::debug!("store get meta-to-value: {store_key}");
 
-        match self.store.database.get(&store_key) {
+        match self.store.database.get_pinned(&store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got meta-to-value: {store_key}");
 
@@ -310,7 +311,7 @@ impl<'a> KvRepositoryReadOnly<'a> {
         let bucket = self.bucket;
 
         let store_key = KvStoreKey::meta_to_value(&bucket, StoreMetaKey::ObjectCount);
-        let value = self.store.database.get(&store_key)?;
+        let value = self.store.database.get_pinned(&store_key)?;
 
         match value {
             Some(bytes) => match bytes.split_first_chunk::<8>() {
@@ -354,8 +355,10 @@ impl<'a> KvRepositoryReadOnly<'a> {
 
         tracing::debug!("store get term-to-iids: {store_key}");
 
-        match self.store.database.get(&store_key) {
+        match self.store.database.get_pinned(&store_key) {
             Ok(Some(value)) => {
+                let value = value.deref();
+
                 tracing::debug!("got term-to-iids: {store_key} with encoded value: {value:?}");
 
                 match Vec::<StoreObjectIid>::try_from_kv_value(&value) {
@@ -398,8 +401,10 @@ impl<'a> KvRepositoryReadOnly<'a> {
             .cf_handle(READ_ON_PUSH_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        match self.store.database.get_cf(cf_handle, &store_key) {
+        match self.store.database.get_pinned_cf(cf_handle, &store_key) {
             Ok(Some(value)) => {
+                let value = value.deref();
+
                 tracing::debug!("got oid-to-iid: {store_key} with encoded value: {value:?}");
 
                 match StoreObjectIid::try_from_kv_value(&value) {
@@ -438,7 +443,7 @@ impl<'a> KvRepositoryReadOnly<'a> {
 
         tracing::debug!("store get iid-to-oid: {store_key}");
 
-        match self.store.database.get(&store_key) {
+        match self.store.database.get_pinned(&store_key) {
             Ok(Some(value)) => {
                 tracing::debug!("got iid-to-oid: {store_key}");
 
@@ -469,8 +474,10 @@ impl<'a> KvRepositoryReadOnly<'a> {
             .cf_handle(INCOMPRESSIBLE_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        match self.store.database.get_cf(cf_handle, &store_key) {
+        match self.store.database.get_pinned_cf(cf_handle, &store_key) {
             Ok(Some(value)) => {
+                let value = value.deref();
+
                 tracing::debug!("got iid-to-terms: {store_key} with encoded value: {value:?}");
 
                 match Vec::<StoreTermHash>::try_from_kv_value(&value) {
