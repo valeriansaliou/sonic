@@ -109,7 +109,7 @@ impl super::Executor {
 
             let mut iids = kv_repo
                 .get_term_to_iids(&term_hash)
-                .unwrap_or(None)
+                .unwrap_or_else(|()| None)
                 .unwrap_or_default();
 
             // Look for exact matches normalized differently if the Sonic
@@ -119,13 +119,13 @@ impl super::Executor {
 
                 let mut nfc = kv_repo
                     .get_term_to_iids(&StoreTermHash::from(term.nfc().to_string().as_str()))
-                    .unwrap_or(None)
+                    .unwrap_or_else(|()| None)
                     .unwrap_or_default();
                 iids.append(&mut nfc);
 
                 let mut nfd = kv_repo
                     .get_term_to_iids(&StoreTermHash::from(term.nfd().to_string().as_str()))
-                    .unwrap_or(None)
+                    .unwrap_or_else(|()| None)
                     .unwrap_or_default();
                 iids.append(&mut nfd);
             };
@@ -635,8 +635,7 @@ fn test_overall_score() {
 fn document_frequency(term_hash: &StoreTermHash, kv_repo: &KvRepositoryReadOnly<'_>) -> u64 {
     kv_repo
         .get_term_to_iids(term_hash)
-        .inspect_err(|err| tracing::error!("{err:?}"))
-        .unwrap_or(None)
+        .unwrap_or_else(|()| None)
         .map_or(0, |iids| iids.len()) as u64
 }
 

@@ -23,7 +23,8 @@
     clippy::needless_as_bytes, // Style preference. Better make those things explicit.
     clippy::needless_borrow, // Style preference.
     clippy::needless_borrows_for_generic_args, // Style preference.
-    clippy::result_unit_err, // TODO: Re-enable (deny).
+    clippy::result_unit_err, // TODO: Re-enable (deny) after improving errors.
+    clippy::unnecessary_lazy_evaluations, // TODO: Re-enable (deny) after improving errors.
 )]
 
 pub mod config;
