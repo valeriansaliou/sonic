@@ -9,6 +9,12 @@ pub(super) type Hash = u32;
 
 // MARK: IID
 
+#[derive(
+    zerocopy::FromBytes,
+    zerocopy::IntoBytes,
+    zerocopy::Immutable,
+    zerocopy::KnownLayout
+)]
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd)]
 #[repr(transparent)]
 pub struct StoreObjectIid(u64);

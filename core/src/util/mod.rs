@@ -101,3 +101,10 @@ macro_rules! impl_int_enum {
     };
 }
 pub(crate) use impl_int_enum;
+
+pub(crate) fn usize_to_u64(value: usize) -> u64 {
+    // SAFETY: This ensures the following `as u64` cast is lossless.
+    const _: () = assert!(usize::BITS <= u64::BITS);
+
+    value as u64
+}

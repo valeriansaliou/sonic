@@ -4,7 +4,11 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use std::hash::Hash;
+
 use hashbrown::HashSet;
+use indexmap::IndexMap;
+use zerocopy::little_endian;
 
 use crate::store::types::*;
 
@@ -19,6 +23,8 @@ use super::keys::StoreMetaKey;
 ///
 /// We just put it here hoping it’ll stay in sync with its related code.
 pub const AVERAGE_MERGE_RATIO: u8 = 4;
+
+pub(crate) const TF_TOMBSTONE: u8 = 0;
 
 pub(super) fn kv_merge_operator(
     key: &[u8],
@@ -48,7 +54,7 @@ pub(super) fn kv_merge_operator(
             ),
             Err(error) => panic!("Unrecognized meta key: {error}"),
         },
-        D::TermToIids => unique_int_list::<8>(existing_val, operands),
+        D::TermToIids => merge_int_set_diffs::<TermToIidsEntry>(existing_val, operands.iter()),
         D::IidToTerms => unique_int_list::<4>(existing_val, operands),
         _ => unreachable!(),
     }
@@ -91,6 +97,112 @@ fn unique_int_list<const WORD_LEN: usize>(
     );
 
     Some(res)
+}
+
+trait Mergeable {
+    type Key: Eq + Hash;
+    type Value: Ord;
+
+    fn merge_in(&self, map: &mut IndexMap<Self::Key, Self::Value>);
+
+    fn cmp(
+        k1: &Self::Key,
+        v1: &Self::Value,
+        k2: &Self::Key,
+        v2: &Self::Value,
+    ) -> std::cmp::Ordering;
+
+    fn should_keep(&self) -> bool;
+
+    fn as_bytes(&self) -> &[u8];
+}
+
+/// This efficiently adds **and removes** new values to an existing slice,
+/// removing duplicates along the way.
+fn merge_int_set_diffs<'op, T>(
+    existing_val: Option<&[u8]>,
+    operands: impl Iterator<Item = &'op [u8]>,
+) -> Option<Vec<u8>>
+where
+    T: Mergeable,
+    T: Sized + zerocopy::FromBytes + zerocopy::Immutable,
+    T: From<(T::Key, T::Value)>,
+{
+    use zerocopy::FromBytes as _;
+
+    // SAFETY: Diffs are encoded and decoded by `zerocopy`, which ensures layout stays coherent.
+
+    let current: &[u8] = existing_val.unwrap_or_default();
+    let current_states: &[T] = <[T]>::ref_from_bytes(current).unwrap();
+
+    // NOTE: Chances are very high the final set will be at least `current_states.len()`
+    //   long (unless most diffs are deletions). `IndexMap::with_capacity` is $O(n)$ and
+    //   a lot of entries might get de-duplicated so we better not pre-allocate that much.
+    let mut map: IndexMap<T::Key, T::Value> = IndexMap::with_capacity(current_states.len());
+
+    for state in current_states {
+        state.merge_in(&mut map);
+    }
+
+    for op in operands {
+        let diffs: &[T] = <[T]>::ref_from_bytes(op).unwrap();
+
+        for diff in diffs {
+            diff.merge_in(&mut map);
+        }
+    }
+
+    // NOTE: We reverse the sort here then reverse the iterator later so we can
+    //   have a stable sort that gives higher precedence to latest values.
+    map.sort_by(|k1, v1, k2, v2| T::cmp(k1, v1, k2, v2).reverse());
+
+    let mut res = Vec::with_capacity(map.len());
+
+    for diff in map.into_iter().rev().map(T::from).filter(T::should_keep) {
+        res.extend_from_slice(diff.as_bytes());
+    }
+
+    Some(res)
+}
+
+#[cfg(test)]
+#[test]
+fn test_merge_int_set_diffs() {
+    use zerocopy::IntoBytes as _;
+
+    let existing = [
+        TermToIidsEntry::new(0.into(), 11),
+        TermToIidsEntry::new(1.into(), 12),
+        TermToIidsEntry::new(2.into(), 13),
+    ];
+
+    let op1 = [
+        TermToIidsEntry::new(0.into(), 3),            // PUSH again on IID 0
+        TermToIidsEntry::new(3.into(), 14),           // PUSH IID 3 (new)
+        TermToIidsEntry::new(2.into(), TF_TOMBSTONE), // FLUSHO IID 2
+    ];
+    let op2 = [
+        TermToIidsEntry::new(0.into(), 4),            // PUSH again on IID 0
+        TermToIidsEntry::new(1.into(), TF_TOMBSTONE), // FLUSHO IID 1
+        TermToIidsEntry::new(2.into(), 2),            // PUSH again on IID 2 (re-index)
+        TermToIidsEntry::new(0.into(), 5),            // PUSH again on IID 0
+        TermToIidsEntry::new(3.into(), 9),            // PUSH again on IID 3
+    ];
+
+    let res = merge_int_set_diffs::<TermToIidsEntry>(
+        Some(existing.as_bytes()),
+        [op1.as_bytes(), op2.as_bytes()].into_iter(),
+    )
+    .unwrap();
+
+    let expected = [
+        // IID 1 should be gone
+        TermToIidsEntry::new(3.into(), 23), // IID 3 should be the first (highest tf + most recent)
+        TermToIidsEntry::new(0.into(), 23),
+        TermToIidsEntry::new(2.into(), 2), // IID 2 should be last (lowest tf)
+    ];
+
+    assert_eq!(res, expected.as_bytes());
 }
 
 /// This keeps only the maximum integer.
@@ -187,4 +299,124 @@ where
     }
 
     Some(res.to_kv_value().to_vec())
+}
+
+// MARK: Term-To-IIDs
+
+// WARN: It’s important to use an encoding that’s compatible no matter the
+//   system endianness!
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(
+    zerocopy::FromBytes,
+    zerocopy::IntoBytes,
+    zerocopy::Immutable,
+    zerocopy::Unaligned
+)]
+#[repr(C, packed)]
+pub struct TermToIidsEntry {
+    iid: little_endian::U64,
+    // NOTE: It’s okay to use a u8 here, as BM25 saturation causes tf values > 256
+    //   to have almost the same score. Saving one byte here is a huge win in terms
+    //   of index size so it’s a worth it trade-off.
+    tf: u8,
+}
+
+impl Mergeable for TermToIidsEntry {
+    type Key = little_endian::U64;
+    type Value = u8;
+
+    fn merge_in(&self, map: &mut IndexMap<Self::Key, Self::Value>) {
+        map.entry(self.iid)
+            .and_modify(|acc| {
+                if self.tf == TF_TOMBSTONE {
+                    *acc = TF_TOMBSTONE;
+                } else {
+                    *acc = acc.saturating_add(self.tf)
+                }
+            })
+            .or_insert(self.tf);
+    }
+
+    fn cmp(
+        _k1: &Self::Key,
+        v1: &Self::Value,
+        _k2: &Self::Key,
+        v2: &Self::Value,
+    ) -> std::cmp::Ordering {
+        v1.cmp(v2).reverse()
+    }
+
+    #[inline]
+    fn should_keep(&self) -> bool {
+        // NOTE: This is where tombstones are taken into account.
+        self.tf != TF_TOMBSTONE
+    }
+
+    #[inline]
+    fn as_bytes(&self) -> &[u8] {
+        zerocopy::IntoBytes::as_bytes(self)
+    }
+}
+
+impl TermToIidsEntry {
+    #[inline]
+    pub const fn new(iid: StoreObjectIid, tf: u8) -> Self {
+        Self {
+            iid: little_endian::U64::new(iid.into_inner()),
+            tf,
+        }
+    }
+
+    #[inline]
+    pub const fn iid(&self) -> StoreObjectIid {
+        StoreObjectIid::new(self.iid.get())
+    }
+
+    #[inline]
+    pub const fn tf(&self) -> u8 {
+        self.tf
+    }
+}
+
+impl From<(little_endian::U64, u8)> for TermToIidsEntry {
+    #[inline]
+    fn from((iid, tf): (little_endian::U64, u8)) -> Self {
+        Self { iid, tf }
+    }
+}
+
+// MARK: IID-To-Terms
+
+// WARN: It’s important to use an encoding that’s compatible no matter the
+//   system endianness!
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(
+    zerocopy::FromBytes,
+    zerocopy::IntoBytes,
+    zerocopy::Immutable,
+    zerocopy::Unaligned
+)]
+#[repr(C, packed)]
+pub struct IidToTermsEntry {
+    term_hash: little_endian::U32,
+}
+
+impl IidToTermsEntry {
+    #[inline]
+    pub const fn new(term_hash: StoreTermHash) -> Self {
+        Self {
+            term_hash: little_endian::U32::new(term_hash.into_inner()),
+        }
+    }
+
+    #[inline]
+    pub const fn into_term_hash(self) -> StoreTermHash {
+        let Self { term_hash, .. } = self;
+        StoreTermHash::new(term_hash.get())
+    }
+
+    #[inline]
+    pub const fn term_hash(&self) -> StoreTermHash {
+        StoreTermHash::new(self.term_hash.get())
+    }
 }

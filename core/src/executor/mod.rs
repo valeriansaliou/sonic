@@ -247,7 +247,7 @@ struct MultipartPushContext {
     /// `NEW` in any multipart chunk is considered `NEW` on commit.
     assume_new: bool,
 
-    terms: HashMap<StoreTermHash, Box<str>>,
+    terms: HashMap<StoreTermHash, (Box<str>, u8)>,
 
     capacity: Option<usize>,
 

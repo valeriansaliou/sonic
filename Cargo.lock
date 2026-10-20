@@ -2406,6 +2406,7 @@ dependencies = [
  "regex-syntax 0.8.11",
  "rocksdb",
  "serde",
+ "thiserror 2.0.21",
  "tracing",
  "tracing-subscriber",
  "twox-hash",
@@ -2413,6 +2414,7 @@ dependencies = [
  "unicode-segmentation",
  "waken_snowball",
  "whatlang",
+ "zerocopy",
 ]
 
 [[package]]

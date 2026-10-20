@@ -7,6 +7,7 @@
 
 mod backup;
 pub(crate) mod pool;
+pub(super) mod util;
 
 use std::ops::Range;
 use std::sync::{Arc, RwLock};

@@ -1470,6 +1470,8 @@ impl sonic::executor::DynamicConfig for DynamicConfig {
         options: &mut sonic::rocksdb::Options,
         config: &sonic::config::RocksDbDatabaseConfig,
     ) {
+        use crate::util::u32_to_usize;
+
         let Self {
             bulk_load_preset_options,
             rocksdb,
@@ -1488,11 +1490,8 @@ impl sonic::executor::DynamicConfig for DynamicConfig {
             options.set_disable_auto_compactions(true);
             options.set_unordered_write(true);
 
-            // SAFETY: This ensures the following `as usize` cast is lossless.
-            const _: () = assert!(u32::BITS <= usize::BITS);
-
             let write_buffer_size: u32 = l2_cache_size.value() / 2;
-            options.set_write_buffer_size(write_buffer_size as usize);
+            options.set_write_buffer_size(u32_to_usize(write_buffer_size));
 
             let max_l0_files = (fd_limit - 48)
                 // Add room for error. Ideally this would be ~1.5 but we’re

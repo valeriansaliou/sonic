@@ -227,3 +227,27 @@ fn test_ranking_uses_idf() {
         assert_eq!(response, ["article:2", "article:3", "article:1"]);
     }
 }
+
+/// Ensures ranking takes into account the number of occurences of a word in a document.
+#[test]
+fn test_ranking_uses_tf() {
+    init_logging();
+    let executor = make_test_executor(|app_conf| {
+        // Disable stemming to make results more predictable.
+        app_conf.normalization.stemming_enabled = false;
+    });
+
+    exec!(
+        executor -> PUSH "articles" "default" "article:1"
+        "GDPR bla bla GDPR"
+    );
+    exec!(
+        executor -> PUSH "articles" "default" "article:2"
+        "GDPR bla bla bla"
+    );
+
+    {
+        let response = exec!(executor -> QUERY "articles" "default" "GDPR");
+        assert_eq!(response, ["article:1", "article:2"]);
+    }
+}

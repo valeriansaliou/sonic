@@ -48,14 +48,16 @@ impl super::Executor {
         };
 
         // Resolve terms associated to IID
-        let iid_terms = (kv_repo.get_iid_to_terms(iid))
+        let object_terms = (kv_repo.get_iid_to_terms(iid))
             .map_err(|()| tracing::error!("failed getting flusho executor iid-to-terms"))?
-            .unwrap_or_default();
+            .into_iter()
+            .flatten()
+            .map(|entry| entry.term_hash());
 
         let mut batch = WriteBatch::default();
 
         // Flush bucket (batch operation, as it is shared w/ other executors)
-        let batch_count = kv_repo.batch_flush_bucket(&mut batch, iid, oid, &iid_terms);
+        let batch_count = kv_repo.delete_object(&mut batch, iid, oid, object_terms);
 
         kv_repo.write(batch).map_err(|error| {
             tracing::error!("failed executing batch-flush-bucket in flusho executor: {error}")

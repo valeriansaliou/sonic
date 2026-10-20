@@ -107,7 +107,7 @@ fn issue_262() {
 
 /// See <https://github.com/valeriansaliou/sonic/issues/264>.
 #[test]
-#[ignore = "Not supported yet (missing tf)"]
+#[ignore = "Not supported yet (missing relative tf)"]
 fn issue_264() {
     #[rustfmt::skip]
     let test_cases = [

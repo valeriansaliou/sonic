@@ -18,6 +18,14 @@ pub(super) fn split_leading_digits(s: &str) -> (&str, &str) {
     s.split_at(split_index)
 }
 
+#[cfg(feature = "experimental-api")]
+pub(crate) fn u32_to_usize(value: u32) -> usize {
+    // SAFETY: This ensures the following `as usize` cast is lossless.
+    const _: () = assert!(u32::BITS <= usize::BITS);
+
+    value as usize
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

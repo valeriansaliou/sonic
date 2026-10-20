@@ -107,32 +107,36 @@ impl super::Executor {
             let term_hash = token.hash();
             let term = token.as_normalized();
 
-            let mut iids = kv_repo
+            let mut iid_iters = Vec::with_capacity(3);
+
+            if let Some(iter) = kv_repo
                 .get_term_to_iids(&term_hash)
                 .unwrap_or_else(|()| None)
-                .unwrap_or_default();
+            {
+                iid_iters.push(iter)
+            }
 
             // Look for exact matches normalized differently if the Sonic
             // index isn’t normalized.
             if !token.is_special() && self.app_conf.normalization.unicode_normalization.is_none() {
                 use unicode_normalization::UnicodeNormalization as _;
 
-                let mut nfc = kv_repo
+                if let Some(iter) = kv_repo
                     .get_term_to_iids(&StoreTermHash::from(term.nfc().to_string().as_str()))
                     .unwrap_or_else(|()| None)
-                    .unwrap_or_default();
-                iids.append(&mut nfc);
+                {
+                    iid_iters.push(iter)
+                }
 
-                let mut nfd = kv_repo
+                if let Some(iter) = kv_repo
                     .get_term_to_iids(&StoreTermHash::from(term.nfd().to_string().as_str()))
                     .unwrap_or_else(|()| None)
-                    .unwrap_or_default();
-                iids.append(&mut nfd);
+                {
+                    iid_iters.push(iter)
+                }
             };
 
-            tracing::debug!("got exact search executor iids: {iids:?} for term: {term:?}");
-
-            let document_frequency = document_frequency(&term_hash, &kv_repo);
+            let document_frequency = kv_repo.get_document_frequency(&term_hash);
 
             // Filter out minimum IDF.
             // PERF: Filtering `minimum_idf > 0` to save some computation.
@@ -146,13 +150,15 @@ impl super::Executor {
                 }
             }
 
-            let bm25_score = bm25_lite_idf(document_count, document_frequency);
+            let bm25_idf = bm25_lite_idf(document_count, document_frequency);
 
-            for iid in iids.into_iter() {
+            for term_to_iids_entry in iid_iters.into_iter().flatten() {
+                let bm25_score = bm25_lite(bm25_idf, term_to_iids_entry.tf());
+
                 // Assign a base score of `1` as those are exact matches.
                 let inserted = update_score(
                     &mut scoring_matrix,
-                    iid,
+                    term_to_iids_entry.iid(),
                     term.to_owned(),
                     1. * bm25_score,
                     idx,
@@ -628,23 +634,29 @@ fn test_overall_score() {
     ); // 2/3
 }
 
-fn document_frequency(term_hash: &StoreTermHash, kv_repo: &KvRepositoryReadOnly<'_>) -> u64 {
-    kv_repo
-        .get_term_to_iids(term_hash)
-        .unwrap_or_else(|()| None)
-        .map_or(0, |iids| iids.len()) as u64
-}
-
-fn bm25_lite_idf(document_count: u64, document_frequency: u64) -> f32 {
+fn bm25_lite_idf(document_count: u64, document_frequency: u64) -> f64 {
     debug_assert!(
         document_frequency <= document_count,
         "{document_frequency} > {document_count}"
     );
 
-    let document_count = document_count.max(document_frequency) as f64;
+    let n = document_count.max(document_frequency) as f64;
     let df = document_frequency as f64;
 
-    (1.0 + (document_count - df + 0.5) / (df + 0.5)).ln() as f32
+    (1.0 + (n - df + 0.5) / (df + 0.5)).ln()
+}
+
+fn bm25_lite(idf: f64, term_frequency: u8) -> f32 {
+    if term_frequency == 0 {
+        return 0.0;
+    }
+
+    let tf = term_frequency as f64;
+
+    // Saturating TF component, with k1 = 1.2.
+    let tf_weight = tf * (1.2 + 1.0) / (tf + 1.2);
+
+    (idf * tf_weight) as f32
 }
 
 #[allow(clippy::too_many_arguments)] // We’ll refactor this someday, and it’ not public anyway.
@@ -675,7 +687,7 @@ fn merge_suggestions(
             Err(_) => continue,
         };
 
-        let document_frequency = document_frequency(&suggested_term_hash, kv_repo);
+        let document_frequency = kv_repo.get_document_frequency(&suggested_term_hash);
 
         // Filter out minimum IDF.
         // PERF: Filtering `minimum_idf > 0` to save some computation.
@@ -689,19 +701,19 @@ fn merge_suggestions(
             }
         }
 
-        let bm25_score = bm25_lite_idf(document_count, document_frequency);
+        let bm25_idf = bm25_lite_idf(document_count, document_frequency);
 
-        let suggestion_score = base_score * bm25_score;
+        for term_to_iids_entry in suggested_iids.into_iter().take(*alternates_try) {
+            let bm25_score = base_score * bm25_lite(bm25_idf, term_to_iids_entry.tf());
 
-        for suggested_iid in suggested_iids.into_iter().take(*alternates_try) {
             // SAFETY: We can reach at most `alternates_try`.
             *alternates_try = unsafe { alternates_try.unchecked_sub(1) };
 
             let inserted = update_score(
                 scoring_matrix,
-                suggested_iid,
+                term_to_iids_entry.iid(),
                 suggested_word.clone(),
-                suggestion_score,
+                bm25_score,
                 term_idx,
                 term_count,
             );

@@ -8,16 +8,15 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
+use indexmap::IndexMap;
 use rocksdb::WriteBatch;
 
 use crate::executor::MultipartPushContext;
-use crate::lexer::itertools::UniqueBy;
-use crate::lexer::preprocessor::{PreprocessorOutput, Token};
+use crate::lexer::preprocessor::PreprocessorOutput;
 use crate::store::kv::KvRepositoryReadWrite;
 use crate::store::kv::encoding::ToKvKeyPart;
 use crate::store::rocksdb::WriteOptions;
 use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreObjectOid, StoreTermHash};
-use crate::util::hash::NoopU32HasherBuilder;
 
 #[derive(Debug, Default)]
 pub struct PushOptions {
@@ -51,11 +50,14 @@ impl super::Executor {
                 } else {
                     input.tokens().len()
                 };
-                let mut terms: HashMap<StoreTermHash, Box<str>> =
+                let mut terms: HashMap<StoreTermHash, (Box<str>, u8)> =
                     HashMap::with_capacity(expected_term_count);
 
                 for token in input.tokens() {
-                    terms.insert(token.hash(), Box::from(token.into_normalized()));
+                    terms
+                        .entry(token.hash())
+                        .and_modify(|(_s, tf)| *tf = tf.saturating_add(1))
+                        .or_insert((Box::from(token.into_normalized()), 1));
                 }
 
                 *multipart_context = Some(MultipartPushContext {
@@ -87,7 +89,9 @@ impl super::Executor {
 
                 for token in input.tokens() {
                     ctx.terms
-                        .insert(token.hash(), Box::from(token.into_normalized()));
+                        .entry(token.hash())
+                        .and_modify(|(_s, tf)| *tf = tf.saturating_add(1))
+                        .or_insert((Box::from(token.into_normalized()), 1));
                 }
 
                 if options.is_incomplete {
@@ -212,24 +216,25 @@ impl super::Executor {
 
                     let mut batch = WriteBatch::default();
 
-                    let mut term_hashes_sorted = ctx.terms.keys().copied().collect::<Vec<_>>();
+                    let mut terms_sorted: IndexMap<StoreTermHash, u8> =
+                        ctx.terms.iter().map(|(t, (_s, tf))| (*t, *tf)).collect();
 
                     // PERF: Sort terms by hash so they’re already sorted in the
                     //   `WriteBatch`. By leveraging `memtable_insert_hint_per_batch`,
                     //   we can reduce the skiplist load by ~1/3, and the total
                     //   amount of computation per channel by ~14%.
-                    term_hashes_sorted.sort_by_key(|term_hash| term_hash.to_kv_key_part());
+                    terms_sorted.sort_unstable_by_key(|term_hash, _| term_hash.to_kv_key_part());
 
-                    for term_hash in term_hashes_sorted.iter() {
+                    for (term_hash, &tf) in terms_sorted.iter() {
                         // Link IID to term
-                        kv_repo.add_term_to_iid(&mut batch, term_hash, iid);
+                        kv_repo.update_term_to_iid(&mut batch, term_hash, iid, Some(tf));
                     }
 
                     // Link terms to IID
                     if is_new {
-                        kv_repo.set_iid_to_terms(&mut batch, iid, term_hashes_sorted.iter());
+                        kv_repo.set_iid_to_terms(&mut batch, iid, terms_sorted.into_keys());
                     } else {
-                        kv_repo.add_iid_to_terms(&mut batch, iid, term_hashes_sorted.iter());
+                        kv_repo.update_iid_to_terms(&mut batch, iid, terms_sorted.into_keys());
                     }
 
                     executor_ensure_op!(
@@ -256,7 +261,7 @@ impl super::Executor {
                 // Update FST store
                 {
                     // Push to FST graph
-                    fst_repo.push_words(ctx.terms.values().map(Box::as_ref));
+                    fst_repo.push_words(ctx.terms.values().map(|(s, _)| s.as_ref()));
                 }
 
                 // Clear multipart context.
@@ -269,9 +274,6 @@ impl super::Executor {
             None => {
                 // PERF: Drop lock early because why not?
                 drop(multipart_context);
-
-                let mut tokens =
-                    UniqueBy::new_with_hasher(input.tokens(), Token::hash, NoopU32HasherBuilder);
 
                 let mut terms = Vec::with_capacity(input.tokens().len());
 
@@ -291,29 +293,38 @@ impl super::Executor {
 
                     let mut batch = WriteBatch::default();
 
-                    let mut term_hashes_sorted = Vec::with_capacity(input.tokens().len());
+                    let mut terms_sorted: IndexMap<StoreTermHash, u8> =
+                        IndexMap::with_capacity(input.tokens().len());
 
-                    for token in &mut tokens {
-                        term_hashes_sorted.push(token.hash());
-                        terms.push(token.into_normalized());
+                    for token in input.tokens() {
+                        match terms_sorted.entry(token.hash()) {
+                            indexmap::map::Entry::Occupied(mut entry) => {
+                                let tf = entry.get_mut();
+                                *tf = tf.saturating_add(1);
+                            }
+                            indexmap::map::Entry::Vacant(entry) => {
+                                terms.push(token.into_normalized());
+                                entry.insert_entry(1);
+                            }
+                        }
                     }
 
                     // PERF: Sort terms by hash so they’re already sorted in the
                     //   `WriteBatch`. By leveraging `memtable_insert_hint_per_batch`,
                     //   we can reduce the skiplist load by ~1/3, and the total
                     //   amount of computation per channel by ~14%.
-                    term_hashes_sorted.sort_by_key(|term_hash| term_hash.to_kv_key_part());
+                    terms_sorted.sort_unstable_by_key(|term_hash, _| term_hash.to_kv_key_part());
 
-                    for term_hash in term_hashes_sorted.iter() {
+                    for (term_hash, &tf) in terms_sorted.iter() {
                         // Link IID to term
-                        kv_repo.add_term_to_iid(&mut batch, term_hash, iid);
+                        kv_repo.update_term_to_iid(&mut batch, term_hash, iid, Some(tf));
                     }
 
                     // Link terms to IID
                     if is_new {
-                        kv_repo.set_iid_to_terms(&mut batch, iid, term_hashes_sorted.iter());
+                        kv_repo.set_iid_to_terms(&mut batch, iid, terms_sorted.into_keys());
                     } else {
-                        kv_repo.add_iid_to_terms(&mut batch, iid, term_hashes_sorted.iter());
+                        kv_repo.update_iid_to_terms(&mut batch, iid, terms_sorted.into_keys());
                     }
 
                     executor_ensure_op!(

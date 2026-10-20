@@ -16,19 +16,23 @@ use std::{fmt, io};
 
 use hashbrown::HashMap;
 use rocksdb::{DB, WriteBatch};
+use zerocopy::IntoBytes;
 
 use crate::store::generic::*;
+use crate::store::kv::merge::TF_TOMBSTONE;
 pub use crate::store::rocksdb::pool::{GenericKvStorePool, KvStoreId};
+use crate::store::rocksdb::util::RocksDbPinnableSliceIter;
 use crate::store::rocksdb::{
     CF_CREATED_ON_OPEN, DEFAULT_CF_NAME, GenericRocksDbStore, GenericRocksDbStorePub,
     RocksDbWriteOptionsBuilder,
 };
 use crate::store::types::*;
+use crate::util::usize_to_u64;
 
 use self::encoding::*;
 use self::keys::KvStoreKey;
 pub use self::keys::StoreMetaKey;
-pub use self::merge::AVERAGE_MERGE_RATIO;
+pub use self::merge::{AVERAGE_MERGE_RATIO, IidToTermsEntry, TermToIidsEntry};
 
 /// A column family for data which need fast access during Ingest too, not just
 /// Search. During a bulk ingestion, this column family is still flushed and
@@ -72,14 +76,16 @@ pub struct KvStore {
     pool_stats: Arc<KvStorePoolStats>,
 }
 
+#[derive(Clone, Copy)]
 pub struct KvRepositoryReadOnly<'a> {
-    bucket: Bucket<'a>,
     store: &'a KvStore,
+    bucket: Bucket<'a>,
 }
 
+#[derive(Clone, Copy)]
 pub struct KvRepositoryReadWrite<'a> {
-    bucket: Bucket<'a>,
     store: &'a KvStore,
+    bucket: Bucket<'a>,
 }
 
 impl KvStore {
@@ -348,35 +354,25 @@ impl<'a> KvRepositoryReadOnly<'a> {
     ///
     /// [IDX=1] ((term)) ~> [((iid))]
     pub fn get_term_to_iids(
-        &self,
+        self,
         term_hash: &StoreTermHash,
-    ) -> Result<Option<Vec<StoreObjectIid>>, ()> {
+    ) -> Result<Option<impl ExactSizeIterator<Item = TermToIidsEntry> + 'a>, ()> {
         let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
 
         tracing::debug!("store get term-to-iids: {store_key}");
 
         match self.store.database.get_pinned(&store_key) {
             Ok(Some(value)) => {
-                let value = value.deref();
+                tracing::debug!(
+                    "got term-to-iids: {store_key} with encoded value: {value:?}",
+                    value = value.deref()
+                );
 
-                tracing::debug!("got term-to-iids: {store_key} with encoded value: {value:?}");
+                let iter = RocksDbPinnableSliceIter::<TermToIidsEntry>::forward(value).map_err(
+                    |error| tracing::error!(?store_key, "invalid term-to-iids: {error}"),
+                )?;
 
-                match rev_iter_kv_value(value) {
-                    Ok(iter) => {
-                        let value_decoded: Vec<StoreObjectIid> = iter.collect();
-
-                        tracing::debug!(
-                            "got term-to-iids: {store_key} with decoded value: {value_decoded:?}"
-                        );
-
-                        Ok(Some(value_decoded))
-                    }
-                    Err(error) => {
-                        tracing::error!(?store_key, "invalid term-to-iids: {error}");
-
-                        Err(())
-                    }
-                }
+                Ok(Some(iter))
             }
             Ok(None) => {
                 tracing::debug!("no term-to-iids found: {store_key}");
@@ -387,6 +383,30 @@ impl<'a> KvRepositoryReadOnly<'a> {
                 tracing::error!("error getting term-to-iids: {store_key} with trace: {err}");
 
                 Err(())
+            }
+        }
+    }
+
+    pub fn get_document_frequency(&self, term_hash: &StoreTermHash) -> u64 {
+        let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
+
+        match self.store.database.get_pinned(&store_key) {
+            Ok(Some(value)) => {
+                usize_to_u64(value.len()) / usize_to_u64(size_of::<TermToIidsEntry>())
+            }
+            Ok(None) => {
+                tracing::debug!(?store_key, ?term_hash, "term-to-iids not found");
+
+                0
+            }
+            Err(error) => {
+                tracing::error!(
+                    ?store_key,
+                    ?term_hash,
+                    "error getting term-to-iids: {error}"
+                );
+
+                0
             }
         }
     }
@@ -467,7 +487,10 @@ impl<'a> KvRepositoryReadOnly<'a> {
     /// IID-to-Terms mapper
     ///
     /// [IDX=4] ((iid)) ~> [((term))]
-    pub fn get_iid_to_terms(&self, iid: StoreObjectIid) -> Result<Option<Vec<StoreTermHash>>, ()> {
+    pub fn get_iid_to_terms(
+        self,
+        iid: StoreObjectIid,
+    ) -> Result<Option<impl ExactSizeIterator<Item = IidToTermsEntry> + 'a>, ()> {
         let store_key = KvStoreKey::iid_to_terms(&self.bucket, iid);
 
         tracing::debug!("store get iid-to-terms: {store_key}");
@@ -478,35 +501,16 @@ impl<'a> KvRepositoryReadOnly<'a> {
 
         match self.store.database.get_pinned_cf(cf_handle, &store_key) {
             Ok(Some(value)) => {
-                let value = value.deref();
+                tracing::debug!(
+                    "got iid-to-terms: {store_key} with encoded value: {value:?}",
+                    value = value.deref()
+                );
 
-                tracing::debug!("got iid-to-terms: {store_key} with encoded value: {value:?}");
+                let iter = RocksDbPinnableSliceIter::<IidToTermsEntry>::forward(value).map_err(
+                    |error| tracing::error!(?store_key, "invalid iid-to-terms: {error}"),
+                )?;
 
-                match iter_kv_value(value) {
-                    Ok(iter) => {
-                        let value_decoded: Vec<StoreTermHash> = iter.collect();
-
-                        tracing::debug!(
-                            "got iid-to-terms: {store_key} with decoded value: {value_decoded:?}"
-                        );
-
-                        // TODO: Do not map empty to `None`, as it has a different
-                        //   meaning. Let handlers do what they want. Also this
-                        //   creates a discrepancy with `get_term_to_iids`.
-                        let value_decoded = if !value_decoded.is_empty() {
-                            Some(value_decoded)
-                        } else {
-                            None
-                        };
-
-                        Ok(value_decoded)
-                    }
-                    Err(error) => {
-                        tracing::error!(?store_key, "invalid iid-to-terms: {error}");
-
-                        Err(())
-                    }
-                }
+                Ok(Some(iter))
             }
             Ok(None) => {
                 tracing::debug!("no iid-to-terms found: {store_key}");
@@ -524,7 +528,7 @@ impl<'a> KvRepositoryReadOnly<'a> {
 
 impl<'a> KvRepositoryReadWrite<'a> {
     /// This is `O(1)`, nothing meaningful happens.
-    fn as_read_only<'b>(&'b self) -> KvRepositoryReadOnly<'b> {
+    fn to_read_only(self) -> KvRepositoryReadOnly<'a> {
         KvRepositoryReadOnly {
             bucket: self.bucket,
             store: self.store,
@@ -538,7 +542,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         &self,
         meta: StoreMetaKey,
     ) -> Result<Option<T>, ()> {
-        self.as_read_only().get_meta_to_value(meta)
+        self.to_read_only().get_meta_to_value(meta)
     }
 
     pub fn set_meta_to_value(
@@ -556,11 +560,11 @@ impl<'a> KvRepositoryReadWrite<'a> {
 
     #[inline]
     pub fn get_object_count(&self) -> Result<u64, Box<dyn std::error::Error>> {
-        self.as_read_only().get_object_count()
+        self.to_read_only().get_object_count()
     }
 
     #[inline]
-    fn add_object_count(&self, batch: &mut WriteBatch, diff: i64) {
+    fn update_object_count(&self, batch: &mut WriteBatch, diff: i64) {
         let store_key = KvStoreKey::meta_to_value(&self.bucket, StoreMetaKey::ObjectCount);
 
         tracing::trace!(
@@ -577,7 +581,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         batch: &mut WriteBatch,
     ) -> Result<StoreObjectIid, Box<dyn std::error::Error>> {
         // Increment object count
-        self.add_object_count(batch, 1);
+        self.update_object_count(batch, 1);
 
         self.store.get_new_iid(self.bucket, batch)
     }
@@ -587,57 +591,39 @@ impl<'a> KvRepositoryReadWrite<'a> {
     /// [IDX=1] ((term)) ~> [((iid))]
     #[inline]
     pub fn get_term_to_iids(
-        &self,
+        self,
         term_hash: &StoreTermHash,
-    ) -> Result<Option<Vec<StoreObjectIid>>, ()> {
-        self.as_read_only().get_term_to_iids(term_hash)
+    ) -> Result<Option<impl ExactSizeIterator<Item = TermToIidsEntry> + 'a>, ()> {
+        self.to_read_only().get_term_to_iids(term_hash)
     }
 
-    // TODO(pref): Update merge operator to support deletion and get rid of this.
-    pub fn set_term_to_iids(
-        &self,
-        batch: &mut WriteBatch,
-        term_hash: &StoreTermHash,
-        iids: impl ExactSizeIterator<Item = StoreObjectIid>,
-    ) {
-        let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
-
-        tracing::debug!("store set term-to-iids: {store_key}");
-
-        // Encode IID list into storage serialized format
-        let iids_encoded = iids.to_kv_value();
-
-        tracing::debug!("store set term-to-iids: {store_key} with encoded value: {iids_encoded:?}");
-
-        batch.put(store_key, &iids_encoded)
-    }
-
-    pub fn add_term_to_iid(
+    pub fn update_term_to_iid(
         &self,
         batch: &mut WriteBatch,
         term_hash: &StoreTermHash,
         iid: StoreObjectIid,
+        tf_delta: Option<u8>,
     ) {
         let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
 
         tracing::debug!("store add term-to-iids: {store_key}");
 
-        batch.merge(&store_key, iid.to_kv_value());
-    }
+        debug_assert!(
+            !matches!(tf_delta, Some(TF_TOMBSTONE)),
+            "Don’t update Term-To-IIDs with a tf of 0"
+        );
 
-    pub fn delete_term_to_iids(&self, batch: &mut WriteBatch, term_hash: &StoreTermHash) {
-        let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
-
-        tracing::debug!("store delete term-to-iids: {store_key}");
-
-        batch.delete(store_key)
+        batch.merge(
+            &store_key,
+            TermToIidsEntry::new(iid, tf_delta.unwrap_or(TF_TOMBSTONE)).as_bytes(),
+        );
     }
 
     /// OID-to-IID mapper
     ///
     /// [IDX=2] ((oid)) ~> ((iid))
     pub fn get_oid_to_iid(&self, oid: StoreObjectOid) -> Result<Option<StoreObjectIid>, ()> {
-        self.as_read_only().get_oid_to_iid(oid)
+        self.to_read_only().get_oid_to_iid(oid)
     }
 
     pub fn set_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOid, iid: StoreObjectIid) {
@@ -673,7 +659,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
     ///
     /// [IDX=3] ((iid)) ~> ((oid))
     pub fn get_iid_to_oid(&self, iid: StoreObjectIid) -> Result<Option<String>, ()> {
-        self.as_read_only().get_iid_to_oid(iid)
+        self.to_read_only().get_iid_to_oid(iid)
     }
 
     pub fn set_iid_to_oid(&self, batch: &mut WriteBatch, iid: StoreObjectIid, oid: StoreObjectOid) {
@@ -695,51 +681,56 @@ impl<'a> KvRepositoryReadWrite<'a> {
     /// IID-to-Terms mapper
     ///
     /// [IDX=4] ((iid)) ~> [((term))]
-    pub fn get_iid_to_terms(&self, iid: StoreObjectIid) -> Result<Option<Vec<StoreTermHash>>, ()> {
-        self.as_read_only().get_iid_to_terms(iid)
+    pub fn get_iid_to_terms(
+        self,
+        iid: StoreObjectIid,
+    ) -> Result<Option<impl ExactSizeIterator<Item = IidToTermsEntry> + 'a>, ()> {
+        self.to_read_only().get_iid_to_terms(iid)
     }
 
-    pub fn set_iid_to_terms<'t>(
+    pub fn set_iid_to_terms(
         &self,
         batch: &mut WriteBatch,
         iid: StoreObjectIid,
-        terms_hashes: impl ExactSizeIterator<Item = &'t StoreTermHash>,
+        terms: impl ExactSizeIterator<Item = StoreTermHash>,
     ) {
         let store_key = KvStoreKey::iid_to_terms(&self.bucket, iid);
 
-        tracing::debug!("store set iid-to-terms: {store_key}");
+        // Encode iterator into storage serialized format.
+        let terms: Vec<IidToTermsEntry> = terms.map(IidToTermsEntry::new).collect();
 
-        // Encode term list into storage serialized format
-        let terms_hashes_encoded = terms_hashes.to_kv_value();
-
-        tracing::debug!(
-            "store set iid-to-terms: {store_key} with encoded value: {terms_hashes_encoded:?}"
-        );
+        tracing::debug!(?terms, "store set iid-to-terms: {store_key}");
 
         let cf_handle = (self.store.database)
             .cf_handle(INCOMPRESSIBLE_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        batch.put_cf(cf_handle, store_key, &terms_hashes_encoded)
+        batch.put_cf(cf_handle, store_key, terms.as_bytes())
     }
 
-    pub fn add_iid_to_terms<'t>(
+    pub fn update_iid_to_terms(
         &self,
         batch: &mut WriteBatch,
         iid: StoreObjectIid,
-        terms_hashes: impl Iterator<Item = &'t StoreTermHash>,
+        new_terms: impl ExactSizeIterator<Item = StoreTermHash>,
     ) {
         let store_key = KvStoreKey::iid_to_terms(&self.bucket, iid);
 
-        tracing::debug!("store add iid-to-terms: {store_key}");
+        // Encode iterator into storage serialized format.
+        // PERF: Collect here instead of running multiple `merge_cf` so we
+        //   RocksDB has less calls to process in parallel (order) and so it
+        //   allocates only once (we know the length of the iterator, RocksDB
+        //   has no such info).
+        let new_terms: Vec<IidToTermsEntry> =
+            new_terms.into_iter().map(IidToTermsEntry::new).collect();
+
+        tracing::debug!(?new_terms, "store update iid-to-terms: {store_key}");
 
         let cf_handle = (self.store.database)
             .cf_handle(INCOMPRESSIBLE_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        for term_hash in terms_hashes {
-            batch.merge_cf(cf_handle, &store_key, term_hash.to_kv_value());
-        }
+        batch.merge_cf(cf_handle, &store_key, new_terms.as_bytes());
     }
 
     pub fn delete_iid_to_terms(&self, batch: &mut WriteBatch, iid: StoreObjectIid) {
@@ -754,18 +745,16 @@ impl<'a> KvRepositoryReadWrite<'a> {
         batch.delete_cf(cf_handle, store_key)
     }
 
-    pub fn batch_flush_bucket(
+    pub fn delete_object(
         &self,
         batch: &mut WriteBatch,
         iid: StoreObjectIid,
         oid: StoreObjectOid,
-        iid_terms_hashes: &[StoreTermHash],
+        object_terms_to_tfs: impl IntoIterator<Item = StoreTermHash>,
     ) -> u32 {
-        let mut count = 0;
+        let mut count: u32 = 0;
 
-        tracing::debug!(
-            "store batch flush bucket: {iid:?} with hashed terms: {iid_terms_hashes:?}"
-        );
+        tracing::debug!("store batch flush bucket: {iid:?}");
 
         // Delete OID <> IID association
         self.delete_oid_to_iid(batch, oid);
@@ -773,27 +762,14 @@ impl<'a> KvRepositoryReadWrite<'a> {
         self.delete_iid_to_terms(batch, iid);
 
         // Delete IID from each associated term
-        for term_hash in iid_terms_hashes {
-            let Ok(Some(mut term_iids)) = self.get_term_to_iids(term_hash) else {
-                continue;
-            };
+        for term_hash in object_terms_to_tfs {
+            self.update_term_to_iid(batch, &term_hash, iid, None);
 
-            if term_iids.contains(&iid) {
-                count += 1;
-
-                // Remove IID from list of IIDs
-                term_iids.retain(|&cur_iid| cur_iid != iid);
-            }
-
-            if term_iids.is_empty() {
-                self.delete_term_to_iids(batch, term_hash)
-            } else {
-                self.set_term_to_iids(batch, term_hash, term_iids.into_iter())
-            };
+            count = count.checked_add(1).unwrap();
         }
 
         // Decrement object count
-        self.add_object_count(batch, -1);
+        self.update_object_count(batch, -1);
 
         count
     }
@@ -845,19 +821,10 @@ mod tests {
             action.write(batch).is_ok()
         });
 
-        assert!(action.get_term_to_iids(&1.into()).is_ok());
+        assert_eq!(action.get_term_to_iids(&1.into()).err(), None);
         assert!({
             let mut batch = WriteBatch::default();
-            action.set_term_to_iids(
-                &mut batch,
-                &1.into(),
-                [0, 1, 2].into_iter().map(StoreObjectIid::from),
-            );
-            action.write(batch).is_ok()
-        });
-        assert!({
-            let mut batch = WriteBatch::default();
-            action.delete_term_to_iids(&mut batch, &1.into());
+            action.update_term_to_iid(&mut batch, &1.into(), 2.into(), Some(3));
             action.write(batch).is_ok()
         });
 
@@ -888,10 +855,8 @@ mod tests {
         assert!(action.get_iid_to_terms(4.into()).is_ok());
         assert!({
             let mut batch = WriteBatch::default();
-            let terms = ([45402].into_iter())
-                .map(StoreTermHash::from)
-                .collect::<Vec<_>>();
-            action.set_iid_to_terms(&mut batch, 4.into(), terms.iter());
+            let terms = [StoreTermHash::from(45402)];
+            action.set_iid_to_terms(&mut batch, 4.into(), terms.into_iter());
             action.write(batch).is_ok()
         });
         assert!({

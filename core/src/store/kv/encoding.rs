@@ -67,31 +67,6 @@ pub(super) trait TryFromKvValue: Sized {
     fn try_from_kv_value(bytes: &[u8]) -> Result<Self, Self::Err>;
 }
 
-pub(super) fn iter_kv_value<'a, const WORD_LEN: usize, T>(
-    bytes: &'a [u8],
-) -> Result<impl ExactSizeIterator<Item = T> + 'a, &'static str>
-where
-    T: FromKvValue<Repr = [u8; WORD_LEN]>,
-{
-    match bytes.as_chunks() {
-        (chunks, []) => Ok(chunks.iter().map(|chunk| T::from_kv_value(*chunk))),
-        (_, _) => Err("Too many bytes"),
-    }
-}
-
-pub(super) fn rev_iter_kv_value<'a, const WORD_LEN: usize, T>(
-    bytes: &'a [u8],
-) -> Result<impl ExactSizeIterator<Item = T> + 'a, &'static str>
-where
-    T: FromKvValue<Repr = [u8; WORD_LEN]>,
-{
-    match bytes.as_rchunks() {
-        // NOTE: `chunks` is still ordered, we have to iterate in reverse order.
-        ([], chunks) => Ok(chunks.iter().rev().map(|chunk| T::from_kv_value(*chunk))),
-        (_, _) => Err("Too many bytes"),
-    }
-}
-
 // MARK: IID
 
 impl ToKvKeyPart for StoreObjectIid {
