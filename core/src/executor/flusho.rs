@@ -20,54 +20,47 @@ impl super::Executor {
         //   prevents the database from being erased while using it in this block.
         let _kv_read_guard = self.kv_pool.lock_read_access();
 
-        if let Ok(kv_store) = self.kv_pool.acquire(false, collection, None) {
-            let Some(kv_store) = kv_store else {
-                tracing::debug!(
-                    "collection store does not exist, consider {bucket:?} from {collection:?} empty"
-                );
-                return Ok(0);
-            };
+        let Ok(kv_store) = self.kv_pool.acquire(false, collection, None) else {
+            return Err(());
+        };
 
-            // Important: acquire bucket store write lock
-            executor_kv_lock_write!(kv_store);
+        let Some(kv_store) = kv_store else {
+            tracing::debug!(
+                "collection store does not exist, consider {bucket:?} from {collection:?} empty"
+            );
+            return Ok(0);
+        };
 
-            let kv_repo = kv_store.to_repository_read_write(bucket);
+        // Important: acquire bucket store write lock
+        executor_kv_lock_write!(kv_store);
 
-            // Try to resolve existing OID to IID (if it does not exist, there is nothing to \
-            //   be flushed)
-            if let Ok(iid_value) = kv_repo.get_oid_to_iid(oid) {
-                let mut count_flushed = 0;
+        let kv_repo = kv_store.to_repository_read_write(bucket);
 
-                if let Some(iid) = iid_value {
-                    // Resolve terms associated to IID
-                    let iid_terms = {
-                        if let Ok(iid_terms_value) = kv_repo.get_iid_to_terms(iid) {
-                            iid_terms_value.unwrap_or_default()
-                        } else {
-                            tracing::error!("failed getting flusho executor iid-to-terms");
+        // Try to resolve existing OID to IID (if it does not exist, there is nothing to \
+        //   be flushed)
+        let Ok(iid_value) = kv_repo.get_oid_to_iid(oid) else {
+            tracing::error!("failed getting flusho executor oid-to-iid");
+            return Err(());
+        };
 
-                            Vec::new()
-                        }
-                    };
+        let Some(iid) = iid_value else {
+            return Ok(0);
+        };
 
-                    let mut batch = WriteBatch::default();
+        // Resolve terms associated to IID
+        let iid_terms = (kv_repo.get_iid_to_terms(iid))
+            .map_err(|()| tracing::error!("failed getting flusho executor iid-to-terms"))?
+            .unwrap_or_default();
 
-                    // Flush bucket (batch operation, as it is shared w/ other executors)
-                    let batch_count = kv_repo.batch_flush_bucket(&mut batch, iid, oid, &iid_terms);
+        let mut batch = WriteBatch::default();
 
-                    if kv_repo.write(batch).is_ok() {
-                        count_flushed += batch_count;
-                    } else {
-                        tracing::error!("failed executing batch-flush-bucket in flusho executor");
-                    }
-                }
+        // Flush bucket (batch operation, as it is shared w/ other executors)
+        let batch_count = kv_repo.batch_flush_bucket(&mut batch, iid, oid, &iid_terms);
 
-                return Ok(count_flushed);
-            } else {
-                tracing::error!("failed getting flusho executor oid-to-iid");
-            }
-        }
+        kv_repo.write(batch).map_err(|error| {
+            tracing::error!("failed executing batch-flush-bucket in flusho executor: {error}")
+        })?;
 
-        Err(())
+        Ok(batch_count)
     }
 }
