@@ -21,7 +21,6 @@ mod flushb;
 mod flushc;
 mod flusho;
 mod list;
-mod pop;
 mod push;
 mod query;
 mod suggest;

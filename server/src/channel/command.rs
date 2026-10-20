@@ -32,6 +32,7 @@ use crate::util::itertools::Itertools as _;
 #[derive(PartialEq)]
 pub enum ChannelCommandError {
     UnknownCommand,
+    Unsupported,
     NotFound,
     QueryError,
     InternalError,
@@ -880,51 +881,8 @@ impl ChannelCommandIngest {
         }
     }
 
-    pub fn dispatch_pop(
-        mut parts: SplitWhitespace,
-        ctx: &ChannelMessageModeIngest,
-    ) -> ChannelResult {
-        match (
-            parts.next(),
-            parts.next(),
-            parts.next(),
-            ChannelCommandBase::parse_text_parts(&mut parts),
-            parts.next(),
-        ) {
-            (Some(collection), Some(bucket), Some(object), Some(text), None) => {
-                tracing::debug!(
-                    "dispatching ingest pop in collection: {}, bucket: {} and object: {}",
-                    collection,
-                    bucket,
-                    object
-                );
-                tracing::debug!("ingest pop has text: {}", text);
-
-                let (collection, bucket, oid) = StoreItemBuilder::from_depth_3(
-                    collection, bucket, object,
-                )
-                .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
-
-                // Make 'pop' query
-                ChannelCommandBase::commit_result_operation(move || {
-                    let preprocessor = Preprocessor::new(
-                        *ctx.tokenization_config,
-                        *ctx.normalization_config,
-                        ctx.stopwords_config.clone(),
-                        false,
-                        false,
-                    );
-                    let text_lexed = preprocessor.preprocess(&text, None);
-
-                    ctx.executor
-                        .pop(collection, bucket, oid, text_lexed)
-                        .map(|count| Some(count.to_string()))
-                })
-            }
-            _ => Err(ChannelCommandError::InvalidFormat(
-                "POP <collection> <bucket> <object> \"<text>\"",
-            )),
-        }
+    pub fn dispatch_pop(_parts: SplitWhitespace, _ctx: &ChannelMessageModeIngest) -> ChannelResult {
+        Err(ChannelCommandError::Unsupported)
     }
 
     pub fn dispatch_count(
@@ -1903,6 +1861,7 @@ impl fmt::Display for ChannelCommandError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
             ChannelCommandError::UnknownCommand => write!(f, "unknown_command"),
+            ChannelCommandError::Unsupported => write!(f, "unsupported"),
             ChannelCommandError::NotFound => write!(f, "not_found"),
             ChannelCommandError::QueryError => write!(f, "query_error"),
             ChannelCommandError::InternalError => write!(f, "internal_error"),
