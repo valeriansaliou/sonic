@@ -131,6 +131,7 @@ impl_fns!(
 // MARK: POP
 
 impl_fns!(
+    #[cfg(feature = "v1")]
     #[doc = "Time complexity: O(1)."]
     fn pop(
         &self,
