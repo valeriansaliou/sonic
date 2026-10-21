@@ -30,6 +30,7 @@
 pub mod config;
 pub mod executor;
 pub mod lexer;
+mod scoring;
 pub mod store;
 pub mod util;
 

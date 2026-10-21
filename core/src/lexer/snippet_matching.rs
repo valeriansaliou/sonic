@@ -72,7 +72,7 @@ pub fn get_best_snippets(
     lang: Option<Lang>,
     preprocessor: &Preprocessor,
     config: QuerySnippetsConfig,
-    idf_by_token: IndexMap<String, f32>,
+    score_per_term: IndexMap<String, f32>,
 ) -> Vec<Snippet> {
     let QuerySnippetsConfig {
         window_count,
@@ -82,24 +82,31 @@ pub fn get_best_snippets(
 
     let doc_preprocessed = preprocessor.preprocess(doc, lang);
 
-    let mut term_counts = vec![0usize; idf_by_token.len()];
+    let mut term_counts = vec![0usize; score_per_term.len()];
 
     // PERF: Start with initial capacity, as we know there will be at least one match.
     let mut matches_tmp = Vec::with_capacity(16);
 
     for doc_token in doc_preprocessed.tokens().filter(Token::is_not_stopword) {
-        if let Some((index, _, idf)) = idf_by_token.get_full(doc_token.as_normalized()) {
+        if let Some((index, _, score)) = score_per_term.get_full(doc_token.as_normalized()) {
             term_counts[index] += 1;
-            matches_tmp.push((doc_token, index, *idf));
+            matches_tmp.push((doc_token, index, *score));
         }
     }
 
     let mut matches = Vec::with_capacity(matches_tmp.len());
 
-    for (doc_token, index, idf) in matches_tmp.into_iter() {
+    for (doc_token, index, score) in matches_tmp.into_iter() {
         let tf: f32 = term_counts[index] as f32 / doc_preprocessed.tokens().len() as f32;
-        let score: f32 = tf * idf;
-        matches.push((doc_token, Score { tf, idf, score }));
+        let score: f32 = tf * score;
+        matches.push((
+            doc_token,
+            Score {
+                tf,
+                idf: score,
+                score,
+            },
+        ));
     }
 
     let tokens = (doc_preprocessed.tokens()).collect::<Vec<Token>>();

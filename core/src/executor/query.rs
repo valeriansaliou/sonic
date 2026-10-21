@@ -11,6 +11,7 @@ use super::types::{QueryMatchScore, QueryResultScore, QuerySearchLimit, QuerySea
 use crate::lexer::preprocessor::{Preprocessor, PreprocessorOutput};
 pub use crate::lexer::snippet_matching::QuerySnippetsConfig;
 use crate::lexer::snippet_matching::{Snippet, get_best_snippets};
+use crate::scoring::*;
 use crate::store::fst::typo_factor;
 use crate::store::kv::KvRepositoryReadOnly;
 use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreObjectOid, StoreTermHash};
@@ -136,42 +137,42 @@ impl super::Executor {
                 }
             };
 
-            let document_frequency = kv_repo.get_document_frequency(&term_hash);
+            let idf = {
+                let document_frequency = kv_repo.get_document_frequency(&term_hash);
+                bm25_lite_idf(document_count, document_frequency)
+            };
 
             // Filter out minimum IDF.
             // PERF: Filtering `minimum_idf > 0` to save some computation.
-            if minimum_idf > 0. {
-                let idf = (document_count as f32 / document_frequency as f32).ln();
-                if idf < minimum_idf {
-                    tracing::debug!(
-                        "skipping term {term:?} because idf too low ({idf}<{minimum_idf})"
-                    );
-                    continue;
-                }
+            if minimum_idf > 0. && idf < minimum_idf {
+                tracing::debug!("skipping term {term:?} because idf too low ({idf}<{minimum_idf})");
+                continue;
             }
 
-            let bm25_idf = bm25_lite_idf(document_count, document_frequency);
+            // Assign a weight of `1` as those are exact matches.
+            let weight = 1.;
 
             for term_to_iids_entry in iid_iters.into_iter().flatten() {
-                let bm25_score = bm25_lite(bm25_idf, term_to_iids_entry.tf());
+                let score = weight * bm25_lite(f64::from(idf), term_to_iids_entry.tf());
 
-                // Assign a base score of `1` as those are exact matches.
                 let inserted = scoring_matrix.update_score(
                     term_to_iids_entry.iid(),
-                    str::to_owned(term),
-                    1. * bm25_score,
+                    QueryTermScore {
+                        score,
+                        idf,
+                        weight,
+                        term: str::to_owned(term),
+                    },
                     idx,
                     term_count,
                 );
 
-                if inserted {
-                    // Higher limit now reached?
-                    // Stop acquiring new suggested IIDs now.
-                    if scoring_matrix.len() >= higher_limit {
-                        tracing::trace!(?term, "got enough completed results for term");
+                // Higher limit now reached?
+                // Stop acquiring new suggested IIDs now.
+                if inserted && scoring_matrix.len() >= higher_limit {
+                    tracing::trace!(?term, "got enough completed results for term");
 
-                        break 'matches;
-                    }
+                    break 'matches;
                 }
             }
         }
@@ -398,7 +399,7 @@ impl super::Executor {
                         continue;
                     };
 
-                    let idf_by_token: IndexMap<String, f32> = (score_per_term.into_iter())
+                    let score_by_token: IndexMap<String, f32> = (score_per_term.into_iter())
                         .flatten()
                         .map(|e| (e.term, e.score))
                         .collect();
@@ -408,7 +409,7 @@ impl super::Executor {
                         lang,
                         &preprocessor,
                         *snippets_config,
-                        idf_by_token,
+                        score_by_token,
                     );
                 }
                 Ok(None) => continue,
@@ -626,31 +627,6 @@ fn test_overall_score() {
     ); // 2/3
 }
 
-fn bm25_lite_idf(document_count: u64, document_frequency: u64) -> f64 {
-    debug_assert!(
-        document_frequency <= document_count,
-        "{document_frequency} > {document_count}"
-    );
-
-    let n = document_count.max(document_frequency) as f64;
-    let df = document_frequency as f64;
-
-    (1.0 + (n - df + 0.5) / (df + 0.5)).ln()
-}
-
-fn bm25_lite(idf: f64, term_frequency: u8) -> f32 {
-    if term_frequency == 0 {
-        return 0.0;
-    }
-
-    let tf = term_frequency as f64;
-
-    // Saturating TF component, with k1 = 1.2.
-    let tf_weight = tf * (1.2 + 1.0) / (tf + 1.2);
-
-    (idf * tf_weight) as f32
-}
-
 #[allow(clippy::too_many_arguments)] // We’ll refactor this someday, and it’ not public anyway.
 fn merge_suggestions(
     suggestions: impl Iterator<Item = (String, QueryMatchScore)>,
@@ -664,7 +640,7 @@ fn merge_suggestions(
     document_count: u64,
     minimum_idf: f32,
 ) {
-    'suggestions: for (suggested_word, base_score) in suggestions {
+    'suggestions: for (suggested_word, weight) in suggestions {
         // Do not load base results twice for same term as base term
         if suggested_word.eq(term) {
             continue;
@@ -679,44 +655,44 @@ fn merge_suggestions(
             Err(_) => continue,
         };
 
-        let document_frequency = kv_repo.get_document_frequency(&suggested_term_hash);
+        let idf = {
+            let document_frequency = kv_repo.get_document_frequency(&suggested_term_hash);
+            bm25_lite_idf(document_count, document_frequency)
+        };
 
         // Filter out minimum IDF.
         // PERF: Filtering `minimum_idf > 0` to save some computation.
-        if minimum_idf > 0. {
-            let idf = (document_count as f32 / document_frequency as f32).ln();
-            if idf < minimum_idf {
-                tracing::debug!(
-                    "skipping term {suggested_word:?} because idf too low ({idf}<{minimum_idf})"
-                );
-                continue;
-            }
+        if minimum_idf > 0. && idf < minimum_idf {
+            tracing::debug!(
+                "skipping term {suggested_word:?} because idf too low ({idf}<{minimum_idf})"
+            );
+            continue;
         }
 
-        let bm25_idf = bm25_lite_idf(document_count, document_frequency);
-
         for term_to_iids_entry in suggested_iids.into_iter().take(*alternates_try) {
-            let bm25_score = base_score * bm25_lite(bm25_idf, term_to_iids_entry.tf());
+            let score = weight * bm25_lite(f64::from(idf), term_to_iids_entry.tf());
 
             // SAFETY: We can reach at most `alternates_try`.
             *alternates_try = unsafe { alternates_try.unchecked_sub(1) };
 
             let inserted = scoring_matrix.update_score(
                 term_to_iids_entry.iid(),
-                String::clone(&suggested_word),
-                bm25_score,
+                QueryTermScore {
+                    score,
+                    idf,
+                    weight,
+                    term: String::clone(&suggested_word),
+                },
                 term_idx,
                 term_count,
             );
 
-            if inserted {
-                // Higher limit now reached?
-                // Stop acquiring new suggested IIDs now.
-                if scoring_matrix.len() >= higher_limit {
-                    tracing::trace!(?term, "got enough completed results for term");
+            // Higher limit now reached?
+            // Stop acquiring new suggested IIDs now.
+            if inserted && scoring_matrix.len() >= higher_limit {
+                tracing::trace!(?term, "got enough completed results for term");
 
-                    break 'suggestions;
-                }
+                break 'suggestions;
             }
         }
     }
@@ -740,6 +716,8 @@ struct ScoringMatrix(IndexMap<StoreObjectIid, Vec<Option<QueryTermScore>>>);
 #[derive(Debug, Clone)]
 pub struct QueryTermScore {
     pub score: f32,
+    pub idf: f32,
+    pub weight: f32,
     pub term: String,
 }
 
@@ -755,11 +733,12 @@ impl ScoringMatrix {
     fn update_score(
         &mut self,
         iid: StoreObjectIid,
-        term: String,
-        score: QueryMatchScore,
+        new_term_score: QueryTermScore,
         term_idx: usize,
         term_count: usize,
     ) -> bool {
+        let new_score = new_term_score.score;
+
         match self.0.entry(iid) {
             // If entry already exists, use lowest score.
             indexmap::map::Entry::Occupied(mut occupied_entry) => {
@@ -769,15 +748,18 @@ impl ScoringMatrix {
 
                 match entry_score_opt {
                     Some(QueryTermScore {
-                        score: entry_score, ..
-                    }) if *entry_score < score => {
-                        tracing::trace!(entry_score, score, "Updating to max score");
-                        *entry_score_opt = Some(QueryTermScore { score, term });
+                        score: current_score,
+                        idf,
+                        weight,
+                        term,
+                    }) if *current_score < new_score => {
+                        tracing::trace!(current_score, new_score, "Updating to max score");
+                        *entry_score_opt = Some(new_term_score);
                     }
                     Some(_) => {}
                     None => {
-                        tracing::trace!(score, "Setting max score");
-                        *entry_score_opt = Some(QueryTermScore { score, term });
+                        tracing::trace!(score = new_score, "Setting max score");
+                        *entry_score_opt = Some(new_term_score);
                     }
                 }
 
@@ -787,11 +769,9 @@ impl ScoringMatrix {
             indexmap::map::Entry::Vacant(vacant_entry) => {
                 let mut scores = vec![None; term_count];
 
-                tracing::trace!(new_score = score, "Inserting new score");
+                tracing::trace!(score = new_score, "Inserting new score");
                 // SAFETY: `scores` has `term_count` elements.
-                unsafe {
-                    *scores.get_unchecked_mut(term_idx) = Some(QueryTermScore { score, term })
-                };
+                unsafe { *scores.get_unchecked_mut(term_idx) = Some(new_term_score) };
 
                 vacant_entry.insert(scores);
 
