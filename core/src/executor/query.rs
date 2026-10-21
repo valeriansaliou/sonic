@@ -271,6 +271,7 @@ impl super::Executor {
             let mut to_remove = Vec::<StoreObjectIid>::new();
 
             for (&iid, scores) in scoring_matrix.iter() {
+                // FIXME: Only remove if it’s a special token that’s missing.
                 if scores.iter().any(Option::is_none) {
                     to_remove.push(iid);
                 }
