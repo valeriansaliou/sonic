@@ -108,3 +108,10 @@ pub(crate) fn usize_to_u64(value: usize) -> u64 {
 
     value as u64
 }
+
+pub(crate) fn u32_to_usize(value: u32) -> usize {
+    // SAFETY: This ensures the following `as usize` cast is lossless.
+    const _: () = assert!(u32::BITS <= usize::BITS);
+
+    value as usize
+}

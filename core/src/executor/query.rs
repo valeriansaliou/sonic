@@ -16,6 +16,7 @@ use crate::store::fst::typo_factor;
 use crate::store::kv::KvRepositoryReadOnly;
 use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreObjectOid, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
+use crate::util::u32_to_usize;
 
 pub struct QueryOptions {
     pub limit: QuerySearchLimit,
@@ -303,7 +304,7 @@ impl super::Executor {
 
         // Resolve OIDs from IIDs
         // Notice: we also proceed paging from there
-        let (limit_usize, offset_usize) = (limit as usize, offset as usize);
+        let (limit_usize, offset_usize) = (usize::from(limit), u32_to_usize(offset));
         let mut result_oids = Vec::with_capacity(limit_usize);
 
         'paging: for (index, found_iid) in all_iids.skip(offset_usize).enumerate() {
