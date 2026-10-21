@@ -8,14 +8,12 @@
 use indexmap::IndexMap;
 
 use super::types::{QueryMatchScore, QueryResultScore, QuerySearchLimit, QuerySearchOffset};
-use crate::lexer::itertools::UniqueBy;
-use crate::lexer::preprocessor::{Preprocessor, PreprocessorOutput, Token};
+use crate::lexer::preprocessor::{Preprocessor, PreprocessorOutput};
 pub use crate::lexer::snippet_matching::QuerySnippetsConfig;
 use crate::lexer::snippet_matching::{Snippet, get_best_snippets};
 use crate::store::fst::typo_factor;
 use crate::store::kv::KvRepositoryReadOnly;
 use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreObjectOid, StoreTermHash};
-use crate::util::hash::NoopU32HasherBuilder;
 use crate::util::u32_to_usize;
 
 pub struct QueryOptions {
@@ -91,11 +89,7 @@ impl super::Executor {
             minimum_idf = 0.;
         }
 
-        // Collect all terms so we know the count right ahead.
-        // PERF: This helps allocating the correct amounts of memory.
-        let tokens: Vec<Token> =
-            UniqueBy::new_with_hasher(input.tokens(), Token::hash, NoopU32HasherBuilder).collect();
-        let term_count = tokens.len();
+        let term_count = input.tokens().len();
 
         // Store scores for each found IID. Results will then be sorted by
         // score before being returned. Scores are basically the sum of
@@ -109,7 +103,7 @@ impl super::Executor {
             ScoringMatrix::with_capacity(24usize.min(usize::from(limit)));
 
         // Look for exact matches.
-        'matches: for (idx, token) in tokens.iter().enumerate() {
+        'matches: for (idx, token) in input.tokens().enumerate() {
             let term_hash = token.hash();
             let term = token.as_normalized();
 
@@ -192,7 +186,7 @@ impl super::Executor {
                 scoring_matrix.len(),
             );
 
-            'terms: for (idx, token) in tokens.iter().enumerate() {
+            'terms: for (idx, token) in input.tokens().enumerate() {
                 let original_len = token.as_original().len();
                 let term = token.as_normalized();
 
@@ -226,7 +220,7 @@ impl super::Executor {
                 scoring_matrix.len(),
             );
 
-            'terms: for (idx, token) in tokens.iter().enumerate() {
+            'terms: for (idx, token) in input.tokens().enumerate() {
                 let original_word_len = token.as_original().len();
                 let term = token.as_normalized();
 
@@ -277,7 +271,7 @@ impl super::Executor {
         //   term. It’s not the most efficient (compared to not storing the
         //   result in the first place) but it’s an edge case and the cost
         //   is negligible.
-        let one_term_is_special = tokens.iter().any(Token::is_special);
+        let one_term_is_special = input.tokens().any(|t| t.is_special());
         if one_term_is_special {
             let mut to_remove = Vec::<StoreObjectIid>::new();
 
