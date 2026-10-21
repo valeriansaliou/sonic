@@ -402,13 +402,8 @@ impl super::Executor {
                     };
                     let scoring_matrix_entry = std::mem::take(scoring_matrix_entry.get_mut());
 
-                    let idf_by_token: std::collections::HashMap<String, (f32, usize)> =
-                        (scoring_matrix_entry.into_iter())
-                            .enumerate()
-                            .flat_map(|(index, opt)| {
-                                opt.map(|(term, score)| (term, (score, index)))
-                            })
-                            .collect();
+                    let idf_by_token: IndexMap<String, f32> =
+                        scoring_matrix_entry.into_iter().flatten().collect();
 
                     match_entry.snippets = get_best_snippets(
                         &doc,

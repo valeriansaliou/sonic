@@ -4,9 +4,10 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::ops::{Range, RangeInclusive};
 
+use indexmap::IndexMap;
 use whatlang::Lang;
 
 use super::preprocessor::{Preprocessor, Token};
@@ -61,7 +62,7 @@ pub fn get_best_snippets(
     lang: Option<Lang>,
     preprocessor: &Preprocessor,
     config: QuerySnippetsConfig,
-    idf_by_token: HashMap<String, (f32, usize)>,
+    idf_by_token: IndexMap<String, f32>,
 ) -> Vec<Snippet> {
     let QuerySnippetsConfig {
         window_count,
@@ -77,9 +78,9 @@ pub fn get_best_snippets(
     let mut matches_tmp = Vec::with_capacity(16);
 
     for doc_token in doc_preprocessed.tokens().filter(Token::is_not_stopword) {
-        if let Some((idf, index)) = idf_by_token.get(doc_token.as_normalized()) {
-            term_counts[*index] += 1;
-            matches_tmp.push((doc_token, *index, *idf));
+        if let Some((index, _, idf)) = idf_by_token.get_full(doc_token.as_normalized()) {
+            term_counts[index] += 1;
+            matches_tmp.push((doc_token, index, *idf));
         }
     }
 
