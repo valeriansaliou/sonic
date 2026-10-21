@@ -8,6 +8,8 @@
       "initialization_options": {
         "cargo": {
           "features": ["experimental-api"],
+          "extraArgs": ["--locked"],
+          // "autoreload": false,
         },
       },
     },
