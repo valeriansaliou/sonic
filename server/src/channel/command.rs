@@ -487,8 +487,8 @@ impl ChannelCommandSearch {
 
                         ctx.executor
                             .query(collection, bucket, text_lexed, query_options)
-                            .map(|results| {
-                                if results.is_empty() {
+                            .map(|mut results| {
+                                if results.len() == 0 {
                                     None
                                 } else {
                                     Some(results.join(" "))

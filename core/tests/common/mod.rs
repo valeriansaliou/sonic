@@ -136,6 +136,7 @@ macro_rules! exec {
                 }
             )
             .expect("QUERY should succeed")
+            .collect::<Vec<_>>()
     }};
 
     ($executor:ident -> LIST $collection:tt $bucket:tt $(LIMIT($limit:expr))?) => {{

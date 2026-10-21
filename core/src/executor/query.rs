@@ -23,6 +23,13 @@ pub struct QueryOptions {
     pub offset: QuerySearchOffset,
 }
 
+#[derive(Debug)]
+pub struct QueryResult {
+    pub oid: String,
+    pub score: f32,
+    pub score_per_term: Vec<Option<QueryTermScore>>,
+}
+
 impl super::Executor {
     fn query_(
         &self,
@@ -30,7 +37,7 @@ impl super::Executor {
         bucket: Bucket,
         input: PreprocessorOutput,
         options: QueryOptions,
-    ) -> Result<(Vec<(String, StoreObjectIid)>, ScoringMatrix), ()> {
+    ) -> Result<Vec<QueryResult>, ()> {
         let QueryOptions { limit, offset } = options;
 
         // Important: acquire database access read lock, and reference it in context. This \
@@ -49,7 +56,7 @@ impl super::Executor {
             tracing::debug!(
                 "collection store does not exist, consider {bucket:?} from {collection:?} empty"
             );
-            return Ok((vec![], ScoringMatrix::new()));
+            return Ok(vec![]);
         };
 
         let (higher_limit, mut alternates_try) = (
@@ -286,44 +293,44 @@ impl super::Executor {
             }
         }
 
-        // Flatten scores, taking into account missing matches (thanks to
-        // `None`).
-        let found_iids = scoring_matrix.iter().map(|(iid, scores)| {
-            (
-                iid,
-                overall_score(scores.iter().map(|o| o.as_ref().map(|e| e.score))),
-            )
-        });
+        let mut all_results = (scoring_matrix.into_iter())
+            .map(|(iid, term_scores)| {
+                // Flatten scores, taking into account missing matches (thanks to `None`).
+                let score =
+                    overall_score(term_scores.iter().map(|opt| opt.as_ref().map(|v| v.score)));
+                (iid, score, term_scores)
+            })
+            .collect::<Vec<_>>();
 
-        // Sort found IIDs.
-        let all_iids = {
-            let mut all_iids = found_iids.collect::<Vec<_>>();
-            all_iids.sort_by(|a, b| a.1.total_cmp(&b.1).reverse());
-            all_iids.into_iter().map(|(iid, _score)| iid)
-        };
+        // Sort results.
+        all_results.sort_by(|a, b| a.1.total_cmp(&b.1).reverse());
 
         // Resolve OIDs from IIDs
         // Notice: we also proceed paging from there
         let (limit_usize, offset_usize) = (usize::from(limit), u32_to_usize(offset));
-        let mut result_oids = Vec::with_capacity(limit_usize);
 
-        'paging: for (index, found_iid) in all_iids.skip(offset_usize).enumerate() {
-            // Stop there?
-            if index >= limit_usize {
-                break 'paging;
-            }
+        let page_results = all_results
+            .into_iter()
+            .skip(offset_usize)
+            .take(limit_usize)
+            .flat_map(|(iid, score, score_per_term)| {
+                // Read IID-to-OID for this found IID
+                if let Ok(Some(oid)) = kv_repo.get_iid_to_oid(iid) {
+                    Some(QueryResult {
+                        oid,
+                        score,
+                        score_per_term,
+                    })
+                } else {
+                    tracing::error!("failed getting search executor iid-to-oid");
+                    None
+                }
+            })
+            .collect();
 
-            // Read IID-to-OID for this found IID
-            if let Ok(Some(oid)) = kv_repo.get_iid_to_oid(*found_iid) {
-                result_oids.push((oid, *found_iid));
-            } else {
-                tracing::error!("failed getting search executor iid-to-oid");
-            }
-        }
+        tracing::info!("got search executor final results: {page_results:?}");
 
-        tracing::info!("got search executor final oids: {:?}", result_oids);
-
-        Ok((result_oids, scoring_matrix))
+        Ok(page_results)
     }
 
     #[inline]
@@ -333,9 +340,9 @@ impl super::Executor {
         bucket: Bucket,
         input: PreprocessorOutput,
         options: QueryOptions,
-    ) -> Result<Vec<String>, ()> {
+    ) -> Result<impl ExactSizeIterator<Item = String>, ()> {
         self.query_(collection, bucket, input, options)
-            .map(|res| res.0.into_iter().map(|(oid, _)| oid).collect())
+            .map(|results| results.into_iter().map(|res| res.oid))
     }
 
     pub fn query_with_snippets(
@@ -347,7 +354,7 @@ impl super::Executor {
         lang: Option<whatlang::Lang>,
         snippets_config: &QuerySnippetsConfig,
     ) -> Result<Vec<MatchWithSnippets>, ()> {
-        let (oids, mut scoring_matrix) = self.query_(collection, bucket, input, options)?;
+        let query_results = self.query_(collection, bucket, input, options)?;
 
         let object_store_pool = self.object_store_pool.acquire(false, collection, None)?;
 
@@ -355,15 +362,15 @@ impl super::Executor {
             tracing::debug!(
                 "Object store does not exist, consider {bucket:?} from {collection:?} empty"
             );
-            let res = (oids.into_iter())
-                .map(|(oid, _)| MatchWithSnippets::new(oid))
+            let res = (query_results.into_iter())
+                .map(|res| MatchWithSnippets::new(res.oid))
                 .collect::<Vec<_>>();
             return Ok(res);
         };
 
         let object_repo = object_store_pool.to_repository(bucket);
 
-        let mut res = Vec::with_capacity(oids.len());
+        let mut res = Vec::with_capacity(query_results.len());
 
         let preprocessor = Preprocessor {
             // NOTE: This is important to get accurate tf and add padding to snippets.
@@ -371,7 +378,12 @@ impl super::Executor {
             ..Preprocessor::from_app_conf(&self.app_conf)
         };
 
-        for (oid, iid) in oids {
+        for QueryResult {
+            oid,
+            score_per_term,
+            ..
+        } in query_results
+        {
             let oid_parsed = StoreObjectOid::from_str(&oid)?;
 
             let original = object_repo.get_object_original(oid_parsed);
@@ -395,15 +407,7 @@ impl super::Executor {
                         continue;
                     };
 
-                    let Some(scoring_matrix_entry) = scoring_matrix.take(iid) else {
-                        if cfg!(debug_assertions) {
-                            panic!("IID missing from scoring matrix; this should not happen.");
-                        } else {
-                            continue;
-                        }
-                    };
-
-                    let idf_by_token: IndexMap<String, f32> = (scoring_matrix_entry.into_iter())
+                    let idf_by_token: IndexMap<String, f32> = (score_per_term.into_iter())
                         .flatten()
                         .map(|e| (e.term, e.score))
                         .collect();
@@ -735,43 +739,22 @@ fn merge_suggestions(
 
 // MARK: - Scoring matrix
 
-/// Score per query token, per object.
+/// Score per query term, per object.
 #[derive(Debug)]
 #[repr(transparent)]
-struct ScoringMatrix(IndexMap<StoreObjectIid, Vec<Option<QueryTokenScore>>>);
+struct ScoringMatrix(IndexMap<StoreObjectIid, Vec<Option<QueryTermScore>>>);
 
-/// Score for a query token, also indicating which term matched (when loose
+/// Score for a query term, also indicating which term matched (when loose
 /// matching).
 #[derive(Debug, Clone)]
-struct QueryTokenScore {
-    score: f32,
-    term: String,
-}
-
-impl std::ops::Deref for ScoringMatrix {
-    type Target = IndexMap<StoreObjectIid, Vec<Option<QueryTokenScore>>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+pub struct QueryTermScore {
+    pub score: f32,
+    pub term: String,
 }
 
 impl ScoringMatrix {
-    fn new() -> Self {
-        Self(IndexMap::new())
-    }
-
     fn with_capacity(n: usize) -> Self {
         Self(IndexMap::with_capacity(n))
-    }
-
-    fn take(&mut self, iid: StoreObjectIid) -> Option<Vec<Option<QueryTokenScore>>> {
-        match self.0.entry(iid) {
-            indexmap::map::Entry::Occupied(mut scoring_matrix_entry) => {
-                Some(std::mem::take(scoring_matrix_entry.get_mut()))
-            }
-            indexmap::map::Entry::Vacant(_) => None,
-        }
     }
 
     fn swap_remove(&mut self, key: &StoreObjectIid) {
@@ -794,16 +777,16 @@ impl ScoringMatrix {
                     unsafe { occupied_entry.get_mut().get_unchecked_mut(term_idx) };
 
                 match entry_score_opt {
-                    Some(QueryTokenScore {
+                    Some(QueryTermScore {
                         score: entry_score, ..
                     }) if *entry_score < score => {
                         tracing::trace!(entry_score, score, "Updating to max score");
-                        *entry_score_opt = Some(QueryTokenScore { term, score });
+                        *entry_score_opt = Some(QueryTermScore { score, term });
                     }
                     Some(_) => {}
                     None => {
                         tracing::trace!(score, "Setting max score");
-                        *entry_score_opt = Some(QueryTokenScore { term, score });
+                        *entry_score_opt = Some(QueryTermScore { score, term });
                     }
                 }
 
@@ -816,7 +799,7 @@ impl ScoringMatrix {
                 tracing::trace!(new_score = score, "Inserting new score");
                 // SAFETY: `scores` has `term_count` elements.
                 unsafe {
-                    *scores.get_unchecked_mut(term_idx) = Some(QueryTokenScore { term, score })
+                    *scores.get_unchecked_mut(term_idx) = Some(QueryTermScore { score, term })
                 };
 
                 vacant_entry.insert(scores);
@@ -824,5 +807,22 @@ impl ScoringMatrix {
                 true
             }
         }
+    }
+}
+
+impl std::ops::Deref for ScoringMatrix {
+    type Target = IndexMap<StoreObjectIid, Vec<Option<QueryTermScore>>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl IntoIterator for ScoringMatrix {
+    type Item = (StoreObjectIid, Vec<Option<QueryTermScore>>);
+    type IntoIter = indexmap::map::IntoIter<StoreObjectIid, Vec<Option<QueryTermScore>>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
