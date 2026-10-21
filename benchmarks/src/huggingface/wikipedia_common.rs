@@ -124,7 +124,7 @@ pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
                     let mut channel = SonicChannelIngestBlocking::connect(
                         ctx.addr,
                         &ctx.password,
-                        &multiplexer,
+                        multiplexer,
                     ).unwrap();
                     // println!("Opened Sonic channel");
 
@@ -138,11 +138,11 @@ pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
 
                     let start = Instant::now();
                     for article in articles() {
-                        let len = article.text.as_bytes().len();
+                        let len = article.text.len();
                         // eprintln!("\n================================");
                         // eprintln!("{}", &article.title);
-                        // eprintln!("{}", &article.text[..(1000.min(article.text.len()))]);
-                        max_size = max_size.max(article.text.len());
+                        // eprintln!("{}", &article.text[..(1000.min(len))]);
+                        max_size = max_size.max(len);
 
                         match channel.push_with_options("wikipedia", "default", article.id, article.text, &[&Lang("eng")]) {
                             Ok(()) => {
@@ -171,7 +171,7 @@ pub fn start_sonic_prepopulated<Articles: Iterator<Item = WikipediaArticle>>(
 
                 // TRIGGER consolidate
                 {
-                    let mut channel = SonicChannelControlBlocking::connect(ctx.addr, &ctx.password, &multiplexer).unwrap();
+                    let mut channel = SonicChannelControlBlocking::connect(ctx.addr, &ctx.password, multiplexer).unwrap();
 
                     let start = Instant::now();
 

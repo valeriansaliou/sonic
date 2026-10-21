@@ -27,18 +27,10 @@ impl HuggingfaceItem for WikipediaArticle {
     type Cols<'b> = WikipediaArticleCols<'b>;
 
     fn cols<'b>(batch: &'b arrow_array::RecordBatch) -> Option<Self::Cols<'b>> {
-        let Some(ids) = str_col(batch, "id") else {
-            return None;
-        };
-        let Some(titles) = str_col(batch, "title") else {
-            return None;
-        };
-        let Some(urls) = str_col(batch, "url") else {
-            return None;
-        };
-        let Some(texts) = str_col(batch, "text") else {
-            return None;
-        };
+        let ids = str_col(batch, "id")?;
+        let titles = str_col(batch, "title")?;
+        let urls = str_col(batch, "url")?;
+        let texts = str_col(batch, "text")?;
 
         Some(WikipediaArticleCols {
             ids,

@@ -45,17 +45,17 @@ impl RunContext {
         match profiling_mode {
             ProfilingMode::Time => {
                 xctrace_record
-                    .args(&["--instrument", "Time Profiler"])
-                    // .args(&["--instrument", "CPU Counters"])
-                    .args(&["--instrument", "CPU Profiler"])
-                    .args(&["--attach", &sonic.id().to_string()]);
+                    .args(["--instrument", "Time Profiler"])
+                    // .args(["--instrument", "CPU Counters"])
+                    .args(["--instrument", "CPU Profiler"])
+                    .args(["--attach", &sonic.id().to_string()]);
             }
             ProfilingMode::ThreadState => {
                 xctrace_record
-                    .args(&["--instrument", "Time Profiler"])
-                    .args(&["--instrument", "CPU Profiler"])
-                    .args(&["--instrument", "Thread State Trace"])
-                    .args(&["--attach", &sonic.id().to_string()]);
+                    .args(["--instrument", "Time Profiler"])
+                    .args(["--instrument", "CPU Profiler"])
+                    .args(["--instrument", "Thread State Trace"])
+                    .args(["--attach", &sonic.id().to_string()]);
             }
         }
 

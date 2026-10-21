@@ -133,7 +133,7 @@ impl RunContext {
         use std::time::{Duration, Instant};
 
         let sonic = self.sonic.as_mut().unwrap();
-        let addr = &self.addr;
+        let addr = self.addr;
 
         let timeout = Duration::from_secs(30);
         let deadline = Instant::now() + timeout;
@@ -198,13 +198,13 @@ impl Drop for RunContext {
         }
 
         // Delete Sonic data if requested.
-        if let Some(data_path) = self.data_path.take() {
-            if data_path.exists() {
-                if data_path.is_dir() {
-                    std::fs::remove_dir_all(&data_path).unwrap();
-                } else {
-                    std::fs::remove_file(&data_path).unwrap();
-                }
+        if let Some(data_path) = self.data_path.take()
+            && data_path.exists()
+        {
+            if data_path.is_dir() {
+                std::fs::remove_dir_all(&data_path).unwrap();
+            } else {
+                std::fs::remove_file(&data_path).unwrap();
             }
         }
     }
