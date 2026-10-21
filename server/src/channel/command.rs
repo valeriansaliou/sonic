@@ -693,11 +693,7 @@ impl ChannelCommandSearch {
                     #[cfg(feature = "experimental-api")]
                     "SNIPPETS" => {
                         // 'SNIPPETS[(<window_count>[, <window_size>[, <max_window_padding>]?]?)]?'
-                        let mut config = sonic::executor::QuerySnippetsConfig {
-                            window_count: 1,
-                            window_size: 42,
-                            max_window_padding: 41,
-                        };
+                        let mut config = sonic::executor::QuerySnippetsConfig::default();
 
                         if !meta_value.is_empty() {
                             let mut args = meta_value.splitn(3, ",");

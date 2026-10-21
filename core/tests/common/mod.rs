@@ -139,6 +139,39 @@ macro_rules! exec {
             .collect::<Vec<_>>()
     }};
 
+    ($executor:ident -> WITH SNIPPETS($snip_wc:expr) QUERY $collection:tt $bucket:tt $term:tt $(LANG($lang:expr))? $(LIMIT($limit:expr))?) => {{
+        #[rustfmt::skip]
+        $executor.log(format!(
+            "QUERY {:?} {:?} {:?}{}{} WITH SNIPPETS({})",
+            $collection, $bucket, $term, exec!(internal_ lang_txt $($lang)?), exec!(internal_ limit_txt $($limit)?), $snip_wc
+        ));
+        let (c, b) = crate::common::bucket_ref!($collection, $bucket);
+        let preprocessor = sonic::lexer::preprocessor::Preprocessor::new(
+            $executor.app_conf.tokenization,
+            $executor.app_conf.normalization,
+            $executor.app_conf.stopwords.clone(),
+            true,
+            true,
+        );
+
+        let lang = exec!(internal_ lang $($lang)?);
+        let input = preprocessor.preprocess($term, lang);
+
+        let query_options = sonic::executor::QueryOptions {
+            limit: exec!(internal_ limit $($limit)?),
+            offset: 0,
+        };
+
+        let snippets_config = sonic::executor::QuerySnippetsConfig {
+            window_count: $snip_wc,
+            ..Default::default()
+        };
+
+        $executor
+            .query_with_snippets(c, b, input, query_options, lang, &snippets_config)
+            .expect("QUERY should succeed")
+    }};
+
     ($executor:ident -> LIST $collection:tt $bucket:tt $(LIMIT($limit:expr))?) => {{
         $executor.log(format!("LIST {:?} {:?}", $collection, $bucket));
         let (c, b) = crate::common::bucket_ref!($collection, $bucket);

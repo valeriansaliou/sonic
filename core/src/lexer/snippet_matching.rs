@@ -57,6 +57,16 @@ pub struct QuerySnippetsConfig {
     pub max_window_padding: usize,
 }
 
+impl Default for QuerySnippetsConfig {
+    fn default() -> Self {
+        Self {
+            window_count: 1,
+            window_size: 42,
+            max_window_padding: 41,
+        }
+    }
+}
+
 pub fn get_best_snippets(
     doc: &str,
     lang: Option<Lang>,
