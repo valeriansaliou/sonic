@@ -305,16 +305,13 @@ impl super::Executor {
         // Sort results.
         all_results.sort_by(|a, b| a.1.total_cmp(&b.1).reverse());
 
-        // Resolve OIDs from IIDs
-        // Notice: we also proceed paging from there
-        let (limit_usize, offset_usize) = (usize::from(limit), u32_to_usize(offset));
-
         let page_results = all_results
             .into_iter()
-            .skip(offset_usize)
-            .take(limit_usize)
+            // Perform paging.
+            .skip(u32_to_usize(offset))
+            .take(usize::from(limit))
+            // Resolve IIDs to OIDs.
             .flat_map(|(iid, score, score_per_term)| {
-                // Read IID-to-OID for this found IID
                 if let Ok(Some(oid)) = kv_repo.get_iid_to_oid(iid) {
                     Some(QueryResult {
                         oid,
