@@ -34,7 +34,7 @@ pub fn build_dictionary(len: usize, alphabet: &[u8], seed: u64) -> Vec<String> {
     (0..len).map(|_| gen_word(&mut rng, alphabet)).collect()
 }
 
-/// Dictionary of 500 pseudo-random words, generated once, lazily, deterministically.
+// /// Dictionary of 500 pseudo-random words, generated once, lazily, deterministically.
 // static WORDS: LazyLock<Vec<String>> = LazyLock::new(|| {
 //     let mut rng = SplitMix64::new(SEED);
 //     (0..DICT_SIZE).map(|_| gen_word(&mut rng)).collect()
@@ -44,11 +44,11 @@ pub fn build_dictionary(len: usize, alphabet: &[u8], seed: u64) -> Vec<String> {
 /// dictionary starting at a seed-derived offset with a fixed odd stride
 /// (odd stride + power-of-two-agnostic modulo ensures good coverage even
 /// though it's not "true" randomness — fine for test data).
-pub fn pick_words<'a>(
+pub fn pick_words(
     n: usize,
-    dictionary: &'a LazyLock<Vec<String>>,
+    dictionary: &LazyLock<Vec<String>>,
     seed: u64,
-) -> impl Iterator<Item = &'a str> {
+) -> impl Iterator<Item = &str> {
     let mut rng = SplitMix64::new(seed ^ 0xA5A5_A5A5_A5A5_A5A5);
     let len = dictionary.len();
 

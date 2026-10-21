@@ -20,7 +20,7 @@ pub fn trigger_compact(
     collections: &[&str],
 ) -> std::io::Result<()> {
     let mut args = String::with_capacity(collections.len() * 16);
-    for &collection in collections.into_iter() {
+    for &collection in collections.iter() {
         args.push(' ');
         args.push_str(collection);
     }
