@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 use super::types::{QueryMatchScore, QueryResultScore, QuerySearchLimit, QuerySearchOffset};
 use crate::lexer::preprocessor::{Preprocessor, PreprocessorOutput};
 pub use crate::lexer::snippet_matching::QuerySnippetsConfig;
-use crate::lexer::snippet_matching::{Snippet, get_best_snippets};
+use crate::lexer::snippet_matching::{self, Snippet, get_best_snippets};
 use crate::scoring::*;
 use crate::store::fst::typo_factor;
 use crate::store::kv::KvRepositoryReadOnly;
@@ -153,7 +153,8 @@ impl super::Executor {
             let weight = 1.;
 
             for term_to_iids_entry in iid_iters.into_iter().flatten() {
-                let score = weight * bm25_lite(f64::from(idf), term_to_iids_entry.tf());
+                let tf = term_to_iids_entry.tf();
+                let score: f32 = weight * bm25_lite(tf, f64::from(idf));
 
                 let inserted = scoring_matrix.update_score(
                     term_to_iids_entry.iid(),
@@ -399,17 +400,17 @@ impl super::Executor {
                         continue;
                     };
 
-                    let score_by_token: IndexMap<String, f32> = (score_per_term.into_iter())
+                    let score_per_term = (score_per_term.into_iter())
                         .flatten()
-                        .map(|e| (e.term, e.score))
-                        .collect();
+                        .map(<(String, snippet_matching::TermScore)>::from)
+                        .collect::<IndexMap<_, _>>();
 
                     match_entry.snippets = get_best_snippets(
                         &doc,
                         lang,
                         &preprocessor,
                         *snippets_config,
-                        score_by_token,
+                        score_per_term,
                     );
                 }
                 Ok(None) => continue,
@@ -670,7 +671,8 @@ fn merge_suggestions(
         }
 
         for term_to_iids_entry in suggested_iids.into_iter().take(*alternates_try) {
-            let score = weight * bm25_lite(f64::from(idf), term_to_iids_entry.tf());
+            let tf = term_to_iids_entry.tf();
+            let score: f32 = weight * bm25_lite(tf, f64::from(idf));
 
             // SAFETY: We can reach at most `alternates_try`.
             *alternates_try = unsafe { alternates_try.unchecked_sub(1) };
@@ -719,6 +721,18 @@ pub struct QueryTermScore {
     pub idf: f32,
     pub weight: f32,
     pub term: String,
+}
+
+impl From<QueryTermScore> for (String, snippet_matching::TermScore) {
+    fn from(value: QueryTermScore) -> Self {
+        (
+            value.term,
+            snippet_matching::TermScore {
+                weight: value.weight,
+                idf: value.idf,
+            },
+        )
+    }
 }
 
 impl ScoringMatrix {

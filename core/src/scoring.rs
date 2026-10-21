@@ -16,12 +16,8 @@ pub(crate) fn bm25_lite_idf(document_count: u64, document_frequency: u64) -> f32
     (1.0 + (n - df + 0.5) / (df + 0.5)).ln()
 }
 
-pub(crate) fn bm25_lite(idf: f64, term_frequency: u8) -> f32 {
-    if term_frequency == 0 {
-        return 0.0;
-    }
-
-    let tf = term_frequency as f64;
+pub(crate) fn bm25_lite(tf: u8, idf: f64) -> f32 {
+    let tf = tf as f64;
 
     // Saturating TF component, with k1 = 1.2.
     let tf_weight = tf * (1.2 + 1.0) / (tf + 1.2);

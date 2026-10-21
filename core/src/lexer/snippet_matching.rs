@@ -10,6 +10,8 @@ use std::ops::{Range, RangeInclusive};
 use indexmap::IndexMap;
 use whatlang::Lang;
 
+use crate::scoring::bm25_lite;
+
 use super::preprocessor::{Preprocessor, Token};
 
 #[derive(Debug)]
@@ -67,12 +69,17 @@ impl Default for QuerySnippetsConfig {
     }
 }
 
+pub struct TermScore {
+    pub weight: f32,
+    pub idf: f32,
+}
+
 pub fn get_best_snippets(
     doc: &str,
     lang: Option<Lang>,
     preprocessor: &Preprocessor,
     config: QuerySnippetsConfig,
-    score_per_term: IndexMap<String, f32>,
+    score_per_term: IndexMap<String, TermScore>,
 ) -> Vec<Snippet> {
     let QuerySnippetsConfig {
         window_count,
@@ -82,34 +89,27 @@ pub fn get_best_snippets(
 
     let doc_preprocessed = preprocessor.preprocess(doc, lang);
 
-    let mut term_counts = vec![0usize; score_per_term.len()];
+    let mut term_counts = vec![0u8; score_per_term.len()];
 
     // PERF: Start with initial capacity, as we know there will be at least one match.
     let mut matches_tmp = Vec::with_capacity(16);
 
     for doc_token in doc_preprocessed.tokens().filter(Token::is_not_stopword) {
-        if let Some((index, _, score)) = score_per_term.get_full(doc_token.as_normalized()) {
-            term_counts[index] += 1;
-            matches_tmp.push((doc_token, index, *score));
+        if let Some((index, _, term_score)) = score_per_term.get_full(doc_token.as_normalized()) {
+            term_counts[index] = term_counts[index].saturating_add(1);
+            matches_tmp.push((doc_token, index, term_score));
         }
     }
 
     let mut matches = Vec::with_capacity(matches_tmp.len());
 
-    for (doc_token, index, score) in matches_tmp.into_iter() {
-        let tf: f32 = term_counts[index] as f32 / doc_preprocessed.tokens().len() as f32;
-        let score: f32 = tf * score;
-        matches.push((
-            doc_token,
-            Score {
-                tf,
-                idf: score,
-                score,
-            },
-        ));
+    for (doc_token, index, TermScore { weight, idf }) in matches_tmp.into_iter() {
+        let tf = term_counts[index];
+        let score: f32 = weight * bm25_lite(tf, f64::from(*idf));
+        matches.push((doc_token, score));
     }
 
-    let tokens = (doc_preprocessed.tokens()).collect::<Vec<Token>>();
+    let tokens = doc_preprocessed.tokens().collect::<Vec<Token>>();
     let mut window_scores: Vec<SnippetWindow> = Vec::with_capacity(tokens.len());
 
     // PERF: To reduce the total number of computations, we avoid storing
@@ -131,7 +131,7 @@ pub fn get_best_snippets(
         //   iteration becomes more efficient.
         let matches_in_window_count =
             (matches[match_token_idx..].iter()).position(|(token, _score)| {
-                token.index_in_tokenized_text >= start_token.index_in_tokenized_text + window_size
+                token.index_in_tokenized_text >= (start_token.index_in_tokenized_text + window_size)
             });
 
         let end = match matches_in_window_count {
@@ -153,12 +153,7 @@ pub fn get_best_snippets(
         assert!(tokens_in_window.len() <= window_size, "{} > {}", tokens_in_window.len(), window_size);
 
         let window_score = (matches_in_window.iter())
-            // Sum up idfs as tf has already been taken into account to sort
-            // the documents themselves. In a single document, tf gives a
-            // low score to rare tokens, which is the opposite of what we
-            // want here. We want to highlight terms that are both rare in
-            // the document (low tf) and rare in the corpus (high idf).
-            .map(|(_token, score)| score.idf)
+            .map(|(_token, score)| score)
             .sum::<f32>();
 
         window_scores.push(SnippetWindow {
@@ -223,7 +218,7 @@ pub fn get_best_snippets(
 
 struct SnippetWindow<'a, 'b> {
     tokens: &'b [Token<'a>],
-    matches: &'b [(Token<'a>, Score)],
+    matches: &'b [(Token<'a>, f32)],
     score: f32,
 }
 
@@ -254,25 +249,5 @@ impl<'a, 'b> SnippetWindow<'a, 'b> {
         self.tokens.last().unwrap().index_in_tokenized_text
             - self.tokens.first().unwrap().index_in_tokenized_text
             + 1
-    }
-}
-
-#[derive(PartialEq)]
-struct Score {
-    tf: f32,
-    idf: f32,
-    score: f32,
-}
-
-impl std::fmt::Debug for Score {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let Score { tf, idf, score } = self;
-        write!(f, "{score} (tf={tf}, idf={idf})")
-    }
-}
-
-impl PartialOrd for Score {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.score.partial_cmp(&other.score)
     }
 }
