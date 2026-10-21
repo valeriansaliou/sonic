@@ -17,8 +17,6 @@ use crate::store::kv::KvRepositoryReadOnly;
 use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreObjectOid, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
 
-type ScoringMatrix = IndexMap<StoreObjectIid, Vec<Option<(String, f32)>>>;
-
 pub struct QueryOptions {
     pub limit: QuerySearchLimit,
     pub offset: QuerySearchOffset,
@@ -100,7 +98,7 @@ impl super::Executor {
         //   order.
         // NOTE: `capacity = 24` to reduce initial grows.
         let mut scoring_matrix: ScoringMatrix =
-            IndexMap::with_capacity(24usize.min(usize::from(limit)));
+            ScoringMatrix::with_capacity(24usize.min(usize::from(limit)));
 
         // Look for exact matches.
         'matches: for (idx, token) in tokens.iter().enumerate() {
@@ -156,10 +154,9 @@ impl super::Executor {
                 let bm25_score = bm25_lite(bm25_idf, term_to_iids_entry.tf());
 
                 // Assign a base score of `1` as those are exact matches.
-                let inserted = update_score(
-                    &mut scoring_matrix,
+                let inserted = scoring_matrix.update_score(
                     term_to_iids_entry.iid(),
-                    term.to_owned(),
+                    str::to_owned(term),
                     1. * bm25_score,
                     idx,
                     term_count,
@@ -293,7 +290,7 @@ impl super::Executor {
         let found_iids = scoring_matrix.iter().map(|(iid, scores)| {
             (
                 iid,
-                overall_score(scores.iter().map(|o| o.as_ref().map(|(_, s)| *s))),
+                overall_score(scores.iter().map(|o| o.as_ref().map(|e| e.score))),
             )
         });
 
@@ -397,19 +394,18 @@ impl super::Executor {
                         continue;
                     };
 
-                    let indexmap::map::Entry::Occupied(mut scoring_matrix_entry) =
-                        scoring_matrix.entry(iid)
-                    else {
+                    let Some(scoring_matrix_entry) = scoring_matrix.take(iid) else {
                         if cfg!(debug_assertions) {
                             panic!("IID missing from scoring matrix; this should not happen.");
                         } else {
                             continue;
                         }
                     };
-                    let scoring_matrix_entry = std::mem::take(scoring_matrix_entry.get_mut());
 
-                    let idf_by_token: IndexMap<String, f32> =
-                        scoring_matrix_entry.into_iter().flatten().collect();
+                    let idf_by_token: IndexMap<String, f32> = (scoring_matrix_entry.into_iter())
+                        .flatten()
+                        .map(|e| (e.term, e.score))
+                        .collect();
 
                     match_entry.snippets = get_best_snippets(
                         &doc,
@@ -662,7 +658,7 @@ fn bm25_lite(idf: f64, term_frequency: u8) -> f32 {
 #[allow(clippy::too_many_arguments)] // We’ll refactor this someday, and it’ not public anyway.
 fn merge_suggestions(
     suggestions: impl Iterator<Item = (String, QueryMatchScore)>,
-    scoring_matrix: &mut IndexMap<StoreObjectIid, Vec<Option<(String, QueryMatchScore)>>>,
+    scoring_matrix: &mut ScoringMatrix,
     term: &str,
     term_idx: usize,
     term_count: usize,
@@ -709,10 +705,9 @@ fn merge_suggestions(
             // SAFETY: We can reach at most `alternates_try`.
             *alternates_try = unsafe { alternates_try.unchecked_sub(1) };
 
-            let inserted = update_score(
-                scoring_matrix,
+            let inserted = scoring_matrix.update_score(
                 term_to_iids_entry.iid(),
-                suggested_word.clone(),
+                String::clone(&suggested_word),
                 bm25_score,
                 term_idx,
                 term_count,
@@ -737,45 +732,96 @@ fn merge_suggestions(
     );
 }
 
-fn update_score(
-    scoring_matrix: &mut IndexMap<StoreObjectIid, Vec<Option<(String, QueryMatchScore)>>>,
-    iid: StoreObjectIid,
+// MARK: - Scoring matrix
+
+/// Score per query token, per object.
+#[derive(Debug)]
+#[repr(transparent)]
+struct ScoringMatrix(IndexMap<StoreObjectIid, Vec<Option<QueryTokenScore>>>);
+
+/// Score for a query token, also indicating which term matched (when loose
+/// matching).
+#[derive(Debug, Clone)]
+struct QueryTokenScore {
+    score: f32,
     term: String,
-    score: QueryMatchScore,
-    term_idx: usize,
-    term_count: usize,
-) -> bool {
-    match scoring_matrix.entry(iid) {
-        // If entry already exists, use lowest score.
-        indexmap::map::Entry::Occupied(mut occupied_entry) => {
-            // SAFETY: We always initialize vecs with `term_count` entries.
-            let entry_score_opt = unsafe { occupied_entry.get_mut().get_unchecked_mut(term_idx) };
+}
 
-            match entry_score_opt {
-                Some((_, entry_score)) if *entry_score < score => {
-                    tracing::trace!(entry_score, score, "Updating to max score");
-                    *entry_score_opt = Some((term, score));
-                }
-                Some(_) => {}
-                None => {
-                    tracing::trace!(score, "Setting max score");
-                    *entry_score_opt = Some((term, score));
-                }
+impl std::ops::Deref for ScoringMatrix {
+    type Target = IndexMap<StoreObjectIid, Vec<Option<QueryTokenScore>>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl ScoringMatrix {
+    fn new() -> Self {
+        Self(IndexMap::new())
+    }
+
+    fn with_capacity(n: usize) -> Self {
+        Self(IndexMap::with_capacity(n))
+    }
+
+    fn take(&mut self, iid: StoreObjectIid) -> Option<Vec<Option<QueryTokenScore>>> {
+        match self.0.entry(iid) {
+            indexmap::map::Entry::Occupied(mut scoring_matrix_entry) => {
+                Some(std::mem::take(scoring_matrix_entry.get_mut()))
             }
-
-            false
+            indexmap::map::Entry::Vacant(_) => None,
         }
-        // If entry does not exist, insert score.
-        indexmap::map::Entry::Vacant(vacant_entry) => {
-            let mut scores = vec![None; term_count];
+    }
 
-            tracing::trace!(new_score = score, "Inserting new score");
-            // SAFETY: `scores` has `term_count` elements.
-            unsafe { *scores.get_unchecked_mut(term_idx) = Some((term, score)) };
+    fn swap_remove(&mut self, key: &StoreObjectIid) {
+        self.0.swap_remove(key);
+    }
 
-            vacant_entry.insert(scores);
+    fn update_score(
+        &mut self,
+        iid: StoreObjectIid,
+        term: String,
+        score: QueryMatchScore,
+        term_idx: usize,
+        term_count: usize,
+    ) -> bool {
+        match self.0.entry(iid) {
+            // If entry already exists, use lowest score.
+            indexmap::map::Entry::Occupied(mut occupied_entry) => {
+                // SAFETY: We always initialize vecs with `term_count` entries.
+                let entry_score_opt =
+                    unsafe { occupied_entry.get_mut().get_unchecked_mut(term_idx) };
 
-            true
+                match entry_score_opt {
+                    Some(QueryTokenScore {
+                        score: entry_score, ..
+                    }) if *entry_score < score => {
+                        tracing::trace!(entry_score, score, "Updating to max score");
+                        *entry_score_opt = Some(QueryTokenScore { term, score });
+                    }
+                    Some(_) => {}
+                    None => {
+                        tracing::trace!(score, "Setting max score");
+                        *entry_score_opt = Some(QueryTokenScore { term, score });
+                    }
+                }
+
+                false
+            }
+            // If entry does not exist, insert score.
+            indexmap::map::Entry::Vacant(vacant_entry) => {
+                let mut scores = vec![None; term_count];
+
+                tracing::trace!(new_score = score, "Inserting new score");
+                // SAFETY: `scores` has `term_count` elements.
+                unsafe {
+                    *scores.get_unchecked_mut(term_idx) = Some(QueryTokenScore { term, score })
+                };
+
+                vacant_entry.insert(scores);
+
+                true
+            }
         }
     }
 }
