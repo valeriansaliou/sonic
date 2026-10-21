@@ -619,7 +619,7 @@ impl<'a> FstRepository<'a> {
 
         Some(FstStreamIterator(stream).map(move |word| {
             // WARN: Calculating distance to original word length might
-            //   yield weird results when combines with stemming.
+            //   yield weird results when combined with stemming.
             let distance: usize = original_word_len.abs_diff(word.len());
             let score = u16::try_from(distance).unwrap_or(u16::MAX);
             (word, score)
