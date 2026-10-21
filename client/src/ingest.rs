@@ -102,7 +102,7 @@ impl_fns!(
             if self.channel_info().caps.contains("push-multipart") {
                 // TODO(perf): Filter out unnecessary options in intermediate commands? Like `NEW`?
                 let mut intermediate_options: Vec<String> = Vec::with_capacity(options.len() + 2);
-                intermediate_options.extend(options.into_iter().map(|opt| opt.to_string()));
+                intermediate_options.extend(options.iter().map(|opt| opt.to_string()));
                 intermediate_options.push(options::Incomplete.to_string());
 
                 if self.channel_info().caps.contains("push-capacity") {
