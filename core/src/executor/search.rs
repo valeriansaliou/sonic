@@ -590,9 +590,9 @@ fn update_score(
             // SAFETY: We always initialize vecs with `term_count` entries.
             let entry_score = unsafe { occupied_entry.get_mut().get_unchecked_mut(term_idx) };
 
-            let new_score = entry_score.map_or(score, |entry_score| score.min(entry_score));
+            let new_score = entry_score.map_or(score, |entry_score| score.max(entry_score));
 
-            tracing::trace!(entry_score, new_score, "Updating to min score");
+            tracing::trace!(entry_score, new_score, "Updating to max score");
             *entry_score = Some(new_score);
 
             false

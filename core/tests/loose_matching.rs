@@ -239,3 +239,29 @@ fn test_no_fuzzy_matching_for_ids() {
         assert_eq!(response, ["chat:0"], "({messages:?}, {query:?})");
     }
 }
+
+/// Ensures ranking of loose matches is correct.
+#[test]
+fn test_loose_matches_ranking() {
+    init_logging();
+    let executor = make_test_executor(|app_conf| {
+        // Disable stemming to make results more predictable.
+        app_conf.normalization.stemming_enabled = false;
+    });
+    assert!(executor.fst_pool.fst_action_config.prefix_matching_enabled);
+
+    exec!(
+        executor -> PUSH "articles" "default" "article:1"
+        "examplar"
+    );
+    exec!(
+        executor -> PUSH "articles" "default" "article:2"
+        "examplary"
+    );
+    exec!(executor -> TRIGGER consolidate);
+
+    {
+        let response = exec!(executor -> QUERY "articles" "default" "exampla");
+        assert_eq!(response, ["article:1", "article:2"]);
+    }
+}
