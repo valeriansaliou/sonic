@@ -745,13 +745,13 @@ fn update_score(
             let entry_score_opt = unsafe { occupied_entry.get_mut().get_unchecked_mut(term_idx) };
 
             match entry_score_opt {
-                Some((_, entry_score)) if *entry_score > score => {
-                    tracing::trace!(entry_score, score, "Updating to min score");
+                Some((_, entry_score)) if *entry_score < score => {
+                    tracing::trace!(entry_score, score, "Updating to max score");
                     *entry_score_opt = Some((term, score));
                 }
                 Some(_) => {}
                 None => {
-                    tracing::trace!(score, "Setting min score");
+                    tracing::trace!(score, "Setting max score");
                     *entry_score_opt = Some((term, score));
                 }
             }
