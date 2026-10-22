@@ -92,6 +92,8 @@ impl super::Executor {
 
         let term_count = input.tokens().len();
 
+        let mut iid_limit_per_token = vec![higher_limit / term_count; term_count];
+
         // Store scores for each found IID. Results will then be sorted by
         // score before being returned. Scores are basically the sum of
         // Levenshtein distances for each term in the query. Lower score
@@ -170,10 +172,13 @@ impl super::Executor {
 
                 // Higher limit now reached?
                 // Stop acquiring new suggested IIDs now.
-                if inserted && scoring_matrix.len() >= higher_limit {
-                    tracing::debug!(?term, "got enough completed results for term");
+                if inserted {
+                    iid_limit_per_token[idx] -= 1;
+                    if iid_limit_per_token[idx] == 0 {
+                        tracing::debug!(?term, "got enough completed results for term");
 
-                    break 'matches;
+                        continue 'matches;
+                    }
                 }
             }
         }
@@ -205,7 +210,7 @@ impl super::Executor {
                     term_count,
                     &kv_repo,
                     &mut alternates_try,
-                    higher_limit,
+                    &mut iid_limit_per_token[idx],
                     document_count,
                     minimum_idf,
                 );
@@ -253,7 +258,7 @@ impl super::Executor {
                         term_count,
                         &kv_repo,
                         &mut alternates_try,
-                        higher_limit,
+                        &mut iid_limit_per_token[idx],
                         document_count,
                         minimum_idf,
                     );
@@ -637,10 +642,15 @@ fn merge_suggestions(
     term_count: usize,
     kv_repo: &KvRepositoryReadOnly<'_>,
     alternates_try: &mut usize,
-    higher_limit: usize,
+    iid_limit: &mut usize,
     document_count: u64,
     minimum_idf: f32,
 ) {
+    // PERF: Abort early.
+    if *iid_limit == 0 {
+        return;
+    }
+
     'suggestions: for (suggested_word, weight) in suggestions {
         // Do not load base results twice for same term as base term
         if suggested_word.eq(term) {
@@ -691,10 +701,14 @@ fn merge_suggestions(
 
             // Higher limit now reached?
             // Stop acquiring new suggested IIDs now.
-            if inserted && scoring_matrix.len() >= higher_limit {
-                tracing::trace!(?term, "got enough completed results for term");
+            if inserted {
+                // SAFETY: `iid_limit` starts `> 0`.
+                *iid_limit -= 1;
+                if *iid_limit == 0 {
+                    tracing::trace!(?term, "got enough completed results for term");
 
-                break 'suggestions;
+                    break 'suggestions;
+                }
             }
         }
     }
