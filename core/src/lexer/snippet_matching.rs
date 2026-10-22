@@ -89,12 +89,34 @@ pub fn get_best_snippets(
 
     let doc_preprocessed = preprocessor.preprocess(doc, lang);
 
+    let tokens = doc_preprocessed.tokens().collect::<Vec<Token>>();
+
+    let Some(matches) = get_matches(&tokens, &score_per_term) else {
+        return Vec::new();
+    };
+
+    let mut windows = get_windows(&config, &tokens, &matches);
+
+    remove_overlaps(&mut windows, window_count);
+
+    (windows.into_iter())
+        .map(|mut window| {
+            window.add_padding(window_size, max_window_padding, &tokens);
+            window.into_snippet(doc)
+        })
+        .collect::<Vec<_>>()
+}
+
+fn get_matches<'a, 'b>(
+    tokens: &'b [Token<'a>],
+    score_per_term: &IndexMap<String, TermScore>,
+) -> Option<Vec<(&'b Token<'a>, f32)>> {
     let mut term_counts = vec![0u8; score_per_term.len()];
 
     // PERF: Start with initial capacity, as we know there will be at least one match.
     let mut matches_tmp = Vec::with_capacity(16);
 
-    for doc_token in doc_preprocessed.tokens().filter(Token::is_not_stopword) {
+    for doc_token in tokens.iter().filter(|&t| t.is_not_stopword()) {
         if let Some((index, _, term_score)) = score_per_term.get_full(doc_token.as_normalized()) {
             term_counts[index] = term_counts[index].saturating_add(1);
             matches_tmp.push((doc_token, index, term_score));
@@ -106,7 +128,7 @@ pub fn get_best_snippets(
     // abort early (also acts as an assertion for later logic).
     debug_assert!(!matches_tmp.is_empty());
     if matches_tmp.is_empty() {
-        return Vec::new();
+        return None;
     }
 
     let mut matches = Vec::with_capacity(matches_tmp.len());
@@ -117,13 +139,22 @@ pub fn get_best_snippets(
         matches.push((doc_token, score));
     }
 
+    Some(matches)
+}
+
+fn get_windows<'a, 'b, 'c: 'b>(
+    config: &QuerySnippetsConfig,
+    tokens: &'b [Token<'a>],
+    matches: &'c [(&'b Token<'a>, f32)],
+) -> Vec<SnippetWindow<'a, 'b>> {
+    let window_size = config.window_size;
+
     let max_window_count = max_window_count(&matches, window_size);
     debug_assert!(max_window_count.is_some());
     // SAFETY: At this point, `matches` should not be empty, but there’s no
     //   harm in falling back to 0.
     let max_window_count = max_window_count.unwrap_or(0);
 
-    let tokens = doc_preprocessed.tokens().collect::<Vec<Token>>();
     let mut window_scores: Vec<SnippetWindow> = Vec::with_capacity(max_window_count);
 
     // PERF: To reduce the total number of computations, we avoid storing
@@ -181,58 +212,35 @@ pub fn get_best_snippets(
 
     window_scores.sort_by(|a, b| a.score.total_cmp(&b.score).reverse());
 
-    let mut window_scores_iter = window_scores.into_iter();
+    window_scores
+}
 
-    let mut res: Vec<SnippetWindow> = Vec::with_capacity(window_count);
+/// Ignore windows overlapping an already-yielded window (which has a better score).
+fn remove_overlaps<'a, 'b>(windows: &mut Vec<SnippetWindow<'a, 'b>>, limit: usize) {
+    let (all_windows, res) = {
+        let res = Vec::with_capacity(limit.min(windows.len()));
+        let all_windows = std::mem::replace(windows, res);
+        (all_windows, windows)
+    };
 
-    let mut window_count = window_count;
-    while let Some(mut window) = window_scores_iter.next()
-        && window_count > 0
+    let mut all_windows_iter = all_windows.into_iter();
+
+    while let Some(window) = all_windows_iter.next()
+        && res.len() < limit
     {
-        // Ignore windows overlapping an already-yielded window (which has
-        // a better score).
         // PERF: This makes the loop become `O(n^2)` but we don’t care as
         //   `n` will always be small.
         if (res.iter()).any(|existing| window.overlaps_with(&existing.tokens)) {
             continue;
         }
 
-        // Add padding around windows so they don’t start and end with a matched
-        // token (or end up being 1 token long).
-        let window_token_count = window.token_count();
-        if window_token_count < window_size {
-            let padding = (window_size - window_token_count).min(max_window_padding);
-
-            let window_range = window.range_in_tokenized_text();
-
-            // Split padding in two (start and end).
-            // NOTE: We use `div_ceil` to get a bigger starting half for odd values.
-            let padding_start = (padding.div_ceil(2))
-                // Limit to document start.
-                .min(*window_range.start());
-            let padding_end = (padding - padding_start)
-                // Limit to document end.
-                .min(tokens.len() - *window_range.end() - 1);
-
-            let new_window_range =
-                (*window_range.start() - padding_start)..=(*window_range.end() + padding_end);
-            window.tokens = &tokens[new_window_range];
-        }
-
         res.push(window);
-
-        window_count -= 1;
     }
-
-    // Map windows to snippets.
-    res.into_iter()
-        .map(|window| window.into_snippet(doc))
-        .collect::<Vec<_>>()
 }
 
-fn max_window_count<T>(matches: &[(Token, T)], window_size: usize) -> Option<usize> {
-    let first_match = &matches.first()?.0;
-    let last_match = &matches.last()?.0;
+fn max_window_count<T>(matches: &[(&Token, T)], window_size: usize) -> Option<usize> {
+    let first_match = matches.first()?.0;
+    let last_match = matches.last()?.0;
 
     let matches_index_range =
         first_match.index_in_tokenized_text..last_match.index_in_tokenized_text;
@@ -241,7 +249,7 @@ fn max_window_count<T>(matches: &[(Token, T)], window_size: usize) -> Option<usi
 
 struct SnippetWindow<'a, 'b> {
     tokens: &'b [Token<'a>],
-    matches: &'b [(Token<'a>, f32)],
+    matches: &'b [(&'b Token<'a>, f32)],
     score: f32,
 }
 
@@ -272,5 +280,34 @@ impl<'a, 'b> SnippetWindow<'a, 'b> {
         self.tokens.last().unwrap().index_in_tokenized_text
             - self.tokens.first().unwrap().index_in_tokenized_text
             + 1
+    }
+
+    /// Add padding around windows so they don’t start and end with a matched
+    /// token (or end up being 1 token long).
+    fn add_padding(
+        &mut self,
+        window_size: usize,
+        max_window_padding: usize,
+        doc_tokens: &'b [Token<'a>],
+    ) {
+        let window_token_count = self.token_count();
+        if window_token_count < window_size {
+            let padding = (window_size - window_token_count).min(max_window_padding);
+
+            let window_range = self.range_in_tokenized_text();
+
+            // Split padding in two (start and end).
+            // NOTE: We use `div_ceil` to get a bigger starting half for odd values.
+            let padding_start = (padding.div_ceil(2))
+                // Limit to document start.
+                .min(*window_range.start());
+            let padding_end = (padding - padding_start)
+                // Limit to document end.
+                .min(doc_tokens.len() - *window_range.end() - 1);
+
+            let new_window_range =
+                (*window_range.start() - padding_start)..=(*window_range.end() + padding_end);
+            self.tokens = &doc_tokens[new_window_range];
+        }
     }
 }
