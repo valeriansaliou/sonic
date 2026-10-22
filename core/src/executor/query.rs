@@ -108,6 +108,18 @@ impl super::Executor {
             let term_hash = token.hash();
             let term = token.as_normalized();
 
+            let idf = {
+                let document_frequency = kv_repo.get_document_frequency(&term_hash);
+                bm25_lite_idf(document_count, document_frequency)
+            };
+
+            // Filter out minimum IDF.
+            // PERF: Filtering `minimum_idf > 0` to save some computation.
+            if minimum_idf > 0. && idf < minimum_idf {
+                tracing::debug!("skipping term {term:?} because idf too low ({idf}<{minimum_idf})");
+                continue;
+            }
+
             let mut iid_iters = Vec::with_capacity(3);
 
             if let Some(iter) = kv_repo
@@ -136,18 +148,6 @@ impl super::Executor {
                     iid_iters.push(iter)
                 }
             };
-
-            let idf = {
-                let document_frequency = kv_repo.get_document_frequency(&term_hash);
-                bm25_lite_idf(document_count, document_frequency)
-            };
-
-            // Filter out minimum IDF.
-            // PERF: Filtering `minimum_idf > 0` to save some computation.
-            if minimum_idf > 0. && idf < minimum_idf {
-                tracing::debug!("skipping term {term:?} because idf too low ({idf}<{minimum_idf})");
-                continue;
-            }
 
             // Assign a weight of `1` as those are exact matches.
             let weight = 1.;
