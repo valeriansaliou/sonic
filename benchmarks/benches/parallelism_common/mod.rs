@@ -54,15 +54,10 @@ pub static NCHANNELS: LazyLock<usize> = LazyLock::new(|| {
     )
 });
 
-pub static NBUCKETS: LazyLock<usize> = LazyLock::new(|| {
-    std::env::var("NBUCKETS").map_or_else(
-        |_err| {
-            let default = 2048;
-            tracing::info!("`NBUCKETS` not configured, using {default:?} as default.");
-            default
-        },
-        |s| s.parse::<usize>().unwrap(),
-    )
+pub static NBUCKETS: LazyLock<Option<usize>> = LazyLock::new(|| {
+    std::env::var("NBUCKETS")
+        .map(|s| s.parse::<usize>().unwrap())
+        .ok()
 });
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -118,6 +113,7 @@ pub fn ingest_parallel_inner<T: Ingestable>(
     articles_iter: impl Iterator<Item = T> + Send + 'static,
     articles_count: usize,
     total_bytes: u64,
+    bucket_count: usize,
 ) -> IngestResponse {
     let show_progress = *SHOW_PROGRESS;
     let push_use_new = *PUSH_USE_NEW;
@@ -272,7 +268,7 @@ pub fn ingest_parallel_inner<T: Ingestable>(
                     while let Some((object_index, object)) = next(&articles) {
                         let len = object.data().as_bytes().len();
 
-                        let bucket = bucket(object_index, articles_count, *NBUCKETS);
+                        let bucket = bucket(object_index, articles_count, bucket_count);
 
                         match black_box(channel.push_with_options(collection, &bucket, object.id(), object.data(), push_options.as_slice())) {
                             Ok(()) => {
@@ -504,6 +500,7 @@ pub fn ingest_parallel<T: Ingestable>(
     articles_iter: impl Iterator<Item = T> + Send + 'static,
     articles_count: usize,
     total_bytes: u64,
+    bucket_count: usize,
 ) -> IngestResponse {
     ctx.start_sonic(
         &new_empty_data_path(BENCH_DATA_PATH, ctx.id),
@@ -525,6 +522,7 @@ pub fn ingest_parallel<T: Ingestable>(
         articles_iter,
         articles_count,
         total_bytes,
+        bucket_count,
     )
 }
 

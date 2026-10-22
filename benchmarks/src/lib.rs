@@ -31,6 +31,7 @@ pub mod prelude {
     pub use sonic_client::options::*;
     pub use sonic_client::search::SonicChannelSearchBlocking;
 
+    pub use crate::constant;
     pub use crate::globals::*;
     pub use crate::util::itertools::Join as _;
     pub use crate::util::logging::{LoggingOptions, init_logging};

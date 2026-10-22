@@ -13,13 +13,8 @@ pub mod load;
 pub mod wikipedia;
 pub mod wikipedia_common;
 
-pub static NSHARDS: LazyLock<usize> = LazyLock::new(|| {
-    std::env::var("NSHARDS").map_or_else(
-        |_err| {
-            let default = 4;
-            tracing::info!("`NSHARDS` not configured, using {default:?} as default.");
-            default
-        },
-        |s| s.parse::<usize>().unwrap(),
-    )
+pub static NSHARDS: LazyLock<Option<usize>> = LazyLock::new(|| {
+    std::env::var("NSHARDS")
+        .map(|s| s.parse::<usize>().unwrap())
+        .ok()
 });

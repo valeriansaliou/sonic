@@ -21,8 +21,13 @@ use crate::parallelism_common::*;
 
 const COLLECTION: &str = "wikipedia";
 
-static SHARD_PATHS: LazyLock<Vec<PathBuf>> =
-    LazyLock::new(|| download_shards("wikimedia/wikipedia", "20231101.en", Some(*NSHARDS)));
+static SHARD_PATHS: LazyLock<Vec<PathBuf>> = LazyLock::new(|| {
+    download_shards(
+        "wikimedia/wikipedia",
+        "20231101.en",
+        Some(constant!(NSHARDS, default: 4)),
+    )
+});
 
 fn articles_iter() -> impl Iterator<Item = WikipediaArticle> {
     SHARD_PATHS.iter().flat_map(iter_shard::<WikipediaArticle>)
@@ -79,6 +84,7 @@ fn main() {
                 articles(),
                 articles_count,
                 total_bytes,
+                constant!(NBUCKETS, default: 2048),
             );
         }
     }

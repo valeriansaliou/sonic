@@ -7,6 +7,20 @@
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
+#[macro_export]
+macro_rules! constant {
+    ($var:ident, default: $default:expr) => {
+        $var.unwrap_or_else(|| {
+            tracing::info!(
+                "`{}` not configured, using {:?} as default.",
+                stringify!($var),
+                $default
+            );
+            $default
+        })
+    };
+}
+
 // NOTE: We initialize `SONIC_BIN_PATH` lazily to avoid logging the
 //   “Environment variable "SONIC_BIN" not found” warning on
 //   `--load-baseline`.
