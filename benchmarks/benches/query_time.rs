@@ -101,13 +101,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     let data_path = Path::new(BENCH_DATA_PATH);
 
-    if data_path.exists() {
-        ctx.start_sonic(data_path, SONIC_BENCH_PASSWORD.to_owned(), |command| {
-            command.arg("-c").arg(sonic_conf_path)
-        });
-
-        ctx.wait_until_ready();
-    } else {
+    if !data_path.exists() {
         std::fs::create_dir_all(&data_path).unwrap();
 
         ctx.start_sonic(data_path, SONIC_BENCH_PASSWORD.to_owned(), |command| {
@@ -126,7 +120,17 @@ fn criterion_benchmark(c: &mut Criterion) {
             total_bytes,
             constant!(NBUCKETS, default: 1),
         );
+
+        // Stop Sonic so benchmarks run on a fresh instance of Sonic with no
+        // pre-filled cache or whatever, no matter if we had to ingest first.
+        ctx.stop_sonic();
     }
+
+    ctx.start_sonic(data_path, SONIC_BENCH_PASSWORD.to_owned(), |command| {
+        command.arg("-c").arg(sonic_conf_path)
+    });
+
+    ctx.wait_until_ready();
 
     let bucket = {
         let stdout_bytes = Command::new("find")

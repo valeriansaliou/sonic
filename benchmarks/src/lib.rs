@@ -158,6 +158,13 @@ impl RunContext {
             std::thread::sleep(Duration::from_millis(50));
         }
     }
+
+    pub fn stop_sonic(&mut self) {
+        if let Some(mut sonic) = self.sonic.take() {
+            sonic.kill().unwrap();
+            sonic.wait().unwrap();
+        }
+    }
 }
 
 impl Drop for RunContext {
@@ -185,10 +192,7 @@ impl Drop for RunContext {
         self.print_index_size_if_enabled();
 
         // Kill Sonic.
-        if let Some(mut sonic) = self.sonic.take() {
-            sonic.kill().unwrap();
-            sonic.wait().unwrap();
-        }
+        self.stop_sonic();
 
         if !self.cleanup_on_drop {
             if let Some(ref data_path) = self.data_path {
