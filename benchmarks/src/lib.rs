@@ -110,6 +110,7 @@ impl RunContext {
             "SONIC_SERVER__LOG_LEVEL",
             LOG_LEVEL.map_or("WARN".to_owned(), |level| level.to_string()),
         ))
+        .env("SONIC_CHANNEL__INET", self.addr.to_string())
         .env("SONIC_STORE__KV__PATH", data_path.join("kv"))
         .env("SONIC_STORE__FST__PATH", data_path.join("fst"))
         .env("SONIC_STORE__OBJECT__PATH", data_path.join("object"))
