@@ -171,7 +171,12 @@ fn criterion_benchmark(c: &mut Criterion) {
                     let elasped = start.elapsed();
 
                     static COUNTER: AtomicU8 = AtomicU8::new(0);
-                    if COUNTER.fetch_add(1, atomic::Ordering::AcqRel) < 5 {
+                    if COUNTER
+                        .try_update(atomic::Ordering::SeqCst, atomic::Ordering::SeqCst, |n| {
+                            n.checked_add(1)
+                        })
+                        .is_ok_and(|prev| prev < 5)
+                    {
                         tracing::info!(?query, ?elasped, "Got snippets: {json}");
                     }
 
