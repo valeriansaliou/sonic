@@ -116,6 +116,8 @@ pub fn ingest_parallel_inner<T: Ingestable>(
     bucket_count: usize,
 ) -> IngestResponse {
     let show_progress = *SHOW_PROGRESS;
+    let show_progress_summary = *SHOW_PROGRESS_SUMMARY;
+    let show_stats = *SHOW_STATS;
     let push_use_new = *PUSH_USE_NEW;
 
     let mut elapsed_total = Duration::ZERO;
@@ -175,6 +177,10 @@ pub fn ingest_parallel_inner<T: Ingestable>(
             let print_stats = Arc::clone(&print_stats);
 
             move || {
+                if !show_stats {
+                    return;
+                }
+
                 let control =
                     SonicChannelControlBlocking::connect(addr, SONIC_BENCH_PASSWORD, &multiplexer)
                         .unwrap();
@@ -281,7 +287,7 @@ pub fn ingest_parallel_inner<T: Ingestable>(
 
                                 used_buckets.lock().unwrap().insert(bucket);
 
-                                if ingested_count.is_multiple_of(10_000) {
+                                if show_progress_summary && ingested_count.is_multiple_of(10_000) {
                                     tracing::info!(
                                         "{elapsed:.3?}: {ingested_count}/{articles_count} ({ingested_bytes:.2})",
                                         elapsed = start.elapsed(),

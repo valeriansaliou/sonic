@@ -55,7 +55,38 @@ pub static SONIC_BIN_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
         })
 });
 
-pub static SHOW_PROGRESS: LazyLock<bool> = LazyLock::new(|| std::env::var("SHOW_PROGRESS").is_ok());
+pub static SHOW_PROGRESS: LazyLock<bool> = LazyLock::new(|| {
+    std::env::var("SHOW_PROGRESS").map_or_else(
+        |_err| {
+            let default = false;
+            tracing::info!("`SHOW_PROGRESS` not configured, using {default:?} as default.");
+            default
+        },
+        |s| matches!(s.as_str(), "1" | "true"),
+    )
+});
+
+pub static SHOW_PROGRESS_SUMMARY: LazyLock<bool> = LazyLock::new(|| {
+    std::env::var("SHOW_PROGRESS_SUMMARY").map_or_else(
+        |_err| {
+            let default = true;
+            tracing::info!("`SHOW_PROGRESS_SUMMARY` not configured, using {default:?} as default.");
+            default
+        },
+        |s| matches!(s.as_str(), "1" | "true"),
+    )
+});
+
+pub static SHOW_STATS: LazyLock<bool> = LazyLock::new(|| {
+    std::env::var("SHOW_STATS").map_or_else(
+        |_err| {
+            let default = true;
+            tracing::info!("`SHOW_STATS` not configured, using {default:?} as default.");
+            default
+        },
+        |s| matches!(s.as_str(), "1" | "true"),
+    )
+});
 
 pub static PUSH_USE_NEW: LazyLock<bool> = LazyLock::new(|| {
     std::env::var("PUSH_USE_NEW").map_or_else(
