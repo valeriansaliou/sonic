@@ -230,7 +230,7 @@ fn remove_overlaps<'a, 'b>(windows: &mut Vec<SnippetWindow<'a, 'b>>, limit: usiz
     {
         // PERF: This makes the loop become `O(n^2)` but we don’t care as
         //   `n` will always be small.
-        if (res.iter()).any(|existing| window.overlaps_with(&existing.tokens)) {
+        if (res.iter()).any(|existing| window.overlaps_with(existing)) {
             continue;
         }
 
@@ -263,15 +263,15 @@ impl<'a, 'b> SnippetWindow<'a, 'b> {
         self.tokens.first().unwrap().start..self.tokens.last().unwrap().end
     }
 
-    fn overlaps_with(&self, tokens: &[Token]) -> bool {
+    fn overlaps_with(&self, other: &Self) -> bool {
         fn overlaps<T: Ord>(a: &RangeInclusive<T>, b: &RangeInclusive<T>) -> bool {
             a.start() <= b.end() && b.start() <= a.end()
         }
 
-        let a = self.range_in_tokenized_text();
-        let b = tokens.first().unwrap().index_in_tokenized_text
-            ..=tokens.last().unwrap().index_in_tokenized_text;
-        overlaps(&a, &b)
+        overlaps(
+            &self.range_in_tokenized_text(),
+            &other.range_in_tokenized_text(),
+        )
     }
 
     /// Number of tokens contained from start to end, including
