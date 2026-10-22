@@ -277,13 +277,15 @@ fn ensure_index(corpus_path: &Path) {
         "Indexed {total_count} documents ({total_bytes}B) in {total_time:.3?} ({thrpt}kB/s)",
         thrpt = (total_bytes / started_at.elapsed().as_secs()) as f32 / 1000.
     );
+
+    drop(ctx);
 }
 
 fn start_sonic() -> RunContext {
     let data_path = Path::new(BENCH_DATA_PATH);
     eprintln!("Running BEIR Quora using {SONIC_BIN_PATH:?}");
 
-    let mut ctx = RunContext::new(true);
+    let mut ctx = RunContext::new(false);
     ctx.start_sonic(data_path, SONIC_BENCH_PASSWORD.to_owned(), |command| {
         command
             .env("SONIC_SEARCH__QUERY_LIMIT_DEFAULT", QUERY_LIMIT.to_string())
