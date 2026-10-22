@@ -101,6 +101,14 @@ pub fn get_best_snippets(
         }
     }
 
+    // There should always be at least one match, but in case some index error
+    // (e.g. out-of-sync tf) causes this to run on a document with no match,
+    // abort early (also acts as an assertion for later logic).
+    debug_assert!(!matches_tmp.is_empty());
+    if matches_tmp.is_empty() {
+        return Vec::new();
+    }
+
     let mut matches = Vec::with_capacity(matches_tmp.len());
 
     for (doc_token, index, TermScore { weight, idf }) in matches_tmp.into_iter() {
@@ -109,8 +117,14 @@ pub fn get_best_snippets(
         matches.push((doc_token, score));
     }
 
+    let max_window_count = max_window_count(&matches, window_size);
+    debug_assert!(max_window_count.is_some());
+    // SAFETY: At this point, `matches` should not be empty, but there’s no
+    //   harm in falling back to 0.
+    let max_window_count = max_window_count.unwrap_or(0);
+
     let tokens = doc_preprocessed.tokens().collect::<Vec<Token>>();
-    let mut window_scores: Vec<SnippetWindow> = Vec::with_capacity(tokens.len());
+    let mut window_scores: Vec<SnippetWindow> = Vec::with_capacity(max_window_count);
 
     // PERF: To reduce the total number of computations, we avoid storing
     //   sub-windows of already-processed windows if we know for sure they
@@ -120,7 +134,7 @@ pub fn get_best_snippets(
     //   the one processed before has more matches and must have a higher
     //   score. If the end index is different, then they might still be
     //   overlapping but we’ll choose in another step which one to keep.
-    let mut processed_windows_ends: HashSet<usize> = HashSet::with_capacity(matches.len());
+    let mut processed_windows_ends: HashSet<usize> = HashSet::with_capacity(max_window_count);
 
     // Compute window scores starting from match locations.
     for match_token_idx in 0..matches.len() {
@@ -210,10 +224,19 @@ pub fn get_best_snippets(
         window_count -= 1;
     }
 
-    // Map windows to ranges.
+    // Map windows to snippets.
     res.into_iter()
         .map(|window| window.into_snippet(doc))
         .collect::<Vec<_>>()
+}
+
+fn max_window_count<T>(matches: &[(Token, T)], window_size: usize) -> Option<usize> {
+    let first_match = &matches.first()?.0;
+    let last_match = &matches.last()?.0;
+
+    let matches_index_range =
+        first_match.index_in_tokenized_text..last_match.index_in_tokenized_text;
+    Some(matches_index_range.len() / window_size)
 }
 
 struct SnippetWindow<'a, 'b> {
