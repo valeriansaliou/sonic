@@ -90,7 +90,8 @@ impl super::Executor {
             minimum_idf = 0.;
         }
 
-        let term_count = input.tokens().len();
+        let tokens = input.tokens().collect::<Vec<_>>();
+        let term_count = tokens.len();
 
         let mut iid_limit_per_token = vec![higher_limit / term_count; term_count];
 
@@ -106,7 +107,7 @@ impl super::Executor {
             ScoringMatrix::with_capacity(24usize.min(usize::from(limit)));
 
         // Look for exact matches.
-        'matches: for (idx, token) in input.tokens().enumerate() {
+        'matches: for (idx, token) in tokens.iter().enumerate() {
             let term_hash = token.hash();
             let term = token.as_normalized();
 
@@ -212,7 +213,7 @@ impl super::Executor {
                 scoring_matrix.len(),
             );
 
-            'terms: for (idx, token) in input.tokens().enumerate() {
+            'terms: for (idx, token) in tokens.iter().enumerate() {
                 let original_len = token.as_original().len();
                 let term = token.as_normalized();
 
@@ -246,7 +247,7 @@ impl super::Executor {
                 scoring_matrix.len(),
             );
 
-            'terms: for (idx, token) in input.tokens().enumerate() {
+            'terms: for (idx, token) in tokens.iter().enumerate() {
                 let original_word_len = token.as_original().len();
                 let term = token.as_normalized();
 
@@ -297,7 +298,7 @@ impl super::Executor {
         //   term. It’s not the most efficient (compared to not storing the
         //   result in the first place) but it’s an edge case and the cost
         //   is negligible.
-        let one_term_is_special = input.tokens().any(|t| t.is_special());
+        let one_term_is_special = tokens.iter().any(|t| t.is_special());
         if one_term_is_special {
             let mut to_remove = Vec::<StoreObjectIid>::new();
 
