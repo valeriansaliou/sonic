@@ -201,10 +201,7 @@ fn ensure_index(corpus_path: &Path) {
     let data_path = Path::new(BENCH_DATA_PATH);
     let ready_path = data_path.join("READY");
     let force_reindex = std::env::var_os("BEIR_REINDEX").is_some();
-    let index_config = format!(
-        "retain_word_objects={};stopwords={}",
-        *RETAIN_WORD_OBJECTS, *STOPWORDS_ENABLED
-    );
+    let index_config = format!("stopwords={}", *STOPWORDS_ENABLED);
     let index_is_ready = std::fs::read_to_string(&ready_path)
         .is_ok_and(|marker| marker.lines().any(|line| line == index_config));
 
