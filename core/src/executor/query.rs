@@ -115,6 +115,19 @@ impl super::Executor {
                 bm25_lite_idf(document_count, document_frequency)
             };
 
+            #[cfg(debug_assertions)]
+            {
+                use std::sync::atomic::{AtomicU8, Ordering};
+
+                static COUNTER: AtomicU8 = AtomicU8::new(0);
+                if COUNTER
+                    .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+                    .is_ok_and(|prev| prev < 200)
+                {
+                    tracing::debug!("idf={idf}, term={term:?}");
+                }
+            }
+
             // Filter out minimum IDF.
             // PERF: Filtering `minimum_idf > 0` to save some computation.
             if minimum_idf > 0. && idf < minimum_idf {
@@ -546,7 +559,26 @@ fn overall_score(
     scores: impl ExactSizeIterator<Item = Option<QueryMatchScore>>,
 ) -> QueryResultScore {
     let count = scores.len() as f32;
-    let total = scores.map(|opt| opt.unwrap_or(0f32)).sum::<f32>();
+    let scores = scores.map(|opt| opt.unwrap_or(0f32));
+
+    #[cfg(debug_assertions)]
+    let scores = {
+        use std::sync::atomic::{AtomicU8, Ordering};
+
+        let scores = scores.collect::<Vec<_>>();
+
+        static COUNTER: AtomicU8 = AtomicU8::new(0);
+        if COUNTER
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+            .is_ok_and(|prev| prev < 200)
+        {
+            tracing::debug!("scores = {scores:?}");
+        }
+
+        scores.into_iter()
+    };
+
+    let total = scores.sum::<f32>();
 
     #[allow(clippy::let_and_return)]
     let average = total / count;
