@@ -171,7 +171,7 @@ impl super::Executor {
                 // Higher limit now reached?
                 // Stop acquiring new suggested IIDs now.
                 if inserted && scoring_matrix.len() >= higher_limit {
-                    tracing::trace!(?term, "got enough completed results for term");
+                    tracing::debug!(?term, "got enough completed results for term");
 
                     break 'matches;
                 }
@@ -767,12 +767,17 @@ impl ScoringMatrix {
                         weight,
                         term,
                     }) if *current_score < new_score => {
-                        tracing::trace!(current_score, new_score, "Updating to max score");
+                        tracing::trace!(
+                            current_score,
+                            new_score,
+                            term_idx,
+                            "Updating to max score"
+                        );
                         *entry_score_opt = Some(new_term_score);
                     }
                     Some(_) => {}
                     None => {
-                        tracing::trace!(score = new_score, "Setting max score");
+                        tracing::trace!(score = new_score, term_idx, "Setting max score");
                         *entry_score_opt = Some(new_term_score);
                     }
                 }
@@ -783,7 +788,7 @@ impl ScoringMatrix {
             indexmap::map::Entry::Vacant(vacant_entry) => {
                 let mut scores = vec![None; term_count];
 
-                tracing::trace!(score = new_score, "Inserting new score");
+                tracing::trace!(score = new_score, term_idx, "Inserting new score");
                 // SAFETY: `scores` has `term_count` elements.
                 unsafe { *scores.get_unchecked_mut(term_idx) = Some(new_term_score) };
 
