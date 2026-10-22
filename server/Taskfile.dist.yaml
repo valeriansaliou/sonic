@@ -19,7 +19,7 @@ vars:
         | select(.name == "sonic-server")
         | .features
         | keys
-        | map(select(IN("experimental-api")))
+        | map(select(IN("experimental-api", "auto-newline")))
         | join(",")'
     secret: true # Just so it doesn’t show up in `--summary`.
 

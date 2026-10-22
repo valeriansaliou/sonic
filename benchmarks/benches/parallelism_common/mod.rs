@@ -276,6 +276,15 @@ pub fn ingest_parallel_inner<T: Ingestable>(
 
                         let bucket = bucket(object_index, articles_count, bucket_count);
 
+                        // Push title in addition to article body.
+                        // Note that we use a hidden feature flag in `sonic-client`
+                        // to automatically add a newline at the end so we don’t end
+                        // up with joined text.
+                        channel.push_with_options(collection, &bucket, object.id(), object.title(), push_options.as_slice()).unwrap();
+                        if push_use_new {
+                            push_options.retain(|opt| opt.to_string() != "NEW");
+                        }
+
                         match black_box(channel.push_with_options(collection, &bucket, object.id(), object.data(), push_options.as_slice())) {
                             Ok(()) => {
                                 if show_progress {
