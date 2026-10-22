@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use sonic_benchmarks::huggingface::download::download_files;
 use sonic_benchmarks::prelude::*;
+use sonic_benchmarks::util::client_helpers::{trigger_compact, trigger_flush};
 
 use crate::common::*;
 
@@ -264,6 +265,9 @@ fn ensure_index(corpus_path: &Path) {
             SonicChannelControlBlocking::connect(ctx.addr, SONIC_BENCH_PASSWORD, &multiplexer)
                 .unwrap();
         control.trigger_consolidate().unwrap();
+
+        trigger_flush(&control).unwrap();
+        trigger_compact(&control, &[COLLECTION]).unwrap();
     }
 
     std::fs::write(
