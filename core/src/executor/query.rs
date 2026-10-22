@@ -154,7 +154,13 @@ impl super::Executor {
             // Assign a weight of `1` as those are exact matches.
             let weight = 1.;
 
-            for term_to_iids_entry in iid_iters.into_iter().flatten() {
+            let mut term_to_iids_entries = iid_iters.into_iter().flatten().collect::<Vec<_>>();
+            // Sort IIDs by highest tf, to get better results first.
+            // NOTE: `sort_by` is stable, meaning ingestion order will still be
+            //   used in case of ties.
+            term_to_iids_entries.sort_by(|a, b| a.tf().cmp(&b.tf()).reverse());
+
+            for term_to_iids_entry in term_to_iids_entries {
                 let tf = term_to_iids_entry.tf();
                 let score: f32 = weight * bm25_lite(tf, f64::from(idf));
 
