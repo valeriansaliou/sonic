@@ -105,10 +105,18 @@ fn criterion_benchmark(c: &mut Criterion) {
         std::fs::create_dir_all(&data_path).unwrap();
 
         ctx.start_sonic(data_path, SONIC_BENCH_PASSWORD.to_owned(), |command| {
-            command.arg("-c").arg(sonic_conf_path)
+            command
+                .arg("-c")
+                .arg(sonic_conf_path)
+                .env("SONIC_SERVER__LOG_LEVEL", "error")
         });
 
         ctx.wait_until_ready();
+
+        unsafe {
+            std::env::set_var("SHOW_PROGRESS_SUMMARY", "false");
+            std::env::set_var("SHOW_STATS", "false");
+        }
 
         ingest_parallel_inner(
             &mut ctx,
