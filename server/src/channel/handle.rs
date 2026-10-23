@@ -77,7 +77,11 @@ impl ChannelHandle {
         self.configure_stream(&stream, false);
 
         // Send connected banner
-        write!(stream, "{}{}", CONNECTED_BANNER, LINE_FEED).expect("write failed");
+        if let Err(err) = write!(stream, "{}{}", CONNECTED_BANNER, LINE_FEED) {
+            tracing::debug!("failed writing connected banner: {err}");
+
+            return;
+        }
 
         // Increment connected clients count
         *CLIENTS_CONNECTED.write().unwrap() += 1;
@@ -101,15 +105,18 @@ impl ChannelHandle {
                 self.configure_stream(&stream, true);
 
                 // Send started acknowledgement (with environment variables)
-                write!(
+                if let Err(err) = write!(
                     stream,
                     "STARTED {} protocol({}) buffer({}){}",
                     mode.to_str(),
                     PROTOCOL_REVISION,
                     BUFFER_SIZE,
                     LINE_FEED
-                )
-                .expect("write failed");
+                ) {
+                    tracing::debug!("failed writing started acknowledgement: {err}");
+
+                    return;
+                }
 
                 self.handle_stream(mode, stream)
                     .unwrap_or_else(|err| tracing::error!("closing channel thread: {err:?}"));
@@ -117,7 +124,7 @@ impl ChannelHandle {
             Err(err) => match write!(stream, "ENDED {}{}", err.to_str(), LINE_FEED) {
                 Ok(()) => {}
                 Err(err) if err.kind() == ErrorKind::BrokenPipe => {}
-                Err(err) => panic!("write failed: {err:?}"),
+                Err(err) => tracing::debug!("failed writing ended response: {err}"),
             },
         }
     }
