@@ -37,6 +37,12 @@ impl super::Executor {
             return Err(());
         };
 
+        // Important: acquire bucket store read lock. PUSH only merges into term-to-IIDs and \
+        //   IID-to-terms, so concurrent PUSHes may share it, but it must not interleave with \
+        //   the read-modify-write updates done by POP, FLUSHO and FLUSHB (which take the \
+        //   write lock), otherwise their full-list rewrites could drop the pushed IID.
+        executor_kv_lock_read!(kv_store);
+
         let kv_action = kv_store.access_read_write(bucket);
 
         let mut batch = WriteBatch::default();
