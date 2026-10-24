@@ -66,10 +66,18 @@ impl super::Executor {
             self.app_conf.search.query_alternates_try,
         );
 
-        let (mut minimum_idf, idf_min_doc_count) = (
+        let (minimum_idf_conf, idf_min_doc_count) = (
             self.app_conf.search.query_minimum_term_idf_default,
             (self.app_conf.search).query_minimum_term_idf_minimum_object_count,
         );
+
+        // TODO: Rename `query_minimum_term_idf_default` to a threshold-like
+        //   name and maybe invert its meaning (e.g. `0.9` instead of `0.1`)?
+        let mut minimum_idf = {
+            let n = (minimum_idf_conf * 1000.) as u64;
+            let df = 1000 - n;
+            bm25_lite_idf(1000, df)
+        };
 
         let (prefix_matching_enabled, fuzzy_matching_enabled) = (
             self.fst_pool.fst_repo_config.prefix_matching_enabled,
