@@ -226,7 +226,7 @@ impl super::Executor {
                 };
 
                 merge_suggestions(
-                    suggestions.map(|(w, distance)| (w, prefix_score(distance, term.len()))),
+                    suggestions,
                     &mut scoring_matrix,
                     term,
                     idx,
@@ -273,8 +273,7 @@ impl super::Executor {
                     };
 
                     merge_suggestions(
-                        suggestions
-                            .map(|(w, distance)| (w, typo_score(distance, original_word_len))),
+                        suggestions,
                         &mut scoring_matrix,
                         term,
                         idx,
@@ -476,95 +475,6 @@ impl MatchWithSnippets {
     }
 }
 
-/// Inversely proportional to `lev_distance / word_len`, decreasing slowly
-/// towards `f(20) = 0.5`. Will never reach `0`.
-fn prefix_score(lev_distance: u16, word_len: usize) -> f32 {
-    // NOTE: Will be `> 1` in practice.
-    let lev_ratio = lev_distance as f32 / word_len as f32;
-
-    // NOTE: `20` means that auto-completed words 20 times longer than the
-    //   original word get a score of `0.5`. It’s just a magic number, it has
-    //   no further meaning. It just feels ok.
-    20. / (20. + lev_ratio)
-}
-
-#[cfg(test)]
-#[test]
-fn test_prefix_score() {
-    // Auto-complete 2 times longer.
-    for n in [2, 4, 8] {
-        assert_eq!(prefix_score(n, n as usize), 0.95238096);
-    }
-
-    // Auto-complete 4 times longer.
-    for n in [2, 4, 8] {
-        assert_eq!(prefix_score(3 * n, n as usize), 0.8695652);
-    }
-
-    // Auto-complete 1 character.
-    assert_eq!(prefix_score(1, 3), 0.9836065);
-    assert_eq!(prefix_score(1, 4), 0.9876543);
-    assert_eq!(prefix_score(1, 5), 0.99009895);
-    assert_eq!(prefix_score(1, 6), 0.9917356);
-
-    // Auto-complete 2 characters.
-    assert_eq!(prefix_score(2, 3), 0.96774197);
-    assert_eq!(prefix_score(2, 4), 0.9756098);
-    assert_eq!(prefix_score(2, 5), 0.98039216);
-    assert_eq!(prefix_score(2, 6), 0.9836065);
-
-    // More auto-complete means lower score.
-    for n in [1, 2, 4, 8] {
-        for word_len in [2, 4, 8, 10] {
-            assert!(prefix_score(n + 1, word_len as usize) < prefix_score(n, word_len as usize));
-        }
-    }
-}
-
-/// Levenshtein distance proportional to word length.
-fn typo_score(lev_distance: u16, word_len: usize) -> f32 {
-    debug_assert!(
-        (lev_distance as usize) < word_len,
-        "{lev_distance} >= {word_len}"
-    );
-
-    // SAFETY: `.min(1)` isn’t strictly necessary as `lev_distance` should
-    //   always be `< word_len`, but it’s there as a safety precaution.
-    let lev_ratio = (lev_distance as f32 / word_len as f32).min(1.);
-
-    1. - lev_ratio
-}
-
-#[cfg(test)]
-#[test]
-fn test_typo_score() {
-    // No typo.
-    assert_eq!(typo_score(0, 1), 1.);
-    assert_eq!(typo_score(0, 2), 1.);
-
-    // 1 typo.
-    assert_eq!(typo_score(1, 3), 0.6666666);
-    assert_eq!(typo_score(1, 4), 0.75);
-    assert_eq!(typo_score(1, 5), 0.8);
-    // 1 typo always scores lower than 0.
-    for n in 2..=8 {
-        assert!(typo_score(1, n) < typo_score(0, n), "n={n}");
-    }
-
-    // 2 typos.
-    assert_eq!(typo_score(2, 5), 0.6);
-    assert_eq!(typo_score(2, 6), 0.6666666);
-    assert_eq!(typo_score(2, 7), 0.71428573);
-    // 2 typos always scores lower than 1.
-    for n in 3..=8 {
-        assert!(typo_score(2, n) < typo_score(1, n), "n={n}");
-    }
-
-    // A lot of typos (length has no impact, proportion has).
-    assert_eq!(typo_score(1 * 20, 2 * 20), typo_score(1, 2));
-    assert_eq!(typo_score(3 * 20, 7 * 20), typo_score(3, 7));
-}
-
 fn overall_score(
     scores: impl ExactSizeIterator<Item = Option<QueryMatchScore>>,
 ) -> QueryResultScore {
@@ -602,6 +512,8 @@ fn overall_score(
 #[test]
 #[rustfmt::skip]
 fn test_overall_score() {
+    use crate::store::fst::{typo_score, prefix_score};
+
     const MISSING: Option<QueryMatchScore> = None;
     const EXACT_MATCH: Option<QueryMatchScore> = Some(1.);
 
