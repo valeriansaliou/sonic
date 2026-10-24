@@ -108,7 +108,7 @@ impl super::Executor {
         //   order.
         // NOTE: `capacity = 24` to reduce initial grows.
         let mut scoring_matrix: ScoringMatrix =
-            ScoringMatrix::with_capacity(24usize.min(usize::from(limit)));
+            ScoringMatrix::with_capacity(24usize.min(usize::from(limit)), term_count);
 
         // Look for exact matches.
         'matches: for (idx, token) in tokens.iter().enumerate() {
@@ -191,7 +191,6 @@ impl super::Executor {
                         term: str::to_owned(term),
                     },
                     idx,
-                    term_count,
                 );
 
                 // Higher limit now reached?
@@ -230,7 +229,6 @@ impl super::Executor {
                     &mut scoring_matrix,
                     term,
                     idx,
-                    term_count,
                     &kv_repo,
                     &mut alternates_try,
                     &mut iid_limit_per_token[idx],
@@ -277,7 +275,6 @@ impl super::Executor {
                         &mut scoring_matrix,
                         term,
                         idx,
-                        term_count,
                         &kv_repo,
                         &mut alternates_try,
                         &mut iid_limit_per_token[idx],
@@ -601,7 +598,6 @@ fn merge_suggestions(
     scoring_matrix: &mut ScoringMatrix,
     term: &str,
     term_idx: usize,
-    term_count: usize,
     kv_repo: &KvRepositoryReadOnly<'_>,
     alternates_try: &mut usize,
     iid_limit: &mut u32,
@@ -658,7 +654,6 @@ fn merge_suggestions(
                     term: String::clone(&suggested_word),
                 },
                 term_idx,
-                term_count,
             );
 
             // Higher limit now reached?
@@ -685,9 +680,10 @@ fn merge_suggestions(
 // MARK: - Scoring matrix
 
 /// Score per query term, per object.
-#[derive(Debug)]
-#[repr(transparent)]
-struct ScoringMatrix(IndexMap<StoreObjectIid, Vec<Option<QueryTermScore>>>);
+struct ScoringMatrix {
+    map: IndexMap<StoreObjectIid, Vec<Option<QueryTermScore>>>,
+    term_count: usize,
+}
 
 /// Score for a query term, also indicating which term matched (when loose
 /// matching).
@@ -712,12 +708,15 @@ impl From<QueryTermScore> for (String, snippet_matching::TermScore) {
 }
 
 impl ScoringMatrix {
-    fn with_capacity(n: usize) -> Self {
-        Self(IndexMap::with_capacity(n))
+    fn with_capacity(n: usize, term_count: usize) -> Self {
+        Self {
+            map: IndexMap::with_capacity(n),
+            term_count,
+        }
     }
 
     fn swap_remove(&mut self, key: &StoreObjectIid) {
-        self.0.swap_remove(key);
+        self.map.swap_remove(key);
     }
 
     fn update_score(
@@ -725,11 +724,10 @@ impl ScoringMatrix {
         iid: StoreObjectIid,
         new_term_score: QueryTermScore,
         term_idx: usize,
-        term_count: usize,
     ) -> bool {
         let new_score = new_term_score.score;
 
-        match self.0.entry(iid) {
+        match self.map.entry(iid) {
             // If entry already exists, use lowest score.
             indexmap::map::Entry::Occupied(mut occupied_entry) => {
                 // SAFETY: We always initialize vecs with `term_count` entries.
@@ -762,7 +760,7 @@ impl ScoringMatrix {
             }
             // If entry does not exist, insert score.
             indexmap::map::Entry::Vacant(vacant_entry) => {
-                let mut scores = vec![None; term_count];
+                let mut scores = vec![None; self.term_count];
 
                 tracing::trace!(score = new_score, term_idx, "Inserting new score");
                 // SAFETY: `scores` has `term_count` elements.
@@ -783,9 +781,9 @@ impl ScoringMatrix {
         document_count: u64,
     ) {
         let mut to_backfill =
-            vec![HashMap::<StoreObjectIid, usize>::with_capacity(self.0.len()); term_count];
+            vec![HashMap::<StoreObjectIid, usize>::with_capacity(self.map.len()); term_count];
 
-        for (iid_idx, (iid, score_per_term)) in self.0.iter_mut().enumerate() {
+        for (iid_idx, (iid, score_per_term)) in self.map.iter_mut().enumerate() {
             for (token_idx, score_opt) in score_per_term.iter_mut().enumerate() {
                 if score_opt.is_none() {
                     to_backfill[token_idx].insert(*iid, iid_idx);
@@ -817,7 +815,7 @@ impl ScoringMatrix {
                     let tf = entry.tf();
                     let score: f32 = weight * bm25_lite(tf, f64::from(idf));
 
-                    self.0[iid_idx][token_idx] = Some(QueryTermScore {
+                    self.map[iid_idx][token_idx] = Some(QueryTermScore {
                         score,
                         idf,
                         weight,
@@ -833,7 +831,15 @@ impl std::ops::Deref for ScoringMatrix {
     type Target = IndexMap<StoreObjectIid, Vec<Option<QueryTermScore>>>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.map
+    }
+}
+
+impl std::fmt::Debug for ScoringMatrix {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("ScoringMatrix")
+            .field(&self.map)
+            .finish_non_exhaustive()
     }
 }
 
@@ -842,6 +848,6 @@ impl IntoIterator for ScoringMatrix {
     type IntoIter = indexmap::map::IntoIter<StoreObjectIid, Vec<Option<QueryTermScore>>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+        self.map.into_iter()
     }
 }
