@@ -32,6 +32,8 @@ inherits = "release"
 debug = "line-tables-only"
 split-debuginfo = "unpacked"
 strip = false
+debug-assertions = true
+overflow-checks = true
 
 [profile.bench]
 inherits = "release"
