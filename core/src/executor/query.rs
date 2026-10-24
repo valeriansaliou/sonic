@@ -5,10 +5,12 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use std::collections::HashMap;
+
 use indexmap::IndexMap;
 
 use super::types::{QueryMatchScore, QueryResultScore, QuerySearchLimit, QuerySearchOffset};
-use crate::lexer::preprocessor::{Preprocessor, PreprocessorOutput};
+use crate::lexer::preprocessor::{Preprocessor, PreprocessorOutput, Token};
 pub use crate::lexer::snippet_matching::QuerySnippetsConfig;
 use crate::lexer::snippet_matching::{self, Snippet, get_best_snippets};
 use crate::scoring::*;
@@ -93,7 +95,8 @@ impl super::Executor {
         let tokens = input.tokens().collect::<Vec<_>>();
         let term_count = tokens.len();
 
-        let mut iid_limit_per_token = vec![higher_limit / term_count; term_count];
+        // let mut iid_limit_per_token = vec![(higher_limit / term_count) as u32; term_count];
+        let mut iid_limit_per_token = vec![offset + u32::from(limit); term_count];
 
         // Store scores for each found IID. Results will then be sorted by
         // score before being returned. Scores are basically the sum of
@@ -287,6 +290,12 @@ impl super::Executor {
                 }
             }
         }
+
+        #[cfg(debug_assertions)]
+        tracing::debug!(?scoring_matrix);
+
+        // tracing::debug!("len: {}", scoring_matrix.len());
+        scoring_matrix.backfill(&kv_repo, &tokens, term_count, document_count);
 
         #[cfg(debug_assertions)]
         tracing::debug!(?scoring_matrix);
@@ -681,7 +690,7 @@ fn merge_suggestions(
     term_count: usize,
     kv_repo: &KvRepositoryReadOnly<'_>,
     alternates_try: &mut usize,
-    iid_limit: &mut usize,
+    iid_limit: &mut u32,
     document_count: u64,
     minimum_idf: f32,
 ) {
@@ -848,6 +857,59 @@ impl ScoringMatrix {
                 vacant_entry.insert(scores);
 
                 true
+            }
+        }
+    }
+
+    fn backfill(
+        &mut self,
+        index: &KvRepositoryReadOnly,
+        tokens: &[Token],
+        term_count: usize,
+        document_count: u64,
+    ) {
+        let mut to_backfill =
+            vec![HashMap::<StoreObjectIid, usize>::with_capacity(self.0.len()); term_count];
+
+        for (iid_idx, (iid, score_per_term)) in self.0.iter_mut().enumerate() {
+            for (token_idx, score_opt) in score_per_term.iter_mut().enumerate() {
+                if score_opt.is_none() {
+                    to_backfill[token_idx].insert(*iid, iid_idx);
+                }
+            }
+        }
+
+        for (token_idx, iids) in to_backfill.into_iter().enumerate() {
+            let token = &tokens[token_idx];
+            let term = token.as_normalized();
+            let term_hash = token.hash();
+
+            let fixme = "unwrap";
+            let Some(term_to_iids_entries) = index.get_term_to_iids(&term_hash).unwrap() else {
+                continue;
+            };
+
+            let todo = "backfill with typos";
+            let weight = 1.;
+
+            let todo = "do not recompute idf";
+            let idf = {
+                let document_frequency = index.get_document_frequency(&term_hash);
+                bm25_lite_idf(document_count, document_frequency)
+            };
+
+            for entry in term_to_iids_entries {
+                if let Some(&iid_idx) = iids.get(&entry.iid()) {
+                    let tf = entry.tf();
+                    let score: f32 = weight * bm25_lite(tf, f64::from(idf));
+
+                    self.0[iid_idx][token_idx] = Some(QueryTermScore {
+                        score,
+                        idf,
+                        weight,
+                        term: str::to_owned(term),
+                    });
+                }
             }
         }
     }
