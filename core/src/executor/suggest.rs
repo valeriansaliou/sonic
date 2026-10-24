@@ -27,12 +27,11 @@ impl super::Executor {
             let mut tokens = input.tokens();
 
             if let (Some(token), None) = (tokens.next(), tokens.next()) {
-                let len = token.as_original().len();
                 let term = token.into_normalized();
 
                 tracing::debug!("running suggest on word: {term:?}");
 
-                return match fst_repo.suggest_words(term, len, limit as usize, None) {
+                return match fst_repo.suggest_words(term, limit as usize, None) {
                     Some(words) => Ok(Some(words.map(|(k, _)| k))),
                     None => Ok(None),
                 };

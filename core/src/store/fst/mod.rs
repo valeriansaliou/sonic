@@ -525,9 +525,6 @@ impl<'a> FstRepository<'a> {
     pub fn suggest_words(
         &self,
         from_word: &str,
-        // Length before stemming. Useful to apply fuzzy matching rules based
-        // on user input.
-        original_word_len: usize,
         limit: usize,
         max_typo_factor: Option<u32>,
     ) -> Option<impl ExactSizeIterator<Item = (String, u16)> + DoubleEndedIterator + use<>> {
@@ -542,7 +539,7 @@ impl<'a> FstRepository<'a> {
 
         if self.config.prefix_matching_enabled {
             // Try to complete provided word
-            if let Some(stream) = self.lookup_begins(from_word, original_word_len) {
+            if let Some(stream) = self.lookup_begins(from_word) {
                 for (word, score) in stream {
                     if found_words.contains_key(&word) {
                         continue;
@@ -561,7 +558,7 @@ impl<'a> FstRepository<'a> {
         // Try to fuzzy-suggest other words? (e.g. correct typos)
         if self.config.fuzzy_matching_enabled && found_words.len() < limit {
             // Allow more typos in word as the word gets longer, up to a maximum limit
-            let max_typo_factor = max_typo_factor.unwrap_or(typo_factor(original_word_len));
+            let max_typo_factor = max_typo_factor.unwrap_or(typo_factor(from_word.len()));
             let mut typo_factor = 1u32;
 
             // TODO: Rework the Levenshtein query feature to avoid repeating
@@ -596,12 +593,7 @@ impl<'a> FstRepository<'a> {
         }
     }
 
-    pub fn lookup_begins(
-        &self,
-        word: &str,
-        // Length before stemming. Useful to calculate correct score.
-        original_word_len: usize,
-    ) -> Option<impl Iterator<Item = (String, u16)>> {
+    pub fn lookup_begins(&self, word: &str) -> Option<impl Iterator<Item = (String, u16)>> {
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(word) {
             return None;
@@ -617,12 +609,10 @@ impl<'a> FstRepository<'a> {
 
         tracing::debug!(?word, "looking up for word in 'begins' fst stream");
 
-        Some(FstStreamIterator(stream).map(move |word| {
-            // WARN: Calculating distance to original word length might
-            //   yield weird results when combined with stemming.
-            let distance: usize = original_word_len.abs_diff(word.len());
+        Some(FstStreamIterator(stream).map(move |suggestion| {
+            let distance: usize = word.len().abs_diff(suggestion.len());
             let score = u16::try_from(distance).unwrap_or(u16::MAX);
-            (word, score)
+            (suggestion, score)
         }))
     }
 

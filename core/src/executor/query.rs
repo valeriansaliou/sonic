@@ -218,16 +218,15 @@ impl super::Executor {
             );
 
             'terms: for (idx, token) in tokens.iter().enumerate() {
-                let original_len = token.as_original().len();
                 let term = token.as_normalized();
 
-                let Some(suggestions) = fst_repo.lookup_begins(term, original_len) else {
+                let Some(suggestions) = fst_repo.lookup_begins(term) else {
                     tracing::trace!("did not get any completed word for term {term:?}");
                     continue 'terms;
                 };
 
                 merge_suggestions(
-                    suggestions.map(|(w, distance)| (w, prefix_score(distance, original_len))),
+                    suggestions.map(|(w, distance)| (w, prefix_score(distance, term.len()))),
                     &mut scoring_matrix,
                     term,
                     idx,
