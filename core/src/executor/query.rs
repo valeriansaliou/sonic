@@ -95,6 +95,12 @@ impl super::Executor {
 
         let tokens = input.tokens().collect::<Vec<_>>();
         let term_count = tokens.len();
+        let idf_per_token = (tokens.iter())
+            .map(|token| {
+                let document_frequency = kv_repo.get_document_frequency(&token.hash());
+                bm25_lite_idf(document_count, document_frequency)
+            })
+            .collect::<Vec<_>>();
 
         // let mut iid_limit_per_token = vec![(higher_limit / term_count) as u32; term_count];
         let mut iid_limit_per_token = vec![offset + u32::from(limit); term_count];
@@ -114,11 +120,7 @@ impl super::Executor {
         'matches: for (idx, token) in tokens.iter().enumerate() {
             let term_hash = token.hash();
             let term = token.as_normalized();
-
-            let idf = {
-                let document_frequency = kv_repo.get_document_frequency(&term_hash);
-                bm25_lite_idf(document_count, document_frequency)
-            };
+            let idf = idf_per_token[idx];
 
             #[cfg(debug_assertions)]
             {
@@ -217,6 +219,15 @@ impl super::Executor {
 
             'terms: for (idx, token) in tokens.iter().enumerate() {
                 let term = token.as_normalized();
+                let idf = idf_per_token[idx];
+
+                // Filter out minimum IDF.
+                if idf < minimum_idf {
+                    tracing::debug!(
+                        "skipping prefix matching for term {term:?} because idf too low ({idf}<{minimum_idf})"
+                    );
+                    continue;
+                }
 
                 let Some(suggestions) = fst_repo.lookup_begins(term) else {
                     tracing::trace!("did not get any completed word for term {term:?}");
@@ -250,6 +261,15 @@ impl super::Executor {
             'terms: for (idx, token) in tokens.iter().enumerate() {
                 let original_word_len = token.as_original().len();
                 let term = token.as_normalized();
+                let idf = idf_per_token[idx];
+
+                // Filter out minimum IDF.
+                if idf < minimum_idf {
+                    tracing::debug!(
+                        "skipping fuzzy matching for term {term:?} because idf too low ({idf}<{minimum_idf})"
+                    );
+                    continue;
+                }
 
                 // Skip term if it’s special (we’d want exact matches only).
                 if token.is_special() {
