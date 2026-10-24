@@ -39,6 +39,7 @@ impl super::Executor {
         input: PreprocessorOutput,
         options: QueryOptions,
     ) -> Result<Vec<QueryResult>, ()> {
+        // eprintln!("q: {}", input.original_text());
         let QueryOptions { limit, offset } = options;
 
         // Important: acquire database access read lock, and reference it in context. This \
@@ -577,6 +578,7 @@ fn overall_score(
 
         let scores = scores.collect::<Vec<_>>();
 
+        // if !scores.iter().any(|v| *v == 0.) {
         static COUNTER: AtomicU8 = AtomicU8::new(0);
         if COUNTER
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
@@ -584,6 +586,7 @@ fn overall_score(
         {
             tracing::debug!("scores = {scores:?}");
         }
+        // }
 
         scores.into_iter()
     };
