@@ -134,8 +134,7 @@ impl super::Executor {
             }
 
             // Filter out minimum IDF.
-            // PERF: Filtering `minimum_idf > 0` to save some computation.
-            if minimum_idf > 0. && idf < minimum_idf {
+            if idf < minimum_idf {
                 tracing::debug!("skipping term {term:?} because idf too low ({idf}<{minimum_idf})");
                 continue;
             }
@@ -630,8 +629,7 @@ fn merge_suggestions(
         };
 
         // Filter out minimum IDF.
-        // PERF: Filtering `minimum_idf > 0` to save some computation.
-        if minimum_idf > 0. && idf < minimum_idf {
+        if idf < minimum_idf {
             tracing::debug!(
                 "skipping term {suggested_word:?} because idf too low ({idf}<{minimum_idf})"
             );
