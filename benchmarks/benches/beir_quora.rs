@@ -125,7 +125,7 @@ fn main() {
             let relevant = qrels.get(query_id).unwrap();
             metrics.add(&results, relevant);
 
-            if (index + 1).is_multiple_of(1000) {
+            if (index + 1).is_multiple_of(100) {
                 eprintln!("Evaluated {:>5}/{:>5} queries", index + 1, queries.len());
             }
         }
