@@ -113,10 +113,10 @@ impl FstStore {
 
     fn lookup_begins(&self, word: &str) -> Result<fst::set::Stream<'_, fst_regex::Regex>, ()> {
         // NOTE: This regex maps over an unicode range, for speed reasons at scale.
-        //   We found out that the 'match any' syntax ('.*') was super-slow. Using the restrictive
+        //   We found out that the 'match any' syntax ('.+') was super-slow. Using the restrictive
         //   syntax below divided the cost of e.g. a search query by 2. The regex below has been
         //   found out to be nearly zero-cost to compile and execute, for whatever reason.
-        // Regex format: '{escaped_word}([{unicode_range}]*)'
+        // Regex format: '{escaped_word}([{unicode_range}]+)'
         let mut regex_str = regex_escape(word);
 
         regex_str.push('(');
@@ -129,7 +129,7 @@ impl FstStore {
                 "Could not lookup word in fst via 'begins': {word:?} because regex write failed: {error:?}"
             ))?;
 
-        regex_str.push_str("*)");
+        regex_str.push_str("+)");
 
         // Proceed word lookup.
         tracing::debug!("Looking-up word in fst via 'begins': {word:?} with regex: {regex_str:?}");
