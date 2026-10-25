@@ -545,6 +545,11 @@ pub mod preprocessor {
             }
         }
 
+        /// Same as `.tokens().len()`, but avoids having to create the iterator.
+        pub const fn token_count(&self) -> usize {
+            self.spans.len()
+        }
+
         pub fn original_text(&'s self) -> &'s str {
             self.text_original
         }
