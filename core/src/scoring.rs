@@ -4,7 +4,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-pub(crate) fn bm25_lite_idf(document_count: u64, document_frequency: u64) -> f32 {
+pub(crate) fn bm25_idf(document_count: u64, document_frequency: u64) -> f32 {
     debug_assert!(
         document_frequency <= document_count,
         "{document_frequency} > {document_count}"

@@ -76,7 +76,7 @@ impl super::Executor {
         let mut minimum_idf = {
             let n = (minimum_idf_conf * 1000.) as u64;
             let df = 1000 - n;
-            bm25_lite_idf(1000, df)
+            bm25_idf(1000, df)
         };
 
         let (prefix_matching_enabled, fuzzy_matching_enabled) = (
@@ -106,7 +106,7 @@ impl super::Executor {
         let idf_per_token = (tokens.iter())
             .map(|token| {
                 let document_frequency = kv_repo.get_document_frequency(&token.hash());
-                bm25_lite_idf(document_count, document_frequency)
+                bm25_idf(document_count, document_frequency)
             })
             .collect::<Vec<_>>();
 
@@ -653,7 +653,7 @@ fn merge_suggestions(
 
         let idf = {
             let document_frequency = kv_repo.get_document_frequency(&suggested_term_hash);
-            bm25_lite_idf(document_count, document_frequency)
+            bm25_idf(document_count, document_frequency)
         };
 
         // Filter out minimum IDF.
@@ -833,7 +833,7 @@ impl ScoringMatrix {
             let todo = "do not recompute idf";
             let idf = {
                 let document_frequency = index.get_document_frequency(&term_hash);
-                bm25_lite_idf(document_count, document_frequency)
+                bm25_idf(document_count, document_frequency)
             };
 
             for entry in term_to_iids_entries {
