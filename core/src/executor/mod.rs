@@ -26,9 +26,7 @@ mod query;
 mod suggest;
 
 pub use push::PushOptions;
-pub use query::{
-    MatchWithSnippets, QueryOptions, QueryResult, QuerySnippetsConfig, QueryTermScore,
-};
+pub use query::{MatchWithSnippets, QueryOptions, QueryResult, QuerySnippetsConfig};
 pub use types::*;
 
 pub struct Executor {

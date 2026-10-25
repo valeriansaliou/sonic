@@ -27,6 +27,10 @@ fn test_search_auto_completion() {
         exec!(executor -> TRIGGER consolidate);
 
         let response = exec!(executor -> QUERY "messages" "user:1" term);
-        assert_eq!(response, ["chat:1"]);
+        assert_eq!(
+            response,
+            ["chat:1"],
+            "message = {message:?}, term = {term:?}"
+        );
     }
 }

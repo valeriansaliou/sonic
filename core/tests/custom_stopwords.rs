@@ -36,15 +36,32 @@ fn test_config_stopwords_deny() {
 #[test]
 fn test_minimum_term_idf() {
     init_logging();
+
+    // NOTE: This is an implementation detail.
+    fn bm25_idf(document_count: u64, document_frequency: u64) -> f32 {
+        debug_assert!(
+            document_frequency <= document_count,
+            "{document_frequency} > {document_count}"
+        );
+
+        let n = document_count.max(document_frequency) as f32;
+        let df = document_frequency as f32;
+
+        (1.0 + (n - df + 0.5) / (df + 0.5)).ln()
+    }
+
     let executor = make_test_executor(|app_conf| {
-        app_conf.search.query_minimum_term_idf_default = 0.5;
+        app_conf.search.query_minimum_term_idf_default = 0.6931472;
         app_conf.search.query_minimum_term_idf_minimum_object_count = 4;
 
         // Disable stemming to make results more predictable.
         app_conf.normalization.stemming_enabled = false;
     });
 
-    // idf("foo") = 0.75, idf("bar") = 0.50, idf("baz") = 0.25
+    assert_eq!(bm25_idf(4, 3), 0.35667497); // foo
+    assert_eq!(bm25_idf(4, 2), 0.6931472); // bar
+    assert_eq!(bm25_idf(4, 1), 1.2039728); // baz
+
     exec!(executor -> PUSH "articles" "default" "article:1" "example");
     exec!(executor -> PUSH "articles" "default" "article:2" "foo");
     exec!(executor -> PUSH "articles" "default" "article:3" "foo bar");

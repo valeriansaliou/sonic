@@ -69,6 +69,7 @@ impl Default for QuerySnippetsConfig {
     }
 }
 
+#[derive(Debug)]
 pub struct TermScore {
     pub weight: f32,
     pub idf: f32,
@@ -135,7 +136,7 @@ fn get_matches<'a, 'b>(
 
     for (doc_token, index, TermScore { weight, idf }) in matches_tmp.into_iter() {
         let tf = term_counts[index];
-        let score: f32 = weight * bm25_lite(tf, f64::from(*idf));
+        let score: f32 = weight * bm25_lite(tf, *idf);
         matches.push((doc_token, score));
     }
 
