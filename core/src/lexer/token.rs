@@ -564,7 +564,7 @@ pub mod preprocessor {
         hash: Rc<OnceCell<StoreTermHash>>,
     }
 
-    /// Iterator over [`Tokens`].
+    /// Iterator over [`Token`]s.
     pub struct TokensIter<'s> {
         text_original: &'s str,
         text_normalized: &'s str,
