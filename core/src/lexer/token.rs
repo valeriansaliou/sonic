@@ -636,11 +636,11 @@ pub mod preprocessor {
             self.kind
         }
 
-        pub const fn as_original(&self) -> &str {
+        pub const fn as_original(&self) -> &'s str {
             self.original
         }
 
-        pub const fn as_normalized(&self) -> &str {
+        pub const fn as_normalized(&self) -> &'s str {
             self.normalized
         }
 
