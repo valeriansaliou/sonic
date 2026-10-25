@@ -7,8 +7,9 @@ env:
   MAIN_WORKTREE_PATH: { sh: "git worktree list --porcelain | awk '/^worktree/{print $2; exit}'" }
   # This matches the last log level flag specified (expected behavior).
   LOG_LEVEL: { ref: regexFindAll "(^| )--(trace|debug|info|warn)( |$)" (.CLI_ARGS_LIST | join "  ") -1 | last | default "--" | trim | substr 2 -1 }
+  CARGO_NET_OFFLINE: { ref: has "--offline" .CLI_ARGS_LIST }
 vars:
-  CLEAN_ARGS_LIST: { ref: without .CLI_ARGS_LIST "--trace" "--debug" "--info" "--warn" }
+  CLEAN_ARGS_LIST: { ref: without .CLI_ARGS_LIST "--trace" "--debug" "--info" "--warn" "--offline" }
   CLEAN_ARGS: { ref: .CLEAN_ARGS_LIST | join " " }
   CARGO_PROFILE: { ref: env "CARGO_PROFILE" | default "relwithdebinfo" }
   WORKING_DIR: { ref: .ROOT_DIR }
