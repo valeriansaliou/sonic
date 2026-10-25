@@ -530,6 +530,11 @@ impl<'a> FstRepository<'a> {
     ) -> Option<impl ExactSizeIterator<Item = (String, f32)> + DoubleEndedIterator + use<>> {
         use indexmap::IndexMap;
 
+        // PERF: Abort early if no-op.
+        if limit == 0 {
+            return None;
+        }
+
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(from_word) {
             return None;
