@@ -648,7 +648,13 @@ impl<'a> FstRepository<'a> {
         let distance = u16::try_from(typo_factor).unwrap_or(u16::MAX);
         let score = typo_score(distance, word.len());
 
-        Some(FstStreamIterator(stream).map(move |word| (word, score)))
+        Some(FstStreamIterator(stream).filter_map(move |suggestion| {
+            if word != suggestion {
+                Some((suggestion, score))
+            } else {
+                None
+            }
+        }))
     }
 
     pub fn list_words(&self, limit: usize, offset: usize) -> Result<Vec<String>, ()> {
