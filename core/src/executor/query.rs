@@ -189,8 +189,7 @@ impl super::Executor {
         // PERF: Truncate to keep only the most meaningful terms.
         query_candidates.truncate(MAX_QUERY_TOKENS);
 
-        let mut scoring_matrix =
-            ScoringMatrix::with_capacity(retain_word_objects, query_candidates.len());
+        let mut scoring_matrix = ScoringMatrix::new(query_candidates.len());
 
         let mut accept_new_iids = true;
 
@@ -585,9 +584,9 @@ struct ScoringMatrix {
 }
 
 impl ScoringMatrix {
-    fn with_capacity(n: usize, term_count: usize) -> Self {
+    fn new(term_count: usize) -> Self {
         Self {
-            map: IndexMap::with_capacity(n),
+            map: IndexMap::new(),
             term_count,
         }
     }
