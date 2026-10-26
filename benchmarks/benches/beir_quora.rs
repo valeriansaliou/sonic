@@ -233,11 +233,8 @@ fn ensure_index(corpus_path: &Path) {
         let mut chunk_bytes = 0u64;
 
         for TextItem { id, title, text } in json_lines::<TextItem>(corpus_path) {
-            let text = if let Some(title) = title {
-                format!("{title}\n{text}")
-            } else {
-                text
-            };
+            assert!(title.is_none_or(|s| s.is_empty()));
+            assert!((1..=1169).contains(&text.len()));
 
             ingest
                 .push_with_options(COLLECTION, BUCKET, &id, &text, &[&*BENCHMARK_LANG])
