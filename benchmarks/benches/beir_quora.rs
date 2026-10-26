@@ -44,7 +44,7 @@ static RETAIN_WORD_OBJECTS: LazyLock<usize> = LazyLock::new(|| {
                 )
             }
         })
-        .unwrap_or(usize::MAX)
+        .unwrap_or(1000)
 });
 
 static STOPWORDS_ENABLED: LazyLock<bool> = LazyLock::new(|| {
