@@ -19,6 +19,9 @@ use crate::store::kv::KvRepositoryReadOnly;
 use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreObjectOid, StoreTermHash};
 use crate::util::u32_to_usize;
 
+// TODO: Make this configurable?
+const MAX_QUERY_TOKENS: usize = 20;
+
 pub struct QueryOptions {
     pub limit: QuerySearchLimit,
     pub offset: QuerySearchOffset,
@@ -35,6 +38,7 @@ pub struct QueryResult {
 struct QueryCandidate<'a> {
     term: Cow<'a, str>,
     term_hash: StoreTermHash,
+    df: u64,
     idf: f32,
     weight: f32,
     is_required: bool,
@@ -85,6 +89,11 @@ impl super::Executor {
             .get_object_count()
             .map_err(|error| tracing::warn!("Error getting object count: {error}"))?;
 
+        #[cfg(debug_assertions)]
+        if input.token_count() > MAX_QUERY_TOKENS {
+            tracing::debug!("Query is very long: {:?}", input.original_text());
+        }
+
         let mut query_candidates =
             Vec::<QueryCandidate<'input>>::with_capacity(input.token_count());
 
@@ -112,6 +121,7 @@ impl super::Executor {
             query_candidates.push(QueryCandidate {
                 term: Cow::Borrowed(term),
                 term_hash: token_hash,
+                df: token_df,
                 idf: token_idf,
                 weight: 1.,
                 is_required,
@@ -155,6 +165,7 @@ impl super::Executor {
                     query_candidates.push(QueryCandidate {
                         term: Cow::Owned(suggestion),
                         term_hash: suggestion_hash,
+                        df: suggestion_df,
                         idf: suggestion_idf,
                         weight,
                         is_required: false,
@@ -165,8 +176,18 @@ impl super::Executor {
             }
         }
 
-        // Keep special terms first.
-        query_candidates.sort_by(|a, b| a.is_required.cmp(&b.is_required).reverse());
+        // Sort terms by df ascending, keeping special terms first.
+        // NOTE: A lower df means a term less frequent in the corpus, hence a
+        //   likely more important meaning in the query (or a typo).
+        query_candidates.sort_by(|a, b| {
+            // Keep special terms first
+            (a.is_required.cmp(&b.is_required).reverse())
+                // Sort by df ascending
+                .then(a.df.cmp(&b.df))
+        });
+
+        // PERF: Truncate to keep only the most meaningful terms.
+        query_candidates.truncate(MAX_QUERY_TOKENS);
 
         let mut scoring_matrix =
             ScoringMatrix::with_capacity(retain_word_objects, query_candidates.len());
