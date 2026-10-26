@@ -633,22 +633,23 @@ impl ScoringMatrix {
     }
 
     fn backfill(&mut self, index: &KvRepositoryReadOnly, query_candidates: &[QueryCandidate]) {
-        let mut to_backfill =
-            vec![HashMap::<StoreObjectIid, usize>::with_capacity(self.map.len()); self.term_count];
+        let mut to_backfill = HashMap::<StoreObjectIid, usize>::with_capacity(self.map.len());
 
-        for (iid_idx, (iid, score_per_term)) in self.map.iter_mut().enumerate() {
-            for (token_idx, score_opt) in score_per_term.iter_mut().enumerate() {
-                if score_opt.is_none() {
-                    to_backfill[token_idx].insert(*iid, iid_idx);
+        for term_idx in 0..query_candidates.len() {
+            to_backfill.clear();
+
+            for (iid_idx, (iid, score_per_term)) in self.map.iter().enumerate() {
+                if score_per_term[term_idx].is_none() {
+                    to_backfill.insert(*iid, iid_idx);
                 }
             }
-        }
 
-        for (token_idx, iids) in to_backfill.into_iter().enumerate() {
-            let token = &query_candidates[token_idx];
+            if to_backfill.is_empty() {
+                continue;
+            }
+
+            let token = &query_candidates[term_idx];
             let term_hash = token.term_hash;
-            let weight = token.weight;
-            let idf = token.idf;
 
             let Some(term_to_iids_entries) =
                 index.get_term_to_iids(&term_hash).unwrap_or_else(|()| None)
@@ -656,11 +657,14 @@ impl ScoringMatrix {
                 continue;
             };
 
+            let weight = token.weight;
+            let idf = token.idf;
+
             for entry in term_to_iids_entries {
-                if let Some(&iid_idx) = iids.get(&entry.iid()) {
+                if let Some(&iid_idx) = to_backfill.get(&entry.iid()) {
                     let score: f32 = weight * bm25_lite(entry.tf(), idf);
 
-                    self.map[iid_idx][token_idx] = Some(IidTermScore { score, idf, weight });
+                    self.map[iid_idx][term_idx] = Some(IidTermScore { score, idf, weight });
                 }
             }
         }
