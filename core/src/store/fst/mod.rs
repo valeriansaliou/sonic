@@ -245,7 +245,7 @@ impl FstStore {
         // on user input.
         original_word_len: usize,
         limit: usize,
-        max_typo_factor: Option<u32>,
+        max_typo_factor: u32,
     ) -> Option<impl ExactSizeIterator<Item = (String, u16)> + DoubleEndedIterator + use<>> {
         use indexmap::IndexMap;
 
@@ -276,8 +276,6 @@ impl FstStore {
 
         // Try to fuzzy-suggest other words? (e.g. correct typos)
         if self.action_config.fuzzy_matching_enabled && found_words.len() < limit {
-            // Allow more typos in word as the word gets longer, up to a maximum limit
-            let max_typo_factor = max_typo_factor.unwrap_or(typo_factor(original_word_len));
             let mut typo_factor = 1u32;
 
             // TODO: Rework the Levenshtein query feature to avoid repeating
@@ -403,13 +401,14 @@ impl FstStore {
 }
 
 /// Allow more typos in word as the word gets longer, up to a maximum limit.
-pub(crate) fn typo_factor(word_len: usize) -> u32 {
-    match word_len {
-        1..=3 => 0,
-        4..=6 => 1,
-        7..=9 => 2,
-        _ => 3,
-    }
+///
+/// `typo_factor_word_lengths` lists the word lengths from which one more typo
+/// is allowed (see `search.typo_factor_word_lengths`).
+pub(crate) fn typo_factor(word_len: usize, typo_factor_word_lengths: &[usize]) -> u32 {
+    typo_factor_word_lengths
+        .iter()
+        .filter(|&&min_word_len| word_len >= min_word_len)
+        .count() as u32
 }
 
 // MARK: - Helpers
