@@ -170,8 +170,8 @@ fn criterion_benchmark(c: &mut Criterion) {
                 for _i in 0..iters {
                     let start = Instant::now();
 
-                    // 6723
-                    let query = &articles().skip(6723).next().unwrap().text[..32];
+                    // let query = &articles().skip(6723).next().unwrap().text[..32];
+                    let query = "ARIA Award for Best Urban Album";
                     let json = search
                         .send_async(
                             sonic_client::Command::new(
@@ -196,6 +196,19 @@ fn criterion_benchmark(c: &mut Criterion) {
                         .is_ok_and(|prev| prev < 5)
                     {
                         tracing::info!(?query, ?elasped, "Got snippets: {json}");
+
+                        for oid in [
+                            "24432646", // Illy (rapper)
+                            "30022306", // 360 (rapper)
+                            "4222633",  // David Bridie
+                            "13215306", // List of awards and nominations received by Kanye West
+                            "14477670", // Katalyst (DJ)
+                            "25642076", // 2010s in music
+                        ] {
+                            if !json.contains(oid) {
+                                tracing::warn!("Snippets don’t contain OID {oid:?}");
+                            }
+                        }
                     }
 
                     elapsed_total += elasped;

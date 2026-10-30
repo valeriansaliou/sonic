@@ -274,6 +274,10 @@ pub fn ingest_parallel_inner<T: Ingestable>(
                     while let Some((object_index, object)) = next(&articles) {
                         let len = object.data().as_bytes().len();
 
+                        // if (30..50).contains(&object_index) {
+                        //     tracing::warn!(ingested_count = ingested_count.load(atomic::Ordering::Relaxed), "{} {:?}: {:?}", object.id(), object.title(), object.data());
+                        // }
+
                         let bucket = bucket(object_index, articles_count, bucket_count);
 
                         // Push title in addition to article body.

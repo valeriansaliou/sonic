@@ -356,7 +356,7 @@ impl<'a> KvRepositoryReadOnly<'a> {
     pub fn get_term_to_iids(
         self,
         term_hash: &StoreTermHash,
-    ) -> Result<Option<impl ExactSizeIterator<Item = TermToIidsEntry> + 'a>, ()> {
+    ) -> Result<Option<impl ExactSizeIterator<Item = TermToIidsEntry> + use<'a>>, ()> {
         let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
 
         tracing::debug!("store get term-to-iids: {store_key}");

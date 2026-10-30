@@ -4,7 +4,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-pub(crate) fn bm25_lite_idf(document_count: u64, document_frequency: u64) -> f32 {
+pub(crate) fn bm25_idf(document_count: u64, document_frequency: u64) -> f32 {
     debug_assert!(
         document_frequency <= document_count,
         "{document_frequency} > {document_count}"
@@ -16,8 +16,9 @@ pub(crate) fn bm25_lite_idf(document_count: u64, document_frequency: u64) -> f32
     (1.0 + (n - df + 0.5) / (df + 0.5)).ln()
 }
 
-pub(crate) fn bm25_lite(tf: u8, idf: f64) -> f32 {
+pub(crate) fn bm25_lite(tf: u8, idf: f32) -> f32 {
     let tf = tf as f64;
+    let idf = idf as f64;
 
     // Saturating TF component, with k1 = 1.2.
     let tf_weight = tf * (1.2 + 1.0) / (tf + 1.2);

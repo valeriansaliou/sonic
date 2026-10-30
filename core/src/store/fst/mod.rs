@@ -113,10 +113,10 @@ impl FstStore {
 
     fn lookup_begins(&self, word: &str) -> Result<fst::set::Stream<'_, fst_regex::Regex>, ()> {
         // NOTE: This regex maps over an unicode range, for speed reasons at scale.
-        //   We found out that the 'match any' syntax ('.*') was super-slow. Using the restrictive
+        //   We found out that the 'match any' syntax ('.+') was super-slow. Using the restrictive
         //   syntax below divided the cost of e.g. a search query by 2. The regex below has been
         //   found out to be nearly zero-cost to compile and execute, for whatever reason.
-        // Regex format: '{escaped_word}([{unicode_range}]*)'
+        // Regex format: '{escaped_word}([{unicode_range}]+)'
         let mut regex_str = regex_escape(word);
 
         regex_str.push('(');
@@ -129,7 +129,7 @@ impl FstStore {
                 "Could not lookup word in fst via 'begins': {word:?} because regex write failed: {error:?}"
             ))?;
 
-        regex_str.push_str("*)");
+        regex_str.push_str("+)");
 
         // Proceed word lookup.
         tracing::debug!("Looking-up word in fst via 'begins': {word:?} with regex: {regex_str:?}");
@@ -525,24 +525,26 @@ impl<'a> FstRepository<'a> {
     pub fn suggest_words(
         &self,
         from_word: &str,
-        // Length before stemming. Useful to apply fuzzy matching rules based
-        // on user input.
-        original_word_len: usize,
         limit: usize,
         max_typo_factor: Option<u32>,
-    ) -> Option<impl ExactSizeIterator<Item = (String, u16)> + DoubleEndedIterator + use<>> {
+    ) -> Option<impl ExactSizeIterator<Item = (String, f32)> + DoubleEndedIterator + use<>> {
         use indexmap::IndexMap;
+
+        // PERF: Abort early if no-op.
+        if limit == 0 {
+            return None;
+        }
 
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(from_word) {
             return None;
         }
 
-        let mut found_words: IndexMap<String, u16> = IndexMap::with_capacity(limit);
+        let mut found_words: IndexMap<String, f32> = IndexMap::with_capacity(limit);
 
         if self.config.prefix_matching_enabled {
             // Try to complete provided word
-            if let Some(stream) = self.lookup_begins(from_word, original_word_len) {
+            if let Some(stream) = self.lookup_begins(from_word) {
                 for (word, score) in stream {
                     if found_words.contains_key(&word) {
                         continue;
@@ -561,7 +563,7 @@ impl<'a> FstRepository<'a> {
         // Try to fuzzy-suggest other words? (e.g. correct typos)
         if self.config.fuzzy_matching_enabled && found_words.len() < limit {
             // Allow more typos in word as the word gets longer, up to a maximum limit
-            let max_typo_factor = max_typo_factor.unwrap_or(typo_factor(original_word_len));
+            let max_typo_factor = max_typo_factor.unwrap_or(typo_factor(from_word.len()));
             let mut typo_factor = 1u32;
 
             // TODO: Rework the Levenshtein query feature to avoid repeating
@@ -596,12 +598,7 @@ impl<'a> FstRepository<'a> {
         }
     }
 
-    pub fn lookup_begins(
-        &self,
-        word: &str,
-        // Length before stemming. Useful to calculate correct score.
-        original_word_len: usize,
-    ) -> Option<impl Iterator<Item = (String, u16)>> {
+    pub fn lookup_begins(&self, word: &str) -> Option<impl Iterator<Item = (String, f32)>> {
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(word) {
             return None;
@@ -617,12 +614,10 @@ impl<'a> FstRepository<'a> {
 
         tracing::debug!(?word, "looking up for word in 'begins' fst stream");
 
-        Some(FstStreamIterator(stream).map(move |word| {
-            // WARN: Calculating distance to original word length might
-            //   yield weird results when combined with stemming.
-            let distance: usize = original_word_len.abs_diff(word.len());
-            let score = u16::try_from(distance).unwrap_or(u16::MAX);
-            (word, score)
+        Some(FstStreamIterator(stream).map(move |suggestion| {
+            let distance: usize = word.len().abs_diff(suggestion.len());
+            let score = prefix_score(distance, word.len());
+            (suggestion, score)
         }))
     }
 
@@ -630,7 +625,7 @@ impl<'a> FstRepository<'a> {
         &self,
         word: &str,
         typo_factor: u32,
-    ) -> Option<impl Iterator<Item = (String, u16)>> {
+    ) -> Option<impl Iterator<Item = (String, f32)>> {
         if !self.config.fuzzy_matching_enabled {
             return None;
         }
@@ -650,9 +645,16 @@ impl<'a> FstRepository<'a> {
         //   larger typo factors and do not re-insert existing
         //   values. As explained in previous TODO, we should try
         //   to get the real distance back from `fst_levenshtein`.
-        let score = u16::try_from(typo_factor).unwrap_or(u16::MAX);
+        let distance = u16::try_from(typo_factor).unwrap_or(u16::MAX);
+        let score = typo_score(distance, word.len());
 
-        Some(FstStreamIterator(stream).map(move |word| (word, score)))
+        Some(FstStreamIterator(stream).filter_map(move |suggestion| {
+            if word != suggestion {
+                Some((suggestion, score))
+            } else {
+                None
+            }
+        }))
     }
 
     pub fn list_words(&self, limit: usize, offset: usize) -> Result<Vec<String>, ()> {
@@ -694,6 +696,95 @@ pub(crate) fn typo_factor(word_len: usize) -> u32 {
         7..=9 => 2,
         _ => 3,
     }
+}
+
+/// Inversely proportional to `lev_distance / word_len`, decreasing slowly
+/// towards `f(20) = 0.5`. Will never reach `0`.
+pub(crate) fn prefix_score(lev_distance: usize, word_len: usize) -> f32 {
+    // NOTE: Will be `> 1` in practice.
+    let lev_ratio = lev_distance as f32 / word_len as f32;
+
+    // NOTE: `20` means that auto-completed words 20 times longer than the
+    //   original word get a score of `0.5`. It’s just a magic number, it has
+    //   no further meaning. It just feels ok.
+    20. / (20. + lev_ratio)
+}
+
+#[cfg(test)]
+#[test]
+fn test_prefix_score() {
+    // Auto-complete 2 times longer.
+    for n in [2, 4, 8] {
+        assert_eq!(prefix_score(n, n as usize), 0.95238096);
+    }
+
+    // Auto-complete 4 times longer.
+    for n in [2, 4, 8] {
+        assert_eq!(prefix_score(3 * n, n as usize), 0.8695652);
+    }
+
+    // Auto-complete 1 character.
+    assert_eq!(prefix_score(1, 3), 0.9836065);
+    assert_eq!(prefix_score(1, 4), 0.9876543);
+    assert_eq!(prefix_score(1, 5), 0.99009895);
+    assert_eq!(prefix_score(1, 6), 0.9917356);
+
+    // Auto-complete 2 characters.
+    assert_eq!(prefix_score(2, 3), 0.96774197);
+    assert_eq!(prefix_score(2, 4), 0.9756098);
+    assert_eq!(prefix_score(2, 5), 0.98039216);
+    assert_eq!(prefix_score(2, 6), 0.9836065);
+
+    // More auto-complete means lower score.
+    for n in [1, 2, 4, 8] {
+        for word_len in [2, 4, 8, 10] {
+            assert!(prefix_score(n + 1, word_len as usize) < prefix_score(n, word_len as usize));
+        }
+    }
+}
+
+/// Levenshtein distance proportional to word length.
+pub(crate) fn typo_score(lev_distance: u16, word_len: usize) -> f32 {
+    debug_assert!(
+        (lev_distance as usize) < word_len,
+        "{lev_distance} >= {word_len}"
+    );
+
+    // SAFETY: `.min(1)` isn’t strictly necessary as `lev_distance` should
+    //   always be `< word_len`, but it’s there as a safety precaution.
+    let lev_ratio = (lev_distance as f32 / word_len as f32).min(1.);
+
+    1. - lev_ratio
+}
+
+#[cfg(test)]
+#[test]
+fn test_typo_score() {
+    // No typo.
+    assert_eq!(typo_score(0, 1), 1.);
+    assert_eq!(typo_score(0, 2), 1.);
+
+    // 1 typo.
+    assert_eq!(typo_score(1, 3), 0.6666666);
+    assert_eq!(typo_score(1, 4), 0.75);
+    assert_eq!(typo_score(1, 5), 0.8);
+    // 1 typo always scores lower than 0.
+    for n in 2..=8 {
+        assert!(typo_score(1, n) < typo_score(0, n), "n={n}");
+    }
+
+    // 2 typos.
+    assert_eq!(typo_score(2, 5), 0.6);
+    assert_eq!(typo_score(2, 6), 0.6666666);
+    assert_eq!(typo_score(2, 7), 0.71428573);
+    // 2 typos always scores lower than 1.
+    for n in 3..=8 {
+        assert!(typo_score(2, n) < typo_score(1, n), "n={n}");
+    }
+
+    // A lot of typos (length has no impact, proportion has).
+    assert_eq!(typo_score(1 * 20, 2 * 20), typo_score(1, 2));
+    assert_eq!(typo_score(3 * 20, 7 * 20), typo_score(3, 7));
 }
 
 // MARK: - Helpers
