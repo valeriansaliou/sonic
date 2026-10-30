@@ -97,8 +97,14 @@ pub trait ChannelMessageMode {
                 if let Some(ref values) = response_args.1 {
                     let values_string = values.join(" ");
 
-                    write!(stream, "{} {}{}", response_args.0, values_string, LINE_FEED)
-                        .expect("write failed");
+                    if let Err(err) =
+                        write!(stream, "{} {}{}", response_args.0, values_string, LINE_FEED)
+                    {
+                        tracing::debug!("failed writing response: {err}");
+
+                        result = ChannelMessageResult::Close;
+                        break;
+                    }
 
                     tracing::trace!(
                         "wrote response with values: {} ({})",
@@ -106,7 +112,12 @@ pub trait ChannelMessageMode {
                         values_string
                     );
                 } else {
-                    write!(stream, "{}{}", response_args.0, LINE_FEED).expect("write failed");
+                    if let Err(err) = write!(stream, "{}{}", response_args.0, LINE_FEED) {
+                        tracing::debug!("failed writing response: {err}");
+
+                        result = ChannelMessageResult::Close;
+                        break;
+                    }
 
                     tracing::trace!("wrote response with no values: {}", response_args.0);
                 }
