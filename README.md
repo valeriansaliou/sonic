@@ -1,5 +1,10 @@
 # Sonic
 
+> [!IMPORTANT]
+> 📢 Heads up! Sonic is undergoing a big rework and contributions on the `master` branch are now bug fixes only. All of our efforts go to the `v2` branch, where we are introducing long-awaited features. Sonic v2 will support Terabyte-scale ingestion/storage along with BM25 scoring and snippet retrieval (among other things). Stay tuned!
+>
+> Until Sonic v2 is released, don’t waste time diving into the source code of Sonic, as most of it will be completely different in v2. Outside contributions will be limited to short bug fixes until we consider Sonic stable again.
+
 [![dependency status](https://deps.rs/repo/github/valeriansaliou/sonic/status.svg)](https://deps.rs/repo/github/valeriansaliou/sonic) [![Buy Me A Coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg)](https://www.buymeacoffee.com/valeriansaliou)
 
 **Sonic is a fast, lightweight and schema-less search backend. It ingests search texts and identifier tuples that can then be queried against in a microsecond's time.**
