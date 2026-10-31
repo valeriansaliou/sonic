@@ -155,7 +155,7 @@ impl super::Executor {
 
             // Bump last stored increment
             let iid = (kv_repo.get_new_iid(batch))
-                .map_err(|error| tracing::error!("Error getting new IID: {error:?}"))?;
+                .map_err(|error| tracing::error!("Error getting new IID: {error}"))?;
 
             // Associate OID <> IID (bidirectional)
             kv_repo.set_oid_to_iid(batch, oid, iid);
@@ -189,8 +189,8 @@ impl super::Executor {
                 match kv_repo.get_oid_to_iid(oid) {
                     Ok(Some(iid)) => Ok((iid, false)),
                     Ok(None) => assign_new_iid(oid, kv_repo, batch).map(|iid| (iid, true)),
-                    Err(error) => {
-                        tracing::error!("Error getting OID-To-IID: {error:?}");
+                    Err(()) => {
+                        tracing::error!("Error getting OID-To-IID");
                         assign_new_iid(oid, kv_repo, batch).map(|iid| (iid, true))
                     }
                 }
