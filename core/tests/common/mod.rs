@@ -46,8 +46,13 @@ pub(crate) mod item_ref {
 
     macro_rules! fragment_ref {
         ($collection:expr, $bucket:expr, $object:expr, $fragment:expr) => {
-            sonic::store::StoreItemBuilder::from_depth_4($collection, $bucket, $object, $fragment)
-                .unwrap()
+            sonic::store::StoreItemBuilder::from_depth_3_or_4(
+                $collection,
+                $bucket,
+                $object,
+                $fragment,
+            )
+            .unwrap()
         };
     }
     pub(crate) use fragment_ref;

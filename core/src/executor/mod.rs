@@ -19,6 +19,7 @@ mod types;
 mod count;
 mod flushb;
 mod flushc;
+mod flushf;
 mod flusho;
 mod list;
 mod push;

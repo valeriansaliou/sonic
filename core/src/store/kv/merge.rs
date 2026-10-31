@@ -10,7 +10,7 @@ use hashbrown::HashSet;
 use indexmap::IndexMap;
 use zerocopy::little_endian;
 
-use crate::store::types::*;
+use crate::store::{kv::keys::ObjectMetaKeyParts, types::*};
 
 use super::encoding::*;
 
@@ -32,7 +32,8 @@ pub(super) fn kv_merge_operator(
 ) -> Option<Vec<u8>> {
     use super::keys::KvStoreKeyDiscriminator as D;
     use super::keys::KvStoreKeyParts;
-    use super::keys::meta::BucketMetaKeyDiscriminator as MetaD;
+    use super::keys::bucket_meta::BucketMetaKeyDiscriminator as BucketMetaD;
+    use super::keys::object_meta::ObjectMetaKeyDiscriminator as ObjectMetaD;
 
     let KvStoreKeyParts {
         bucket: _,
@@ -49,9 +50,9 @@ pub(super) fn kv_merge_operator(
     };
 
     match discriminator {
-        D::MetaToValue => match MetaD::try_from_kv_key_part(route) {
-            Ok(MetaD::IidIncr) => merge_int_max::<IidIncr>(existing_val, operands),
-            Ok(MetaD::ObjectCount) => merge_int_counter::<8, ObjectCount>(
+        D::BucketMetaToValue => match BucketMetaD::try_from_kv_key_part(route) {
+            Ok(BucketMetaD::IidIncr) => merge_int_max::<IidIncr>(existing_val, operands),
+            Ok(BucketMetaD::ObjectCount) => merge_int_counter::<8, ObjectCount>(
                 existing_val,
                 operands,
                 ObjectCount::saturating_add,
@@ -61,8 +62,36 @@ pub(super) fn kv_merge_operator(
                 None
             }
         },
-        D::TermToIids => merge_int_set_diffs::<TermToIidsEntry>(existing_val, operands.iter()),
+        D::TermToIids | D::TermToFragmentIids => {
+            merge_int_set_diffs::<TermToIidsEntry>(existing_val, operands.iter())
+        }
         D::IidToTerms => unique_int_list::<4>(existing_val, operands),
+        D::ObjectMetaToValue => {
+            let meta_key_parts = match ObjectMetaKeyParts::try_from(route) {
+                Ok(parts) => parts,
+                Err(error) => {
+                    tracing::error!(?key, ?error, "kv_merge_operator: Invalid object meta key");
+                    return None;
+                }
+            };
+
+            match ObjectMetaD::try_from(meta_key_parts.discriminator) {
+                Ok(ObjectMetaD::IidIncr) => merge_int_max::<IidIncr>(existing_val, operands),
+                Ok(ObjectMetaD::FragmentCount) => merge_int_counter::<8, FragmentCount>(
+                    existing_val,
+                    operands,
+                    FragmentCount::saturating_add,
+                ),
+                Err(error) => {
+                    tracing::error!(
+                        ?key,
+                        ?error,
+                        "kv_merge_operator: Unrecognized object meta key"
+                    );
+                    None
+                }
+            }
+        }
         _ => {
             tracing::error!(?key, "kv_merge_operator: Unexpected merge key");
             None

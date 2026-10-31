@@ -159,9 +159,9 @@ impl TryFromKvKeyPart for StoreTermHash {
     }
 }
 
-// MARK: Meta key
+// MARK: Bucket meta key
 
-impl ToKvKeyPart for meta::BucketMetaKeyDiscriminator {
+impl ToKvKeyPart for bucket_meta::BucketMetaKeyDiscriminator {
     type Repr = [u8; 4];
 
     #[inline]
@@ -170,7 +170,7 @@ impl ToKvKeyPart for meta::BucketMetaKeyDiscriminator {
     }
 }
 
-impl TryFromKvKeyPart for meta::BucketMetaKeyDiscriminator {
+impl TryFromKvKeyPart for bucket_meta::BucketMetaKeyDiscriminator {
     type Err = String;
 
     fn try_from_kv_key_part(bytes: &[u8]) -> Result<Self, Self::Err> {
@@ -179,6 +179,17 @@ impl TryFromKvKeyPart for meta::BucketMetaKeyDiscriminator {
             Some(_) => Err("Too many bytes".to_owned()),
             None => Err("Missing bytes".to_owned()),
         }
+    }
+}
+
+// MARK: Object meta key
+
+impl ToKvKeyPart for object_meta::ObjectMetaKeyDiscriminator {
+    type Repr = [u8; 1];
+
+    #[inline]
+    fn to_kv_key_part(self) -> Self::Repr {
+        (self as u8).to_be_bytes()
     }
 }
 
@@ -212,6 +223,16 @@ impl<'a> TryFromKvValue<&'a [u8]> for IidIncr {
 // MARK: ObjectCount counter
 
 impl<'a> TryFromKvValue<&'a [u8]> for ObjectCount {
+    type Err = SizeError;
+
+    fn try_from_kv_value(bytes: &'a [u8]) -> Result<Self, Self::Err> {
+        zerocopy::FromBytes::read_from_bytes(bytes).map_err(Into::into)
+    }
+}
+
+// MARK: FragmentCount counter
+
+impl<'a> TryFromKvValue<&'a [u8]> for FragmentCount {
     type Err = SizeError;
 
     fn try_from_kv_value(bytes: &'a [u8]) -> Result<Self, Self::Err> {

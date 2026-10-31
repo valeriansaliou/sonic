@@ -33,6 +33,7 @@ twox-hash = { version = "2", default-features = false, features = ["xxhash32"] }
 hashbrown = { version = "0.17", default-features = false, features = ["allocator-api2", "default-hasher", "inline-more"] }
 indexmap = { version = "2", default-features = false, features = ["std"] }
 linked_hash_set = { version = "0.1", default-features = false }
+lru = { version = "0.18", default-features = false }
 whatlang = { version = "0.18", default-features = false }
 regex = { version = "1", default-features = false, features = ["std", "unicode", "perf"] }
 jieba-rs = { optional = true, version = "0.11", default-features = false, features = ["default-dict"] }

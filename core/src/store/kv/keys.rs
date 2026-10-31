@@ -53,7 +53,7 @@ macro_rules! declare_store_keys {
                     let Self { bucket, $($field),+ } = self;
                     let route = $route;
 
-                    KvStoreKey::make(Self::disciminator(), bucket, route).0
+                    KvStoreKey::make(Self::disciminator(), bucket, route.as_ref()).0
                 }
             }
 
@@ -87,70 +87,140 @@ macro_rules! declare_store_keys {
 // WARN: Don’t change values here, it would break the index! Only add new cases.
 declare_store_keys!(pub(super) KvStoreKeyDiscriminator(u8):
     [META_TO_VALUE = 0]
-    MetaToValue<'a, SubKey: TypedBucketMetaKey> { meta: SubKey },
+    BucketMetaToValue<'a, SubKey: TypedBucketMetaKey> { meta: SubKey },
     Value = SubKey::Value<'db>,
-    route("{}", SubKey::disciminator()) = { SubKey::disciminator() },
+    route("{}", SubKey::disciminator()) = { SubKey::disciminator().to_kv_key_part() },
 
     [TERM_TO_IIDS = 1]
     TermToIids<'a> { term_hash: &'a StoreTermHash },
     Value = TermToIidsIter<'db>,
-    route("{term_hash}") = { term_hash },
+    route("{term_hash}") = { term_hash.to_kv_key_part() },
 
     [OID_TO_IID = 2]
     OidToIid<'a> { oid: GenericOid<'a> },
     Value = GenericIid,
-    route("{oid:?}") = { oid },
+    route("{oid:?}") = { oid.to_kv_key_part() },
 
     [IID_TO_OID = 3]
     IidToOid<'a> { iid: GenericIid },
     Value = GenericOidOwned,
-    route("{iid}") = { iid },
+    route("{iid}") = { iid.to_kv_key_part() },
 
     [IID_TO_TERMS = 4]
     IidToTerms<'a> { iid: GenericIid },
     Value = IidToTermsIter<'a>,
-    route("{iid}") = { iid },
+    route("{iid}") = { iid.to_kv_key_part() },
+
+    [OBJECT_META_TO_VALUE = 5]
+    ObjectMetaToValue<'a, SubKey: TypedObjectMetaKey> { object_iid: GenericIid, meta: SubKey },
+    Value = SubKey::Value<'db>,
+    route("{object_iid}:{}", SubKey::disciminator()) = {
+        let capacity = 9;
+        let mut res = Vec::with_capacity(capacity);
+
+        res.extend_from_slice(&object_iid.to_kv_key_part());
+        res.extend_from_slice(&SubKey::disciminator().to_kv_key_part());
+
+        debug_assert_eq!(res.len(), capacity);
+
+        res
+    },
+
+    [TERM_TO_FRAGMENT_IIDS = 6]
+    TermToFragmentIids<'a> { object_iid: GenericIid, term_hash: &'a StoreTermHash },
+    Value = TermToIidsIter<'db>,
+    route("{object_iid}:{term_hash}") = {
+        let capacity = 12;
+        let mut res = Vec::with_capacity(capacity);
+
+        res.extend_from_slice(&object_iid.to_kv_key_part());
+        res.extend_from_slice(&term_hash.to_kv_key_part());
+
+        debug_assert_eq!(res.len(), capacity);
+
+        res
+    },
+
+    [FRAGMENT_OID_TO_IID = 7]
+    FragmentOidToIid<'a> { object_oid: GenericOid<'a>, fragment_oid: GenericOid<'a> },
+    Value = GenericIid,
+    route("{object_oid:?}:{fragment_oid:?}") = {
+        let capacity = object_oid.len() + fragment_oid.len() + 2;
+        let mut res = Vec::with_capacity(capacity);
+
+        res.extend_from_slice(&object_oid.to_kv_key_part());
+        res.extend_from_slice(&fragment_oid.to_kv_key_part());
+
+        debug_assert_eq!(res.len(), capacity);
+
+        res
+    },
+
+    [FRAGMENT_IID_TO_OID = 8]
+    FragmentIidToOid<'a> { object_iid: GenericIid, fragment_iid: GenericIid },
+    Value = GenericOidOwned,
+    route("{object_iid}:{fragment_iid}") = {
+        let capacity = 16;
+        let mut res = Vec::with_capacity(capacity);
+
+        res.extend_from_slice(&object_iid.to_kv_key_part());
+        res.extend_from_slice(&fragment_iid.to_kv_key_part());
+
+        debug_assert_eq!(res.len(), capacity);
+
+        res
+    },
 );
 
-pub mod meta {
+macro_rules! declare_meta_keys {
+    (
+        $vis:vis $t:ident($repr:ty) / $trait:ty:
+        $($case:ident ($const:ident) -> $value_type:path = $value:expr),+ $(,)?
+    ) => {
+        impl_int_enum!($vis $t($repr):
+            $($case ($const) = $value,)+
+        );
+
+        $(
+            #[derive(Clone, Copy)]
+            $vis struct $case;
+
+            impl $trait for $case {
+                type Value<'db> = $value_type;
+
+                #[inline]
+                fn disciminator() -> $t {
+                    $t::$case
+                }
+            }
+
+            impl std::fmt::Display for $case {
+                #[inline]
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    std::fmt::Display::fmt(&Self::disciminator(), f)
+                }
+            }
+        )+
+    };
+}
+
+pub mod bucket_meta {
     use super::*;
-
-    macro_rules! declare_meta_keys {
-        (
-            $vis:vis $t:ident($repr:ty) / $trait:ty:
-            $($case:ident ($const:ident) -> $value_type:path = $value:expr),+ $(,)?
-        ) => {
-            impl_int_enum!($vis $t($repr):
-                $($case ($const) = $value,)+
-            );
-
-            $(
-                #[derive(Clone, Copy)]
-                $vis struct $case;
-
-                impl $trait for $case {
-                    type Value<'db> = $value_type;
-
-                    #[inline]
-                    fn disciminator() -> $t {
-                        $t::$case
-                    }
-                }
-
-                impl std::fmt::Display for $case {
-                    #[inline]
-                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                        std::fmt::Display::fmt(&Self::disciminator(), f)
-                    }
-                }
-            )+
-        };
-    }
 
     // WARN: Don’t change values here, it would break the index! Only add new cases.
     declare_meta_keys!(pub BucketMetaKeyDiscriminator(u32) / TypedBucketMetaKey:
         IidIncr (IID_INCR) -> crate::store::IidIncr = 0,
         ObjectCount (OBJECT_COUNT) -> crate::store::ObjectCount = 1,
+    );
+}
+
+pub mod object_meta {
+    use super::*;
+
+    // WARN: Don’t change values here, it would break the index! Only add new cases.
+    declare_meta_keys!(pub ObjectMetaKeyDiscriminator(u8) / TypedObjectMetaKey:
+        IidIncr (IID_INCR) -> crate::store::IidIncr = 0,
+        FragmentCount (OBJECT_COUNT) -> crate::store::FragmentCount = 1,
     );
 }
 
@@ -165,7 +235,13 @@ pub(super) trait TypedKvStoreKey: std::fmt::Display {
 pub trait TypedBucketMetaKey: std::fmt::Display + Copy {
     type Value<'db>;
 
-    fn disciminator() -> meta::BucketMetaKeyDiscriminator;
+    fn disciminator() -> bucket_meta::BucketMetaKeyDiscriminator;
+}
+
+pub trait TypedObjectMetaKey: std::fmt::Display + Copy {
+    type Value<'db>;
+
+    fn disciminator() -> object_meta::ObjectMetaKeyDiscriminator;
 }
 
 #[repr(transparent)]
@@ -205,13 +281,10 @@ impl KvStoreKey {
     fn make(
         idx: KvStoreKeyDiscriminator,
         bucket: impl ToKvKeyPart,
-        route: impl ToKvKeyPart,
+        route_bytes: &[u8],
     ) -> KvStoreKey {
         let bucket_repr = bucket.to_kv_key_part();
         let bucket_bytes = bucket_repr.as_ref();
-
-        let route_repr = route.to_kv_key_part();
-        let route_bytes = route_repr.as_ref();
 
         let mut key_bytes = Vec::with_capacity(bucket_bytes.len() + 1 + route_bytes.len());
 
@@ -244,13 +317,41 @@ impl<'a> TryFrom<&'a [u8]> for KvStoreKeyParts<'a> {
         };
 
         let Some((&discriminator, route)) = rest.split_first() else {
-            return Err("key missing route");
+            return Err("key missing discriminator");
         };
 
         Ok(Self {
             bucket,
             discriminator,
             route,
+        })
+    }
+}
+
+pub(super) struct ObjectMetaKeyParts<'a> {
+    #[allow(dead_code)]
+    pub(super) object: &'a <GenericIid as ToKvKeyPart>::Repr,
+    pub(super) discriminator: u8,
+}
+
+impl<'a> TryFrom<&'a [u8]> for ObjectMetaKeyParts<'a> {
+    type Error = &'static str;
+
+    fn try_from(bytes: &'a [u8]) -> Result<Self, Self::Error> {
+        // TODO: Move this logic near `GenericIid` key encoding.
+        let Some((object, rest)) = bytes.split_first_chunk() else {
+            return Err("key missing object");
+        };
+
+        let Some((&discriminator, route)) = rest.split_first() else {
+            return Err("key missing discriminator");
+        };
+
+        debug_assert!(route.is_empty(), "route={route:?} (bytes={bytes:?})");
+
+        Ok(Self {
+            object,
+            discriminator,
         })
     }
 }
@@ -279,7 +380,7 @@ mod tests {
     #[test]
     fn it_keys_meta_to_value() {
         assert_eq!(
-            MetaToValue { bucket: "b:1".into(), meta: meta::IidIncr }.to_bytes(),
+            BucketMetaToValue { bucket: "b:1".into(), meta: bucket_meta::IidIncr }.to_bytes(),
             [3, b'b', b':', b'1', 0, 0, 0, 0, 0]
         );
     }
@@ -345,7 +446,7 @@ mod tests {
             r#""b:6":TERM_TO_IIDS:<44cba83>"#
         );
         assert_eq!(
-            &format!("{}", MetaToValue { bucket: "b:6".into(), meta: meta::IidIncr }),
+            &format!("{}", BucketMetaToValue { bucket: "b:6".into(), meta: bucket_meta::IidIncr }),
             r#""b:6":META_TO_VALUE:IID_INCR"#
         );
     }

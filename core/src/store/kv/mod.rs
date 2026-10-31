@@ -13,12 +13,14 @@ pub mod errors {
     pub use super::encoding::{BadLength, SizeError};
 }
 
+use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 use std::{fmt, io};
 
 use hashbrown::HashMap;
+use lru::LruCache;
 use rocksdb::{DB, WriteBatch};
 use zerocopy::IntoBytes;
 
@@ -48,6 +50,9 @@ pub const READ_ON_PUSH_CF_NAME: &str = "read_on_push";
 /// See [Issue #435 “perf: Store `IID-To-Terms` in a separate column family with no compression”](https://github.com/valeriansaliou/sonic/issues/435) for context.
 pub const INCOMPRESSIBLE_CF_NAME: &str = "incompressible";
 
+// TODO: Find a more appropriate value, this one was chosen for no particular reason.
+const IID_INCR_PER_OBJECT_CACHE_SIZE: NonZeroUsize = NonZeroUsize::new(1_000).unwrap();
+
 const CF_NAMES: &[&str] = &[
     DEFAULT_CF_NAME,
     READ_ON_PUSH_CF_NAME,
@@ -75,6 +80,12 @@ pub struct KvStore {
     ///
     /// In benchmarks, we saw a `~23%` throughput increase after this change.
     iid_incr_per_bucket: RwLock<HashMap<Vec<u8>, IidIncr>>,
+
+    /// Cache of `IidIncr` per object.
+    ///
+    /// Because atomic operations in RocksDB would be very expensive, it’s
+    /// better for us to cache values as much as possible.
+    iid_incr_per_object: RwLock<LruCache<(Vec<u8>, GenericIid), IidIncr>>,
 
     /// A synchronization lock used to prevent race conditions when assigning
     /// new IIDs.
@@ -230,6 +241,7 @@ impl GenericRocksDbStore for KvStore {
             lock: RwLock::new(()),
             write_options_builder,
             iid_incr_per_bucket: RwLock::new(HashMap::new()),
+            iid_incr_per_object: RwLock::new(LruCache::sparse(IID_INCR_PER_OBJECT_CACHE_SIZE)),
             oid_sync: Mutex::new(()),
             pool_stats,
         }
@@ -261,6 +273,11 @@ impl GenericRocksDbStore for KvStore {
 
     fn on_batch_erase_bucket(&self, bucket: &Bucket) {
         (self.iid_incr_per_bucket.write().unwrap()).remove(&bucket.to_kv_key_part());
+
+        // PERF: Let’s not care about `iid_incr_per_object`. It’s a LRU cache,
+        //   values will get evicted at some point anyway. Walking the entire
+        //   cache and removing keys would likely be more expensive than just
+        //   leaving it untouched.
     }
 }
 
@@ -337,9 +354,9 @@ impl<'db> KvRepositoryRead<'db> {
     /// Note that because of the underlying use of `i64`, the max value is
     /// `i64::MAX` (hence `u64::MAX / 2`).
     pub fn get_object_count(&self) -> Result<u64, ()> {
-        let store_key = keys::MetaToValue {
+        let store_key = keys::BucketMetaToValue {
             bucket: self.bucket,
-            meta: keys::meta::ObjectCount,
+            meta: keys::bucket_meta::ObjectCount,
         };
 
         self.get_pinned(None, &store_key).map(|opt| {
@@ -448,6 +465,89 @@ impl<'db> KvRepositoryRead<'db> {
         self.get_pinned(Some(cf_handle), &store_key)
             .map(|opt| opt.map(|iter| iter.0))
     }
+
+    /// Note that because of the underlying use of `i64`, the max value is
+    /// `i64::MAX` (hence `u64::MAX / 2`).
+    pub fn get_fragment_count(&self, object_iid: GenericIid) -> Result<u64, ()> {
+        let store_key = keys::ObjectMetaToValue {
+            bucket: self.bucket,
+            object_iid,
+            meta: keys::object_meta::FragmentCount,
+        };
+
+        self.get_pinned(None, &store_key).map(|opt| {
+            opt.map_or_else(
+                || {
+                    tracing::debug!(
+                        %store_key,
+                        "FragmentCount not found in database, considering bucket empty"
+                    );
+                    0
+                },
+                |count| match u64::try_from(count.0.get()) {
+                    Ok(n) => n,
+                    Err(error) => {
+                        tracing::debug!(
+                            %store_key,
+                            %error,
+                            "Invalid FragmentCount in database, considering bucket empty"
+                        );
+                        0
+                    }
+                },
+            )
+        })
+    }
+
+    #[inline]
+    pub fn get_term_to_fragment_iids<'a>(
+        &'a self,
+        object_iid: GenericIid,
+        term_hash: &StoreTermHash,
+    ) -> Result<Option<impl ExactSizeIterator<Item = TermToIidsEntry> + 'a>, ()> {
+        let store_key = keys::TermToFragmentIids {
+            bucket: self.bucket,
+            object_iid,
+            term_hash,
+        };
+
+        self.get_pinned(None, &store_key)
+            .map(|opt| opt.map(|iter| iter.0))
+    }
+
+    #[inline]
+    pub fn get_fragment_oid_to_iid(
+        &self,
+        object_oid: GenericOid,
+        fragment_oid: GenericOid,
+    ) -> Result<Option<GenericIid>, ()> {
+        let store_key = keys::FragmentOidToIid {
+            bucket: self.bucket,
+            object_oid,
+            fragment_oid,
+        };
+
+        let cf_handle = (self.store.database)
+            .cf_handle(READ_ON_PUSH_CF_NAME)
+            .expect(CF_CREATED_ON_OPEN);
+
+        self.get_pinned(Some(cf_handle), &store_key)
+    }
+
+    #[inline]
+    pub fn get_fragment_iid_to_oid(
+        &self,
+        object_iid: GenericIid,
+        fragment_iid: GenericIid,
+    ) -> Result<Option<String>, ()> {
+        let store_key = keys::FragmentIidToOid {
+            bucket: self.bucket,
+            object_iid,
+            fragment_iid,
+        };
+
+        self.get_pinned(None, &store_key)
+    }
 }
 
 impl<'a> KvRepositoryReadWrite<'a> {
@@ -513,9 +613,9 @@ impl<'a> KvRepositoryReadWrite<'a> {
 impl<'db> KvRepositoryReadWrite<'db> {
     #[inline]
     fn update_object_count(&self, batch: &mut WriteBatch, diff: i64) {
-        let store_key = keys::MetaToValue {
+        let store_key = keys::BucketMetaToValue {
             bucket: self.bucket,
-            meta: keys::meta::ObjectCount,
+            meta: keys::bucket_meta::ObjectCount,
         };
 
         self.merge(None, &store_key, &ObjectCount(diff.into()), batch);
@@ -525,16 +625,16 @@ impl<'db> KvRepositoryReadWrite<'db> {
         &self,
         batch: &mut WriteBatch,
     ) -> Result<GenericIid, Box<dyn std::error::Error>> {
+        let store_key = keys::BucketMetaToValue {
+            bucket: self.bucket,
+            meta: keys::bucket_meta::IidIncr,
+        };
+
         let cf_handle = (self.store.database)
             .cf_handle(READ_ON_PUSH_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        let store_key = keys::MetaToValue {
-            bucket: self.bucket,
-            meta: keys::meta::IidIncr,
-        };
-
-        let mut cache_guard = self.store.iid_incr_per_bucket.write().unwrap();
+        let mut cache_guard = self.0.store.iid_incr_per_bucket.write().unwrap();
 
         let cache_key = self.bucket.to_kv_key_part();
         let iid_incr = match cache_guard.entry(cache_key) {
@@ -573,7 +673,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
         // NOTE: If the `WriteBatch` doesn’t get written, we’ll have wasted one IID.
         //   We can’t really do otherwise without blocking locks for a long time.
         //   `Iid::MAX` should never get reached so it’s an acceptable trade-off.
-        batch.merge_cf(cf_handle, store_key.to_bytes(), iid_incr.as_bytes());
+        self.merge(Some(cf_handle), &store_key, iid_incr.as_bytes(), batch);
 
         Ok(iid_incr.0)
     }
@@ -598,11 +698,15 @@ impl<'db> KvRepositoryReadWrite<'db> {
         Ok(iid)
     }
 
+    /// Gets the IID for an object OID, creating a new one if necessary.
+    ///
+    /// Returns a boolean indicating if the IID is new.
+    #[inline]
     pub fn get_or_assign_iid(
         &self,
         oid: GenericOid<'_>,
     ) -> Result<(GenericIid, bool), Box<dyn std::error::Error>> {
-        let _oid_sync_guard = self.store.oid_sync.lock().unwrap();
+        let _oid_sync_guard = self.0.store.oid_sync.lock().unwrap();
 
         match (self.get_oid_to_iid(oid))
             .map_err(|()| io::Error::other("Error getting OID-To-IID"))?
@@ -742,12 +846,225 @@ impl<'db> KvRepositoryReadWrite<'db> {
         self.delete(Some(cf_handle), &store_key, batch)
     }
 
+    #[inline]
+    fn update_fragment_count(&self, batch: &mut WriteBatch, object_iid: GenericIid, diff: i64) {
+        let store_key = keys::ObjectMetaToValue {
+            bucket: self.bucket,
+            object_iid,
+            meta: keys::object_meta::FragmentCount,
+        };
+
+        self.merge(None, &store_key, &FragmentCount(diff.into()), batch);
+    }
+
+    fn get_new_fragment_iid(
+        &self,
+        batch: &mut WriteBatch,
+        object_iid: GenericIid,
+    ) -> Result<GenericIid, Box<dyn std::error::Error>> {
+        // Increment fragment count
+        self.update_fragment_count(batch, object_iid, 1);
+
+        let store_key = keys::ObjectMetaToValue {
+            bucket: self.bucket,
+            object_iid,
+            meta: keys::object_meta::IidIncr,
+        };
+
+        let cf_handle = (self.store.database)
+            .cf_handle(READ_ON_PUSH_CF_NAME)
+            .expect(CF_CREATED_ON_OPEN);
+
+        let mut cache_guard = self.0.store.iid_incr_per_object.write().unwrap();
+
+        let cache_key = (self.bucket.to_kv_key_part(), object_iid);
+        let iid_incr = match cache_guard.get_mut(&cache_key) {
+            Some(iid_incr) => {
+                iid_incr.increment();
+
+                *iid_incr
+            }
+            None => {
+                // Read from database (`cache_guard` ensures no race condition).
+                let iid_incr = match self
+                    .get_pinned(Some(cf_handle), &store_key)
+                    .map_err(|()| io::Error::other("Error getting object IidIncr"))?
+                {
+                    Some(mut iid_incr) => {
+                        iid_incr.increment();
+                        iid_incr
+                    }
+                    None => Default::default(),
+                };
+
+                // Populate the cache.
+                let previous = cache_guard.put(cache_key, iid_incr);
+                debug_assert_eq!(previous, None);
+
+                iid_incr
+            }
+        };
+
+        // Early release lock.
+        drop(cache_guard);
+
+        // Schedule a write to the database.
+        // NOTE: If the `WriteBatch` doesn’t get written, we’ll have wasted one IID.
+        //   We can’t really do otherwise without blocking locks for a long time.
+        //   `Iid::MAX` should never get reached so it’s an acceptable trade-off.
+        self.merge(Some(cf_handle), &store_key, iid_incr.as_bytes(), batch);
+
+        Ok(iid_incr.0)
+    }
+
+    fn assign_new_fragment_iid(
+        &self,
+        object_oid: GenericOid<'_>,
+        object_iid: GenericIid,
+        fragment_oid: GenericOid<'_>,
+    ) -> Result<GenericIid, Box<dyn std::error::Error>> {
+        let mut batch = WriteBatch::new();
+
+        // Bump last stored increment
+        let fragment_iid = self.get_new_fragment_iid(&mut batch, object_iid)?;
+
+        // Associate OID <> IID (bidirectional)
+        self.set_fragment_oid_to_iid(&mut batch, object_oid, fragment_oid, fragment_iid);
+        self.set_fragment_iid_to_oid(&mut batch, object_iid, fragment_iid, fragment_oid);
+
+        self.write(batch)?;
+
+        Ok(fragment_iid)
+    }
+
+    /// Gets the IID for a fragment OID, creating a new one if necessary.
+    ///
+    /// Returns a boolean indicating if the IID is new.
+    #[inline]
+    pub fn get_fragment_iid(
+        &self,
+        object_oid: GenericOid<'_>,
+        object_iid: GenericIid,
+        fragment_oid: GenericOid<'_>,
+    ) -> Result<(GenericIid, bool), Box<dyn std::error::Error>> {
+        match (self.get_fragment_oid_to_iid(object_oid, fragment_oid))
+            .map_err(|()| io::Error::other("Error getting OID-To-IID"))?
+        {
+            Some(iid) => Ok((iid, false)),
+            None => self
+                .assign_new_fragment_iid(object_oid, object_iid, fragment_oid)
+                .map(|iid| (iid, true)),
+        }
+    }
+
+    #[inline]
+    pub fn update_term_to_fragment_iid(
+        &self,
+        batch: &mut WriteBatch,
+        object_iid: GenericIid,
+        term_hash: &StoreTermHash,
+        iid: GenericIid,
+        tf_delta: Option<u8>,
+    ) {
+        debug_assert!(
+            !matches!(tf_delta, Some(TF_TOMBSTONE)),
+            "Don’t update Term-To-IIDs with a tf of 0"
+        );
+
+        let store_key = keys::TermToFragmentIids {
+            bucket: self.bucket,
+            object_iid,
+            term_hash,
+        };
+
+        self.merge(
+            None,
+            &store_key,
+            &TermToIidsEntry::new(iid, tf_delta.unwrap_or(TF_TOMBSTONE)),
+            batch,
+        );
+    }
+
+    #[inline]
+    pub fn set_fragment_oid_to_iid(
+        &self,
+        batch: &mut WriteBatch,
+        object_oid: GenericOid,
+        fragment_oid: GenericOid,
+        fragment_iid: GenericIid,
+    ) {
+        let store_key = keys::FragmentOidToIid {
+            bucket: self.bucket,
+            object_oid,
+            fragment_oid,
+        };
+
+        let cf_handle = (self.store.database)
+            .cf_handle(READ_ON_PUSH_CF_NAME)
+            .expect(CF_CREATED_ON_OPEN);
+
+        self.put(Some(cf_handle), &store_key, &fragment_iid, batch)
+    }
+
+    #[inline]
+    pub fn delete_fragment_oid_to_iid(
+        &self,
+        batch: &mut WriteBatch,
+        object_oid: GenericOid,
+        fragment_oid: GenericOid,
+    ) {
+        let store_key = keys::FragmentOidToIid {
+            bucket: self.bucket,
+            object_oid,
+            fragment_oid,
+        };
+
+        let cf_handle = (self.store.database)
+            .cf_handle(READ_ON_PUSH_CF_NAME)
+            .expect(CF_CREATED_ON_OPEN);
+
+        self.delete(Some(cf_handle), &store_key, batch)
+    }
+
+    #[inline]
+    pub fn set_fragment_iid_to_oid(
+        &self,
+        batch: &mut WriteBatch,
+        object_iid: GenericIid,
+        fragment_iid: GenericIid,
+        fragment_oid: GenericOid,
+    ) {
+        let store_key = keys::FragmentIidToOid {
+            bucket: self.bucket,
+            object_iid,
+            fragment_iid,
+        };
+
+        self.put(None, &store_key, fragment_oid.as_bytes(), batch)
+    }
+
+    #[inline]
+    pub fn delete_fragment_iid_to_oid(
+        &self,
+        batch: &mut WriteBatch,
+        object_iid: GenericIid,
+        fragment_iid: GenericIid,
+    ) {
+        let store_key = keys::FragmentIidToOid {
+            bucket: self.bucket,
+            object_iid,
+            fragment_iid,
+        };
+
+        self.delete(None, &store_key, batch)
+    }
+
     pub fn delete_object(
         &self,
         batch: &mut WriteBatch,
         iid: GenericIid,
         oid: GenericOid,
-        object_terms_to_tfs: impl IntoIterator<Item = StoreTermHash>,
+        object_terms: impl IntoIterator<Item = StoreTermHash>,
     ) -> u32 {
         let mut count: u32 = 0;
 
@@ -759,7 +1076,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
         self.delete_iid_to_terms(batch, iid);
 
         // Delete IID from each associated term
-        for term_hash in object_terms_to_tfs {
+        for term_hash in object_terms {
             self.update_term_to_iid(batch, &term_hash, iid, None);
 
             count = count.checked_add(1).unwrap();
@@ -769,6 +1086,41 @@ impl<'db> KvRepositoryReadWrite<'db> {
         self.update_object_count(batch, -1);
 
         count
+    }
+
+    pub fn delete_fragment(
+        &self,
+        batch: &mut WriteBatch,
+        object_iid: GenericIid,
+        fragment_iid: GenericIid,
+        object_oid: GenericOid,
+        fragment_oid: GenericOid,
+        object_terms: impl IntoIterator<Item = StoreTermHash>,
+    ) -> u32 {
+        let mut deleted_terms_count: u32 = 0;
+
+        tracing::debug!("store batch flush fragment: {object_iid}:{fragment_iid}");
+
+        // Delete OID <> IID association
+        self.delete_fragment_oid_to_iid(batch, object_oid, fragment_oid);
+        self.delete_fragment_iid_to_oid(batch, object_iid, fragment_iid);
+
+        // Delete IID from each associated term
+        // NOTE: To reduce the disk footprint of the Sonic index, we don’t store
+        //   a list of terms per fragment. However, since we have a list of terms
+        //   per object we can use that to efficiently remove the fragment from
+        //   Term-To-Fragment-IID entries. If the fragment didn’t contain a
+        //   term, the merge operator will just ignore it so we’re good.
+        for term_hash in object_terms {
+            self.update_term_to_fragment_iid(batch, object_iid, &term_hash, fragment_iid, None);
+
+            deleted_terms_count = deleted_terms_count.checked_add(1).unwrap();
+        }
+
+        // Decrement fragment count
+        self.update_fragment_count(batch, object_iid, -1);
+
+        deleted_terms_count
     }
 }
 
@@ -883,6 +1235,7 @@ impl fmt::Debug for KvStore {
             lock,
             write_options_builder,
             iid_incr_per_bucket,
+            iid_incr_per_object,
             oid_sync,
             pool_stats,
         } = self;
@@ -894,6 +1247,7 @@ impl fmt::Debug for KvStore {
             .field("lock", &AsPrettyRwLock(lock))
             .field("write_options_builder", write_options_builder)
             .field("iid_incr_per_bucket", &AsPrettyRwLock(iid_incr_per_bucket))
+            .field("iid_incr_per_object", &AsPrettyRwLock(iid_incr_per_object))
             .field("oid_sync", &AsPrettyMutex(oid_sync))
             .field("pool_stats", &pool_stats)
             .finish()

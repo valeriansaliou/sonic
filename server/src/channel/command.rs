@@ -87,8 +87,8 @@ static BACKUP_OBJECT_PATH: &str = "object";
 
 pub static COMMANDS_MODE_SEARCH: &[&str] = &["QUERY", "SUGGEST", "LIST", "PING", "HELP", "QUIT"];
 pub static COMMANDS_MODE_INGEST: &[&str] = &[
-    "PUSH", "POP", "COUNT", "COUNTC", "COUNTB", "COUNTO", "FLUSHC", "FLUSHB", "FLUSHO", "PING",
-    "HELP", "QUIT",
+    "PUSH", "POP", "COUNT", "COUNTC", "COUNTB", "COUNTO", "FLUSHC", "FLUSHB", "FLUSHO", "FLUSHF",
+    "PING", "HELP", "QUIT",
 ];
 #[rustfmt::skip]
 pub static COMMANDS_MODE_CONTROL: &[&str] = &[
@@ -862,7 +862,7 @@ impl ChannelCommandIngest {
         tracing::trace!("will push for text: {text} with hinted locale: <{push_lang:?}>");
 
         let (collection, bucket, oid, fragment) =
-            StoreItemBuilder::from_depth_4(collection, bucket, object, fragment)
+            StoreItemBuilder::from_depth_3_or_4(collection, bucket, object, fragment)
                 .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
 
         // Commit 'push' query
@@ -1094,6 +1094,44 @@ impl ChannelCommandIngest {
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "FLUSHO <collection> <bucket> <object>",
+            )),
+        }
+    }
+
+    pub fn dispatch_flushf(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeIngest,
+    ) -> ChannelResult {
+        match (
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+        ) {
+            (Some(collection), Some(bucket), Some(object), Some(fragment), None) => {
+                tracing::debug!(
+                    collection,
+                    bucket,
+                    object,
+                    fragment,
+                    "dispatching ingest flush fragment"
+                );
+
+                let (collection, bucket, object_oid, fragment_oid) =
+                    StoreItemBuilder::from_depth_4(collection, bucket, object, fragment).map_err(
+                        |error| ChannelCommandError::InvalidArgument(format!("{error:?}")),
+                    )?;
+
+                // Make 'flushf' query
+                ChannelCommandBase::commit_result_operation(move || {
+                    ctx.executor
+                        .flushf(collection, bucket, object_oid, fragment_oid)
+                        .map(|count| Some(count.to_string()))
+                })
+            }
+            _ => Err(ChannelCommandError::InvalidFormat(
+                "FLUSHF <collection> <bucket> <object> <fragment>",
             )),
         }
     }

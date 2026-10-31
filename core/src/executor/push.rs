@@ -179,8 +179,17 @@ impl super::Executor {
 
         // Update KV store
         let is_new = {
-            let (iid, is_new) = (kv_repo.get_or_assign_iid(object_oid))
+            let (object_iid, object_is_new) = (kv_repo.get_or_assign_iid(object_oid))
                 .map_err(|error| tracing::error!("Error getting IID: {error}"))?;
+
+            let (fragment_iid, fragment_is_new) = match fragment_oid {
+                Some(fragment_oid) => {
+                    (kv_repo.get_fragment_iid(object_oid, object_iid, fragment_oid))
+                        .map(|(a, b)| (Some(a), Some(b)))
+                        .map_err(|error| tracing::error!("Error getting IID: {error}"))?
+                }
+                None => (None, None),
+            };
 
             let mut batch = WriteBatch::default();
 
@@ -190,21 +199,34 @@ impl super::Executor {
             //   amount of computation per channel by ~14%.
             terms_sorted.sort_unstable_by_key(|term_hash, _| term_hash.to_kv_key_part());
 
+            // Link object to term
             for (term_hash, &tf) in terms_sorted.iter() {
-                // Link IID to term
-                kv_repo.update_term_to_iid(&mut batch, term_hash, iid, Some(tf));
+                kv_repo.update_term_to_iid(&mut batch, term_hash, object_iid, Some(tf));
             }
 
-            // Link terms to IID
-            if is_new {
-                kv_repo.set_iid_to_terms(&mut batch, iid, terms_sorted.into_keys());
+            // Link fragment to term
+            if let Some(fragment_iid) = fragment_iid {
+                for (term_hash, &tf) in terms_sorted.iter() {
+                    kv_repo.update_term_to_fragment_iid(
+                        &mut batch,
+                        object_iid,
+                        term_hash,
+                        fragment_iid,
+                        Some(tf),
+                    );
+                }
+            }
+
+            // Link terms to object
+            if object_is_new {
+                kv_repo.set_iid_to_terms(&mut batch, object_iid, terms_sorted.into_keys());
             } else {
-                kv_repo.update_iid_to_terms(&mut batch, iid, terms_sorted.into_keys());
+                kv_repo.update_iid_to_terms(&mut batch, object_iid, terms_sorted.into_keys());
             }
 
             executor_ensure_op!(kv_repo.write_opt(batch, WriteOptions { is_ordered: true }));
 
-            is_new
+            fragment_is_new.unwrap_or(object_is_new)
         };
 
         // Update Object store

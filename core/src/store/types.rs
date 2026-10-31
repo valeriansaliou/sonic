@@ -296,7 +296,7 @@ impl StoreItemBuilder {
         }
     }
 
-    pub fn from_depth_4<'a>(
+    pub fn from_depth_3_or_4<'a>(
         collection: &'a str,
         bucket: &'a str,
         object: &'a str,
@@ -316,6 +316,28 @@ impl StoreItemBuilder {
             .map(GenericOid::from_str)
             .transpose()
             .map_err(|()| StoreItemError::InvalidFragment)?;
+
+        Ok((collection, bucket, object, fragment))
+    }
+
+    pub fn from_depth_4<'a>(
+        collection: &'a str,
+        bucket: &'a str,
+        object: &'a str,
+        fragment: &'a str,
+    ) -> Result<
+        (
+            StoreItemPart<'a>,
+            Bucket<'a>,
+            GenericOid<'a>,
+            GenericOid<'a>,
+        ),
+        StoreItemError,
+    > {
+        let (collection, bucket, object) = Self::from_depth_3(collection, bucket, object)?;
+
+        let fragment =
+            GenericOid::from_str(fragment).map_err(|()| StoreItemError::InvalidFragment)?;
 
         Ok((collection, bucket, object, fragment))
     }
@@ -357,6 +379,25 @@ impl ObjectCount {
 }
 
 crate::util::impl_transparent_wrapper_utils!(Debug for ObjectCount(i64));
+
+// MARK: FragmentCount counter
+
+#[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout)]
+#[derive(zerocopy::IntoBytes)]
+#[derive(Default)]
+#[repr(transparent)]
+pub struct FragmentCount(pub(super) little_endian::I64);
+
+impl FragmentCount {
+    #[inline]
+    pub(super) const fn saturating_add(self, rhs: &Self) -> Self {
+        Self(little_endian::I64::new(
+            self.0.get().saturating_add(rhs.0.get()),
+        ))
+    }
+}
+
+crate::util::impl_transparent_wrapper_utils!(Debug for FragmentCount(i64));
 
 // MARK: - Tests
 
