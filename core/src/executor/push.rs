@@ -34,7 +34,11 @@ impl super::Executor {
     ) -> Result<(), ()> {
         let mut multipart_context = self.multipart_push_context.lock().unwrap();
 
-        match *multipart_context {
+        let (original_text, mut terms_sorted, terms): (
+            &str,
+            IndexMap<StoreTermHash, u8>,
+            Box<dyn Iterator<Item = &str>>,
+        ) = match *multipart_context {
             // Received first chunk: initiate multipart context.
             None if options.is_incomplete => {
                 let mut original_text: String =
@@ -68,8 +72,33 @@ impl super::Executor {
                 return Ok(());
             }
 
-            // Normal `PUSH`, proceed with the rest of the code.
-            None => {}
+            // Normal `PUSH`.
+            None => {
+                let mut terms = Vec::with_capacity(input.tokens().len());
+
+                let mut terms_sorted: IndexMap<StoreTermHash, u8> =
+                    IndexMap::with_capacity(input.tokens().len());
+
+                for token in input.tokens() {
+                    match terms_sorted.entry(token.hash()) {
+                        indexmap::map::Entry::Occupied(mut entry) => {
+                            let tf = entry.get_mut();
+                            *tf = tf.saturating_add(1);
+                        }
+                        indexmap::map::Entry::Vacant(entry) => {
+                            terms.push(token.into_normalized());
+                            entry.insert_entry(1);
+                        }
+                    }
+                }
+
+                // Proceed with the rest of the code.
+                (
+                    input.original_text(),
+                    terms_sorted,
+                    Box::new(terms.into_iter()),
+                )
+            }
 
             // Received multipart chunk: update multipart context.
             Some(ref mut ctx) if ctx.oid.as_str() == object_oid.as_str() => {
@@ -90,7 +119,16 @@ impl super::Executor {
                 if options.is_incomplete {
                     return Ok(());
                 } else {
+                    // Received last multipart chunk.
+                    let terms_sorted: IndexMap<StoreTermHash, u8> =
+                        ctx.terms.iter().map(|(t, (_s, tf))| (*t, *tf)).collect();
+
                     // Proceed with the rest of the code.
+                    (
+                        ctx.original_text.as_str(),
+                        terms_sorted,
+                        Box::new(ctx.terms.values().map(|(s, _)| s.as_ref())),
+                    )
                 }
             }
 
@@ -139,167 +177,69 @@ impl super::Executor {
         let fst_repo = fst_store.to_repository();
         let object_repo = object_store.to_repository(bucket);
 
-        match *multipart_context {
-            // Received last multipart chunk.
-            Some(ref ctx) => {
-                // Update KV store
-                let is_new = {
-                    let (iid, is_new) = (kv_repo.get_or_assign_iid(object_oid))
-                        .map_err(|error| tracing::error!("Error getting IID: {error}"))?;
+        // Update KV store
+        let is_new = {
+            let (iid, is_new) = (kv_repo.get_or_assign_iid(object_oid))
+                .map_err(|error| tracing::error!("Error getting IID: {error}"))?;
 
-                    let mut batch = WriteBatch::default();
+            let mut batch = WriteBatch::default();
 
-                    let mut terms_sorted: IndexMap<StoreTermHash, u8> =
-                        ctx.terms.iter().map(|(t, (_s, tf))| (*t, *tf)).collect();
+            // PERF: Sort terms by hash so they’re already sorted in the
+            //   `WriteBatch`. By leveraging `memtable_insert_hint_per_batch`,
+            //   we can reduce the skiplist load by ~1/3, and the total
+            //   amount of computation per channel by ~14%.
+            terms_sorted.sort_unstable_by_key(|term_hash, _| term_hash.to_kv_key_part());
 
-                    // PERF: Sort terms by hash so they’re already sorted in the
-                    //   `WriteBatch`. By leveraging `memtable_insert_hint_per_batch`,
-                    //   we can reduce the skiplist load by ~1/3, and the total
-                    //   amount of computation per channel by ~14%.
-                    terms_sorted.sort_unstable_by_key(|term_hash, _| term_hash.to_kv_key_part());
-
-                    for (term_hash, &tf) in terms_sorted.iter() {
-                        // Link IID to term
-                        kv_repo.update_term_to_iid(&mut batch, term_hash, iid, Some(tf));
-                    }
-
-                    // Link terms to IID
-                    if is_new {
-                        kv_repo.set_iid_to_terms(&mut batch, iid, terms_sorted.into_keys());
-                    } else {
-                        kv_repo.update_iid_to_terms(&mut batch, iid, terms_sorted.into_keys());
-                    }
-
-                    executor_ensure_op!(
-                        kv_repo.write_opt(batch, WriteOptions { is_ordered: true })
-                    );
-
-                    is_new
-                };
-
-                // Update Object store
-                {
-                    let mut batch = WriteBatch::default();
-
-                    // Store original text
-                    if is_new {
-                        object_repo.put_object_original(
-                            object_oid,
-                            fragment_oid,
-                            &ctx.original_text,
-                            &mut batch,
-                        );
-                    } else {
-                        object_repo.push_object_original(
-                            object_oid,
-                            fragment_oid,
-                            &ctx.original_text,
-                            &mut batch,
-                        );
-                    }
-
-                    executor_ensure_op!(object_repo.write(batch));
-                }
-
-                // Update FST store
-                {
-                    // Push to FST graph
-                    fst_repo.push_words(ctx.terms.values().map(|(s, _)| s.as_ref()));
-                }
-
-                // Clear multipart context.
-                *multipart_context = None;
-
-                Ok(())
+            for (term_hash, &tf) in terms_sorted.iter() {
+                // Link IID to term
+                kv_repo.update_term_to_iid(&mut batch, term_hash, iid, Some(tf));
             }
 
-            // Normal `PUSH`.
-            None => {
-                // PERF: Drop lock early because why not?
-                drop(multipart_context);
-
-                let mut terms = Vec::with_capacity(input.tokens().len());
-
-                // Update KV store
-                let is_new = {
-                    let (iid, is_new) = (kv_repo.get_or_assign_iid(object_oid))
-                        .map_err(|error| tracing::error!("Error getting IID: {error}"))?;
-
-                    let mut batch = WriteBatch::default();
-
-                    let mut terms_sorted: IndexMap<StoreTermHash, u8> =
-                        IndexMap::with_capacity(input.tokens().len());
-
-                    for token in input.tokens() {
-                        match terms_sorted.entry(token.hash()) {
-                            indexmap::map::Entry::Occupied(mut entry) => {
-                                let tf = entry.get_mut();
-                                *tf = tf.saturating_add(1);
-                            }
-                            indexmap::map::Entry::Vacant(entry) => {
-                                terms.push(token.into_normalized());
-                                entry.insert_entry(1);
-                            }
-                        }
-                    }
-
-                    // PERF: Sort terms by hash so they’re already sorted in the
-                    //   `WriteBatch`. By leveraging `memtable_insert_hint_per_batch`,
-                    //   we can reduce the skiplist load by ~1/3, and the total
-                    //   amount of computation per channel by ~14%.
-                    terms_sorted.sort_unstable_by_key(|term_hash, _| term_hash.to_kv_key_part());
-
-                    for (term_hash, &tf) in terms_sorted.iter() {
-                        // Link IID to term
-                        kv_repo.update_term_to_iid(&mut batch, term_hash, iid, Some(tf));
-                    }
-
-                    // Link terms to IID
-                    if is_new {
-                        kv_repo.set_iid_to_terms(&mut batch, iid, terms_sorted.into_keys());
-                    } else {
-                        kv_repo.update_iid_to_terms(&mut batch, iid, terms_sorted.into_keys());
-                    }
-
-                    executor_ensure_op!(
-                        kv_repo.write_opt(batch, WriteOptions { is_ordered: true })
-                    );
-
-                    is_new
-                };
-
-                // Update Object store
-                {
-                    let mut batch = WriteBatch::default();
-
-                    // Store original text
-                    if is_new {
-                        object_repo.put_object_original(
-                            object_oid,
-                            fragment_oid,
-                            input.original_text(),
-                            &mut batch,
-                        );
-                    } else {
-                        object_repo.push_object_original(
-                            object_oid,
-                            fragment_oid,
-                            input.original_text(),
-                            &mut batch,
-                        );
-                    }
-
-                    executor_ensure_op!(object_repo.write(batch));
-                }
-
-                // Update FST store
-                {
-                    // Push to FST graph
-                    fst_repo.push_words(terms.into_iter());
-                }
-
-                Ok(())
+            // Link terms to IID
+            if is_new {
+                kv_repo.set_iid_to_terms(&mut batch, iid, terms_sorted.into_keys());
+            } else {
+                kv_repo.update_iid_to_terms(&mut batch, iid, terms_sorted.into_keys());
             }
+
+            executor_ensure_op!(kv_repo.write_opt(batch, WriteOptions { is_ordered: true }));
+
+            is_new
+        };
+
+        // Update Object store
+        {
+            let mut batch = WriteBatch::default();
+
+            // Store original text
+            if is_new {
+                object_repo.put_object_original(
+                    object_oid,
+                    fragment_oid,
+                    original_text,
+                    &mut batch,
+                );
+            } else {
+                object_repo.push_object_original(
+                    object_oid,
+                    fragment_oid,
+                    original_text,
+                    &mut batch,
+                );
+            }
+
+            executor_ensure_op!(object_repo.write(batch));
         }
+
+        // Update FST store
+        {
+            // Push to FST graph
+            fst_repo.push_words(terms);
+        }
+
+        // Clear multipart context.
+        *multipart_context = None;
+
+        Ok(())
     }
 }
