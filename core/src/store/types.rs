@@ -269,7 +269,7 @@ impl StoreItemBuilder {
 
 #[derive(Clone, Copy, Default, PartialEq, PartialOrd)]
 #[repr(transparent)]
-pub(super) struct IidIncr(pub(super) StoreObjectIid);
+pub struct IidIncr(pub(super) StoreObjectIid);
 
 impl IidIncr {
     #[inline]
@@ -279,12 +279,13 @@ impl IidIncr {
 }
 
 crate::util::impl_transparent_wrapper_utils!(Debug for IidIncr(StoreObjectIid));
+crate::util::impl_transparent_wrapper_utils!(From for IidIncr(StoreObjectIid));
 
 // MARK: ObjectCount counter
 
 #[derive(Default)]
 #[repr(transparent)]
-pub(super) struct ObjectCount(pub(super) i64);
+pub struct ObjectCount(pub(super) i64);
 
 impl ObjectCount {
     #[inline]

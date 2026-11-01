@@ -13,7 +13,6 @@ use zerocopy::little_endian;
 use crate::store::types::*;
 
 use super::encoding::*;
-use super::keys::StoreMetaKey;
 
 /// This is an empirical value, which represents the average
 /// amount of compression KV merge operations result to.
@@ -33,6 +32,7 @@ pub(super) fn kv_merge_operator(
 ) -> Option<Vec<u8>> {
     use super::keys::KvStoreKeyDiscriminator as D;
     use super::keys::KvStoreKeyParts;
+    use super::keys::meta::BucketMetaKeyDiscriminator as MetaD;
 
     let KvStoreKeyParts {
         bucket: _,
@@ -45,9 +45,9 @@ pub(super) fn kv_merge_operator(
         .ok()?;
 
     match discriminator {
-        D::MetaToValue => match StoreMetaKey::try_from_kv_key_part(route) {
-            Ok(StoreMetaKey::IIDIncr) => merge_int_max::<8, IidIncr>(existing_val, operands),
-            Ok(StoreMetaKey::ObjectCount) => merge_int_counter::<8, ObjectCount>(
+        D::MetaToValue => match MetaD::try_from_kv_key_part(route) {
+            Ok(MetaD::IidIncr) => merge_int_max::<8, IidIncr>(existing_val, operands),
+            Ok(MetaD::ObjectCount) => merge_int_counter::<8, ObjectCount>(
                 existing_val,
                 operands,
                 ObjectCount::saturating_add,
@@ -209,13 +209,14 @@ fn test_merge_int_set_diffs() {
 ///
 /// It’s used for `IIDIncr`, where we can’t guarantee the order in which
 /// incremental values will effectively be written.
-fn merge_int_max<const WORD_LEN: usize, T>(
-    existing_val: Option<&[u8]>,
-    operands: &rocksdb::MergeOperands,
+fn merge_int_max<'a, const WORD_LEN: usize, T>(
+    existing_val: Option<&'a [u8]>,
+    operands: &'a rocksdb::MergeOperands,
 ) -> Option<Vec<u8>>
 where
-    T: ToKvValue<Repr = [u8; WORD_LEN]> + FromKvValue + TryFromKvValue + Default + PartialOrd,
-    <T as TryFromKvValue>::Err: std::fmt::Display,
+    T: ToKvValue<Repr = [u8; WORD_LEN]> + FromKvValue + TryFromKvValue<&'a [u8]> + Default,
+    T: PartialOrd,
+    <T as TryFromKvValue<&'a [u8]>>::Err: std::fmt::Display,
 {
     let mut res = match existing_val {
         Some(bytes) => match T::try_from_kv_value(bytes) {
@@ -262,14 +263,14 @@ where
 /// way to know that they’re now encoded as `u64`. In addition, if one merge
 /// operation gets `(None, [-1, -1])` and another `(None, [1, 1, 1])`, the
 /// final counter value would be `3`; which is incorrect (expected: `1`).
-fn merge_int_counter<const WORD_LEN: usize, T>(
-    existing_val: Option<&[u8]>,
-    operands: &rocksdb::MergeOperands,
+fn merge_int_counter<'a, const WORD_LEN: usize, T>(
+    existing_val: Option<&'a [u8]>,
+    operands: &'a rocksdb::MergeOperands,
     saturating_add: fn(T, T) -> T,
 ) -> Option<Vec<u8>>
 where
-    T: ToKvValue<Repr = [u8; WORD_LEN]> + FromKvValue + TryFromKvValue + Default,
-    <T as TryFromKvValue>::Err: std::fmt::Display,
+    T: ToKvValue<Repr = [u8; WORD_LEN]> + FromKvValue + TryFromKvValue<&'a [u8]> + Default,
+    <T as TryFromKvValue<&'a [u8]>>::Err: std::fmt::Display,
 {
     let mut res = match existing_val {
         Some(bytes) => match T::try_from_kv_value(bytes) {

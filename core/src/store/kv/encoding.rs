@@ -4,6 +4,8 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use std::ops::Deref;
+
 use crate::store::types::*;
 
 use super::keys::*;
@@ -61,10 +63,31 @@ pub(super) trait FromKvValue: ToKvValue {
     fn from_kv_value(repr: Self::Repr) -> Self;
 }
 
-pub(super) trait TryFromKvValue: Sized {
-    type Err;
+pub(super) trait TryFromKvValue<Value>: Sized + std::fmt::Debug {
+    type Err: std::error::Error;
 
-    fn try_from_kv_value(bytes: &[u8]) -> Result<Self, Self::Err>;
+    fn try_from_kv_value(value: Value) -> Result<Self, Self::Err>;
+}
+
+impl<'db, T, E> TryFromKvValue<rocksdb::DBPinnableSlice<'db>> for T
+where
+    T: for<'a> TryFromKvValue<&'a [u8], Err = E>,
+    E: std::error::Error,
+{
+    type Err = E;
+
+    fn try_from_kv_value(value: rocksdb::DBPinnableSlice<'db>) -> Result<Self, Self::Err> {
+        <Self as TryFromKvValue<&[u8]>>::try_from_kv_value(value.deref())
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum BadLength {
+    #[error("Missing bytes")]
+    TooShort,
+
+    #[error("Too many bytes")]
+    TooLong,
 }
 
 // MARK: IID
@@ -100,14 +123,14 @@ impl FromKvValue for StoreObjectIid {
     }
 }
 
-impl TryFromKvValue for StoreObjectIid {
-    type Err = &'static str;
+impl TryFromKvValue<&[u8]> for StoreObjectIid {
+    type Err = BadLength;
 
     fn try_from_kv_value(bytes: &[u8]) -> Result<Self, Self::Err> {
         match bytes.split_first_chunk() {
             Some((chunk, [])) => Ok(Self::from_kv_value(*chunk)),
-            Some(_) => Err("Too many bytes"),
-            None => Err("Missing bytes"),
+            Some(_) => Err(BadLength::TooLong),
+            None => Err(BadLength::TooShort),
         }
     }
 }
@@ -130,6 +153,14 @@ impl<'a> ToKvKeyPart for &'a StoreObjectOid<'a> {
     }
 }
 
+impl TryFromKvValue<&[u8]> for String {
+    type Err = std::str::Utf8Error;
+
+    fn try_from_kv_value(bytes: &[u8]) -> Result<Self, Self::Err> {
+        str::from_utf8(bytes).map(str::to_string)
+    }
+}
+
 // MARK: Term hash
 
 impl ToKvKeyPart for StoreTermHash {
@@ -149,13 +180,13 @@ impl FromKvKeyPart for StoreTermHash {
 }
 
 impl TryFromKvKeyPart for StoreTermHash {
-    type Err = &'static str;
+    type Err = BadLength;
 
     fn try_from_kv_key_part(bytes: &[u8]) -> Result<Self, Self::Err> {
         match bytes.split_first_chunk() {
             Some((chunk, [])) => Ok(Self::from_kv_key_part(*chunk)),
-            Some(_) => Err("Too many bytes"),
-            None => Err("Missing bytes"),
+            Some(_) => Err(BadLength::TooLong),
+            None => Err(BadLength::TooShort),
         }
     }
 }
@@ -186,7 +217,7 @@ impl FromKvValue for StoreTermHash {
 
 // MARK: Meta key
 
-impl ToKvKeyPart for StoreMetaKey {
+impl ToKvKeyPart for meta::BucketMetaKeyDiscriminator {
     type Repr = [u8; 4];
 
     #[inline]
@@ -195,7 +226,7 @@ impl ToKvKeyPart for StoreMetaKey {
     }
 }
 
-impl TryFromKvKeyPart for StoreMetaKey {
+impl TryFromKvKeyPart for meta::BucketMetaKeyDiscriminator {
     type Err = String;
 
     fn try_from_kv_key_part(bytes: &[u8]) -> Result<Self, Self::Err> {
@@ -242,14 +273,14 @@ impl FromKvValue for IidIncr {
     }
 }
 
-impl TryFromKvValue for IidIncr {
-    type Err = &'static str;
+impl TryFromKvValue<&[u8]> for IidIncr {
+    type Err = BadLength;
 
     fn try_from_kv_value(bytes: &[u8]) -> Result<Self, Self::Err> {
         match bytes.split_first_chunk() {
             Some((chunk, [])) => Ok(Self::from_kv_value(*chunk)),
-            Some(_) => Err("Too many bytes"),
-            None => Err("Missing bytes"),
+            Some(_) => Err(BadLength::TooLong),
+            None => Err(BadLength::TooShort),
         }
     }
 }
@@ -272,14 +303,38 @@ impl FromKvValue for ObjectCount {
     }
 }
 
-impl TryFromKvValue for ObjectCount {
-    type Err = &'static str;
+impl TryFromKvValue<&[u8]> for ObjectCount {
+    type Err = BadLength;
 
     fn try_from_kv_value(bytes: &[u8]) -> Result<Self, Self::Err> {
         match bytes.split_first_chunk() {
             Some((chunk, [])) => Ok(Self::from_kv_value(*chunk)),
-            Some(_) => Err("Too many bytes"),
-            None => Err("Missing bytes"),
+            Some(_) => Err(BadLength::TooLong),
+            None => Err(BadLength::TooShort),
         }
+    }
+}
+
+// Iterators
+
+impl<'db> TryFromKvValue<rocksdb::DBPinnableSlice<'db>> for IidToTermsIter<'db> {
+    type Err = crate::store::rocksdb::util::BadLength;
+
+    fn try_from_kv_value(slice: rocksdb::DBPinnableSlice<'db>) -> Result<Self, Self::Err> {
+        crate::store::rocksdb::util::RocksDbPinnableSliceIter::<super::IidToTermsEntry>::forward(
+            slice,
+        )
+        .map(Self)
+    }
+}
+
+impl<'db> TryFromKvValue<rocksdb::DBPinnableSlice<'db>> for TermToIidsIter<'db> {
+    type Err = crate::store::rocksdb::util::BadLength;
+
+    fn try_from_kv_value(slice: rocksdb::DBPinnableSlice<'db>) -> Result<Self, Self::Err> {
+        crate::store::rocksdb::util::RocksDbPinnableSliceIter::<super::TermToIidsEntry>::forward(
+            slice,
+        )
+        .map(Self)
     }
 }

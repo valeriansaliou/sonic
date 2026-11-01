@@ -88,7 +88,7 @@ impl super::Executor {
         // PERF: Get document count once (used to compute idfs).
         let document_count = kv_repo
             .get_object_count()
-            .map_err(|error| tracing::warn!("Error getting object count: {error}"))?;
+            .map_err(|()| tracing::warn!("Error getting object count"))?;
 
         #[cfg(debug_assertions)]
         if input.token_count() > MAX_QUERY_TOKENS {
