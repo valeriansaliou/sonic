@@ -367,7 +367,7 @@ impl Mergeable for TermToIidsEntry {
 
 impl TermToIidsEntry {
     #[inline]
-    pub const fn new(iid: StoreObjectIid, tf: u8) -> Self {
+    pub const fn new(iid: GenericIid, tf: u8) -> Self {
         Self {
             iid: iid.into_inner(),
             tf,
@@ -375,8 +375,8 @@ impl TermToIidsEntry {
     }
 
     #[inline]
-    pub const fn iid(&self) -> StoreObjectIid {
-        StoreObjectIid::new(self.iid)
+    pub const fn iid(&self) -> GenericIid {
+        GenericIid::new(self.iid)
     }
 
     #[inline]

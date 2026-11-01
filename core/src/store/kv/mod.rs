@@ -408,7 +408,7 @@ impl<'db> KvRepositoryRead<'db> {
     }
 
     #[inline]
-    pub fn get_oid_to_iid(&self, oid: StoreObjectOid) -> Result<Option<StoreObjectIid>, ()> {
+    pub fn get_oid_to_iid(&self, oid: GenericOid) -> Result<Option<GenericIid>, ()> {
         let store_key = keys::OidToIid {
             bucket: self.bucket,
             oid,
@@ -422,7 +422,7 @@ impl<'db> KvRepositoryRead<'db> {
     }
 
     #[inline]
-    pub fn get_iid_to_oid(&self, iid: StoreObjectIid) -> Result<Option<String>, ()> {
+    pub fn get_iid_to_oid(&self, iid: GenericIid) -> Result<Option<GenericOidOwned>, ()> {
         let store_key = keys::IidToOid {
             bucket: self.bucket,
             iid,
@@ -434,7 +434,7 @@ impl<'db> KvRepositoryRead<'db> {
     #[inline]
     pub fn get_iid_to_terms<'a>(
         &'a self,
-        iid: StoreObjectIid,
+        iid: GenericIid,
     ) -> Result<Option<impl ExactSizeIterator<Item = IidToTermsEntry> + 'a>, ()> {
         let store_key = keys::IidToTerms {
             bucket: self.bucket,
@@ -524,7 +524,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
     fn get_new_iid(
         &self,
         batch: &mut WriteBatch,
-    ) -> Result<StoreObjectIid, Box<dyn std::error::Error>> {
+    ) -> Result<GenericIid, Box<dyn std::error::Error>> {
         let cf_handle = (self.store.database)
             .cf_handle(READ_ON_PUSH_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
@@ -580,8 +580,8 @@ impl<'db> KvRepositoryReadWrite<'db> {
 
     fn assign_new_iid(
         &self,
-        oid: StoreObjectOid<'_>,
-    ) -> Result<StoreObjectIid, Box<dyn std::error::Error>> {
+        oid: GenericOid<'_>,
+    ) -> Result<GenericIid, Box<dyn std::error::Error>> {
         tracing::trace!("Must initialize push executor oid-to-iid and iid-to-oid");
 
         let mut batch = WriteBatch::new();
@@ -600,8 +600,8 @@ impl<'db> KvRepositoryReadWrite<'db> {
 
     pub fn get_or_assign_iid(
         &self,
-        oid: StoreObjectOid<'_>,
-    ) -> Result<(StoreObjectIid, bool), Box<dyn std::error::Error>> {
+        oid: GenericOid<'_>,
+    ) -> Result<(GenericIid, bool), Box<dyn std::error::Error>> {
         let _oid_sync_guard = self.store.oid_sync.lock().unwrap();
 
         match (self.get_oid_to_iid(oid))
@@ -616,7 +616,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
         &self,
         batch: &mut WriteBatch,
         term_hash: &StoreTermHash,
-        iid: StoreObjectIid,
+        iid: GenericIid,
         tf_delta: Option<u8>,
     ) {
         debug_assert!(
@@ -637,7 +637,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
         );
     }
 
-    pub fn set_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOid, iid: StoreObjectIid) {
+    pub fn set_oid_to_iid(&self, batch: &mut WriteBatch, oid: GenericOid, iid: GenericIid) {
         let store_key = keys::OidToIid {
             bucket: self.bucket,
             oid,
@@ -650,7 +650,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
         self.put(Some(cf_handle), &store_key, &iid, batch)
     }
 
-    pub fn delete_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOid) {
+    pub fn delete_oid_to_iid(&self, batch: &mut WriteBatch, oid: GenericOid) {
         let store_key = keys::OidToIid {
             bucket: self.bucket,
             oid,
@@ -663,7 +663,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
         self.delete(Some(cf_handle), &store_key, batch)
     }
 
-    pub fn set_iid_to_oid(&self, batch: &mut WriteBatch, iid: StoreObjectIid, oid: StoreObjectOid) {
+    pub fn set_iid_to_oid(&self, batch: &mut WriteBatch, iid: GenericIid, oid: GenericOid) {
         let store_key = keys::IidToOid {
             bucket: self.bucket,
             iid,
@@ -672,7 +672,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
         self.put(None, &store_key, oid.as_bytes(), batch)
     }
 
-    pub fn delete_iid_to_oid(&self, batch: &mut WriteBatch, iid: StoreObjectIid) {
+    pub fn delete_iid_to_oid(&self, batch: &mut WriteBatch, iid: GenericIid) {
         let store_key = keys::IidToOid {
             bucket: self.bucket,
             iid,
@@ -684,7 +684,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
     pub fn set_iid_to_terms(
         &self,
         batch: &mut WriteBatch,
-        iid: StoreObjectIid,
+        iid: GenericIid,
         terms: impl ExactSizeIterator<Item = StoreTermHash>,
     ) {
         let store_key = keys::IidToTerms {
@@ -706,7 +706,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
     pub fn update_iid_to_terms(
         &self,
         batch: &mut WriteBatch,
-        iid: StoreObjectIid,
+        iid: GenericIid,
         new_terms: impl ExactSizeIterator<Item = StoreTermHash>,
     ) {
         let store_key = keys::IidToTerms {
@@ -729,7 +729,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
         self.merge(Some(cf_handle), &store_key, new_terms.as_slice(), batch);
     }
 
-    pub fn delete_iid_to_terms(&self, batch: &mut WriteBatch, iid: StoreObjectIid) {
+    pub fn delete_iid_to_terms(&self, batch: &mut WriteBatch, iid: GenericIid) {
         let store_key = keys::IidToTerms {
             bucket: self.bucket,
             iid,
@@ -745,8 +745,8 @@ impl<'db> KvRepositoryReadWrite<'db> {
     pub fn delete_object(
         &self,
         batch: &mut WriteBatch,
-        iid: StoreObjectIid,
-        oid: StoreObjectOid,
+        iid: GenericIid,
+        oid: GenericOid,
         object_terms_to_tfs: impl IntoIterator<Item = StoreTermHash>,
     ) -> u32 {
         let mut count: u32 = 0;

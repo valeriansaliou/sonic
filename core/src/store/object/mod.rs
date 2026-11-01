@@ -152,8 +152,8 @@ impl<'a> ObjectRepository<'a> {
 
     pub fn put_object_original(
         &self,
-        oid: StoreObjectOid,
-        fragment_oid: Option<FragmentOid>,
+        oid: GenericOid,
+        fragment_oid: Option<GenericOid>,
         text: impl AsRef<[u8]>,
         batch: &mut rocksdb::WriteBatch,
     ) {
@@ -168,8 +168,8 @@ impl<'a> ObjectRepository<'a> {
     ///   snippet retrieval won’t work properly (terms might get merged).
     pub fn push_object_original(
         &self,
-        oid: StoreObjectOid,
-        fragment_oid: Option<FragmentOid>,
+        oid: GenericOid,
+        fragment_oid: Option<GenericOid>,
         text: impl AsRef<[u8]>,
         batch: &mut rocksdb::WriteBatch,
     ) {
@@ -180,8 +180,8 @@ impl<'a> ObjectRepository<'a> {
 
     pub fn get_object_original(
         &self,
-        oid: StoreObjectOid,
-        fragment_oid: Option<FragmentOid>,
+        oid: GenericOid,
+        fragment_oid: Option<GenericOid>,
     ) -> Result<Option<Vec<u8>>, rocksdb::Error> {
         let store_key = keys::object_key(&self.bucket, oid, fragment_oid);
 
@@ -190,7 +190,7 @@ impl<'a> ObjectRepository<'a> {
 }
 
 mod keys {
-    use crate::store::{Bucket, FragmentOid, ITEM_PART_MAX_LEN_ERROR, StoreObjectOid};
+    use crate::store::{Bucket, GenericOid, ITEM_PART_MAX_LEN_ERROR};
 
     use super::ObjectStoreFragmentDiscriminator as FragmentDiscriminator;
     use super::ObjectStoreKeyDiscriminator as D;
@@ -211,8 +211,8 @@ mod keys {
 
     pub(super) fn object_key(
         bucket: &Bucket,
-        oid: StoreObjectOid,
-        fragment_oid: Option<FragmentOid>,
+        oid: GenericOid,
+        fragment_oid: Option<GenericOid>,
     ) -> Vec<u8> {
         let mut key = Vec::with_capacity(
             bucket.len() + oid.len() + 4 + fragment_oid.map_or(0, |id| id.len() + 1),

@@ -79,7 +79,7 @@ where
 
 // MARK: IID
 
-impl ToKvKeyPart for StoreObjectIid {
+impl ToKvKeyPart for GenericIid {
     type Repr = [u8; 8];
 
     #[inline]
@@ -88,14 +88,14 @@ impl ToKvKeyPart for StoreObjectIid {
     }
 }
 
-impl FromKvKeyPart for StoreObjectIid {
+impl FromKvKeyPart for GenericIid {
     #[inline]
     fn from_kv_key_part(repr: Self::Repr) -> Self {
         Self::new(zerocopy::big_endian::U64::from_bytes(repr).get().into())
     }
 }
 
-impl<'a> TryFromKvValue<&'a [u8]> for StoreObjectIid {
+impl<'a> TryFromKvValue<&'a [u8]> for GenericIid {
     type Err = SizeError;
 
     fn try_from_kv_value(bytes: &'a [u8]) -> Result<Self, Self::Err> {
@@ -105,7 +105,7 @@ impl<'a> TryFromKvValue<&'a [u8]> for StoreObjectIid {
 
 // MARK: OID
 
-impl<'a> ToKvKeyPart for &'a StoreObjectOid<'a> {
+impl<'a> ToKvKeyPart for &'a GenericOid<'a> {
     type Repr = Vec<u8>;
 
     #[inline]

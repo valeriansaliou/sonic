@@ -17,7 +17,7 @@ use crate::lexer::snippet_matching::{self, Snippet, get_best_snippets};
 use crate::scoring::*;
 use crate::store::fst::typo_factor;
 use crate::store::kv::KvRepositoryReadOnly;
-use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreObjectOid, StoreTermHash};
+use crate::store::{Bucket, GenericIid, GenericOid, StoreItemPart, StoreTermHash};
 use crate::util::u32_to_usize;
 
 // TODO: Make this configurable?
@@ -345,7 +345,7 @@ impl super::Executor {
             ..
         } in query_results
         {
-            let oid_parsed = StoreObjectOid::from_str(&oid)?;
+            let oid_parsed = GenericOid::from_str(&oid)?;
 
             let todo = "Match fragments";
             let original = object_repo.get_object_original(oid_parsed, None);
@@ -591,7 +591,7 @@ struct IidTermScore {
 
 /// Score per query term, per object.
 struct ScoringMatrix {
-    map: IndexMap<StoreObjectIid, Vec<Option<IidTermScore>>>,
+    map: IndexMap<GenericIid, Vec<Option<IidTermScore>>>,
     term_count: usize,
 }
 
@@ -605,7 +605,7 @@ impl ScoringMatrix {
 
     fn set_score(
         &mut self,
-        iid: StoreObjectIid,
+        iid: GenericIid,
         score: IidTermScore,
         term_idx: usize,
         accept_new_iids: bool,
@@ -645,7 +645,7 @@ impl ScoringMatrix {
     }
 
     fn backfill(&mut self, index: &KvRepositoryReadOnly, query_candidates: &[QueryCandidate]) {
-        let mut to_backfill = HashMap::<StoreObjectIid, usize>::with_capacity(self.map.len());
+        let mut to_backfill = HashMap::<GenericIid, usize>::with_capacity(self.map.len());
 
         for term_idx in 0..query_candidates.len() {
             to_backfill.clear();
@@ -684,7 +684,7 @@ impl ScoringMatrix {
 }
 
 impl std::ops::Deref for ScoringMatrix {
-    type Target = IndexMap<StoreObjectIid, Vec<Option<IidTermScore>>>;
+    type Target = IndexMap<GenericIid, Vec<Option<IidTermScore>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.map
@@ -700,8 +700,8 @@ impl std::fmt::Debug for ScoringMatrix {
 }
 
 impl IntoIterator for ScoringMatrix {
-    type Item = (StoreObjectIid, Vec<Option<IidTermScore>>);
-    type IntoIter = indexmap::map::IntoIter<StoreObjectIid, Vec<Option<IidTermScore>>>;
+    type Item = (GenericIid, Vec<Option<IidTermScore>>);
+    type IntoIter = indexmap::map::IntoIter<GenericIid, Vec<Option<IidTermScore>>>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.map.into_iter()

@@ -97,17 +97,17 @@ declare_store_keys!(pub(super) KvStoreKeyDiscriminator(u8):
     route("{term_hash}") = { term_hash },
 
     [OID_TO_IID = 2]
-    OidToIid<'a> { oid: StoreObjectOid<'a> },
-    Value = StoreObjectIid,
+    OidToIid<'a> { oid: GenericOid<'a> },
+    Value = GenericIid,
     route("{oid:?}") = { oid },
 
     [IID_TO_OID = 3]
-    IidToOid<'a> { iid: StoreObjectIid },
-    Value = String,
+    IidToOid<'a> { iid: GenericIid },
+    Value = GenericOidOwned,
     route("{iid}") = { iid },
 
     [IID_TO_TERMS = 4]
-    IidToTerms<'a> { iid: StoreObjectIid },
+    IidToTerms<'a> { iid: GenericIid },
     Value = IidToTermsIter<'a>,
     route("{iid}") = { iid },
 );
@@ -334,8 +334,8 @@ mod tests {
 
     #[test]
     fn it_hashes_compact() {
-        assert_eq!(StoreObjectOid::from("key:1").to_compact(), 3370353088);
-        assert_eq!(StoreObjectOid::from("key:2").to_compact(), 1042559698);
+        assert_eq!(GenericOid::from("key:1").to_compact(), 3370353088);
+        assert_eq!(GenericOid::from("key:2").to_compact(), 1042559698);
     }
 
     #[test]

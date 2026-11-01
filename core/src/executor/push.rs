@@ -14,7 +14,7 @@ use crate::executor::MultipartPushContext;
 use crate::lexer::preprocessor::PreprocessorOutput;
 use crate::store::kv::encoding::ToKvKeyPart;
 use crate::store::rocksdb::WriteOptions;
-use crate::store::{Bucket, FragmentOid, StoreItemPart, StoreObjectOid, StoreTermHash};
+use crate::store::{Bucket, GenericOid, StoreItemPart, StoreTermHash};
 
 #[derive(Debug, Default)]
 pub struct PushOptions {
@@ -27,8 +27,8 @@ impl super::Executor {
         &self,
         collection: StoreItemPart,
         bucket: Bucket,
-        object_oid: StoreObjectOid,
-        fragment_oid: Option<FragmentOid>,
+        object_oid: GenericOid,
+        fragment_oid: Option<GenericOid>,
         input: PreprocessorOutput,
         options: PushOptions,
     ) -> Result<(), ()> {
