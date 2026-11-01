@@ -1112,17 +1112,6 @@ impl ChannelCommandIngest {
                         }
                     }
                     #[cfg(feature = "experimental-api")]
-                    "NEW" => {
-                        if meta_value.is_empty() {
-                            options.1.assume_new = true;
-                            Ok(())
-                        } else {
-                            Err(ChannelCommandBase::make_error_invalid_meta_value(
-                                meta_key, meta_value,
-                            ))
-                        }
-                    }
-                    #[cfg(feature = "experimental-api")]
                     "INCOMPLETE" => {
                         if meta_value.is_empty() {
                             options.1.is_incomplete = true;

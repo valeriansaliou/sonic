@@ -6,7 +6,6 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use std::collections::HashMap;
-use std::sync::RwLock;
 
 use indexmap::IndexMap;
 use rocksdb::WriteBatch;
@@ -20,7 +19,6 @@ use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreObjectOid, StoreT
 
 #[derive(Debug, Default)]
 pub struct PushOptions {
-    pub assume_new: bool,
     pub is_incomplete: bool,
     pub capacity: Option<usize>,
 }
@@ -62,8 +60,6 @@ impl super::Executor {
 
                 *multipart_context = Some(MultipartPushContext {
                     oid: oid.to_string(),
-                    // `NEW` in any multipart chunk is considered `NEW` on commit.
-                    assume_new: options.assume_new,
                     terms,
                     capacity: options.capacity,
                     original_text,
@@ -77,9 +73,6 @@ impl super::Executor {
 
             // Received multipart chunk: update multipart context.
             Some(ref mut ctx) if ctx.oid.as_str() == oid.as_str() => {
-                // `NEW` in any multipart chunk is considered `NEW` on commit.
-                ctx.assume_new |= options.assume_new;
-
                 if ctx.capacity.is_none() {
                     ctx.terms.reserve(input.tokens().len());
                     ctx.terms.reserve(input.tokens().len());
@@ -166,33 +159,16 @@ impl super::Executor {
 
         fn get_iid(
             oid: StoreObjectOid<'_>,
-            assume_new: bool,
             kv_repo: &KvRepositoryReadWrite<'_>,
             batch: &mut WriteBatch,
-            last_assumed_new_oid: &RwLock<Option<(String, StoreObjectIid)>>,
         ) -> Result<(StoreObjectIid, bool), ()> {
-            if assume_new {
-                if let Some((last_oid, iid)) = last_assumed_new_oid.read().unwrap().as_ref()
-                    && **oid == *last_oid.as_str()
-                {
-                    Ok((*iid, false))
-                } else {
-                    // Get new IID (assume new).
-                    let iid = assign_new_iid(oid, kv_repo, batch)?;
-
-                    *last_assumed_new_oid.write().unwrap() = Some((oid.to_string(), iid));
-
-                    Ok((iid, true))
-                }
-            } else {
-                // Try to resolve existing OID to IID, otherwise get new IID.
-                match kv_repo.get_oid_to_iid(oid) {
-                    Ok(Some(iid)) => Ok((iid, false)),
-                    Ok(None) => assign_new_iid(oid, kv_repo, batch).map(|iid| (iid, true)),
-                    Err(()) => {
-                        tracing::error!("Error getting OID-To-IID");
-                        assign_new_iid(oid, kv_repo, batch).map(|iid| (iid, true))
-                    }
+            // Try to resolve existing OID to IID, otherwise get new IID.
+            match kv_repo.get_oid_to_iid(oid) {
+                Ok(Some(iid)) => Ok((iid, false)),
+                Ok(None) => assign_new_iid(oid, kv_repo, batch).map(|iid| (iid, true)),
+                Err(()) => {
+                    tracing::error!("Error getting OID-To-IID");
+                    assign_new_iid(oid, kv_repo, batch).map(|iid| (iid, true))
                 }
             }
         }
@@ -204,15 +180,7 @@ impl super::Executor {
                 let is_new = {
                     let mut batch = WriteBatch::default();
 
-                    let (iid, is_new) = get_iid(
-                        oid,
-                        ctx.assume_new,
-                        &kv_repo,
-                        &mut batch,
-                        &self.last_assumed_new_oid,
-                    )?;
-
-                    executor_ensure_op!(kv_repo.write(batch));
+                    let (iid, is_new) = get_iid(oid, &kv_repo, &mut batch)?;
 
                     let mut batch = WriteBatch::default();
 
@@ -281,13 +249,7 @@ impl super::Executor {
                 let is_new = {
                     let mut batch = WriteBatch::default();
 
-                    let (iid, is_new) = get_iid(
-                        oid,
-                        options.assume_new,
-                        &kv_repo,
-                        &mut batch,
-                        &self.last_assumed_new_oid,
-                    )?;
+                    let (iid, is_new) = get_iid(oid, &kv_repo, &mut batch)?;
 
                     executor_ensure_op!(kv_repo.write(batch));
 
