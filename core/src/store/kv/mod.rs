@@ -472,11 +472,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
             meta: keys::meta::ObjectCount,
         };
 
-        tracing::trace!(
-            %store_key,
-            "increasing {} object count by {diff}",
-            &self.bucket
-        );
+        tracing::trace!(%store_key, diff, "updating object count");
 
         batch.merge(store_key.to_bytes(), ObjectCount(diff).to_kv_value());
     }
@@ -584,17 +580,19 @@ impl<'a> KvRepositoryReadWrite<'a> {
             term_hash,
         };
 
-        tracing::debug!("store add term-to-iids: {store_key}");
+        tracing::debug!(%store_key, "updating term-to-iids");
 
         debug_assert!(
             !matches!(tf_delta, Some(TF_TOMBSTONE)),
             "Don’t update Term-To-IIDs with a tf of 0"
         );
 
-        batch.merge(
-            store_key.to_bytes(),
-            TermToIidsEntry::new(iid, tf_delta.unwrap_or(TF_TOMBSTONE)).as_bytes(),
-        );
+        let encoded_value = TermToIidsEntry::new(iid, tf_delta.unwrap_or(TF_TOMBSTONE));
+        let encoded_value = encoded_value.as_bytes();
+
+        tracing::trace!(%store_key, "updating term-to-iids with encoded value: {encoded_value:?}");
+
+        batch.merge(store_key.to_bytes(), encoded_value);
     }
 
     pub fn set_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOid, iid: StoreObjectIid) {
@@ -603,18 +601,17 @@ impl<'a> KvRepositoryReadWrite<'a> {
             oid,
         };
 
-        tracing::debug!("store set oid-to-iid: {store_key}");
+        tracing::debug!(%store_key, "setting oid-to-iid");
 
-        // Encode IID
-        let iid_encoded = iid.to_kv_value();
+        let encoded_value = iid.to_kv_value();
 
-        tracing::debug!("store set oid-to-iid: {store_key} with encoded value: {iid_encoded:?}");
+        tracing::trace!(%store_key, "setting oid-to-iid with encoded value: {encoded_value:?}");
 
         let cf_handle = (self.store.database)
             .cf_handle(READ_ON_PUSH_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        batch.put_cf(cf_handle, store_key.to_bytes(), &iid_encoded)
+        batch.put_cf(cf_handle, store_key.to_bytes(), &encoded_value)
     }
 
     pub fn delete_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOid) {
@@ -623,7 +620,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
             oid,
         };
 
-        tracing::debug!("store delete oid-to-iid: {store_key}");
+        tracing::debug!(%store_key, "deleting oid-to-iid");
 
         let cf_handle = (self.store.database)
             .cf_handle(READ_ON_PUSH_CF_NAME)
@@ -638,7 +635,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
             iid,
         };
 
-        tracing::debug!("store set iid-to-oid: {store_key}");
+        tracing::debug!(%store_key, "setting iid-to-oid");
 
         batch.put(store_key.to_bytes(), oid.as_bytes())
     }
@@ -649,7 +646,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
             iid,
         };
 
-        tracing::debug!("store delete iid-to-oid: {store_key}");
+        tracing::debug!(%store_key, "deleting iid-to-oid");
 
         batch.delete(store_key.to_bytes())
     }
@@ -668,7 +665,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         // Encode iterator into storage serialized format.
         let terms: Vec<IidToTermsEntry> = terms.map(IidToTermsEntry::new).collect();
 
-        tracing::debug!(?terms, "store set iid-to-terms: {store_key}");
+        tracing::trace!(%store_key, ?terms, "setting iid-to-terms");
 
         let cf_handle = (self.store.database)
             .cf_handle(INCOMPRESSIBLE_CF_NAME)
@@ -696,7 +693,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         let new_terms: Vec<IidToTermsEntry> =
             new_terms.into_iter().map(IidToTermsEntry::new).collect();
 
-        tracing::debug!(?new_terms, "store update iid-to-terms: {store_key}");
+        tracing::trace!(%store_key, ?new_terms, "updating iid-to-terms");
 
         let cf_handle = (self.store.database)
             .cf_handle(INCOMPRESSIBLE_CF_NAME)
@@ -711,7 +708,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
             iid,
         };
 
-        tracing::debug!("store delete iid-to-terms: {store_key}");
+        tracing::debug!(%store_key, "deleting iid-to-terms");
 
         let cf_handle = (self.store.database)
             .cf_handle(INCOMPRESSIBLE_CF_NAME)
