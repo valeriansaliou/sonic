@@ -535,29 +535,6 @@ impl<'a> KvRepositoryReadWrite<'a> {
         }
     }
 
-    /// Meta-to-Value mapper
-    ///
-    /// [IDX=0] ((meta)) ~> ((value))
-    pub fn get_meta_to_value<T: std::str::FromStr>(
-        &self,
-        meta: StoreMetaKey,
-    ) -> Result<Option<T>, ()> {
-        self.to_read_only().get_meta_to_value(meta)
-    }
-
-    pub fn set_meta_to_value(
-        &self,
-        batch: &mut WriteBatch,
-        meta: StoreMetaKey,
-        value: impl ToString,
-    ) {
-        let store_key = KvStoreKey::meta_to_value(&self.bucket, meta);
-
-        tracing::debug!("store set meta-to-value: {store_key}");
-
-        batch.put(store_key, value.to_string().as_bytes())
-    }
-
     #[inline]
     pub fn get_object_count(&self) -> Result<u64, Box<dyn std::error::Error>> {
         self.to_read_only().get_object_count()
@@ -809,17 +786,6 @@ mod tests {
             .unwrap()
             .unwrap();
         let action = store.to_repository_read_write("b:test:3".into());
-
-        assert!(
-            action
-                .get_meta_to_value::<StoreObjectIid>(StoreMetaKey::IIDIncr)
-                .is_ok()
-        );
-        assert!({
-            let mut batch = WriteBatch::default();
-            action.set_meta_to_value(&mut batch, StoreMetaKey::IIDIncr, 1);
-            action.write(batch).is_ok()
-        });
 
         assert_eq!(action.get_term_to_iids(&1.into()).err(), None);
         assert!({
