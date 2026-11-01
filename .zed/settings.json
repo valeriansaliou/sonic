@@ -11,7 +11,7 @@
             "sonic-server/experimental-api",
             "sonic_client/experimental-api",
           ],
-          "extraArgs": ["--locked"],
+          "extraArgs": ["--locked", "--offline"],
           // "autoreload": false,
         },
         "check": {
