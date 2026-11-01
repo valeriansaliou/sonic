@@ -30,7 +30,7 @@ use crate::store::rocksdb::{
     RocksDbWriteOptionsBuilder,
 };
 use crate::store::types::*;
-use crate::util::usize_to_u64;
+use crate::util::{impl_transparent_wrapper_utils, usize_to_u64};
 
 use self::encoding::*;
 use self::keys::TypedKvStoreKey;
@@ -96,16 +96,22 @@ pub struct KvStore {
 }
 
 #[derive(Clone, Copy)]
-pub struct KvRepositoryReadOnly<'a> {
+pub struct KvRepositoryRead<'a> {
     store: &'a KvStore,
     bucket: Bucket<'a>,
 }
 
 #[derive(Clone, Copy)]
-pub struct KvRepositoryReadWrite<'a> {
-    store: &'a KvStore,
-    bucket: Bucket<'a>,
-}
+#[repr(transparent)]
+pub struct KvRepositoryReadOnly<'a>(KvRepositoryRead<'a>);
+
+impl_transparent_wrapper_utils!(Deref for KvRepositoryReadOnly<'a>(KvRepositoryRead<'a>));
+
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct KvRepositoryReadWrite<'a>(KvRepositoryRead<'a>);
+
+impl_transparent_wrapper_utils!(Deref for KvRepositoryReadWrite<'a>(KvRepositoryRead<'a>));
 
 impl<'a> KvRepositoryReadWrite<'a> {
     #[inline]
@@ -265,21 +271,21 @@ impl Drop for KvStore {
 
 impl KvStore {
     pub fn to_repository_read_only<'a>(&'a self, bucket: Bucket<'a>) -> KvRepositoryReadOnly<'a> {
-        KvRepositoryReadOnly {
+        KvRepositoryReadOnly(KvRepositoryRead {
             bucket,
             store: self,
-        }
+        })
     }
 
     pub fn to_repository_read_write<'a>(&'a self, bucket: Bucket<'a>) -> KvRepositoryReadWrite<'a> {
-        KvRepositoryReadWrite {
+        KvRepositoryReadWrite(KvRepositoryRead {
             bucket,
             store: self,
-        }
+        })
     }
 }
 
-impl<'a> KvRepositoryReadOnly<'a> {
+impl<'a> KvRepositoryRead<'a> {
     fn parse_opt_pinned<K: TypedKvStoreKey>(
         key: K,
         value_res: Result<Option<rocksdb::DBPinnableSlice<'a>>, rocksdb::Error>,
@@ -342,7 +348,7 @@ impl<'a> KvRepositoryReadOnly<'a> {
     }
 }
 
-impl<'a> KvRepositoryReadOnly<'a> {
+impl<'a> KvRepositoryRead<'a> {
     /// Note that because of the underlying use of `i64`, the max value is
     /// `i64::MAX` (hence `u64::MAX / 2`).
     pub fn get_object_count(&self) -> Result<u64, ()> {
@@ -459,19 +465,6 @@ impl<'a> KvRepositoryReadOnly<'a> {
 }
 
 impl<'a> KvRepositoryReadWrite<'a> {
-    /// This is `O(1)`, nothing meaningful happens.
-    fn to_read_only(self) -> KvRepositoryReadOnly<'a> {
-        KvRepositoryReadOnly {
-            bucket: self.bucket,
-            store: self.store,
-        }
-    }
-
-    #[inline]
-    pub fn get_object_count(&self) -> Result<u64, ()> {
-        self.to_read_only().get_object_count()
-    }
-
     #[inline]
     fn update_object_count(&self, batch: &mut WriteBatch, diff: i64) {
         let store_key = keys::MetaToValue {
@@ -514,7 +507,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
             }
             hashbrown::hash_map::Entry::Vacant(entry) => {
                 // Read from database (`cache_guard` ensures no race condition).
-                let iid_incr = match (self.to_read_only())
+                let iid_incr = match self
                     .get_pinned_cf(cf_handle, store_key)
                     .map_err(|()| io::Error::other("Error getting IidIncr"))?
                 {
@@ -579,14 +572,6 @@ impl<'a> KvRepositoryReadWrite<'a> {
         }
     }
 
-    #[inline]
-    pub fn get_term_to_iids(
-        self,
-        term_hash: &StoreTermHash,
-    ) -> Result<Option<impl ExactSizeIterator<Item = TermToIidsEntry> + 'a>, ()> {
-        self.to_read_only().get_term_to_iids(term_hash)
-    }
-
     pub fn update_term_to_iid(
         &self,
         batch: &mut WriteBatch,
@@ -610,10 +595,6 @@ impl<'a> KvRepositoryReadWrite<'a> {
             store_key.to_bytes(),
             TermToIidsEntry::new(iid, tf_delta.unwrap_or(TF_TOMBSTONE)).as_bytes(),
         );
-    }
-
-    pub fn get_oid_to_iid(&self, oid: StoreObjectOid) -> Result<Option<StoreObjectIid>, ()> {
-        self.to_read_only().get_oid_to_iid(oid)
     }
 
     pub fn set_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOid, iid: StoreObjectIid) {
@@ -651,10 +632,6 @@ impl<'a> KvRepositoryReadWrite<'a> {
         batch.delete_cf(cf_handle, store_key.to_bytes())
     }
 
-    pub fn get_iid_to_oid(&self, iid: StoreObjectIid) -> Result<Option<String>, ()> {
-        self.to_read_only().get_iid_to_oid(iid)
-    }
-
     pub fn set_iid_to_oid(&self, batch: &mut WriteBatch, iid: StoreObjectIid, oid: StoreObjectOid) {
         let store_key = keys::IidToOid {
             bucket: self.bucket,
@@ -675,13 +652,6 @@ impl<'a> KvRepositoryReadWrite<'a> {
         tracing::debug!("store delete iid-to-oid: {store_key}");
 
         batch.delete(store_key.to_bytes())
-    }
-
-    pub fn get_iid_to_terms(
-        self,
-        iid: StoreObjectIid,
-    ) -> Result<Option<impl ExactSizeIterator<Item = IidToTermsEntry> + 'a>, ()> {
-        self.to_read_only().get_iid_to_terms(iid)
     }
 
     pub fn set_iid_to_terms(
