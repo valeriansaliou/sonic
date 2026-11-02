@@ -35,34 +35,6 @@ impl<T: ToKvKeyPart + Copy> ToKvKeyPart for &T {
     }
 }
 
-pub(super) trait ToKvValue {
-    type Repr: AsRef<[u8]>;
-
-    fn to_kv_value(self) -> Self::Repr;
-}
-
-impl<const WORD_LEN: usize, T, I> ToKvValue for I
-where
-    I: ExactSizeIterator<Item = T>,
-    T: ToKvValue<Repr = [u8; WORD_LEN]>,
-{
-    type Repr = Vec<u8>;
-
-    fn to_kv_value(self) -> Self::Repr {
-        let mut encoded: Vec<u8> = Vec::with_capacity(self.len() * WORD_LEN);
-
-        for item in self {
-            encoded.extend_from_slice(item.to_kv_value().as_ref());
-        }
-
-        encoded
-    }
-}
-
-pub(super) trait FromKvValue: ToKvValue {
-    fn from_kv_value(repr: Self::Repr) -> Self;
-}
-
 pub(super) trait TryFromKvValue<Value>: Sized + std::fmt::Debug {
     type Err: std::error::Error;
 
@@ -90,6 +62,21 @@ pub enum BadLength {
     TooLong,
 }
 
+/// A wrapper around `zerocopy::SizeError` that’s not tied to a lifetime.
+#[derive(Debug, thiserror::Error)]
+#[repr(transparent)]
+#[error("{0}")]
+pub struct SizeError(String);
+
+impl<'a, T> From<zerocopy::SizeError<&'a [u8], T>> for SizeError
+where
+    zerocopy::SizeError<&'a [u8], T>: std::fmt::Display,
+{
+    fn from(value: zerocopy::SizeError<&'a [u8], T>) -> Self {
+        Self(value.to_string())
+    }
+}
+
 // MARK: IID
 
 impl ToKvKeyPart for StoreObjectIid {
@@ -97,41 +84,22 @@ impl ToKvKeyPart for StoreObjectIid {
 
     #[inline]
     fn to_kv_key_part(self) -> Self::Repr {
-        self.into_inner().to_be_bytes()
+        zerocopy::big_endian::U64::from(self.into_inner().get()).to_bytes()
     }
 }
 
 impl FromKvKeyPart for StoreObjectIid {
     #[inline]
     fn from_kv_key_part(repr: Self::Repr) -> Self {
-        Self::new(u64::from_be_bytes(repr))
+        Self::new(zerocopy::big_endian::U64::from_bytes(repr).get().into())
     }
 }
 
-impl ToKvValue for StoreObjectIid {
-    type Repr = [u8; 8];
+impl<'a> TryFromKvValue<&'a [u8]> for StoreObjectIid {
+    type Err = SizeError;
 
-    #[inline]
-    fn to_kv_value(self) -> Self::Repr {
-        self.into_inner().to_le_bytes()
-    }
-}
-
-impl FromKvValue for StoreObjectIid {
-    fn from_kv_value(repr: Self::Repr) -> Self {
-        Self::new(u64::from_le_bytes(repr))
-    }
-}
-
-impl TryFromKvValue<&[u8]> for StoreObjectIid {
-    type Err = BadLength;
-
-    fn try_from_kv_value(bytes: &[u8]) -> Result<Self, Self::Err> {
-        match bytes.split_first_chunk() {
-            Some((chunk, [])) => Ok(Self::from_kv_value(*chunk)),
-            Some(_) => Err(BadLength::TooLong),
-            None => Err(BadLength::TooShort),
-        }
+    fn try_from_kv_value(bytes: &'a [u8]) -> Result<Self, Self::Err> {
+        zerocopy::FromBytes::read_from_bytes(bytes).map_err(Into::into)
     }
 }
 
@@ -191,30 +159,6 @@ impl TryFromKvKeyPart for StoreTermHash {
     }
 }
 
-impl ToKvValue for &StoreTermHash {
-    type Repr = <StoreTermHash as ToKvValue>::Repr;
-
-    #[inline]
-    fn to_kv_value(self) -> Self::Repr {
-        (*self).to_kv_value()
-    }
-}
-
-impl ToKvValue for StoreTermHash {
-    type Repr = [u8; 4];
-
-    #[inline]
-    fn to_kv_value(self) -> Self::Repr {
-        self.into_inner().to_le_bytes()
-    }
-}
-
-impl FromKvValue for StoreTermHash {
-    fn from_kv_value(repr: Self::Repr) -> Self {
-        Self::new(u32::from_le_bytes(repr))
-    }
-}
-
 // MARK: Meta key
 
 impl ToKvKeyPart for meta::BucketMetaKeyDiscriminator {
@@ -257,61 +201,21 @@ impl<'a> ToKvKeyPart for &'a Bucket<'a> {
 
 // MARK: IIDIncr counter
 
-impl ToKvValue for IidIncr {
-    type Repr = [u8; 8];
+impl<'a> TryFromKvValue<&'a [u8]> for IidIncr {
+    type Err = SizeError;
 
-    #[inline]
-    fn to_kv_value(self) -> Self::Repr {
-        self.0.to_le_bytes()
-    }
-}
-
-impl FromKvValue for IidIncr {
-    #[inline]
-    fn from_kv_value(repr: Self::Repr) -> Self {
-        Self(StoreObjectIid::new(u64::from_le_bytes(repr)))
-    }
-}
-
-impl TryFromKvValue<&[u8]> for IidIncr {
-    type Err = BadLength;
-
-    fn try_from_kv_value(bytes: &[u8]) -> Result<Self, Self::Err> {
-        match bytes.split_first_chunk() {
-            Some((chunk, [])) => Ok(Self::from_kv_value(*chunk)),
-            Some(_) => Err(BadLength::TooLong),
-            None => Err(BadLength::TooShort),
-        }
+    fn try_from_kv_value(bytes: &'a [u8]) -> Result<Self, Self::Err> {
+        zerocopy::FromBytes::read_from_bytes(bytes).map_err(Into::into)
     }
 }
 
 // MARK: ObjectCount counter
 
-impl ToKvValue for ObjectCount {
-    type Repr = [u8; 8];
+impl<'a> TryFromKvValue<&'a [u8]> for ObjectCount {
+    type Err = SizeError;
 
-    #[inline]
-    fn to_kv_value(self) -> Self::Repr {
-        self.0.to_le_bytes()
-    }
-}
-
-impl FromKvValue for ObjectCount {
-    #[inline]
-    fn from_kv_value(repr: Self::Repr) -> Self {
-        Self(i64::from_le_bytes(repr))
-    }
-}
-
-impl TryFromKvValue<&[u8]> for ObjectCount {
-    type Err = BadLength;
-
-    fn try_from_kv_value(bytes: &[u8]) -> Result<Self, Self::Err> {
-        match bytes.split_first_chunk() {
-            Some((chunk, [])) => Ok(Self::from_kv_value(*chunk)),
-            Some(_) => Err(BadLength::TooLong),
-            None => Err(BadLength::TooShort),
-        }
+    fn try_from_kv_value(bytes: &'a [u8]) -> Result<Self, Self::Err> {
+        zerocopy::FromBytes::read_from_bytes(bytes).map_err(Into::into)
     }
 }
 

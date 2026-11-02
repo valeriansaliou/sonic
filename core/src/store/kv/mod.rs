@@ -10,7 +10,7 @@ pub mod keys;
 mod merge;
 
 pub mod errors {
-    pub use super::encoding::BadLength;
+    pub use super::encoding::{BadLength, SizeError};
 }
 
 use std::ops::Deref;
@@ -285,13 +285,14 @@ impl KvStore {
     }
 }
 
-impl<'a> KvRepositoryRead<'a> {
-    fn parse_opt_pinned<K: TypedKvStoreKey>(
+impl<'db> KvRepositoryRead<'db> {
+    fn parse_opt_pinned<'a, K: TypedKvStoreKey>(
         key: K,
-        value_res: Result<Option<rocksdb::DBPinnableSlice<'a>>, rocksdb::Error>,
-    ) -> Result<Option<K::Value<'a>>, ()>
+        value_res: Result<Option<rocksdb::DBPinnableSlice<'db>>, rocksdb::Error>,
+    ) -> Result<Option<K::Value<'db>>, ()>
     where
-        K::Value<'a>: TryFromKvValue<rocksdb::DBPinnableSlice<'a>>,
+        K::Value<'db>: TryFromKvValue<rocksdb::DBPinnableSlice<'a>>,
+        'db: 'a,
     {
         match value_res {
             Ok(Some(value)) => {
@@ -324,9 +325,9 @@ impl<'a> KvRepositoryRead<'a> {
     }
 
     #[inline]
-    fn get_pinned<K: TypedKvStoreKey>(&self, key: K) -> Result<Option<K::Value<'a>>, ()>
+    fn get_pinned<'a, K: TypedKvStoreKey>(&'a self, key: K) -> Result<Option<K::Value<'db>>, ()>
     where
-        K::Value<'a>: TryFromKvValue<rocksdb::DBPinnableSlice<'a>>,
+        K::Value<'db>: TryFromKvValue<rocksdb::DBPinnableSlice<'a>>,
     {
         let value_res = self.store.database.get_pinned(key.to_bytes());
 
@@ -334,13 +335,13 @@ impl<'a> KvRepositoryRead<'a> {
     }
 
     #[inline]
-    fn get_pinned_cf<K: TypedKvStoreKey>(
-        &self,
+    fn get_pinned_cf<'a, K: TypedKvStoreKey>(
+        &'a self,
         cf_handle: &rocksdb::ColumnFamily,
         key: K,
-    ) -> Result<Option<K::Value<'a>>, ()>
+    ) -> Result<Option<K::Value<'db>>, ()>
     where
-        K::Value<'a>: TryFromKvValue<rocksdb::DBPinnableSlice<'a>>,
+        K::Value<'db>: TryFromKvValue<rocksdb::DBPinnableSlice<'a>>,
     {
         let value_res = self.store.database.get_pinned_cf(cf_handle, key.to_bytes());
 
@@ -348,7 +349,7 @@ impl<'a> KvRepositoryRead<'a> {
     }
 }
 
-impl<'a> KvRepositoryRead<'a> {
+impl<'db> KvRepositoryRead<'db> {
     /// Note that because of the underlying use of `i64`, the max value is
     /// `i64::MAX` (hence `u64::MAX / 2`).
     pub fn get_object_count(&self) -> Result<u64, ()> {
@@ -366,7 +367,7 @@ impl<'a> KvRepositoryRead<'a> {
                     );
                     0
                 },
-                |count| match u64::try_from(count.0) {
+                |count| match u64::try_from(count.0.get()) {
                     Ok(n) => n,
                     Err(error) => {
                         tracing::debug!(
@@ -382,8 +383,8 @@ impl<'a> KvRepositoryRead<'a> {
     }
 
     #[inline]
-    pub fn get_term_to_iids(
-        self,
+    pub fn get_term_to_iids<'a>(
+        &'a self,
         term_hash: &StoreTermHash,
     ) -> Result<Option<impl ExactSizeIterator<Item = TermToIidsEntry> + 'a>, ()> {
         let store_key = keys::TermToIids {
@@ -446,8 +447,8 @@ impl<'a> KvRepositoryRead<'a> {
     }
 
     #[inline]
-    pub fn get_iid_to_terms(
-        self,
+    pub fn get_iid_to_terms<'a>(
+        &'a self,
         iid: StoreObjectIid,
     ) -> Result<Option<impl ExactSizeIterator<Item = IidToTermsEntry> + 'a>, ()> {
         let store_key = keys::IidToTerms {
@@ -474,7 +475,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
 
         tracing::trace!(%store_key, diff, "updating object count");
 
-        batch.merge(store_key.to_bytes(), ObjectCount(diff).to_kv_value());
+        batch.merge(store_key.to_bytes(), ObjectCount(diff.into()).as_bytes());
     }
 
     fn get_new_iid(
@@ -529,7 +530,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         // NOTE: If the `WriteBatch` doesn’t get written, we’ll have wasted one IID.
         //   We can’t really do otherwise without blocking locks for a long time.
         //   `Iid::MAX` should never get reached so it’s an acceptable trade-off.
-        batch.merge_cf(cf_handle, store_key.to_bytes(), iid_incr.to_kv_value());
+        batch.merge_cf(cf_handle, store_key.to_bytes(), iid_incr.as_bytes());
 
         Ok(iid_incr.0)
     }
@@ -603,7 +604,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
 
         tracing::debug!(%store_key, "setting oid-to-iid");
 
-        let encoded_value = iid.to_kv_value();
+        let encoded_value = iid.as_bytes();
 
         tracing::trace!(%store_key, "setting oid-to-iid with encoded value: {encoded_value:?}");
 

@@ -5,27 +5,25 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use zerocopy::little_endian;
+
 pub(super) type Hash = u32;
 
 // MARK: IID
 
-#[derive(
-    zerocopy::FromBytes,
-    zerocopy::IntoBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout
-)]
+#[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout)]
+#[derive(zerocopy::IntoBytes)]
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd)]
 #[repr(transparent)]
-pub struct StoreObjectIid(u64);
+pub struct StoreObjectIid(little_endian::U64);
 
-impl_primitive_wrapper_utils!(StoreObjectIid(u64));
+impl_primitive_wrapper_utils!(StoreObjectIid(little_endian::U64));
 
 impl StoreObjectIid {
     // NOTE: We went for `into_inner` here instead of marking `.0` `pub(super)`
     //   so it’s easier to identify call sites and keep constuction via `From`.
     #[inline]
-    pub(super) const fn into_inner(self) -> u64 {
+    pub(super) const fn into_inner(self) -> little_endian::U64 {
         self.0
     }
 }
@@ -35,6 +33,13 @@ impl std::fmt::Display for StoreObjectIid {
         let Self(n) = self;
 
         write!(f, "{n}")
+    }
+}
+
+impl From<u64> for StoreObjectIid {
+    #[inline]
+    fn from(value: u64) -> Self {
+        Self(little_endian::U64::new(value))
     }
 }
 
@@ -267,6 +272,8 @@ impl StoreItemBuilder {
 
 // MARK: IIDIncr counter
 
+#[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout)]
+#[derive(zerocopy::IntoBytes)]
 #[derive(Clone, Copy, Default, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct IidIncr(pub(super) StoreObjectIid);
@@ -274,7 +281,7 @@ pub struct IidIncr(pub(super) StoreObjectIid);
 impl IidIncr {
     #[inline]
     pub(super) const fn increment(&mut self) {
-        self.0.0 = self.0.0.saturating_add(1);
+        self.0.0 = little_endian::U64::new(self.0.0.get().saturating_add(1));
     }
 }
 
@@ -283,14 +290,18 @@ crate::util::impl_transparent_wrapper_utils!(From for IidIncr(StoreObjectIid));
 
 // MARK: ObjectCount counter
 
+#[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout)]
+#[derive(zerocopy::IntoBytes)]
 #[derive(Default)]
 #[repr(transparent)]
-pub struct ObjectCount(pub(super) i64);
+pub struct ObjectCount(pub(super) little_endian::I64);
 
 impl ObjectCount {
     #[inline]
-    pub(super) const fn saturating_add(self, rhs: Self) -> Self {
-        Self(self.0.saturating_add(rhs.0))
+    pub(super) const fn saturating_add(self, rhs: &Self) -> Self {
+        Self(little_endian::I64::new(
+            self.0.get().saturating_add(rhs.0.get()),
+        ))
     }
 }
 
@@ -424,7 +435,7 @@ impl std::fmt::Debug for CollectionHash {
 // MARK: - Helpers
 
 macro_rules! impl_primitive_wrapper_utils {
-    ($t:ident($wrapped:ident)) => {
+    ($t:ident($wrapped:path)) => {
         impl $t {
             pub const fn new(value: $wrapped) -> Self {
                 Self(value)
@@ -445,7 +456,6 @@ macro_rules! impl_primitive_wrapper_utils {
 
         crate::util::impl_transparent_wrapper_utils!(Deref for $t($wrapped));
         crate::util::impl_transparent_wrapper_utils!(Debug for $t($wrapped));
-        crate::util::impl_transparent_wrapper_utils!(FromStr for $t($wrapped));
     };
 }
 use impl_primitive_wrapper_utils;

@@ -287,11 +287,11 @@ mod tests {
     #[test]
     fn it_keys_term_to_iids() {
         assert_eq!(
-            TermToIids { bucket: "b:2".into(), term_hash: &772137347.into() }.to_bytes(),
+            TermToIids { bucket: "b:2".into(), term_hash: &772137347u32.into() }.to_bytes(),
             [3, b'b', b':', b'2', 1, 131, 225, 5, 46]
         );
         assert_eq!(
-            TermToIids { bucket: "b:2".into(), term_hash: &3582484684.into() }.to_bytes(),
+            TermToIids { bucket: "b:2".into(), term_hash: &3582484684u32.into() }.to_bytes(),
             [3, b'b', b':', b'2', 1, 204, 96, 136, 213]
         );
     }
@@ -341,7 +341,7 @@ mod tests {
     #[test]
     fn it_formats_key() {
         assert_eq!(
-            &format!("{}", TermToIids { bucket: "b:6".into(), term_hash: &72137347.into() }),
+            &format!("{}", TermToIids { bucket: "b:6".into(), term_hash: &72137347u32.into() }),
             r#""b:6":TERM_TO_IIDS:<44cba83>"#
         );
         assert_eq!(
