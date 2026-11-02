@@ -45,7 +45,9 @@ impl From<u64> for StoreObjectIid {
 
 // MARK: OID
 
+#[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout)]
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct StoreObjectOid<'a>(StoreItemPart<'a>);
 
 crate::util::impl_transparent_wrapper_utils!(Deref for StoreObjectOid<'a>(StoreItemPart<'a>));
@@ -106,17 +108,19 @@ impl std::str::FromStr for BucketOwned {
 
 /// Remember to use [`crate::util::hash::NoopU32HasherBuilder`], as
 /// `StoreTermHash` values are already hashed (by xxHash)!
+#[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout)]
+#[derive(zerocopy::IntoBytes)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct StoreTermHash(u32);
+pub struct StoreTermHash(little_endian::U32);
 
-impl_primitive_wrapper_utils!(StoreTermHash(u32));
+impl_primitive_wrapper_utils!(StoreTermHash(little_endian::U32));
 
 impl StoreTermHash {
     // NOTE: We went for `into_inner` here instead of marking `.0` `pub(super)`
     //   so it’s easier to identify call sites and keep constuction via `From`.
     #[inline]
-    pub(super) const fn into_inner(self) -> u32 {
+    pub(super) const fn into_inner(self) -> little_endian::U32 {
         self.0
     }
 }
@@ -130,7 +134,13 @@ impl From<&str> for StoreTermHash {
 
         hasher.write(term.as_bytes());
 
-        Self(hasher.finish() as u32)
+        Self((hasher.finish() as u32).into())
+    }
+}
+
+impl From<u32> for StoreTermHash {
+    fn from(hash: u32) -> Self {
+        Self(hash.into())
     }
 }
 
@@ -157,6 +167,7 @@ mod tests_store_term_hash {
 
 // MARK: Item part
 
+#[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StoreItemPart<'a>(&'a str);
 

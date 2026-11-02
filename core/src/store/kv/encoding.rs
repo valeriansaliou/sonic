@@ -136,14 +136,14 @@ impl ToKvKeyPart for StoreTermHash {
 
     #[inline]
     fn to_kv_key_part(self) -> Self::Repr {
-        self.into_inner().to_le_bytes()
+        zerocopy::little_endian::U32::from(self.into_inner().get()).to_bytes()
     }
 }
 
 impl FromKvKeyPart for StoreTermHash {
     #[inline]
     fn from_kv_key_part(repr: Self::Repr) -> Self {
-        Self::new(u32::from_le_bytes(repr))
+        Self::new(zerocopy::little_endian::U32::from_bytes(repr).get().into())
     }
 }
 

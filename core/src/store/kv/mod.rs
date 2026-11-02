@@ -56,6 +56,8 @@ const CF_NAMES: &[&str] = &[
 
 pub type KvStorePool = GenericKvStorePool<KvStore>;
 
+type ColumnFamilyRef<'a> = &'a rocksdb::ColumnFamily;
+
 #[derive(Debug, Default)]
 pub struct KvStorePoolStats {}
 
@@ -286,14 +288,20 @@ impl KvStore {
 }
 
 impl<'db> KvRepositoryRead<'db> {
-    fn parse_opt_pinned<'a, K: TypedKvStoreKey>(
-        key: K,
-        value_res: Result<Option<rocksdb::DBPinnableSlice<'db>>, rocksdb::Error>,
+    fn get_pinned<'a, K: TypedKvStoreKey>(
+        &'a self,
+        cf: Option<ColumnFamilyRef<'_>>,
+        key: &K,
     ) -> Result<Option<K::Value<'db>>, ()>
     where
         K::Value<'db>: TryFromKvValue<rocksdb::DBPinnableSlice<'a>>,
-        'db: 'a,
     {
+        let value_res = if let Some(cf) = cf {
+            self.store.database.get_pinned_cf(cf, key.to_bytes())
+        } else {
+            self.store.database.get_pinned(key.to_bytes())
+        };
+
         match value_res {
             Ok(Some(value)) => {
                 tracing::debug!(%key, "Got encoded value: {:?}", value.deref());
@@ -323,30 +331,6 @@ impl<'db> KvRepositoryRead<'db> {
             }
         }
     }
-
-    #[inline]
-    fn get_pinned<'a, K: TypedKvStoreKey>(&'a self, key: K) -> Result<Option<K::Value<'db>>, ()>
-    where
-        K::Value<'db>: TryFromKvValue<rocksdb::DBPinnableSlice<'a>>,
-    {
-        let value_res = self.store.database.get_pinned(key.to_bytes());
-
-        Self::parse_opt_pinned(key, value_res)
-    }
-
-    #[inline]
-    fn get_pinned_cf<'a, K: TypedKvStoreKey>(
-        &'a self,
-        cf_handle: &rocksdb::ColumnFamily,
-        key: K,
-    ) -> Result<Option<K::Value<'db>>, ()>
-    where
-        K::Value<'db>: TryFromKvValue<rocksdb::DBPinnableSlice<'a>>,
-    {
-        let value_res = self.store.database.get_pinned_cf(cf_handle, key.to_bytes());
-
-        Self::parse_opt_pinned(key, value_res)
-    }
 }
 
 impl<'db> KvRepositoryRead<'db> {
@@ -358,7 +342,7 @@ impl<'db> KvRepositoryRead<'db> {
             meta: keys::meta::ObjectCount,
         };
 
-        self.get_pinned(store_key).map(|opt| {
+        self.get_pinned(None, &store_key).map(|opt| {
             opt.map_or_else(
                 || {
                     tracing::debug!(
@@ -392,7 +376,8 @@ impl<'db> KvRepositoryRead<'db> {
             term_hash,
         };
 
-        self.get_pinned(store_key).map(|opt| opt.map(|iter| iter.0))
+        self.get_pinned(None, &store_key)
+            .map(|opt| opt.map(|iter| iter.0))
     }
 
     pub fn get_document_frequency(&self, term_hash: &StoreTermHash) -> u64 {
@@ -433,7 +418,7 @@ impl<'db> KvRepositoryRead<'db> {
             .cf_handle(READ_ON_PUSH_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        self.get_pinned_cf(cf_handle, store_key)
+        self.get_pinned(Some(cf_handle), &store_key)
     }
 
     #[inline]
@@ -443,7 +428,7 @@ impl<'db> KvRepositoryRead<'db> {
             iid,
         };
 
-        self.get_pinned(store_key)
+        self.get_pinned(None, &store_key)
     }
 
     #[inline]
@@ -460,12 +445,72 @@ impl<'db> KvRepositoryRead<'db> {
             .cf_handle(INCOMPRESSIBLE_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        self.get_pinned_cf(cf_handle, store_key)
+        self.get_pinned(Some(cf_handle), &store_key)
             .map(|opt| opt.map(|iter| iter.0))
     }
 }
 
 impl<'a> KvRepositoryReadWrite<'a> {
+    fn merge<K, V>(
+        &self,
+        cf: Option<ColumnFamilyRef<'_>>,
+        key: &K,
+        value: &V,
+        batch: &mut WriteBatch,
+    ) where
+        K: TypedKvStoreKey,
+        V: IntoBytes + zerocopy::Immutable + ?Sized,
+    {
+        let value = value.as_bytes();
+
+        if tracing::enabled!(tracing::Level::TRACE) {
+            tracing::trace!(store_key = %key, ?value, "Updating value");
+        } else {
+            tracing::debug!(store_key = %key, "Updating value");
+        }
+
+        if let Some(cf) = cf {
+            batch.merge_cf(cf, key.to_bytes(), value)
+        } else {
+            batch.merge(key.to_bytes(), value)
+        }
+    }
+
+    fn put<K, V>(&self, cf: Option<ColumnFamilyRef<'_>>, key: &K, value: &V, batch: &mut WriteBatch)
+    where
+        K: TypedKvStoreKey,
+        V: IntoBytes + zerocopy::Immutable + ?Sized,
+    {
+        let value = value.as_bytes();
+
+        if tracing::enabled!(tracing::Level::TRACE) {
+            tracing::trace!(store_key = %key, ?value, "Setting value");
+        } else {
+            tracing::debug!(store_key = %key, "Setting value");
+        }
+
+        if let Some(cf) = cf {
+            batch.put_cf(cf, key.to_bytes(), value)
+        } else {
+            batch.put(key.to_bytes(), value)
+        }
+    }
+
+    fn delete<K>(&self, cf: Option<ColumnFamilyRef<'_>>, key: &K, batch: &mut WriteBatch)
+    where
+        K: TypedKvStoreKey,
+    {
+        tracing::debug!(store_key = %key, "Deleting value");
+
+        if let Some(cf) = cf {
+            batch.delete_cf(cf, key.to_bytes())
+        } else {
+            batch.delete(key.to_bytes())
+        }
+    }
+}
+
+impl<'db> KvRepositoryReadWrite<'db> {
     #[inline]
     fn update_object_count(&self, batch: &mut WriteBatch, diff: i64) {
         let store_key = keys::MetaToValue {
@@ -473,9 +518,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
             meta: keys::meta::ObjectCount,
         };
 
-        tracing::trace!(%store_key, diff, "updating object count");
-
-        batch.merge(store_key.to_bytes(), ObjectCount(diff.into()).as_bytes());
+        self.merge(None, &store_key, &ObjectCount(diff.into()), batch);
     }
 
     fn get_new_iid(
@@ -505,7 +548,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
             hashbrown::hash_map::Entry::Vacant(entry) => {
                 // Read from database (`cache_guard` ensures no race condition).
                 let iid_incr = match self
-                    .get_pinned_cf(cf_handle, store_key)
+                    .get_pinned(Some(cf_handle), &store_key)
                     .map_err(|()| io::Error::other("Error getting IidIncr"))?
                 {
                     Some(mut iid_incr) => {
@@ -576,24 +619,22 @@ impl<'a> KvRepositoryReadWrite<'a> {
         iid: StoreObjectIid,
         tf_delta: Option<u8>,
     ) {
-        let store_key = keys::TermToIids {
-            bucket: self.bucket,
-            term_hash,
-        };
-
-        tracing::debug!(%store_key, "updating term-to-iids");
-
         debug_assert!(
             !matches!(tf_delta, Some(TF_TOMBSTONE)),
             "Don’t update Term-To-IIDs with a tf of 0"
         );
 
-        let encoded_value = TermToIidsEntry::new(iid, tf_delta.unwrap_or(TF_TOMBSTONE));
-        let encoded_value = encoded_value.as_bytes();
+        let store_key = keys::TermToIids {
+            bucket: self.bucket,
+            term_hash,
+        };
 
-        tracing::trace!(%store_key, "updating term-to-iids with encoded value: {encoded_value:?}");
-
-        batch.merge(store_key.to_bytes(), encoded_value);
+        self.merge(
+            None,
+            &store_key,
+            &TermToIidsEntry::new(iid, tf_delta.unwrap_or(TF_TOMBSTONE)),
+            batch,
+        );
     }
 
     pub fn set_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOid, iid: StoreObjectIid) {
@@ -602,17 +643,11 @@ impl<'a> KvRepositoryReadWrite<'a> {
             oid,
         };
 
-        tracing::debug!(%store_key, "setting oid-to-iid");
-
-        let encoded_value = iid.as_bytes();
-
-        tracing::trace!(%store_key, "setting oid-to-iid with encoded value: {encoded_value:?}");
-
         let cf_handle = (self.store.database)
             .cf_handle(READ_ON_PUSH_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        batch.put_cf(cf_handle, store_key.to_bytes(), &encoded_value)
+        self.put(Some(cf_handle), &store_key, &iid, batch)
     }
 
     pub fn delete_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOid) {
@@ -621,13 +656,11 @@ impl<'a> KvRepositoryReadWrite<'a> {
             oid,
         };
 
-        tracing::debug!(%store_key, "deleting oid-to-iid");
-
         let cf_handle = (self.store.database)
             .cf_handle(READ_ON_PUSH_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        batch.delete_cf(cf_handle, store_key.to_bytes())
+        self.delete(Some(cf_handle), &store_key, batch)
     }
 
     pub fn set_iid_to_oid(&self, batch: &mut WriteBatch, iid: StoreObjectIid, oid: StoreObjectOid) {
@@ -636,9 +669,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
             iid,
         };
 
-        tracing::debug!(%store_key, "setting iid-to-oid");
-
-        batch.put(store_key.to_bytes(), oid.as_bytes())
+        self.put(None, &store_key, oid.as_bytes(), batch)
     }
 
     pub fn delete_iid_to_oid(&self, batch: &mut WriteBatch, iid: StoreObjectIid) {
@@ -647,9 +678,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
             iid,
         };
 
-        tracing::debug!(%store_key, "deleting iid-to-oid");
-
-        batch.delete(store_key.to_bytes())
+        self.delete(None, &store_key, batch)
     }
 
     pub fn set_iid_to_terms(
@@ -664,17 +693,16 @@ impl<'a> KvRepositoryReadWrite<'a> {
         };
 
         // Encode iterator into storage serialized format.
-        let terms: Vec<IidToTermsEntry> = terms.map(IidToTermsEntry::new).collect();
-
-        tracing::trace!(%store_key, ?terms, "setting iid-to-terms");
+        let terms = terms.map(IidToTermsEntry::new).collect::<Vec<_>>();
 
         let cf_handle = (self.store.database)
             .cf_handle(INCOMPRESSIBLE_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        batch.put_cf(cf_handle, store_key.to_bytes(), terms.as_bytes())
+        self.put(Some(cf_handle), &store_key, terms.as_slice(), batch)
     }
 
+    #[inline]
     pub fn update_iid_to_terms(
         &self,
         batch: &mut WriteBatch,
@@ -694,13 +722,11 @@ impl<'a> KvRepositoryReadWrite<'a> {
         let new_terms: Vec<IidToTermsEntry> =
             new_terms.into_iter().map(IidToTermsEntry::new).collect();
 
-        tracing::trace!(%store_key, ?new_terms, "updating iid-to-terms");
-
         let cf_handle = (self.store.database)
             .cf_handle(INCOMPRESSIBLE_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        batch.merge_cf(cf_handle, store_key.to_bytes(), new_terms.as_bytes());
+        self.merge(Some(cf_handle), &store_key, new_terms.as_slice(), batch);
     }
 
     pub fn delete_iid_to_terms(&self, batch: &mut WriteBatch, iid: StoreObjectIid) {
@@ -709,13 +735,11 @@ impl<'a> KvRepositoryReadWrite<'a> {
             iid,
         };
 
-        tracing::debug!(%store_key, "deleting iid-to-terms");
-
         let cf_handle = (self.store.database)
             .cf_handle(INCOMPRESSIBLE_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        batch.delete_cf(cf_handle, store_key.to_bytes())
+        self.delete(Some(cf_handle), &store_key, batch)
     }
 
     pub fn delete_object(

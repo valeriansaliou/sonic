@@ -402,18 +402,18 @@ impl IidToTermsEntry {
     #[inline]
     pub const fn new(term_hash: StoreTermHash) -> Self {
         Self {
-            term_hash: little_endian::U32::new(term_hash.into_inner()),
+            term_hash: term_hash.into_inner(),
         }
     }
 
     #[inline]
     pub const fn into_term_hash(self) -> StoreTermHash {
         let Self { term_hash, .. } = self;
-        StoreTermHash::new(term_hash.get())
+        StoreTermHash::new(term_hash)
     }
 
     #[inline]
     pub const fn term_hash(&self) -> StoreTermHash {
-        StoreTermHash::new(self.term_hash.get())
+        StoreTermHash::new(self.term_hash)
     }
 }
