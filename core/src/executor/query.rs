@@ -242,14 +242,14 @@ impl super::Executor {
 
         scoring_matrix.backfill(&kv_repo, &query_candidates);
 
+        let required_terms = query_candidates
+            .iter()
+            .take_while(|qc| qc.is_required)
+            .count();
+
         let mut all_results = Vec::with_capacity(scoring_matrix.len());
         all_results.extend(
             (scoring_matrix.into_iter()).filter_map(|(iid, term_scores)| {
-                let required_terms = query_candidates
-                    .iter()
-                    .take_while(|qc| qc.is_required)
-                    .count();
-
                 if term_scores[..required_terms].iter().any(Option::is_none) {
                     return None;
                 };
