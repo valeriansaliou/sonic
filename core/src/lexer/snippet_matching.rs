@@ -4,6 +4,7 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::ops::{Range, RangeInclusive};
 
@@ -70,7 +71,7 @@ impl Default for QuerySnippetsConfig {
 }
 
 #[derive(Debug)]
-pub struct TermScore {
+pub struct TermWeights {
     pub weight: f32,
     pub idf: f32,
 }
@@ -80,7 +81,7 @@ pub fn get_best_snippets(
     lang: Option<Lang>,
     preprocessor: &Preprocessor,
     config: QuerySnippetsConfig,
-    score_per_term: IndexMap<String, TermScore>,
+    weights_per_term: &IndexMap<Cow<'_, str>, TermWeights>,
 ) -> Vec<Snippet> {
     let QuerySnippetsConfig {
         window_count,
@@ -92,7 +93,7 @@ pub fn get_best_snippets(
 
     let tokens = doc_preprocessed.tokens().collect::<Vec<Token>>();
 
-    let Some(matches) = get_matches(&tokens, &score_per_term) else {
+    let Some(matches) = get_matches(&tokens, &weights_per_term) else {
         return Vec::new();
     };
 
@@ -110,17 +111,18 @@ pub fn get_best_snippets(
 
 fn get_matches<'a, 'b>(
     tokens: &'b [Token<'a>],
-    score_per_term: &IndexMap<String, TermScore>,
+    weights_per_term: &IndexMap<Cow<'_, str>, TermWeights>,
 ) -> Option<Vec<(&'b Token<'a>, f32)>> {
-    let mut term_counts = vec![0u8; score_per_term.len()];
+    let mut term_counts = vec![0u8; weights_per_term.len()];
 
     // PERF: Start with initial capacity, as we know there will be at least one match.
     let mut matches_tmp = Vec::with_capacity(16);
 
     for doc_token in tokens.iter().filter(|&t| t.is_not_stopword()) {
-        if let Some((index, _, term_score)) = score_per_term.get_full(doc_token.as_normalized()) {
+        if let Some((index, _, term_weights)) = weights_per_term.get_full(doc_token.as_normalized())
+        {
             term_counts[index] = term_counts[index].saturating_add(1);
-            matches_tmp.push((doc_token, index, term_score));
+            matches_tmp.push((doc_token, index, term_weights));
         }
     }
 
@@ -134,7 +136,7 @@ fn get_matches<'a, 'b>(
 
     let mut matches = Vec::with_capacity(matches_tmp.len());
 
-    for (doc_token, index, TermScore { weight, idf }) in matches_tmp.into_iter() {
+    for (doc_token, index, TermWeights { weight, idf }) in matches_tmp.into_iter() {
         let tf = term_counts[index];
         let score: f32 = weight * bm25_lite(tf, *idf);
         matches.push((doc_token, score));

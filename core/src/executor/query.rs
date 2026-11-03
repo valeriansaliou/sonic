@@ -32,7 +32,6 @@ pub struct QueryOptions {
 pub struct QueryResult {
     pub oid: String,
     pub score: f32,
-    score_per_term: Vec<Option<IidTermScore>>,
 }
 
 #[derive(Debug)]
@@ -205,10 +204,9 @@ impl super::Executor {
         all_results.extend(scoring_matrix.into_iter(&query_candidates).map(
             |(iid, term_scores)| {
                 // Flatten scores, taking into account missing matches (thanks to `None`).
-                let score =
-                    overall_score(term_scores.iter().map(|opt| opt.as_ref().map(|v| v.score)));
+                let score = overall_score(term_scores.iter().copied());
 
-                (iid, score, term_scores)
+                (iid, score)
             },
         ));
 
@@ -223,13 +221,9 @@ impl super::Executor {
             //   there’s no guarantee results will contain `limit` results.
             //   This should however happen after `.skip(offset)` so it’s
             //   computed lazily.
-            .flat_map(|(iid, score, score_per_term)| {
+            .flat_map(|(iid, score)| {
                 if let Ok(Some(oid)) = kv_repo.get_iid_to_oid(iid) {
-                    Some(QueryResult {
-                        oid,
-                        score,
-                        score_per_term,
-                    })
+                    Some(QueryResult { oid, score })
                 } else {
                     tracing::error!("failed getting search executor iid-to-oid");
                     None
@@ -341,12 +335,20 @@ impl super::Executor {
             ..Preprocessor::from_app_conf(&self.app_conf)
         };
 
-        for QueryResult {
-            oid,
-            score_per_term,
-            ..
-        } in query_results
-        {
+        let weights_per_term = query_candidates
+            .into_iter()
+            .map(|candidate| {
+                (
+                    candidate.term,
+                    snippet_matching::TermWeights {
+                        weight: candidate.weight,
+                        idf: candidate.idf,
+                    },
+                )
+            })
+            .collect();
+
+        for QueryResult { oid, .. } in query_results {
             let oid_parsed = GenericOid::from_str(&oid)?;
 
             let todo = "Match fragments";
@@ -371,31 +373,12 @@ impl super::Executor {
                         continue;
                     };
 
-                    let score_per_term = score_per_term
-                        .into_iter()
-                        .enumerate()
-                        .flat_map(|(term_idx, opt)| {
-                            opt.map(|score| {
-                                let term =
-                                    Cow::clone(&query_candidates[term_idx].term).into_owned();
-
-                                (
-                                    term,
-                                    snippet_matching::TermScore {
-                                        weight: score.weight,
-                                        idf: score.idf,
-                                    },
-                                )
-                            })
-                        })
-                        .collect();
-
                     match_entry.snippets = get_best_snippets(
                         &doc,
                         lang,
                         &preprocessor,
                         *snippets_config,
-                        score_per_term,
+                        &weights_per_term,
                     );
                 }
                 Ok(None) => continue,
@@ -584,16 +567,9 @@ fn test_overall_score() {
 
 // MARK: - Scoring matrix
 
-#[derive(Debug)]
-struct IidTermScore {
-    score: f32,
-    idf: f32,
-    weight: f32,
-}
-
 /// Score per query term, per object.
 struct ScoringMatrix {
-    map: IndexMap<GenericIid, Vec<Option<IidTermScore>>>,
+    map: IndexMap<GenericIid, Vec<Option<QueryMatchScore>>>,
     term_count: usize,
 }
 
@@ -640,13 +616,7 @@ impl ScoringMatrix {
                 let tf = term_to_iids_entry.tf();
                 let bm25_score = weight * bm25_lite(tf, *idf);
 
-                let score_entry = IidTermScore {
-                    score: bm25_score,
-                    idf: *idf,
-                    weight: *weight,
-                };
-
-                scoring_matrix.set_score(iid, score_entry, term_idx, accept_new_iids);
+                scoring_matrix.set_score(iid, bm25_score, term_idx, accept_new_iids);
             }
 
             if *is_required {
@@ -664,7 +634,7 @@ impl ScoringMatrix {
     fn set_score(
         &mut self,
         iid: GenericIid,
-        score: IidTermScore,
+        score: QueryMatchScore,
         term_idx: usize,
         accept_new_iids: bool,
     ) -> bool {
@@ -739,7 +709,7 @@ impl ScoringMatrix {
                 if let Some(&iid_idx) = to_backfill.get(&entry.iid()) {
                     let score: f32 = weight * bm25_lite(entry.tf(), idf);
 
-                    self.map[iid_idx][term_idx] = Some(IidTermScore { score, idf, weight });
+                    self.map[iid_idx][term_idx] = Some(score);
                 }
             }
         }
@@ -747,7 +717,7 @@ impl ScoringMatrix {
 }
 
 impl std::ops::Deref for ScoringMatrix {
-    type Target = IndexMap<GenericIid, Vec<Option<IidTermScore>>>;
+    type Target = IndexMap<GenericIid, Vec<Option<QueryMatchScore>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.map
@@ -767,7 +737,7 @@ impl ScoringMatrix {
     fn into_iter<'a>(
         self,
         query_candidates: &'a [QueryCandidate<'_>],
-    ) -> impl Iterator<Item = (GenericIid, Vec<Option<IidTermScore>>)> + use<'a> {
+    ) -> impl Iterator<Item = (GenericIid, Vec<Option<QueryMatchScore>>)> + use<'a> {
         let required_terms = query_candidates
             .iter()
             .take_while(|qc| qc.is_required)
@@ -776,11 +746,5 @@ impl ScoringMatrix {
         self.map.into_iter().filter(move |(_iid, term_scores)| {
             !term_scores[..required_terms].iter().any(Option::is_none)
         })
-    }
-}
-
-impl Clone for IidTermScore {
-    fn clone(&self) -> Self {
-        unreachable!("Only `Option::<IidTermScore>::None` should ever be cloned.")
     }
 }
