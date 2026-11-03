@@ -15,8 +15,8 @@ use crate::lexer::preprocessor::{Preprocessor, PreprocessorOutput};
 pub use crate::lexer::snippet_matching::QuerySnippetsConfig;
 use crate::lexer::snippet_matching::{self, Snippet, get_best_snippets};
 use crate::scoring::*;
-use crate::store::fst::typo_factor;
-use crate::store::kv::KvRepositoryReadOnly;
+use crate::store::fst::{FstRepository, typo_factor};
+use crate::store::kv::{KvRepositoryReadOnly, TermToIidsEntry};
 use crate::store::{Bucket, GenericIid, GenericOid, StoreItemPart, StoreTermHash};
 use crate::util::u32_to_usize;
 
@@ -46,12 +46,12 @@ struct QueryCandidate<'a> {
 }
 
 impl super::Executor {
-    fn query_<'input>(
+    fn query_inner<'input>(
         &self,
-        collection: StoreItemPart,
-        bucket: Bucket,
         input: &'input PreprocessorOutput<'input>,
         options: QueryOptions,
+        kv_repo: &KvRepositoryReadOnly<'_>,
+        fst_repo: &FstRepository<'_>,
     ) -> Result<(Vec<QueryResult>, Vec<QueryCandidate<'input>>), ()> {
         // eprintln!("q: {}", input.original_text());
         let QueryOptions { limit, offset } = options;
@@ -61,27 +61,6 @@ impl super::Executor {
         retain_word_objects = retain_word_objects.max(u32_to_usize(offset) + usize::from(limit));
         let min_idf = (self.app_conf.search).query_minimum_term_idf_default;
         let min_doc_count = (self.app_conf.search).query_minimum_term_idf_minimum_object_count;
-
-        // ------------
-
-        // SAFETY: Acquire database access read lock, and reference it in context.
-        //   This prevents the database from being erased while using it in this block.
-        let _kv_read_guard = self.kv_pool.lock_read_access();
-        let _fst_read_guard = self.fst_pool.lock_read_access();
-
-        let Some(kv_store) = self.kv_pool.acquire(false, collection, None)? else {
-            tracing::debug!(
-                "collection store does not exist, consider {bucket:?} from {collection:?} empty"
-            );
-            return Ok((vec![], vec![]));
-        };
-        let fst_store = self.fst_pool.acquire(collection, bucket)?;
-
-        // SAFETY: Acquire bucket store read lock.
-        executor_kv_lock_read!(kv_store);
-
-        let kv_repo = kv_store.to_repository_read_only(bucket);
-        let fst_repo = fst_store.to_repository();
 
         // ------------
 
@@ -196,71 +175,22 @@ impl super::Executor {
         // PERF: Truncate to keep only the most meaningful terms.
         query_candidates.truncate(MAX_QUERY_TOKENS);
 
-        let mut scoring_matrix = ScoringMatrix::new(query_candidates.len());
+        let scoring_matrix =
+            ScoringMatrix::build(retain_word_objects, &query_candidates, |term_hash| {
+                kv_repo.get_term_to_iids(term_hash)
+            });
 
-        let mut accept_new_iids = true;
-
-        // Populate the scoring matrix with IIDs.
-        for (
-            term_idx,
-            QueryCandidate {
-                term_hash,
-                idf,
-                weight,
-                is_required,
-                ..
-            },
-        ) in query_candidates.iter().enumerate()
-        {
-            for term_to_iids_entry in kv_repo
-                .get_term_to_iids(&term_hash)
-                .unwrap_or_else(|()| None)
-                .into_iter()
-                .flatten()
-                .take(retain_word_objects)
-            {
-                let iid = term_to_iids_entry.iid();
-
-                let tf = term_to_iids_entry.tf();
-                let bm25_score = weight * bm25_lite(tf, *idf);
-
-                let score_entry = IidTermScore {
-                    score: bm25_score,
-                    idf: *idf,
-                    weight: *weight,
-                };
-
-                scoring_matrix.set_score(iid, score_entry, term_idx, accept_new_iids);
-            }
-
-            if *is_required {
-                // PERF: Don’t store new IIDs in the scoring matrix from now on;
-                //   it would be filtered out later when applying the AND logic.
-                accept_new_iids = false;
-            }
-        }
-
-        scoring_matrix.backfill(&kv_repo, &query_candidates);
-
-        let required_terms = query_candidates
-            .iter()
-            .take_while(|qc| qc.is_required)
-            .count();
-
+        // TODO(perf): Don’t pre-allocate that much.
         let mut all_results = Vec::with_capacity(scoring_matrix.len());
-        all_results.extend(
-            (scoring_matrix.into_iter()).filter_map(|(iid, term_scores)| {
-                if term_scores[..required_terms].iter().any(Option::is_none) {
-                    return None;
-                };
-
+        all_results.extend(scoring_matrix.into_iter(&query_candidates).map(
+            |(iid, term_scores)| {
                 // Flatten scores, taking into account missing matches (thanks to `None`).
                 let score =
                     overall_score(term_scores.iter().map(|opt| opt.as_ref().map(|v| v.score)));
 
-                Some((iid, score, term_scores))
-            }),
-        );
+                (iid, score, term_scores)
+            },
+        ));
 
         // Sort results.
         all_results.sort_by(|a, b| a.1.total_cmp(&b.1).reverse());
@@ -294,6 +224,36 @@ impl super::Executor {
         Ok((page_results, query_candidates))
     }
 
+    pub fn query_(
+        &self,
+        collection: StoreItemPart,
+        bucket: Bucket,
+        input: &PreprocessorOutput,
+        options: QueryOptions,
+    ) -> Result<Vec<QueryResult>, ()> {
+        // SAFETY: Acquire database access read lock, and reference it in context.
+        //   This prevents the database from being erased while using it in this block.
+        let _kv_read_guard = self.kv_pool.lock_read_access();
+        let _fst_read_guard = self.fst_pool.lock_read_access();
+
+        let Some(kv_store) = self.kv_pool.acquire(false, collection, None)? else {
+            tracing::debug!(
+                "collection store does not exist, consider {bucket:?} from {collection:?} empty"
+            );
+            return Ok(vec![]);
+        };
+        let fst_store = self.fst_pool.acquire(collection, bucket)?;
+
+        // SAFETY: Acquire bucket store read lock.
+        executor_kv_lock_read!(kv_store);
+
+        let kv_repo = kv_store.to_repository_read_only(bucket);
+        let fst_repo = fst_store.to_repository();
+
+        self.query_inner(&input, options, &kv_repo, &fst_repo)
+            .map(|(results, _)| results)
+    }
+
     #[inline]
     pub fn query(
         &self,
@@ -303,7 +263,7 @@ impl super::Executor {
         options: QueryOptions,
     ) -> Result<impl ExactSizeIterator<Item = String>, ()> {
         self.query_(collection, bucket, &input, options)
-            .map(|(results, _)| results.into_iter().map(|res| res.oid))
+            .map(|results| results.into_iter().map(|res| res.oid))
     }
 
     pub fn query_with_snippets(
@@ -315,7 +275,29 @@ impl super::Executor {
         lang: Option<whatlang::Lang>,
         snippets_config: &QuerySnippetsConfig,
     ) -> Result<Vec<MatchWithSnippets>, ()> {
-        let (query_results, query_candidates) = self.query_(collection, bucket, &input, options)?;
+        // SAFETY: Acquire database access read lock, and reference it in context.
+        //   This prevents the database from being erased while using it in this block.
+        let _kv_read_guard = self.kv_pool.lock_read_access();
+        let _fst_read_guard = self.fst_pool.lock_read_access();
+
+        let Some(kv_store) = self.kv_pool.acquire(false, collection, None)? else {
+            tracing::debug!(
+                "collection store does not exist, consider {bucket:?} from {collection:?} empty"
+            );
+            return Ok(vec![]);
+        };
+        let fst_store = self.fst_pool.acquire(collection, bucket)?;
+
+        // SAFETY: Acquire bucket store read lock.
+        executor_kv_lock_read!(kv_store);
+
+        let kv_repo = kv_store.to_repository_read_only(bucket);
+        let fst_repo = fst_store.to_repository();
+
+        // ------------
+
+        let (query_results, query_candidates) =
+            self.query_inner(&input, options, &kv_repo, &fst_repo)?;
 
         let object_store_pool = self.object_store_pool.acquire(false, collection, None)?;
 
@@ -603,6 +585,62 @@ impl ScoringMatrix {
         }
     }
 
+    fn build<'input, 'candidates, I>(
+        retain_word_objects: usize,
+        query_candidates: &'candidates [QueryCandidate<'_>],
+        get_term_to_iids: impl Fn(&'candidates StoreTermHash) -> Result<Option<I>, ()> + Copy,
+    ) -> Self
+    where
+        I: ExactSizeIterator<Item = TermToIidsEntry> + 'candidates,
+    {
+        let mut scoring_matrix = ScoringMatrix::new(query_candidates.len());
+
+        let mut accept_new_iids = true;
+
+        // Populate the scoring matrix with IIDs.
+        for (
+            term_idx,
+            QueryCandidate {
+                term_hash,
+                idf,
+                weight,
+                is_required,
+                ..
+            },
+        ) in query_candidates.iter().enumerate()
+        {
+            for term_to_iids_entry in get_term_to_iids(&term_hash)
+                .unwrap_or_else(|()| None)
+                .into_iter()
+                .flatten()
+                .take(retain_word_objects)
+            {
+                let iid = term_to_iids_entry.iid();
+
+                let tf = term_to_iids_entry.tf();
+                let bm25_score = weight * bm25_lite(tf, *idf);
+
+                let score_entry = IidTermScore {
+                    score: bm25_score,
+                    idf: *idf,
+                    weight: *weight,
+                };
+
+                scoring_matrix.set_score(iid, score_entry, term_idx, accept_new_iids);
+            }
+
+            if *is_required {
+                // PERF: Don’t store new IIDs in the scoring matrix from now on;
+                //   it would be filtered out later when applying the AND logic.
+                accept_new_iids = false;
+            }
+        }
+
+        scoring_matrix.backfill(&query_candidates, get_term_to_iids);
+
+        scoring_matrix
+    }
+
     fn set_score(
         &mut self,
         iid: GenericIid,
@@ -644,7 +682,13 @@ impl ScoringMatrix {
         }
     }
 
-    fn backfill(&mut self, index: &KvRepositoryReadOnly, query_candidates: &[QueryCandidate]) {
+    fn backfill<'candidates, I>(
+        &mut self,
+        query_candidates: &'candidates [QueryCandidate],
+        get_term_to_iids: impl Fn(&'candidates StoreTermHash) -> Result<Option<I>, ()> + Copy,
+    ) where
+        I: ExactSizeIterator<Item = TermToIidsEntry> + 'candidates,
+    {
         let mut to_backfill = HashMap::<GenericIid, usize>::with_capacity(self.map.len());
 
         for term_idx in 0..query_candidates.len() {
@@ -661,10 +705,9 @@ impl ScoringMatrix {
             }
 
             let token = &query_candidates[term_idx];
-            let term_hash = token.term_hash;
+            let term_hash = &token.term_hash;
 
-            let Some(term_to_iids_entries) =
-                index.get_term_to_iids(&term_hash).unwrap_or_else(|()| None)
+            let Some(term_to_iids_entries) = get_term_to_iids(term_hash).unwrap_or_else(|()| None)
             else {
                 continue;
             };
@@ -699,12 +742,20 @@ impl std::fmt::Debug for ScoringMatrix {
     }
 }
 
-impl IntoIterator for ScoringMatrix {
-    type Item = (GenericIid, Vec<Option<IidTermScore>>);
-    type IntoIter = indexmap::map::IntoIter<GenericIid, Vec<Option<IidTermScore>>>;
+impl ScoringMatrix {
+    #[inline]
+    fn into_iter<'a>(
+        self,
+        query_candidates: &'a [QueryCandidate<'_>],
+    ) -> impl Iterator<Item = (GenericIid, Vec<Option<IidTermScore>>)> + use<'a> {
+        let required_terms = query_candidates
+            .iter()
+            .take_while(|qc| qc.is_required)
+            .count();
 
-    fn into_iter(self) -> Self::IntoIter {
-        self.map.into_iter()
+        self.map.into_iter().filter(move |(_iid, term_scores)| {
+            !term_scores[..required_terms].iter().any(Option::is_none)
+        })
     }
 }
 
