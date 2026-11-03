@@ -189,16 +189,7 @@ impl super::Executor {
                 kv_repo.get_term_to_iids(term_hash)
             });
 
-        // TODO(perf): Don’t pre-allocate that much.
-        let mut all_results = Vec::with_capacity(scoring_matrix.len());
-        all_results.extend(scoring_matrix.into_iter(&query_candidates).map(
-            |(iid, term_scores)| {
-                // Flatten scores, taking into account missing matches (thanks to `None`).
-                let score = overall_score(term_scores.iter().copied());
-
-                (iid, score)
-            },
-        ));
+        let mut all_results = scoring_matrix.flatten(&query_candidates);
 
         // Sort results.
         all_results.sort_by(|a, b| a.1.total_cmp(&b.1).reverse());
@@ -745,18 +736,38 @@ impl std::fmt::Debug for ScoringMatrix {
 }
 
 impl ScoringMatrix {
+    /// Flatten scores, taking into account missing matches (thanks to `None`).
     #[inline]
-    fn into_iter<'a>(
-        self,
-        query_candidates: &'a [QueryCandidate<'_>],
-    ) -> impl Iterator<Item = (GenericIid, Vec<Option<QueryMatchScore>>)> + use<'a> {
+    fn flatten(self, query_candidates: &[QueryCandidate<'_>]) -> Vec<(GenericIid, f32)> {
         let required_terms = query_candidates
             .iter()
             .take_while(|qc| qc.is_required)
             .count();
 
-        self.map.into_iter().filter(move |(_iid, term_scores)| {
-            !term_scores[..required_terms].iter().any(Option::is_none)
-        })
+        let capacity = if required_terms == 0 {
+            self.map.len()
+        } else {
+            // PERF: This should generally be cheap, and it avoids pre-allocating too much.
+            (self.map.values())
+                .filter(|term_scores| !term_scores[..required_terms].iter().any(Option::is_none))
+                .count()
+        };
+
+        let mut all_results = Vec::with_capacity(capacity);
+
+        all_results.extend(
+            (self.map.into_iter())
+                .filter(|(_iid, term_scores)| {
+                    required_terms == 0
+                        || !term_scores[..required_terms].iter().any(Option::is_none)
+                })
+                .map(|(iid, term_scores)| {
+                    let score = overall_score(term_scores.into_iter());
+
+                    (iid, score)
+                }),
+        );
+
+        all_results
     }
 }
