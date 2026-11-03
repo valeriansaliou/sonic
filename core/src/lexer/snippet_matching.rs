@@ -18,6 +18,8 @@ use super::preprocessor::{Preprocessor, Token};
 #[derive(Debug)]
 #[derive(serde::Serialize)]
 pub struct Snippet {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fragment: Option<String>,
     pub text: String,
     pub matches: Vec<MatchRange>,
     pub score: f32,
@@ -32,11 +34,12 @@ pub struct MatchRange {
 }
 
 impl<'a, 'b> SnippetWindow<'a, 'b> {
-    fn into_snippet(self, original_text: &str) -> Snippet {
+    fn into_snippet(self, original_text: &str, fragment_oid: Option<&str>) -> Snippet {
         let range = self.range_in_original_text();
         let shift = range.start;
 
         Snippet {
+            fragment: fragment_oid.map(str::to_owned),
             range: MatchRange {
                 start: range.start,
                 end: range.end,
@@ -78,6 +81,7 @@ pub struct TermWeights {
 
 pub fn get_best_snippets(
     doc: &str,
+    fragment_oid: Option<String>,
     lang: Option<Lang>,
     preprocessor: &Preprocessor,
     config: QuerySnippetsConfig,
@@ -104,7 +108,7 @@ pub fn get_best_snippets(
     (windows.into_iter())
         .map(|mut window| {
             window.add_padding(window_size, max_window_padding, &tokens);
-            window.into_snippet(doc)
+            window.into_snippet(doc, fragment_oid.as_deref())
         })
         .collect::<Vec<_>>()
 }

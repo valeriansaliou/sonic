@@ -182,10 +182,10 @@ impl<'a> ObjectRepository<'a> {
         &self,
         oid: GenericOid,
         fragment_oid: Option<GenericOid>,
-    ) -> Result<Option<Vec<u8>>, rocksdb::Error> {
-        let store_key = keys::object_key(&self.bucket, oid, fragment_oid);
+    ) -> Result<Option<impl AsRef<[u8]> + use<'a>>, rocksdb::Error> {
+        let store_key: Vec<u8> = keys::object_key(&self.bucket, oid, fragment_oid);
 
-        self.store.database.get(&store_key)
+        self.store.database.get_pinned(&store_key)
     }
 }
 

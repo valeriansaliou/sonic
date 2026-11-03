@@ -23,6 +23,7 @@ use crate::util::u32_to_usize;
 // TODO: Make this configurable?
 const MAX_QUERY_TOKENS: usize = 20;
 
+#[derive(Debug, Clone, Copy)]
 pub struct QueryOptions {
     pub limit: QuerySearchLimit,
     pub offset: QuerySearchOffset,
@@ -30,6 +31,7 @@ pub struct QueryOptions {
 
 #[derive(Debug)]
 pub struct QueryResult {
+    pub iid: GenericIid,
     pub oid: String,
     pub score: f32,
 }
@@ -176,10 +178,10 @@ impl super::Executor {
     fn query_inner(
         &self,
         query_candidates: &[QueryCandidate<'_>],
-        options: QueryOptions,
+        options: &QueryOptions,
         kv_repo: &KvRepositoryReadOnly<'_>,
     ) -> Result<Vec<QueryResult>, ()> {
-        let QueryOptions { limit, offset } = options;
+        let &QueryOptions { limit, offset } = options;
 
         let mut retain_word_objects = self.app_conf.search.query_retain_word_objects;
         retain_word_objects = retain_word_objects.max(u32_to_usize(offset) + usize::from(limit));
@@ -204,7 +206,7 @@ impl super::Executor {
             //   computed lazily.
             .flat_map(|(iid, score)| {
                 if let Ok(Some(oid)) = kv_repo.get_iid_to_oid(iid) {
-                    Some(QueryResult { oid, score })
+                    Some(QueryResult { iid, oid, score })
                 } else {
                     tracing::error!("failed getting search executor iid-to-oid");
                     None
@@ -258,7 +260,7 @@ impl super::Executor {
 
         let query_candidates = self.get_query_candidates(&input, &kv_repo, &fst_repo)?;
 
-        self.query_inner(&query_candidates, options, &kv_repo)
+        self.query_inner(&query_candidates, &options, &kv_repo)
     }
 
     #[inline]
@@ -314,7 +316,7 @@ impl super::Executor {
 
         let query_candidates = self.get_query_candidates(&input, &kv_repo, &fst_repo)?;
 
-        let query_results = self.query_inner(&query_candidates, options, &kv_repo)?;
+        let query_results = self.query_inner(&query_candidates, &options, &kv_repo)?;
 
         let object_store_pool = self.object_store_pool.acquire(false, collection, None)?;
 
@@ -338,11 +340,10 @@ impl super::Executor {
             ..Preprocessor::from_app_conf(&self.app_conf)
         };
 
-        let weights_per_term = query_candidates
-            .into_iter()
+        let weights_per_term = (query_candidates.iter())
             .map(|candidate| {
                 (
-                    candidate.term,
+                    Cow::clone(&candidate.term),
                     snippet_matching::TermWeights {
                         weight: candidate.weight,
                         idf: candidate.idf,
@@ -351,43 +352,127 @@ impl super::Executor {
             })
             .collect();
 
-        for QueryResult { oid, .. } in query_results {
-            let oid_parsed = GenericOid::from_str(&oid)?;
-
-            let todo = "Match fragments";
-            let original = object_repo.get_object_original(oid_parsed, None);
-
+        'results: for QueryResult {
+            iid: object_iid,
+            oid: object_oid,
+            ..
+        } in query_results
+        {
             // Push a new entry no matter if we find the orignal object or even
             // any snippet. All matching objects must be returned, snippets list
             // will just be empty.
-            let match_entry = res.push_mut(MatchWithSnippets::new(oid));
+            let match_entry = res.push_mut(MatchWithSnippets::new(String::clone(&object_oid)));
 
-            match original {
-                Ok(Some(bytes)) => {
-                    // TODO(perf): Avoid parsing to string here? Match on raw bytes?
-                    let Ok(doc) = String::from_utf8(bytes).inspect_err(|error| {
-                        tracing::warn!(
-                            ?collection,
-                            ?bucket,
-                            oid = match_entry.oid,
-                            "Invalid byte sequence found in object store: {error}"
-                        )
-                    }) else {
-                        continue;
+            let object_oid_parsed = match GenericOid::from_str(&object_oid) {
+                Ok(oid) => oid,
+                Err(()) => {
+                    tracing::error!(%object_oid, "Invalid object OID");
+                    continue 'results;
+                }
+            };
+
+            let fragment_count = kv_repo.get_fragment_count(object_iid).unwrap_or_else(|()| {
+                tracing::error!(
+                    %object_iid,
+                    "Error getting fragment count, considering no fragment exist."
+                );
+                0
+            });
+
+            // TODO: Return snippets in both the object and its fragments.
+            //   This requires storing the object as special fragment #0.
+            if fragment_count == 0 {
+                let original = object_repo.get_object_original(object_oid_parsed, None);
+
+                match original {
+                    Ok(Some(bytes)) => {
+                        let doc = String::from_utf8_lossy(bytes.as_ref());
+
+                        match_entry.snippets = get_best_snippets(
+                            &doc,
+                            None,
+                            lang,
+                            &preprocessor,
+                            *snippets_config,
+                            &weights_per_term,
+                        );
+                    }
+                    Ok(None) => continue 'results,
+                    Err(error) => {
+                        tracing::error!("Error getting original object: {error}");
+                        continue 'results;
+                    }
+                }
+            } else {
+                let retain_word_objects = (self.app_conf.search.query_retain_word_objects)
+                    .max(snippets_config.window_count);
+
+                let fragments_scoring_matrix =
+                    ScoringMatrix::build(retain_word_objects, &query_candidates, |term_hash| {
+                        kv_repo.get_term_to_fragment_iids(object_iid, term_hash)
+                    });
+
+                let mut score_per_fragment = fragments_scoring_matrix.flatten(&query_candidates);
+
+                // Sort results.
+                score_per_fragment.sort_by(|a, b| a.1.total_cmp(&b.1).reverse());
+                let best_fragments = score_per_fragment;
+
+                'fragments: for (fragment_iid, _score) in best_fragments {
+                    let fragment_oid = match kv_repo
+                        .get_fragment_iid_to_oid(object_iid, fragment_iid)
+                    {
+                        Ok(Some(oid)) => oid,
+                        Ok(None) => {
+                            tracing::error!(%object_oid, %fragment_iid, "Fragment OID not found");
+                            continue 'fragments;
+                        }
+                        Err(()) => {
+                            tracing::error!(%object_oid, %fragment_iid, "Error finding fragment OID");
+                            continue 'fragments;
+                        }
+                    };
+                    let fragment_oid_parsed = match GenericOid::from_str(&fragment_oid) {
+                        Ok(oid) => oid,
+                        Err(()) => {
+                            tracing::error!(%object_oid, %fragment_oid, "Invalid fragment OID");
+                            continue 'fragments;
+                        }
                     };
 
-                    match_entry.snippets = get_best_snippets(
+                    let original = object_repo
+                        .get_object_original(object_oid_parsed, Some(fragment_oid_parsed));
+
+                    let doc = match &original {
+                        Ok(Some(bytes)) => String::from_utf8_lossy(bytes.as_ref()),
+                        Ok(None) => continue 'fragments,
+                        Err(error) => {
+                            tracing::error!("Error getting original object: {error}");
+                            continue 'fragments;
+                        }
+                    };
+
+                    let mut snippets = get_best_snippets(
                         &doc,
+                        Some(fragment_oid),
                         lang,
                         &preprocessor,
-                        *snippets_config,
+                        QuerySnippetsConfig {
+                            // We want at most one snippet per fragment.
+                            window_count: 1,
+                            ..*snippets_config
+                        },
                         &weights_per_term,
                     );
-                }
-                Ok(None) => continue,
-                Err(error) => {
-                    tracing::error!("Error getting original object: {error}");
-                    continue;
+
+                    debug_assert!(snippets.len() <= 1, "len={}", snippets.len());
+
+                    match_entry.snippets.append(&mut snippets);
+                    drop(snippets);
+
+                    if match_entry.snippets.len() >= snippets_config.window_count {
+                        break 'fragments;
+                    }
                 }
             }
         }
