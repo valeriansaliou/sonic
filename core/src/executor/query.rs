@@ -175,24 +175,14 @@ impl super::Executor {
 
     fn query_inner(
         &self,
-        input: &'input PreprocessorOutput<'input>,
+        query_candidates: &[QueryCandidate<'_>],
         options: QueryOptions,
         kv_repo: &KvRepositoryReadOnly<'_>,
-        fst_repo: &FstRepository<'_>,
-    ) -> Result<(Vec<QueryResult>, Vec<QueryCandidate<'input>>), ()> {
+    ) -> Result<Vec<QueryResult>, ()> {
         let QueryOptions { limit, offset } = options;
 
         let mut retain_word_objects = self.app_conf.search.query_retain_word_objects;
         retain_word_objects = retain_word_objects.max(u32_to_usize(offset) + usize::from(limit));
-
-        // #[cfg(debug_assertions)]
-        // eprintln!("q: {}", input.original_text());
-        #[cfg(debug_assertions)]
-        if input.token_count() > MAX_QUERY_TOKENS {
-            tracing::debug!("Query is very long: {:?}", input.original_text());
-        }
-
-        let query_candidates = self.get_query_candidates(input, kv_repo, fst_repo)?;
 
         let scoring_matrix =
             ScoringMatrix::build(retain_word_objects, &query_candidates, |term_hash| {
@@ -235,7 +225,7 @@ impl super::Executor {
 
         tracing::info!("got search executor final results: {page_results:?}");
 
-        Ok((page_results, query_candidates))
+        Ok(page_results)
     }
 
     pub fn query_(
@@ -245,6 +235,15 @@ impl super::Executor {
         input: &PreprocessorOutput,
         options: QueryOptions,
     ) -> Result<Vec<QueryResult>, ()> {
+        // #[cfg(debug_assertions)]
+        // eprintln!("q: {}", input.original_text());
+        #[cfg(debug_assertions)]
+        if input.token_count() > MAX_QUERY_TOKENS {
+            tracing::debug!("Query is very long: {:?}", input.original_text());
+        }
+
+        // ------------
+
         // SAFETY: Acquire database access read lock, and reference it in context.
         //   This prevents the database from being erased while using it in this block.
         let _kv_read_guard = self.kv_pool.lock_read_access();
@@ -264,8 +263,11 @@ impl super::Executor {
         let kv_repo = kv_store.to_repository_read_only(bucket);
         let fst_repo = fst_store.to_repository();
 
-        self.query_inner(&input, options, &kv_repo, &fst_repo)
-            .map(|(results, _)| results)
+        // ------------
+
+        let query_candidates = self.get_query_candidates(&input, &kv_repo, &fst_repo)?;
+
+        self.query_inner(&query_candidates, options, &kv_repo)
     }
 
     #[inline]
@@ -289,6 +291,15 @@ impl super::Executor {
         lang: Option<whatlang::Lang>,
         snippets_config: &QuerySnippetsConfig,
     ) -> Result<Vec<MatchWithSnippets>, ()> {
+        // #[cfg(debug_assertions)]
+        // eprintln!("q: {}", input.original_text());
+        #[cfg(debug_assertions)]
+        if input.token_count() > MAX_QUERY_TOKENS {
+            tracing::debug!("Query is very long: {:?}", input.original_text());
+        }
+
+        // ------------
+
         // SAFETY: Acquire database access read lock, and reference it in context.
         //   This prevents the database from being erased while using it in this block.
         let _kv_read_guard = self.kv_pool.lock_read_access();
@@ -310,8 +321,9 @@ impl super::Executor {
 
         // ------------
 
-        let (query_results, query_candidates) =
-            self.query_inner(&input, options, &kv_repo, &fst_repo)?;
+        let query_candidates = self.get_query_candidates(&input, &kv_repo, &fst_repo)?;
+
+        let query_results = self.query_inner(&query_candidates, options, &kv_repo)?;
 
         let object_store_pool = self.object_store_pool.acquire(false, collection, None)?;
 
