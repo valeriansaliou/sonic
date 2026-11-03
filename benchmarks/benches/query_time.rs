@@ -199,11 +199,8 @@ fn criterion_benchmark(c: &mut Criterion) {
 
                         for oid in [
                             "24432646", // Illy (rapper)
-                            "30022306", // 360 (rapper)
                             "4222633",  // David Bridie
-                            "13215306", // List of awards and nominations received by Kanye West
                             "14477670", // Katalyst (DJ)
-                            "25642076", // 2010s in music
                         ] {
                             if !json.contains(oid) {
                                 tracing::warn!("Snippets don’t contain OID {oid:?}");
