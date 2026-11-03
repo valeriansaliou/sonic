@@ -46,23 +46,19 @@ struct QueryCandidate<'a> {
 }
 
 impl super::Executor {
-    fn query_inner<'input>(
+    /// Given input tokens, returns an ordered list of words to consider
+    /// (with typo corrections, etc.).
+    ///
+    /// This could be seen as some kind of query planner, in a way.
+    fn get_query_candidates<'input>(
         &self,
         input: &'input PreprocessorOutput<'input>,
-        options: QueryOptions,
         kv_repo: &KvRepositoryReadOnly<'_>,
         fst_repo: &FstRepository<'_>,
-    ) -> Result<(Vec<QueryResult>, Vec<QueryCandidate<'input>>), ()> {
-        // eprintln!("q: {}", input.original_text());
-        let QueryOptions { limit, offset } = options;
-
+    ) -> Result<Vec<QueryCandidate<'input>>, ()> {
         let alternates_try = self.app_conf.search.query_alternates_try;
-        let mut retain_word_objects = self.app_conf.search.query_retain_word_objects;
-        retain_word_objects = retain_word_objects.max(u32_to_usize(offset) + usize::from(limit));
         let min_idf = (self.app_conf.search).query_minimum_term_idf_default;
         let min_doc_count = (self.app_conf.search).query_minimum_term_idf_minimum_object_count;
-
-        // ------------
 
         // PERF: Get document count once (used to compute idfs).
         let document_count = kv_repo
@@ -174,6 +170,30 @@ impl super::Executor {
 
         // PERF: Truncate to keep only the most meaningful terms.
         query_candidates.truncate(MAX_QUERY_TOKENS);
+
+        Ok(query_candidates)
+    }
+
+    fn query_inner(
+        &self,
+        input: &'input PreprocessorOutput<'input>,
+        options: QueryOptions,
+        kv_repo: &KvRepositoryReadOnly<'_>,
+        fst_repo: &FstRepository<'_>,
+    ) -> Result<(Vec<QueryResult>, Vec<QueryCandidate<'input>>), ()> {
+        let QueryOptions { limit, offset } = options;
+
+        let mut retain_word_objects = self.app_conf.search.query_retain_word_objects;
+        retain_word_objects = retain_word_objects.max(u32_to_usize(offset) + usize::from(limit));
+
+        // #[cfg(debug_assertions)]
+        // eprintln!("q: {}", input.original_text());
+        #[cfg(debug_assertions)]
+        if input.token_count() > MAX_QUERY_TOKENS {
+            tracing::debug!("Query is very long: {:?}", input.original_text());
+        }
+
+        let query_candidates = self.get_query_candidates(input, kv_repo, fst_repo)?;
 
         let scoring_matrix =
             ScoringMatrix::build(retain_word_objects, &query_candidates, |term_hash| {
