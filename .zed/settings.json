@@ -7,7 +7,10 @@
     "rust-analyzer": {
       "initialization_options": {
         "cargo": {
-          "features": ["experimental-api"],
+          "features": [
+            "sonic-server/experimental-api",
+            "sonic_client/experimental-api",
+          ],
           "extraArgs": ["--locked"],
           // "autoreload": false,
         },
