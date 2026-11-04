@@ -159,11 +159,13 @@ macro_rules! exec {
             .collect::<Vec<_>>()
     }};
 
-    ($executor:ident -> WITH SNIPPETS($snip_wc:expr) QUERY $collection:tt $bucket:tt $term:tt $(LANG($lang:expr))? $(LIMIT($limit:expr))?) => {{
+    ($executor:ident -> WITH SNIPPETS$(($snip_wc:expr$(, $snip_ws:expr$(, $snip_wp:expr)?)?))? QUERY $collection:tt $bucket:tt $term:tt $(LANG($lang:expr))? $(LIMIT($limit:expr))?) => {{
+        let additional_meta = concat!(" WITH SNIPPETS"$(, "(", $snip_wc, $(",", $snip_ws, $(",", $snip_wp,)?)? ")")?);
+
         #[rustfmt::skip]
         $executor.log(format!(
-            "QUERY {:?} {:?} {:?}{}{} WITH SNIPPETS({})",
-            $collection, $bucket, $term, exec!(internal_ lang_txt $($lang)?), exec!(internal_ limit_txt $($limit)?), $snip_wc
+            "QUERY {:?} {:?} {:?}{}{}{additional_meta}",
+            $collection, $bucket, $term, exec!(internal_ lang_txt $($lang)?), exec!(internal_ limit_txt $($limit)?)
         ));
         let (c, b) = crate::common::bucket_ref!($collection, $bucket);
         let preprocessor = sonic::lexer::preprocessor::Preprocessor::new(
@@ -183,7 +185,9 @@ macro_rules! exec {
         };
 
         let snippets_config = sonic::executor::QuerySnippetsConfig {
-            window_count: $snip_wc,
+            $(window_count: $snip_wc,
+            $(window_size: $snip_ws,
+            $(max_window_padding: $snip_wp,)?)?)?
             ..Default::default()
         };
 
