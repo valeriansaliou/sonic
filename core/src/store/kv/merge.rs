@@ -40,9 +40,13 @@ pub(super) fn kv_merge_operator(
         route,
     } = KvStoreKeyParts::try_from(key).ok()?;
 
-    let discriminator = D::try_from(discriminator)
-        .inspect_err(|error| tracing::error!("kv_merge_operator: Invalid discriminator: {error}"))
-        .ok()?;
+    let discriminator = match D::try_from(discriminator) {
+        Ok(d) => d,
+        Err(error) => {
+            tracing::error!(?key, ?error, "kv_merge_operator: Invalid discriminator");
+            return None;
+        }
+    };
 
     match discriminator {
         D::MetaToValue => match MetaD::try_from_kv_key_part(route) {
@@ -52,11 +56,17 @@ pub(super) fn kv_merge_operator(
                 operands,
                 ObjectCount::saturating_add,
             ),
-            Err(error) => panic!("Unrecognized meta key: {error}"),
+            Err(error) => {
+                tracing::error!(?key, ?error, "kv_merge_operator: Unrecognized meta key");
+                None
+            }
         },
         D::TermToIids => merge_int_set_diffs::<TermToIidsEntry>(existing_val, operands.iter()),
         D::IidToTerms => unique_int_list::<4>(existing_val, operands),
-        _ => unreachable!(),
+        _ => {
+            tracing::error!(?key, "kv_merge_operator: Unexpected merge key");
+            None
+        }
     }
 }
 
