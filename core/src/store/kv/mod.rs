@@ -88,30 +88,6 @@ pub struct KvRepositoryReadWrite<'a> {
     bucket: Bucket<'a>,
 }
 
-impl KvStore {
-    fn get_new_iid(
-        &self,
-        bucket: Bucket,
-        batch: &mut WriteBatch,
-    ) -> Result<StoreObjectIid, Box<dyn std::error::Error>> {
-        let mut write_guard = self.iid_incr_per_bucket.write().unwrap();
-
-        let cache_key = bucket.to_kv_key_part();
-        let iid_incr = *write_guard
-            .entry(cache_key)
-            .and_modify(IidIncr::increment)
-            .or_default();
-
-        // Early release lock.
-        drop(write_guard);
-
-        let store_key = KvStoreKey::meta_to_value(&bucket, StoreMetaKey::IIDIncr);
-        batch.merge(store_key, iid_incr.to_kv_value());
-
-        Ok(iid_incr.0)
-    }
-}
-
 impl<'a> KvRepositoryReadWrite<'a> {
     #[inline]
     pub fn write_opt(
@@ -173,6 +149,9 @@ impl GenericRocksDbStore for KvStore {
                             .set_merge_operator_associative("kv_merge", merge::kv_merge_operator);
                     }
                     READ_ON_PUSH_CF_NAME => {
+                        cf_options
+                            .set_merge_operator_associative("kv_merge", merge::kv_merge_operator);
+
                         // Never disable auto-compactions for this CF.
                         cf_options.set_disable_auto_compactions(false);
 
@@ -308,6 +287,36 @@ impl<'a> KvRepositoryReadOnly<'a> {
 
                 Err(())
             }
+        }
+    }
+
+    fn get_iid_incr(&self) -> Result<Option<IidIncr>, Box<dyn std::error::Error>> {
+        let bucket = self.bucket;
+
+        let cf_handle = (self.store.database)
+            .cf_handle(READ_ON_PUSH_CF_NAME)
+            .expect(CF_CREATED_ON_OPEN);
+
+        let store_key = KvStoreKey::meta_to_value(&bucket, StoreMetaKey::IIDIncr);
+        let value = self.store.database.get_pinned_cf(cf_handle, &store_key)?;
+
+        match value {
+            Some(bytes) => match bytes.split_first_chunk::<8>() {
+                Some((chunk, [])) => {
+                    let iid_incr = IidIncr::from_kv_value(*chunk);
+
+                    tracing::debug!(?bucket, ?iid_incr, "Read IIDIncr from database");
+
+                    Ok(Some(iid_incr))
+                }
+                Some(_) => Err(Box::new(io::Error::other(format!(
+                    "Invalid IIDIncr value in bucket {bucket:?}: too many bytes",
+                )))),
+                None => Err(Box::new(io::Error::other(format!(
+                    "Invalid IIDIncr value in bucket {bucket:?}: missing bytes",
+                )))),
+            },
+            None => Ok(None),
         }
     }
 
@@ -536,6 +545,11 @@ impl<'a> KvRepositoryReadWrite<'a> {
     }
 
     #[inline]
+    fn get_iid_incr(&self) -> Result<Option<IidIncr>, Box<dyn std::error::Error>> {
+        self.to_read_only().get_iid_incr()
+    }
+
+    #[inline]
     pub fn get_object_count(&self) -> Result<u64, Box<dyn std::error::Error>> {
         self.to_read_only().get_object_count()
     }
@@ -557,10 +571,51 @@ impl<'a> KvRepositoryReadWrite<'a> {
         &self,
         batch: &mut WriteBatch,
     ) -> Result<StoreObjectIid, Box<dyn std::error::Error>> {
+        let mut cache_guard = self.store.iid_incr_per_bucket.write().unwrap();
+
+        let cache_key = self.bucket.to_kv_key_part();
+        let iid_incr = match cache_guard.entry(cache_key) {
+            hashbrown::hash_map::Entry::Occupied(mut entry) => {
+                let iid_incr = entry.get_mut();
+
+                iid_incr.increment();
+
+                *iid_incr
+            }
+            hashbrown::hash_map::Entry::Vacant(entry) => {
+                // Read from database (`cache_guard` ensures no race condition).
+                let iid_incr = match self.get_iid_incr()? {
+                    Some(mut iid_incr) => {
+                        iid_incr.increment();
+                        iid_incr
+                    }
+                    None => Default::default(),
+                };
+
+                // Populate the cache.
+                *entry.insert(iid_incr)
+            }
+        };
+
+        // Early release lock.
+        drop(cache_guard);
+
         // Increment object count
         self.update_object_count(batch, 1);
 
-        self.store.get_new_iid(self.bucket, batch)
+        let cf_handle = (self.store.database)
+            .cf_handle(READ_ON_PUSH_CF_NAME)
+            .expect(CF_CREATED_ON_OPEN);
+
+        let store_key = KvStoreKey::meta_to_value(&self.bucket, StoreMetaKey::IIDIncr);
+
+        // Schedule a write to the database.
+        // NOTE: If the `WriteBatch` doesn’t get written, we’ll have wasted one IID.
+        //   We can’t really do otherwise without blocking locks for a long time.
+        //   `Iid::MAX` should never get reached so it’s an acceptable trade-off.
+        batch.merge_cf(cf_handle, store_key, iid_incr.to_kv_value());
+
+        Ok(iid_incr.0)
     }
 
     /// Term-to-IIDs mapper
