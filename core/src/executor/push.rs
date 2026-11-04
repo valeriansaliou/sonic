@@ -12,10 +12,9 @@ use rocksdb::WriteBatch;
 
 use crate::executor::MultipartPushContext;
 use crate::lexer::preprocessor::PreprocessorOutput;
-use crate::store::kv::KvRepositoryReadWrite;
 use crate::store::kv::encoding::ToKvKeyPart;
 use crate::store::rocksdb::WriteOptions;
-use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreObjectOid, StoreTermHash};
+use crate::store::{Bucket, StoreItemPart, StoreObjectOid, StoreTermHash};
 
 #[derive(Debug, Default)]
 pub struct PushOptions {
@@ -139,48 +138,13 @@ impl super::Executor {
         let fst_repo = fst_store.to_repository();
         let object_repo = object_store.to_repository(bucket);
 
-        fn assign_new_iid(
-            oid: StoreObjectOid<'_>,
-            kv_repo: &KvRepositoryReadWrite<'_>,
-            batch: &mut WriteBatch,
-        ) -> Result<StoreObjectIid, ()> {
-            tracing::trace!("Must initialize push executor oid-to-iid and iid-to-oid");
-
-            // Bump last stored increment
-            let iid = (kv_repo.get_new_iid(batch))
-                .map_err(|error| tracing::error!("Error getting new IID: {error}"))?;
-
-            // Associate OID <> IID (bidirectional)
-            kv_repo.set_oid_to_iid(batch, oid, iid);
-            kv_repo.set_iid_to_oid(batch, iid, oid);
-
-            Ok(iid)
-        }
-
-        fn get_iid(
-            oid: StoreObjectOid<'_>,
-            kv_repo: &KvRepositoryReadWrite<'_>,
-            batch: &mut WriteBatch,
-        ) -> Result<(StoreObjectIid, bool), ()> {
-            // Try to resolve existing OID to IID, otherwise get new IID.
-            match kv_repo.get_oid_to_iid(oid) {
-                Ok(Some(iid)) => Ok((iid, false)),
-                Ok(None) => assign_new_iid(oid, kv_repo, batch).map(|iid| (iid, true)),
-                Err(()) => {
-                    tracing::error!("Error getting OID-To-IID");
-                    assign_new_iid(oid, kv_repo, batch).map(|iid| (iid, true))
-                }
-            }
-        }
-
         match *multipart_context {
             // Received last multipart chunk.
             Some(ref ctx) => {
                 // Update KV store
                 let is_new = {
-                    let mut batch = WriteBatch::default();
-
-                    let (iid, is_new) = get_iid(oid, &kv_repo, &mut batch)?;
+                    let (iid, is_new) = (kv_repo.get_or_assign_iid(oid))
+                        .map_err(|error| tracing::error!("Error getting IID: {error}"))?;
 
                     let mut batch = WriteBatch::default();
 
@@ -247,11 +211,8 @@ impl super::Executor {
 
                 // Update KV store
                 let is_new = {
-                    let mut batch = WriteBatch::default();
-
-                    let (iid, is_new) = get_iid(oid, &kv_repo, &mut batch)?;
-
-                    executor_ensure_op!(kv_repo.write(batch));
+                    let (iid, is_new) = (kv_repo.get_or_assign_iid(oid))
+                        .map_err(|error| tracing::error!("Error getting IID: {error}"))?;
 
                     let mut batch = WriteBatch::default();
 

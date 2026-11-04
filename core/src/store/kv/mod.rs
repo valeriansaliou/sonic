@@ -10,7 +10,7 @@ mod keys;
 mod merge;
 
 use std::ops::Deref;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 use std::{fmt, io};
 
@@ -64,14 +64,31 @@ pub struct KvStore {
     pub lock: RwLock<()>,
     write_options_builder: RocksDbWriteOptionsBuilder,
 
-    /// Cache of `IIDIncr` per bucket, removing the need for countless reads
-    /// while ingesting new data.
+    /// Cache of `IidIncr` per bucket.
     ///
-    /// This cache is particularly effective with large memtables, which often
-    /// have bad read performance.
+    /// Because atomic operations in RocksDB would be very expensive, it’s
+    /// better for us to cache values as much as possible.
     ///
     /// In benchmarks, we saw a `~23%` throughput increase after this change.
     iid_incr_per_bucket: RwLock<HashMap<Vec<u8>, IidIncr>>,
+
+    /// A synchronization lock used to prevent race conditions when assigning
+    /// new IIDs.
+    ///
+    /// This fixes the situation where two Sonic channels push to the same new
+    /// OID at the same time. Both threads would read `None` via
+    /// `get_oid_to_iid`, and assign two different IIDs to the same OID (the
+    /// last one would take precedence, but everything tied to the first in the
+    /// index would become dead data).
+    ///
+    /// This lock is used for both object OIDs and fragment OIDs out of
+    /// simplicity. We might split it in two if we notice performace issues
+    /// (unlikely).
+    ///
+    /// Note that we must use a `Mutex` as read guards cannot be upgraded and
+    /// any non-atomic upgrade would either be very expensive (double checking)
+    /// or still leave room for race conditions.
+    oid_sync: Mutex<()>,
 
     pool_stats: Arc<KvStorePoolStats>,
 }
@@ -203,6 +220,7 @@ impl GenericRocksDbStore for KvStore {
             lock: RwLock::new(()),
             write_options_builder,
             iid_incr_per_bucket: RwLock::new(HashMap::new()),
+            oid_sync: Mutex::new(()),
             pool_stats,
         }
     }
@@ -567,7 +585,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
         batch.merge(store_key, ObjectCount(diff).to_kv_value());
     }
 
-    pub fn get_new_iid(
+    fn get_new_iid(
         &self,
         batch: &mut WriteBatch,
     ) -> Result<StoreObjectIid, Box<dyn std::error::Error>> {
@@ -616,6 +634,40 @@ impl<'a> KvRepositoryReadWrite<'a> {
         batch.merge_cf(cf_handle, store_key, iid_incr.to_kv_value());
 
         Ok(iid_incr.0)
+    }
+
+    fn assign_new_iid(
+        &self,
+        oid: StoreObjectOid<'_>,
+    ) -> Result<StoreObjectIid, Box<dyn std::error::Error>> {
+        tracing::trace!("Must initialize push executor oid-to-iid and iid-to-oid");
+
+        let mut batch = WriteBatch::new();
+
+        // Bump last stored increment
+        let iid = self.get_new_iid(&mut batch)?;
+
+        // Associate OID <> IID (bidirectional)
+        self.set_oid_to_iid(&mut batch, oid, iid);
+        self.set_iid_to_oid(&mut batch, iid, oid);
+
+        self.write(batch)?;
+
+        Ok(iid)
+    }
+
+    pub fn get_or_assign_iid(
+        &self,
+        oid: StoreObjectOid<'_>,
+    ) -> Result<(StoreObjectIid, bool), Box<dyn std::error::Error>> {
+        let _oid_sync_guard = self.store.oid_sync.lock().unwrap();
+
+        match (self.get_oid_to_iid(oid))
+            .map_err(|()| io::Error::other("Error getting OID-To-IID"))?
+        {
+            Some(iid) => Ok((iid, false)),
+            None => self.assign_new_iid(oid).map(|iid| (iid, true)),
+        }
     }
 
     /// Term-to-IIDs mapper
@@ -908,7 +960,7 @@ mod tests {
 
 impl fmt::Debug for KvStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use crate::util::fmt::AsPrettyRwLock;
+        use crate::util::fmt::{AsPrettyMutex, AsPrettyRwLock};
 
         // NOTE: Deconstructing to future-proof this function.
         let Self {
@@ -920,6 +972,7 @@ impl fmt::Debug for KvStore {
             // NOTE: We don’t care about the configuration,
             //   we can see it elsewhere if needed.
             iid_incr_per_bucket,
+            oid_sync,
             pool_stats,
         } = self;
 
@@ -930,6 +983,7 @@ impl fmt::Debug for KvStore {
             .field("lock", &AsPrettyRwLock(lock))
             .field("write_options_builder", write_options_builder)
             .field("iid_incr_per_bucket", &AsPrettyRwLock(iid_incr_per_bucket))
+            .field("oid_sync", &AsPrettyMutex(oid_sync))
             .field("pool_stats", &pool_stats)
             .finish_non_exhaustive()
     }
