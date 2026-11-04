@@ -115,11 +115,18 @@ impl TryFromKvValue for StoreObjectIid {
 // MARK: OID
 
 impl<'a> ToKvKeyPart for &'a StoreObjectOid<'a> {
-    type Repr = &'a [u8];
+    type Repr = Vec<u8>;
 
     #[inline]
     fn to_kv_key_part(self) -> Self::Repr {
-        self.as_bytes()
+        let bytes = self.as_bytes();
+
+        let mut res = Vec::with_capacity(bytes.len() + 1);
+
+        res.push(u8::try_from(bytes.len()).expect(ITEM_PART_MAX_LEN_ERROR));
+        res.extend_from_slice(bytes);
+
+        res
     }
 }
 

@@ -212,7 +212,7 @@ mod tests {
         #[rustfmt::skip]
         assert_eq!(
             KvStoreKey::oid_to_iid(&"b:3".into(), "conv:6501e83a".into()).0,
-            [3, b'b', b':', b'3', 2, b'c', b'o', b'n', b'v', b':', b'6', b'5', b'0', b'1', b'e', b'8', b'3', b'a']
+            [3, b'b', b':', b'3', 2, 13, b'c', b'o', b'n', b'v', b':', b'6', b'5', b'0', b'1', b'e', b'8', b'3', b'a']
         );
     }
 
