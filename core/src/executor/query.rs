@@ -481,7 +481,7 @@ impl super::Executor {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[derive(serde::Serialize)]
 pub struct MatchWithSnippets {
     pub oid: String,

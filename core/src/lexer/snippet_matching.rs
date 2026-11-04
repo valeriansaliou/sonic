@@ -15,7 +15,7 @@ use crate::scoring::bm25_lite;
 
 use super::preprocessor::{Preprocessor, Token};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[derive(serde::Serialize)]
 pub struct Snippet {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -26,7 +26,7 @@ pub struct Snippet {
     pub range: MatchRange,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[derive(serde::Serialize)]
 pub struct MatchRange {
     pub start: usize,
