@@ -92,7 +92,7 @@ impl_fns!(
     #[doc = "alternate words tried, in practice it approaches O(1)."]
     #[inline]
     #[doc(alias = "search")]
-    fn query(
+    pub fn query(
         &self,
         collection: impl AsRef<str>,
         bucket: impl AsRef<str>,
@@ -107,7 +107,7 @@ impl_fns!(
     #[doc = "if not enough exact matches where N is the number of"]
     #[doc = "alternate words tried, in practice it approaches O(1)."]
     #[doc(alias = "search_with_options")]
-    fn query_with_options<'a>(
+    pub fn query_with_options<'a>(
         &self,
         collection: impl AsRef<str>,
         bucket: impl AsRef<str>,
@@ -132,7 +132,7 @@ impl SuggestOption for options::Limit {}
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
     #[inline]
-    fn suggest(
+    pub fn suggest(
         &self,
         collection: impl AsRef<str>,
         bucket: impl AsRef<str>,
@@ -144,7 +144,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn suggest_with_options<'a>(
+    pub fn suggest_with_options<'a>(
         &self,
         collection: impl AsRef<str>,
         bucket: impl AsRef<str>,
@@ -171,7 +171,7 @@ impl_fns!(
     #[doc = "Time complexity: O(N) where N is the number of words"]
     #[doc = "enumerated, within provided limits."]
     #[inline]
-    fn list(
+    pub fn list(
         &self,
         collection: impl AsRef<str>,
         bucket: impl AsRef<str>,
@@ -184,7 +184,7 @@ impl_fns!(
     #[doc = "Time complexity: O(N) where N is the number of words"]
     #[doc = "enumerated, within provided limits."]
     #[inline]
-    fn list_with_options<'a>(
+    pub fn list_with_options<'a>(
         &self,
         collection: impl AsRef<str>,
         bucket: impl AsRef<str>,
@@ -203,7 +203,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn ping(&self) -> std::io::Result<()> {
+    pub fn ping(&self) -> std::io::Result<()> {
         self.inner
             .send(make_command!("PING"), Discriminant::Pong, |_data| Ok(()))
     }
@@ -213,7 +213,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn quit(&mut self) -> std::io::Result<()> {
+    pub fn quit(&mut self) -> std::io::Result<()> {
         let res = (self.inner).send(make_command!("QUIT"), Discriminant::Ended, |_data| Ok(()));
 
         // NOTE: We mark closed even though the call should fail, because
@@ -228,7 +228,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Send a raw command."]
-    fn send<T>(
+    pub fn send<T>(
         &self,
         command: crate::Command,
         discriminant: self::Discriminant,
@@ -241,7 +241,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Send a raw async command."]
-    fn send_async<T>(
+    pub fn send_async<T>(
         &self,
         command: crate::Command,
         discriminant1: impl Into<self::Discriminant>,

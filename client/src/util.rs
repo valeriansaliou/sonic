@@ -282,11 +282,11 @@ pub(crate) use impl_channel_structs;
 macro_rules! impl_fns {
     (
         $(#[$meta:meta])*
-        fn $fn:ident $(<$($lifetime:lifetime),+>)? (&mut $self:ident $(, $arg_name:ident: $arg_ty:ty)* $(,)?) -> $ret_ty:ty $main:block
+        $vis:vis fn $fn:ident $(<$($lifetime:lifetime),+>)? (&mut $self:ident $(, $arg_name:ident: $arg_ty:ty)* $(,)?) -> $ret_ty:ty $main:block
     ) => {
         impl self::LowLevelChannel {
             $(#[$meta])*
-            pub fn $fn$(<$($lifetime),+>)?(
+            $vis fn $fn$(<$($lifetime),+>)?(
                 &mut $self,
                 $($arg_name: $arg_ty,)*
             ) -> std::io::Result<oneshot::Receiver<$ret_ty>> {
@@ -297,7 +297,7 @@ macro_rules! impl_fns {
         #[cfg(feature = "sync")]
         impl self::BlockingChannel {
             $(#[$meta])*
-            pub fn $fn$(<$($lifetime),+>)?(
+            $vis fn $fn$(<$($lifetime),+>)?(
                 &mut $self,
                 $($arg_name: $arg_ty,)*
             ) -> $ret_ty {
@@ -309,7 +309,7 @@ macro_rules! impl_fns {
 
         #[cfg(feature = "async")]
         impl self::AsyncChannel {
-            pub async fn $fn$(<$($lifetime),+>)?(
+            $vis async fn $fn$(<$($lifetime),+>)?(
                 &mut $self,
                 $($arg_name: $arg_ty,)*
             ) -> $ret_ty {
@@ -322,7 +322,7 @@ macro_rules! impl_fns {
 
     (
         $(#[$meta:meta])*
-        fn $fn:ident
+        $vis:vis fn $fn:ident
             $(<$($generic_param:tt),+>)?
             (&$self:ident $(, $arg_name:ident: $arg_ty:ty)* $(,)?)
             -> $ret_ty:ty $main:block
@@ -332,7 +332,7 @@ macro_rules! impl_fns {
     ) => {
         impl self::LowLevelChannel {
             $(#[$meta])*
-            pub fn $fn$(<$($generic_param),+>)?(
+            $vis fn $fn$(<$($generic_param),+>)?(
                 &$self,
                 $($arg_name: $arg_ty,)*
             ) -> std::io::Result<oneshot::Receiver<$ret_ty>>
@@ -345,7 +345,7 @@ macro_rules! impl_fns {
         #[cfg(feature = "sync")]
         impl self::BlockingChannel {
             $(#[$meta])*
-            pub fn $fn$(<$($generic_param),+>)?(
+            $vis fn $fn$(<$($generic_param),+>)?(
                 &$self,
                 $($arg_name: $arg_ty,)*
             ) -> $ret_ty
@@ -359,7 +359,7 @@ macro_rules! impl_fns {
 
         #[cfg(feature = "async")]
         impl self::AsyncChannel {
-            pub async fn $fn$(<$($generic_param),+>)?(
+            $vis async fn $fn$(<$($generic_param),+>)?(
                 &$self,
                 $($arg_name: $arg_ty,)*
             ) -> $ret_ty

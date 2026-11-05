@@ -70,7 +70,7 @@ impl PushOption for options::Capacity {}
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
     #[inline]
-    fn push(
+    pub fn push(
         &self,
         collection: impl AsRef<str>,
         bucket: impl AsRef<str>,
@@ -83,7 +83,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn push_with_options<'a>(
+    pub fn push_with_options<'a>(
         &self,
         collection: impl AsRef<str>,
         bucket: impl AsRef<str>,
@@ -133,7 +133,7 @@ impl_fns!(
 impl_fns!(
     #[cfg(feature = "v1")]
     #[doc = "Time complexity: O(1)."]
-    fn pop(
+    pub fn pop(
         &self,
         collection: impl AsRef<str>,
         bucket: impl AsRef<str>,
@@ -163,7 +163,7 @@ impl_fns!(
 impl_fns!(
     #[doc = "Count buckets in collection."]
     #[doc = "\n\nTime complexity: O(1)."]
-    fn countc(&self, collection: impl AsRef<str>) -> std::io::Result<usize> {
+    pub fn countc(&self, collection: impl AsRef<str>) -> std::io::Result<usize> {
         self.inner.send(
             make_command!("COUNTC {}", collection),
             Discriminant::Result,
@@ -175,7 +175,7 @@ impl_fns!(
 impl_fns!(
     #[doc = "Count objects in bucket."]
     #[doc = "\n\nTime complexity: O(1)."]
-    fn countb(
+    pub fn countb(
         &self,
         collection: impl AsRef<str>,
         bucket: impl AsRef<str>,
@@ -191,7 +191,7 @@ impl_fns!(
 impl_fns!(
     #[doc = "Count terms in object."]
     #[doc = "\n\nTime complexity: O(1)."]
-    fn counto(
+    pub fn counto(
         &self,
         collection: impl AsRef<str>,
         bucket: impl AsRef<str>,
@@ -208,7 +208,7 @@ impl_fns!(
 impl_fns!(
     #[doc = "Count terms in bucket."]
     #[doc = "\n\nTime complexity: O(1)."]
-    fn legacy_countb(
+    pub fn legacy_countb(
         &self,
         collection: impl AsRef<str>,
         bucket: impl AsRef<str>,
@@ -225,7 +225,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn flushc(&self, collection: impl AsRef<str>) -> std::io::Result<usize> {
+    pub fn flushc(&self, collection: impl AsRef<str>) -> std::io::Result<usize> {
         self.inner.send(
             make_command!("FLUSHC {}", collection),
             Discriminant::Result,
@@ -236,7 +236,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Time complexity: O(N) where N is the number of bucket objects."]
-    fn flushb(
+    pub fn flushb(
         &self,
         collection: impl AsRef<str>,
         bucket: impl AsRef<str>,
@@ -251,7 +251,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn flusho(
+    pub fn flusho(
         &self,
         collection: impl AsRef<str>,
         bucket: impl AsRef<str>,
@@ -269,7 +269,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn ping(&self) -> std::io::Result<()> {
+    pub fn ping(&self) -> std::io::Result<()> {
         self.inner
             .send(make_command!("PING"), Discriminant::Pong, |_data| Ok(()))
     }
@@ -279,7 +279,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn quit(&mut self) -> std::io::Result<()> {
+    pub fn quit(&mut self) -> std::io::Result<()> {
         let res = (self.inner).send(make_command!("QUIT"), Discriminant::Ended, |_data| Ok(()));
 
         // NOTE: We mark closed even though the call should fail, because
@@ -294,7 +294,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Send a raw command."]
-    fn send<T>(
+    pub fn send<T>(
         &self,
         command: crate::Command,
         discriminant: self::Discriminant,

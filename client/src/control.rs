@@ -58,7 +58,7 @@ impl ChannelMode for ControlMode {
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn trigger_consolidate(&self) -> std::io::Result<()> {
+    pub fn trigger_consolidate(&self) -> std::io::Result<()> {
         self.inner.send(
             make_command!("TRIGGER consolidate"),
             Discriminant::Ok,
@@ -69,7 +69,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn trigger_backup(&self, path: impl AsRef<str>) -> std::io::Result<()> {
+    pub fn trigger_backup(&self, path: impl AsRef<str>) -> std::io::Result<()> {
         self.inner.send(
             make_command!("TRIGGER backup {}", path),
             Discriminant::Ok,
@@ -80,7 +80,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn trigger_restore(&self, path: impl AsRef<str>) -> std::io::Result<()> {
+    pub fn trigger_restore(&self, path: impl AsRef<str>) -> std::io::Result<()> {
         self.inner.send(
             make_command!("TRIGGER restore {}", path),
             Discriminant::Ok,
@@ -93,7 +93,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn info(&self) -> std::io::Result<String> {
+    pub fn info(&self) -> std::io::Result<String> {
         self.inner
             .send(make_command!("INFO"), Discriminant::Result, |s| {
                 Ok(s.to_owned())
@@ -106,7 +106,7 @@ impl_fns!(
 #[cfg(feature = "experimental-api")]
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn config_set(
+    pub fn config_set(
         &self,
         collection: impl AsRef<str>,
         configs: &[impl AsRef<str>],
@@ -134,7 +134,7 @@ impl_fns!(
 #[cfg(feature = "experimental-api")]
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn config_reset(
+    pub fn config_reset(
         &self,
         collection: impl AsRef<str>,
         configs: &[impl AsRef<str>],
@@ -162,7 +162,7 @@ impl_fns!(
 #[cfg(feature = "experimental-api")]
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn config_reset_all(&self, collection: impl AsRef<str>) -> std::io::Result<()> {
+    pub fn config_reset_all(&self, collection: impl AsRef<str>) -> std::io::Result<()> {
         self.inner.send(
             make_command!("CONFIG {} RESET", collection),
             Discriminant::Ok,
@@ -175,7 +175,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn ping(&self) -> std::io::Result<()> {
+    pub fn ping(&self) -> std::io::Result<()> {
         self.inner
             .send(make_command!("PING"), Discriminant::Pong, |_data| Ok(()))
     }
@@ -185,7 +185,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Time complexity: O(1)."]
-    fn quit(&mut self) -> std::io::Result<()> {
+    pub fn quit(&mut self) -> std::io::Result<()> {
         let res = (self.inner).send(make_command!("QUIT"), Discriminant::Ended, |_data| Ok(()));
 
         // NOTE: We mark closed even though the call should fail, because
@@ -200,7 +200,7 @@ impl_fns!(
 
 impl_fns!(
     #[doc = "Send a raw command."]
-    fn send<T>(
+    pub fn send<T>(
         &self,
         command: crate::Command,
         discriminant: self::Discriminant,
