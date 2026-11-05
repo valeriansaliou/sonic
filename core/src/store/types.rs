@@ -11,19 +11,37 @@ pub(super) type Hash = u32;
 
 // MARK: IID
 
+#[cfg(not(feature = "short-iids"))]
+mod iid_defs {
+    pub(crate) type RawIid = zerocopy::little_endian::U64;
+    pub(crate) type RawIidNative = u64;
+    pub(crate) type RawIidKey = zerocopy::big_endian::U64;
+    pub(crate) const RAW_IID_SIZE: usize = 8;
+}
+
+#[cfg(feature = "short-iids")]
+mod iid_defs {
+    pub(crate) type RawIid = zerocopy::little_endian::U32;
+    pub(crate) type RawIidNative = u32;
+    pub(crate) type RawIidKey = zerocopy::big_endian::U32;
+    pub(crate) const RAW_IID_SIZE: usize = 4;
+}
+
+pub(crate) use iid_defs::*;
+
 #[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout)]
 #[derive(zerocopy::IntoBytes)]
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd)]
 #[repr(transparent)]
-pub struct GenericIid(little_endian::U64);
+pub struct GenericIid(RawIid);
 
-impl_primitive_wrapper_utils!(GenericIid(little_endian::U64));
+impl_primitive_wrapper_utils!(GenericIid(RawIid));
 
 impl GenericIid {
     // NOTE: We went for `into_inner` here instead of marking `.0` `pub(super)`
     //   so it’s easier to identify call sites and keep constuction via `From`.
     #[inline]
-    pub(super) const fn into_inner(self) -> little_endian::U64 {
+    pub(super) const fn into_inner(self) -> RawIid {
         self.0
     }
 }
@@ -36,10 +54,10 @@ impl std::fmt::Display for GenericIid {
     }
 }
 
-impl From<u64> for GenericIid {
+impl From<RawIidNative> for GenericIid {
     #[inline]
-    fn from(value: u64) -> Self {
-        Self(little_endian::U64::new(value))
+    fn from(value: RawIidNative) -> Self {
+        Self(RawIid::new(value))
     }
 }
 
@@ -354,7 +372,7 @@ pub struct IidIncr(pub(super) GenericIid);
 impl IidIncr {
     #[inline]
     pub(super) const fn increment(&mut self) {
-        self.0.0 = little_endian::U64::new(self.0.0.get().saturating_add(1));
+        self.0.0 = RawIid::new(self.0.0.get().saturating_add(1));
     }
 }
 

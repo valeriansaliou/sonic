@@ -80,18 +80,18 @@ where
 // MARK: IID
 
 impl ToKvKeyPart for GenericIid {
-    type Repr = [u8; 8];
+    type Repr = [u8; RAW_IID_SIZE];
 
     #[inline]
     fn to_kv_key_part(self) -> Self::Repr {
-        zerocopy::big_endian::U64::from(self.into_inner().get()).to_bytes()
+        RawIidKey::from(self.into_inner().get()).to_bytes()
     }
 }
 
 impl FromKvKeyPart for GenericIid {
     #[inline]
     fn from_kv_key_part(repr: Self::Repr) -> Self {
-        Self::new(zerocopy::big_endian::U64::from_bytes(repr).get().into())
+        Self::new(RawIidKey::from_bytes(repr).get().into())
     }
 }
 

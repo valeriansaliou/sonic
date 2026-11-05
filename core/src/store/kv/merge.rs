@@ -350,7 +350,7 @@ where
 )]
 #[repr(C, packed)]
 pub struct TermToIidsEntry {
-    iid: little_endian::U64,
+    iid: RawIid,
     // NOTE: It’s okay to use a u8 here, as BM25 saturation causes tf values > 256
     //   to have almost the same score. Saving one byte here is a huge win in terms
     //   of index size so it’s a worth it trade-off.
@@ -358,7 +358,7 @@ pub struct TermToIidsEntry {
 }
 
 impl Mergeable for TermToIidsEntry {
-    type Key = little_endian::U64;
+    type Key = RawIid;
     type Value = u8;
 
     fn merge_in(&self, map: &mut IndexMap<Self::Key, Self::Value>) {
@@ -414,9 +414,9 @@ impl TermToIidsEntry {
     }
 }
 
-impl From<(little_endian::U64, u8)> for TermToIidsEntry {
+impl From<(RawIid, u8)> for TermToIidsEntry {
     #[inline]
-    fn from((iid, tf): (little_endian::U64, u8)) -> Self {
+    fn from((iid, tf): (RawIid, u8)) -> Self {
         Self { iid, tf }
     }
 }
