@@ -81,16 +81,15 @@ impl_fns!(
     }
 );
 
-impl_fns!(
-    #[doc = "Time complexity: O(1)."]
-    pub fn push_with_options<'a>(
+impl self::LowLevelChannel {
+    fn push_with_options_inner(
         &self,
-        collection: impl AsRef<str>,
-        bucket: impl AsRef<str>,
-        object: impl AsRef<str>,
+        id1: impl AsRef<str>,
+        id2: impl AsRef<str>,
+        id3: impl AsRef<str>,
         text: impl AsRef<str>,
-        options: &[&'a dyn PushOption],
-    ) -> std::io::Result<()> {
+        options: &[&dyn PushOption],
+    ) -> std::io::Result<oneshot::Receiver<std::io::Result<()>>> {
         #[cfg(feature = "experimental-api")]
         {
             if self.channel_info().caps.contains("push-multipart") {
@@ -106,8 +105,8 @@ impl_fns!(
                 let placeholder = "";
 
                 return self.inner.send_buffered_complex(
-                    make_command!("PUSH {} {} {}", collection, bucket, object; text: text + AUTO_NEWLINE; options: options),
-                    make_command!("PUSH {} {} {}", collection, bucket, object; text: placeholder + AUTO_NEWLINE; options: intermediate_options),
+                    make_command!("PUSH {} {} {}", id1, id2, id3; text: text + AUTO_NEWLINE; options: options),
+                    make_command!("PUSH {} {} {}", id1, id2, id3; text: placeholder + AUTO_NEWLINE; options: intermediate_options),
                     Discriminant::Ok,
                     |_acc, _data| Ok(())
                 );
@@ -115,10 +114,58 @@ impl_fns!(
         }
 
         self.inner.send_buffered(
-            make_command!("PUSH {} {} {}", collection, bucket, object; text: text + AUTO_NEWLINE; options: options),
+            make_command!("PUSH {} {} {}", id1, id2, id3; text: text + AUTO_NEWLINE; options: options),
             Discriminant::Ok,
             |_acc, _data| Ok(())
         )
+    }
+}
+
+impl_fns!(
+    #[doc = "Time complexity: O(1)."]
+    #[inline]
+    pub fn push_with_options<'a>(
+        &self,
+        collection: impl AsRef<str>,
+        bucket: impl AsRef<str>,
+        object: impl AsRef<str>,
+        text: impl AsRef<str>,
+        options: &[&'a dyn PushOption],
+    ) -> std::io::Result<()> {
+        self.push_with_options_inner(collection, bucket, object, text, options)
+    }
+);
+
+impl_fns!(
+    #[doc = "Time complexity: O(1)."]
+    #[inline]
+    pub fn pushf(
+        &self,
+        collection: impl AsRef<str>,
+        bucket: impl AsRef<str>,
+        object: impl AsRef<str>,
+        fragment: impl AsRef<str>,
+        text: impl AsRef<str>,
+    ) -> std::io::Result<()> {
+        let id3 = format!("{} {}", object.as_ref(), fragment.as_ref());
+        self.push_with_options(collection, bucket, id3, text, &[])
+    }
+);
+
+impl_fns!(
+    #[doc = "Time complexity: O(1)."]
+    #[inline]
+    pub fn pushf_with_options<'a>(
+        &self,
+        collection: impl AsRef<str>,
+        bucket: impl AsRef<str>,
+        object: impl AsRef<str>,
+        fragment: impl AsRef<str>,
+        text: impl AsRef<str>,
+        options: &[&'a dyn PushOption],
+    ) -> std::io::Result<()> {
+        let id3 = format!("{} {}", object.as_ref(), fragment.as_ref());
+        self.push_with_options_inner(collection, bucket, id3, text, options)
     }
 );
 
