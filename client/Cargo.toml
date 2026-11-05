@@ -28,16 +28,19 @@ slab = { version = "0.4", default-features = false }
 
 # Optional dependencies
 log = { optional = true, version = "0.4", default-features = false }
+serde = { optional = true, version = "1", default-features = false, features = ["derive", "std"] }
+serde_json = { optional = true, version = "1", default-features = false, features = ["std"] }
 tracing = { optional = true, version = "0.1", default-features = false }
 
 [dev-dependencies]
 tokio = { version = "=1.54.1", default-features = false, features = ["rt-multi-thread", "macros"] }
 
 [features]
-default = ["ingest", "control", "search", "sync"]
+default = ["ingest", "control", "search", "snippets", "sync"]
 ingest = []
 control = []
 search = []
+snippets = ["serde", "serde_json"]
 sync = []
 async = ["oneshot/async"]
 raw-api = []

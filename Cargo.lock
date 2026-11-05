@@ -2452,6 +2452,8 @@ dependencies = [
  "log",
  "mio",
  "oneshot",
+ "serde",
+ "serde_json",
  "slab",
  "tokio",
  "tracing",
