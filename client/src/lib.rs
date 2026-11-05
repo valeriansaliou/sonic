@@ -74,3 +74,9 @@ const TCP_WRITE_BUFFER_CAPACITY: usize = 65_536;
 ///
 /// This timeout can be reached if channel capacities are too low.
 const SEND_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+const AUTO_NEWLINE: &str = if cfg!(feature = "experimental-api") && cfg!(feature = "auto-newline") {
+    r"\n"
+} else {
+    ""
+};

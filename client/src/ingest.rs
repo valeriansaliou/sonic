@@ -5,9 +5,9 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 use crate::channel::{ChannelMode, SonicChannel};
-use crate::options;
 use crate::util::errors::io_error_invalid_data;
 use crate::util::{impl_channel_structs, impl_fns, make_command};
+use crate::{AUTO_NEWLINE, options};
 
 // NOTE: Shorter type aliases.
 use self::IngestMode as Mode;
@@ -91,12 +91,6 @@ impl_fns!(
         text: impl AsRef<str>,
         options: &[&'a dyn PushOption],
     ) -> std::io::Result<()> {
-        let auto_newline = if cfg!(feature = "experimental-api") && cfg!(feature = "auto-newline") {
-            r"\n"
-        } else {
-            ""
-        };
-
         #[cfg(feature = "experimental-api")]
         {
             if self.channel_info().caps.contains("push-multipart") {
@@ -112,8 +106,8 @@ impl_fns!(
                 let placeholder = "";
 
                 return self.inner.send_buffered_complex(
-                    make_command!("PUSH {} {} {}", collection, bucket, object; text: text + auto_newline; options: options),
-                    make_command!("PUSH {} {} {}", collection, bucket, object; text: placeholder + auto_newline; options: intermediate_options),
+                    make_command!("PUSH {} {} {}", collection, bucket, object; text: text + AUTO_NEWLINE; options: options),
+                    make_command!("PUSH {} {} {}", collection, bucket, object; text: placeholder + AUTO_NEWLINE; options: intermediate_options),
                     Discriminant::Ok,
                     |_acc, _data| Ok(())
                 );
@@ -121,7 +115,7 @@ impl_fns!(
         }
 
         self.inner.send_buffered(
-            make_command!("PUSH {} {} {}", collection, bucket, object; text: text + auto_newline; options: options),
+            make_command!("PUSH {} {} {}", collection, bucket, object; text: text + AUTO_NEWLINE; options: options),
             Discriminant::Ok,
             |_acc, _data| Ok(())
         )
