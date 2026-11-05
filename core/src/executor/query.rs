@@ -88,7 +88,7 @@ impl super::Executor {
         // PERF: Get document count once (used to compute idfs).
         let document_count = kv_repo
             .get_object_count()
-            .map_err(|error| tracing::warn!("Error getting object count: {error}"))?;
+            .map_err(|()| tracing::warn!("Error getting object count"))?;
 
         #[cfg(debug_assertions)]
         if input.token_count() > MAX_QUERY_TOKENS {
@@ -242,14 +242,14 @@ impl super::Executor {
 
         scoring_matrix.backfill(&kv_repo, &query_candidates);
 
+        let required_terms = query_candidates
+            .iter()
+            .take_while(|qc| qc.is_required)
+            .count();
+
         let mut all_results = Vec::with_capacity(scoring_matrix.len());
         all_results.extend(
             (scoring_matrix.into_iter()).filter_map(|(iid, term_scores)| {
-                let required_terms = query_candidates
-                    .iter()
-                    .take_while(|qc| qc.is_required)
-                    .count();
-
                 if term_scores[..required_terms].iter().any(Option::is_none) {
                     return None;
                 };
@@ -265,12 +265,14 @@ impl super::Executor {
         // Sort results.
         all_results.sort_by(|a, b| a.1.total_cmp(&b.1).reverse());
 
-        let page_results: Vec<QueryResult> = all_results
-            .into_iter()
-            // Perform paging.
+        let page_results: Vec<QueryResult> = (all_results.into_iter())
+            // Perform paging (1/2).
             .skip(u32_to_usize(offset))
-            .take(usize::from(limit))
             // Resolve IIDs to OIDs.
+            // NOTE: This must happen before `.take(limit)`, as otherwise
+            //   there’s no guarantee results will contain `limit` results.
+            //   This should however happen after `.skip(offset)` so it’s
+            //   computed lazily.
             .flat_map(|(iid, score, score_per_term)| {
                 if let Ok(Some(oid)) = kv_repo.get_iid_to_oid(iid) {
                     Some(QueryResult {
@@ -283,6 +285,8 @@ impl super::Executor {
                     None
                 }
             })
+            // Perform paging (2/2).
+            .take(usize::from(limit))
             .collect();
 
         tracing::info!("got search executor final results: {page_results:?}");

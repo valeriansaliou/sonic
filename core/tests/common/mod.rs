@@ -49,7 +49,6 @@ macro_rules! exec {
     ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $(LANG($lang:expr))? $(; $($standalone_meta:ident)+)?) => {{
         let mut additional_meta = concat!($($(" ", stringify!($standalone_meta),)+)? " ");
 
-        let assume_new = additional_meta.contains(" NEW ");
         let is_incomplete = additional_meta.contains(" INCOMPLETE ");
 
         // Remove additional space added for search purposes.
@@ -69,7 +68,6 @@ macro_rules! exec {
             true,
         );
         let options = sonic::executor::PushOptions {
-            assume_new,
             is_incomplete,
             ..Default::default()
         };

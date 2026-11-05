@@ -6,11 +6,15 @@
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
 pub(crate) mod encoding;
-mod keys;
+pub mod keys;
 mod merge;
 
+pub mod errors {
+    pub use super::encoding::{BadLength, SizeError};
+}
+
 use std::ops::Deref;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 use std::{fmt, io};
 
@@ -21,17 +25,15 @@ use zerocopy::IntoBytes;
 use crate::store::generic::*;
 use crate::store::kv::merge::TF_TOMBSTONE;
 pub use crate::store::rocksdb::pool::{GenericKvStorePool, KvStoreId};
-use crate::store::rocksdb::util::RocksDbPinnableSliceIter;
 use crate::store::rocksdb::{
     CF_CREATED_ON_OPEN, DEFAULT_CF_NAME, GenericRocksDbStore, GenericRocksDbStorePub,
     RocksDbWriteOptionsBuilder,
 };
 use crate::store::types::*;
-use crate::util::usize_to_u64;
+use crate::util::{impl_transparent_wrapper_utils, usize_to_u64};
 
 use self::encoding::*;
-use self::keys::KvStoreKey;
-pub use self::keys::StoreMetaKey;
+use self::keys::TypedKvStoreKey;
 pub use self::merge::{AVERAGE_MERGE_RATIO, IidToTermsEntry, TermToIidsEntry};
 
 /// A column family for data which need fast access during Ingest too, not just
@@ -54,6 +56,8 @@ const CF_NAMES: &[&str] = &[
 
 pub type KvStorePool = GenericKvStorePool<KvStore>;
 
+type ColumnFamilyRef<'a> = &'a rocksdb::ColumnFamily;
+
 #[derive(Debug, Default)]
 pub struct KvStorePoolStats {}
 
@@ -64,53 +68,52 @@ pub struct KvStore {
     pub lock: RwLock<()>,
     write_options_builder: RocksDbWriteOptionsBuilder,
 
-    /// Cache of `IIDIncr` per bucket, removing the need for countless reads
-    /// while ingesting new data.
+    /// Cache of `IidIncr` per bucket.
     ///
-    /// This cache is particularly effective with large memtables, which often
-    /// have bad read performance.
+    /// Because atomic operations in RocksDB would be very expensive, it’s
+    /// better for us to cache values as much as possible.
     ///
     /// In benchmarks, we saw a `~23%` throughput increase after this change.
     iid_incr_per_bucket: RwLock<HashMap<Vec<u8>, IidIncr>>,
+
+    /// A synchronization lock used to prevent race conditions when assigning
+    /// new IIDs.
+    ///
+    /// This fixes the situation where two Sonic channels push to the same new
+    /// OID at the same time. Both threads would read `None` via
+    /// `get_oid_to_iid`, and assign two different IIDs to the same OID (the
+    /// last one would take precedence, but everything tied to the first in the
+    /// index would become dead data).
+    ///
+    /// This lock is used for both object OIDs and fragment OIDs out of
+    /// simplicity. We might split it in two if we notice performace issues
+    /// (unlikely).
+    ///
+    /// Note that we must use a `Mutex` as read guards cannot be upgraded and
+    /// any non-atomic upgrade would either be very expensive (double checking)
+    /// or still leave room for race conditions.
+    oid_sync: Mutex<()>,
 
     pool_stats: Arc<KvStorePoolStats>,
 }
 
 #[derive(Clone, Copy)]
-pub struct KvRepositoryReadOnly<'a> {
+pub struct KvRepositoryRead<'a> {
     store: &'a KvStore,
     bucket: Bucket<'a>,
 }
 
 #[derive(Clone, Copy)]
-pub struct KvRepositoryReadWrite<'a> {
-    store: &'a KvStore,
-    bucket: Bucket<'a>,
-}
+#[repr(transparent)]
+pub struct KvRepositoryReadOnly<'a>(KvRepositoryRead<'a>);
 
-impl KvStore {
-    fn get_new_iid(
-        &self,
-        bucket: Bucket,
-        batch: &mut WriteBatch,
-    ) -> Result<StoreObjectIid, Box<dyn std::error::Error>> {
-        let mut write_guard = self.iid_incr_per_bucket.write().unwrap();
+impl_transparent_wrapper_utils!(Deref for KvRepositoryReadOnly<'a>(KvRepositoryRead<'a>));
 
-        let cache_key = bucket.to_kv_key_part();
-        let iid_incr = *write_guard
-            .entry(cache_key)
-            .and_modify(IidIncr::increment)
-            .or_default();
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct KvRepositoryReadWrite<'a>(KvRepositoryRead<'a>);
 
-        // Early release lock.
-        drop(write_guard);
-
-        let store_key = KvStoreKey::meta_to_value(&bucket, StoreMetaKey::IIDIncr);
-        batch.merge(store_key, iid_incr.to_kv_value());
-
-        Ok(iid_incr.0)
-    }
-}
+impl_transparent_wrapper_utils!(Deref for KvRepositoryReadWrite<'a>(KvRepositoryRead<'a>));
 
 impl<'a> KvRepositoryReadWrite<'a> {
     #[inline]
@@ -173,6 +176,9 @@ impl GenericRocksDbStore for KvStore {
                             .set_merge_operator_associative("kv_merge", merge::kv_merge_operator);
                     }
                     READ_ON_PUSH_CF_NAME => {
+                        cf_options
+                            .set_merge_operator_associative("kv_merge", merge::kv_merge_operator);
+
                         // Never disable auto-compactions for this CF.
                         cf_options.set_disable_auto_compactions(false);
 
@@ -224,6 +230,7 @@ impl GenericRocksDbStore for KvStore {
             lock: RwLock::new(()),
             write_options_builder,
             iid_incr_per_bucket: RwLock::new(HashMap::new()),
+            oid_sync: Mutex::new(()),
             pool_stats,
         }
     }
@@ -245,7 +252,7 @@ impl GenericRocksDbStore for KvStore {
     }
 
     fn bucket_key_ranges(bucket: &Bucket) -> Vec<(Option<&'static str>, std::ops::Range<Vec<u8>>)> {
-        let prefix_range = KvStoreKey::prefix_range(bucket);
+        let prefix_range = keys::prefix_range(bucket);
 
         (CF_NAMES.iter())
             .map(|&cf_name| (Some(cf_name), prefix_range.clone()))
@@ -266,142 +273,131 @@ impl Drop for KvStore {
 
 impl KvStore {
     pub fn to_repository_read_only<'a>(&'a self, bucket: Bucket<'a>) -> KvRepositoryReadOnly<'a> {
-        KvRepositoryReadOnly {
+        KvRepositoryReadOnly(KvRepositoryRead {
             bucket,
             store: self,
-        }
+        })
     }
 
     pub fn to_repository_read_write<'a>(&'a self, bucket: Bucket<'a>) -> KvRepositoryReadWrite<'a> {
-        KvRepositoryReadWrite {
+        KvRepositoryReadWrite(KvRepositoryRead {
             bucket,
             store: self,
+        })
+    }
+}
+
+impl<'db> KvRepositoryRead<'db> {
+    fn get_pinned<'a, K: TypedKvStoreKey>(
+        &'a self,
+        cf: Option<ColumnFamilyRef<'_>>,
+        key: &K,
+    ) -> Result<Option<K::Value<'db>>, ()>
+    where
+        K::Value<'db>: TryFromKvValue<rocksdb::DBPinnableSlice<'a>>,
+    {
+        let value_res = if let Some(cf) = cf {
+            self.store.database.get_pinned_cf(cf, key.to_bytes())
+        } else {
+            self.store.database.get_pinned(key.to_bytes())
+        };
+
+        match value_res {
+            Ok(Some(value)) => {
+                tracing::debug!(%key, "Got encoded value: {:?}", value.deref());
+
+                match K::Value::try_from_kv_value(value) {
+                    Ok(value_decoded) => {
+                        tracing::debug!(%key, "Got decoded value: {value_decoded:?}");
+
+                        Ok(Some(value_decoded))
+                    }
+                    Err(error) => {
+                        tracing::error!(%key, "Invalid value: {error}");
+
+                        Err(())
+                    }
+                }
+            }
+            Ok(None) => {
+                tracing::debug!(%key, "Found no value");
+
+                Ok(None)
+            }
+            Err(error) => {
+                tracing::error!(%key, "Error getting value: {error}");
+
+                Err(())
+            }
         }
     }
 }
 
-impl<'a> KvRepositoryReadOnly<'a> {
-    /// Meta-to-Value mapper
-    ///
-    /// [IDX=0] ((meta)) ~> ((value))
-    pub fn get_meta_to_value<T: std::str::FromStr>(
-        &self,
-        meta: StoreMetaKey,
-    ) -> Result<Option<T>, ()> {
-        let store_key = KvStoreKey::meta_to_value(&self.bucket, meta);
-
-        tracing::debug!("store get meta-to-value: {store_key}");
-
-        match self.store.database.get_pinned(&store_key) {
-            Ok(Some(value)) => {
-                tracing::debug!("got meta-to-value: {store_key}");
-
-                Ok(str::from_utf8(&value).map_or(None, |value| value.parse::<T>().ok()))
-            }
-            Ok(None) => {
-                tracing::debug!("no meta-to-value found: {store_key}");
-
-                Ok(None)
-            }
-            Err(err) => {
-                tracing::error!("error getting meta-to-value: {store_key} with trace: {err}");
-
-                Err(())
-            }
-        }
-    }
-
+impl<'db> KvRepositoryRead<'db> {
     /// Note that because of the underlying use of `i64`, the max value is
     /// `i64::MAX` (hence `u64::MAX / 2`).
-    pub fn get_object_count(&self) -> Result<u64, Box<dyn std::error::Error>> {
-        let bucket = self.bucket;
+    pub fn get_object_count(&self) -> Result<u64, ()> {
+        let store_key = keys::MetaToValue {
+            bucket: self.bucket,
+            meta: keys::meta::ObjectCount,
+        };
 
-        let store_key = KvStoreKey::meta_to_value(&bucket, StoreMetaKey::ObjectCount);
-        let value = self.store.database.get_pinned(&store_key)?;
-
-        match value {
-            Some(bytes) => match bytes.split_first_chunk::<8>() {
-                Some((chunk, [])) => {
-                    let count = ObjectCount::from_kv_value(*chunk);
-
-                    tracing::debug!(?bucket, ?count, "Read ObjectCount from database");
-
-                    match u64::try_from(count.0) {
-                        Ok(count) => Ok(count),
-                        Err(error) => Err(Box::new(io::Error::other(format!(
-                            "Invalid ObjectCount value in bucket {bucket:?}: {error:?}",
-                        )))),
+        self.get_pinned(None, &store_key).map(|opt| {
+            opt.map_or_else(
+                || {
+                    tracing::debug!(
+                        bucket = %self.bucket,
+                        "ObjectCount not found in database, considering bucket empty"
+                    );
+                    0
+                },
+                |count| match u64::try_from(count.0.get()) {
+                    Ok(n) => n,
+                    Err(error) => {
+                        tracing::debug!(
+                            bucket = %self.bucket,
+                            %error,
+                            "Invalid ObjectCount in database, considering bucket empty"
+                        );
+                        0
                     }
-                }
-                Some(_) => Err(Box::new(io::Error::other(format!(
-                    "Invalid ObjectCount value in bucket {bucket:?}: too many bytes",
-                )))),
-                None => Err(Box::new(io::Error::other(format!(
-                    "Invalid ObjectCount value in bucket {bucket:?}: missing bytes",
-                )))),
-            },
-            None => {
-                tracing::debug!(
-                    ?bucket,
-                    "ObjectCount not found in database, considering bucket empty"
-                );
-                Ok(0)
-            }
-        }
+                },
+            )
+        })
     }
 
-    /// Term-to-IIDs mapper
-    ///
-    /// [IDX=1] ((term)) ~> [((iid))]
-    pub fn get_term_to_iids(
-        self,
+    #[inline]
+    pub fn get_term_to_iids<'a>(
+        &'a self,
         term_hash: &StoreTermHash,
-    ) -> Result<Option<impl ExactSizeIterator<Item = TermToIidsEntry> + use<'a>>, ()> {
-        let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
+    ) -> Result<Option<impl ExactSizeIterator<Item = TermToIidsEntry> + 'a>, ()> {
+        let store_key = keys::TermToIids {
+            bucket: self.bucket,
+            term_hash,
+        };
 
-        tracing::debug!("store get term-to-iids: {store_key}");
-
-        match self.store.database.get_pinned(&store_key) {
-            Ok(Some(value)) => {
-                tracing::debug!(
-                    "got term-to-iids: {store_key} with encoded value: {value:?}",
-                    value = value.deref()
-                );
-
-                let iter = RocksDbPinnableSliceIter::<TermToIidsEntry>::forward(value).map_err(
-                    |error| tracing::error!(?store_key, "invalid term-to-iids: {error}"),
-                )?;
-
-                Ok(Some(iter))
-            }
-            Ok(None) => {
-                tracing::debug!("no term-to-iids found: {store_key}");
-
-                Ok(None)
-            }
-            Err(err) => {
-                tracing::error!("error getting term-to-iids: {store_key} with trace: {err}");
-
-                Err(())
-            }
-        }
+        self.get_pinned(None, &store_key)
+            .map(|opt| opt.map(|iter| iter.0))
     }
 
     pub fn get_document_frequency(&self, term_hash: &StoreTermHash) -> u64 {
-        let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
+        let store_key = keys::TermToIids {
+            bucket: self.bucket,
+            term_hash,
+        };
 
-        match self.store.database.get_pinned(&store_key) {
+        match self.store.database.get_pinned(store_key.to_bytes()) {
             Ok(Some(value)) => {
                 usize_to_u64(value.len()) / usize_to_u64(size_of::<TermToIidsEntry>())
             }
             Ok(None) => {
-                tracing::debug!(?store_key, ?term_hash, "term-to-iids not found");
+                tracing::debug!(%store_key, ?term_hash, "term-to-iids not found");
 
                 0
             }
             Err(error) => {
                 tracing::error!(
-                    ?store_key,
+                    %store_key,
                     ?term_hash,
                     "error getting term-to-iids: {error}"
                 );
@@ -411,190 +407,209 @@ impl<'a> KvRepositoryReadOnly<'a> {
         }
     }
 
-    /// OID-to-IID mapper
-    ///
-    /// [IDX=2] ((oid)) ~> ((iid))
+    #[inline]
     pub fn get_oid_to_iid(&self, oid: StoreObjectOid) -> Result<Option<StoreObjectIid>, ()> {
-        let store_key = KvStoreKey::oid_to_iid(&self.bucket, oid);
-
-        tracing::debug!("store get oid-to-iid: {store_key}");
+        let store_key = keys::OidToIid {
+            bucket: self.bucket,
+            oid,
+        };
 
         let cf_handle = (self.store.database)
             .cf_handle(READ_ON_PUSH_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        match self.store.database.get_pinned_cf(cf_handle, &store_key) {
-            Ok(Some(value)) => {
-                let value = value.deref();
-
-                tracing::debug!("got oid-to-iid: {store_key} with encoded value: {value:?}");
-
-                match StoreObjectIid::try_from_kv_value(&value) {
-                    Ok(value_decoded) => {
-                        tracing::debug!(
-                            "got oid-to-iid: {store_key} with decoded value: {value_decoded:?}"
-                        );
-
-                        Ok(Some(value_decoded))
-                    }
-                    Err(error) => {
-                        tracing::error!(?store_key, "invalid oid-to-iid: {error}");
-
-                        Err(())
-                    }
-                }
-            }
-            Ok(None) => {
-                tracing::debug!("no oid-to-iid found: {store_key}");
-
-                Ok(None)
-            }
-            Err(err) => {
-                tracing::error!("error getting oid-to-iid: {store_key} with trace: {err}");
-
-                Err(())
-            }
-        }
+        self.get_pinned(Some(cf_handle), &store_key)
     }
 
-    /// IID-to-OID mapper
-    ///
-    /// [IDX=3] ((iid)) ~> ((oid))
+    #[inline]
     pub fn get_iid_to_oid(&self, iid: StoreObjectIid) -> Result<Option<String>, ()> {
-        let store_key = KvStoreKey::iid_to_oid(&self.bucket, iid);
+        let store_key = keys::IidToOid {
+            bucket: self.bucket,
+            iid,
+        };
 
-        tracing::debug!("store get iid-to-oid: {store_key}");
-
-        match self.store.database.get_pinned(&store_key) {
-            Ok(Some(value)) => {
-                tracing::debug!("got iid-to-oid: {store_key}");
-
-                Ok(str::from_utf8(&value).ok().map(str::to_string))
-            }
-            Ok(None) => {
-                tracing::debug!("no iid-to-oid found: {store_key}");
-
-                Ok(None)
-            }
-            Err(err) => {
-                tracing::error!("error getting iid-to-oid: {store_key} with trace: {err}");
-
-                Err(())
-            }
-        }
+        self.get_pinned(None, &store_key)
     }
 
-    /// IID-to-Terms mapper
-    ///
-    /// [IDX=4] ((iid)) ~> [((term))]
-    pub fn get_iid_to_terms(
-        self,
+    #[inline]
+    pub fn get_iid_to_terms<'a>(
+        &'a self,
         iid: StoreObjectIid,
     ) -> Result<Option<impl ExactSizeIterator<Item = IidToTermsEntry> + 'a>, ()> {
-        let store_key = KvStoreKey::iid_to_terms(&self.bucket, iid);
-
-        tracing::debug!("store get iid-to-terms: {store_key}");
+        let store_key = keys::IidToTerms {
+            bucket: self.bucket,
+            iid,
+        };
 
         let cf_handle = (self.store.database)
             .cf_handle(INCOMPRESSIBLE_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        match self.store.database.get_pinned_cf(cf_handle, &store_key) {
-            Ok(Some(value)) => {
-                tracing::debug!(
-                    "got iid-to-terms: {store_key} with encoded value: {value:?}",
-                    value = value.deref()
-                );
-
-                let iter = RocksDbPinnableSliceIter::<IidToTermsEntry>::forward(value).map_err(
-                    |error| tracing::error!(?store_key, "invalid iid-to-terms: {error}"),
-                )?;
-
-                Ok(Some(iter))
-            }
-            Ok(None) => {
-                tracing::debug!("no iid-to-terms found: {store_key}");
-
-                Ok(None)
-            }
-            Err(err) => {
-                tracing::error!("error getting iid-to-terms: {store_key} with trace: {err}");
-
-                Err(())
-            }
-        }
+        self.get_pinned(Some(cf_handle), &store_key)
+            .map(|opt| opt.map(|iter| iter.0))
     }
 }
 
 impl<'a> KvRepositoryReadWrite<'a> {
-    /// This is `O(1)`, nothing meaningful happens.
-    fn to_read_only(self) -> KvRepositoryReadOnly<'a> {
-        KvRepositoryReadOnly {
-            bucket: self.bucket,
-            store: self.store,
+    fn merge<K, V>(
+        &self,
+        cf: Option<ColumnFamilyRef<'_>>,
+        key: &K,
+        value: &V,
+        batch: &mut WriteBatch,
+    ) where
+        K: TypedKvStoreKey,
+        V: IntoBytes + zerocopy::Immutable + ?Sized,
+    {
+        let value = value.as_bytes();
+
+        if tracing::enabled!(tracing::Level::TRACE) {
+            tracing::trace!(store_key = %key, ?value, "Updating value");
+        } else {
+            tracing::debug!(store_key = %key, "Updating value");
+        }
+
+        if let Some(cf) = cf {
+            batch.merge_cf(cf, key.to_bytes(), value)
+        } else {
+            batch.merge(key.to_bytes(), value)
         }
     }
 
-    /// Meta-to-Value mapper
-    ///
-    /// [IDX=0] ((meta)) ~> ((value))
-    pub fn get_meta_to_value<T: std::str::FromStr>(
-        &self,
-        meta: StoreMetaKey,
-    ) -> Result<Option<T>, ()> {
-        self.to_read_only().get_meta_to_value(meta)
+    fn put<K, V>(&self, cf: Option<ColumnFamilyRef<'_>>, key: &K, value: &V, batch: &mut WriteBatch)
+    where
+        K: TypedKvStoreKey,
+        V: IntoBytes + zerocopy::Immutable + ?Sized,
+    {
+        let value = value.as_bytes();
+
+        if tracing::enabled!(tracing::Level::TRACE) {
+            tracing::trace!(store_key = %key, ?value, "Setting value");
+        } else {
+            tracing::debug!(store_key = %key, "Setting value");
+        }
+
+        if let Some(cf) = cf {
+            batch.put_cf(cf, key.to_bytes(), value)
+        } else {
+            batch.put(key.to_bytes(), value)
+        }
     }
 
-    pub fn set_meta_to_value(
-        &self,
-        batch: &mut WriteBatch,
-        meta: StoreMetaKey,
-        value: impl ToString,
-    ) {
-        let store_key = KvStoreKey::meta_to_value(&self.bucket, meta);
+    fn delete<K>(&self, cf: Option<ColumnFamilyRef<'_>>, key: &K, batch: &mut WriteBatch)
+    where
+        K: TypedKvStoreKey,
+    {
+        tracing::debug!(store_key = %key, "Deleting value");
 
-        tracing::debug!("store set meta-to-value: {store_key}");
-
-        batch.put(store_key, value.to_string().as_bytes())
+        if let Some(cf) = cf {
+            batch.delete_cf(cf, key.to_bytes())
+        } else {
+            batch.delete(key.to_bytes())
+        }
     }
+}
 
-    #[inline]
-    pub fn get_object_count(&self) -> Result<u64, Box<dyn std::error::Error>> {
-        self.to_read_only().get_object_count()
-    }
-
+impl<'db> KvRepositoryReadWrite<'db> {
     #[inline]
     fn update_object_count(&self, batch: &mut WriteBatch, diff: i64) {
-        let store_key = KvStoreKey::meta_to_value(&self.bucket, StoreMetaKey::ObjectCount);
+        let store_key = keys::MetaToValue {
+            bucket: self.bucket,
+            meta: keys::meta::ObjectCount,
+        };
 
-        tracing::trace!(
-            ?store_key,
-            "increasing {} object count by {diff}",
-            &self.bucket
-        );
-
-        batch.merge(store_key, ObjectCount(diff).to_kv_value());
+        self.merge(None, &store_key, &ObjectCount(diff.into()), batch);
     }
 
-    pub fn get_new_iid(
+    fn get_new_iid(
         &self,
         batch: &mut WriteBatch,
     ) -> Result<StoreObjectIid, Box<dyn std::error::Error>> {
+        let cf_handle = (self.store.database)
+            .cf_handle(READ_ON_PUSH_CF_NAME)
+            .expect(CF_CREATED_ON_OPEN);
+
+        let store_key = keys::MetaToValue {
+            bucket: self.bucket,
+            meta: keys::meta::IidIncr,
+        };
+
+        let mut cache_guard = self.store.iid_incr_per_bucket.write().unwrap();
+
+        let cache_key = self.bucket.to_kv_key_part();
+        let iid_incr = match cache_guard.entry(cache_key) {
+            hashbrown::hash_map::Entry::Occupied(mut entry) => {
+                let iid_incr = entry.get_mut();
+
+                iid_incr.increment();
+
+                *iid_incr
+            }
+            hashbrown::hash_map::Entry::Vacant(entry) => {
+                // Read from database (`cache_guard` ensures no race condition).
+                let iid_incr = match self
+                    .get_pinned(Some(cf_handle), &store_key)
+                    .map_err(|()| io::Error::other("Error getting IidIncr"))?
+                {
+                    Some(mut iid_incr) => {
+                        iid_incr.increment();
+                        iid_incr
+                    }
+                    None => Default::default(),
+                };
+
+                // Populate the cache.
+                *entry.insert(iid_incr)
+            }
+        };
+
+        // Early release lock.
+        drop(cache_guard);
+
         // Increment object count
         self.update_object_count(batch, 1);
 
-        self.store.get_new_iid(self.bucket, batch)
+        // Schedule a write to the database.
+        // NOTE: If the `WriteBatch` doesn’t get written, we’ll have wasted one IID.
+        //   We can’t really do otherwise without blocking locks for a long time.
+        //   `Iid::MAX` should never get reached so it’s an acceptable trade-off.
+        batch.merge_cf(cf_handle, store_key.to_bytes(), iid_incr.as_bytes());
+
+        Ok(iid_incr.0)
     }
 
-    /// Term-to-IIDs mapper
-    ///
-    /// [IDX=1] ((term)) ~> [((iid))]
-    #[inline]
-    pub fn get_term_to_iids(
-        self,
-        term_hash: &StoreTermHash,
-    ) -> Result<Option<impl ExactSizeIterator<Item = TermToIidsEntry> + 'a>, ()> {
-        self.to_read_only().get_term_to_iids(term_hash)
+    fn assign_new_iid(
+        &self,
+        oid: StoreObjectOid<'_>,
+    ) -> Result<StoreObjectIid, Box<dyn std::error::Error>> {
+        tracing::trace!("Must initialize push executor oid-to-iid and iid-to-oid");
+
+        let mut batch = WriteBatch::new();
+
+        // Bump last stored increment
+        let iid = self.get_new_iid(&mut batch)?;
+
+        // Associate OID <> IID (bidirectional)
+        self.set_oid_to_iid(&mut batch, oid, iid);
+        self.set_iid_to_oid(&mut batch, iid, oid);
+
+        self.write(batch)?;
+
+        Ok(iid)
+    }
+
+    pub fn get_or_assign_iid(
+        &self,
+        oid: StoreObjectOid<'_>,
+    ) -> Result<(StoreObjectIid, bool), Box<dyn std::error::Error>> {
+        let _oid_sync_guard = self.store.oid_sync.lock().unwrap();
+
+        match (self.get_oid_to_iid(oid))
+            .map_err(|()| io::Error::other("Error getting OID-To-IID"))?
+        {
+            Some(iid) => Ok((iid, false)),
+            None => self.assign_new_iid(oid).map(|iid| (iid, true)),
+        }
     }
 
     pub fn update_term_to_iid(
@@ -604,88 +619,66 @@ impl<'a> KvRepositoryReadWrite<'a> {
         iid: StoreObjectIid,
         tf_delta: Option<u8>,
     ) {
-        let store_key = KvStoreKey::term_to_iids(&self.bucket, term_hash);
-
-        tracing::debug!("store add term-to-iids: {store_key}");
-
         debug_assert!(
             !matches!(tf_delta, Some(TF_TOMBSTONE)),
             "Don’t update Term-To-IIDs with a tf of 0"
         );
 
-        batch.merge(
+        let store_key = keys::TermToIids {
+            bucket: self.bucket,
+            term_hash,
+        };
+
+        self.merge(
+            None,
             &store_key,
-            TermToIidsEntry::new(iid, tf_delta.unwrap_or(TF_TOMBSTONE)).as_bytes(),
+            &TermToIidsEntry::new(iid, tf_delta.unwrap_or(TF_TOMBSTONE)),
+            batch,
         );
     }
 
-    /// OID-to-IID mapper
-    ///
-    /// [IDX=2] ((oid)) ~> ((iid))
-    pub fn get_oid_to_iid(&self, oid: StoreObjectOid) -> Result<Option<StoreObjectIid>, ()> {
-        self.to_read_only().get_oid_to_iid(oid)
-    }
-
     pub fn set_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOid, iid: StoreObjectIid) {
-        let store_key = KvStoreKey::oid_to_iid(&self.bucket, oid);
-
-        tracing::debug!("store set oid-to-iid: {store_key}");
-
-        // Encode IID
-        let iid_encoded = iid.to_kv_value();
-
-        tracing::debug!("store set oid-to-iid: {store_key} with encoded value: {iid_encoded:?}");
+        let store_key = keys::OidToIid {
+            bucket: self.bucket,
+            oid,
+        };
 
         let cf_handle = (self.store.database)
             .cf_handle(READ_ON_PUSH_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        batch.put_cf(cf_handle, store_key, &iid_encoded)
+        self.put(Some(cf_handle), &store_key, &iid, batch)
     }
 
     pub fn delete_oid_to_iid(&self, batch: &mut WriteBatch, oid: StoreObjectOid) {
-        let store_key = KvStoreKey::oid_to_iid(&self.bucket, oid);
-
-        tracing::debug!("store delete oid-to-iid: {store_key}");
+        let store_key = keys::OidToIid {
+            bucket: self.bucket,
+            oid,
+        };
 
         let cf_handle = (self.store.database)
             .cf_handle(READ_ON_PUSH_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        batch.delete_cf(cf_handle, store_key)
-    }
-
-    /// IID-to-OID mapper
-    ///
-    /// [IDX=3] ((iid)) ~> ((oid))
-    pub fn get_iid_to_oid(&self, iid: StoreObjectIid) -> Result<Option<String>, ()> {
-        self.to_read_only().get_iid_to_oid(iid)
+        self.delete(Some(cf_handle), &store_key, batch)
     }
 
     pub fn set_iid_to_oid(&self, batch: &mut WriteBatch, iid: StoreObjectIid, oid: StoreObjectOid) {
-        let store_key = KvStoreKey::iid_to_oid(&self.bucket, iid);
+        let store_key = keys::IidToOid {
+            bucket: self.bucket,
+            iid,
+        };
 
-        tracing::debug!("store set iid-to-oid: {store_key}");
-
-        batch.put(store_key, oid.as_bytes())
+        self.put(None, &store_key, oid.as_bytes(), batch)
     }
 
     pub fn delete_iid_to_oid(&self, batch: &mut WriteBatch, iid: StoreObjectIid) {
-        let store_key = KvStoreKey::iid_to_oid(&self.bucket, iid);
+        let store_key = keys::IidToOid {
+            bucket: self.bucket,
+            iid,
+        };
 
-        tracing::debug!("store delete iid-to-oid: {store_key}");
-
-        batch.delete(store_key)
-    }
-
-    /// IID-to-Terms mapper
-    ///
-    /// [IDX=4] ((iid)) ~> [((term))]
-    pub fn get_iid_to_terms(
-        self,
-        iid: StoreObjectIid,
-    ) -> Result<Option<impl ExactSizeIterator<Item = IidToTermsEntry> + 'a>, ()> {
-        self.to_read_only().get_iid_to_terms(iid)
+        self.delete(None, &store_key, batch)
     }
 
     pub fn set_iid_to_terms(
@@ -694,27 +687,32 @@ impl<'a> KvRepositoryReadWrite<'a> {
         iid: StoreObjectIid,
         terms: impl ExactSizeIterator<Item = StoreTermHash>,
     ) {
-        let store_key = KvStoreKey::iid_to_terms(&self.bucket, iid);
+        let store_key = keys::IidToTerms {
+            bucket: self.bucket,
+            iid,
+        };
 
         // Encode iterator into storage serialized format.
-        let terms: Vec<IidToTermsEntry> = terms.map(IidToTermsEntry::new).collect();
-
-        tracing::debug!(?terms, "store set iid-to-terms: {store_key}");
+        let terms = terms.map(IidToTermsEntry::new).collect::<Vec<_>>();
 
         let cf_handle = (self.store.database)
             .cf_handle(INCOMPRESSIBLE_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        batch.put_cf(cf_handle, store_key, terms.as_bytes())
+        self.put(Some(cf_handle), &store_key, terms.as_slice(), batch)
     }
 
+    #[inline]
     pub fn update_iid_to_terms(
         &self,
         batch: &mut WriteBatch,
         iid: StoreObjectIid,
         new_terms: impl ExactSizeIterator<Item = StoreTermHash>,
     ) {
-        let store_key = KvStoreKey::iid_to_terms(&self.bucket, iid);
+        let store_key = keys::IidToTerms {
+            bucket: self.bucket,
+            iid,
+        };
 
         // Encode iterator into storage serialized format.
         // PERF: Collect here instead of running multiple `merge_cf` so we
@@ -724,25 +722,24 @@ impl<'a> KvRepositoryReadWrite<'a> {
         let new_terms: Vec<IidToTermsEntry> =
             new_terms.into_iter().map(IidToTermsEntry::new).collect();
 
-        tracing::debug!(?new_terms, "store update iid-to-terms: {store_key}");
-
         let cf_handle = (self.store.database)
             .cf_handle(INCOMPRESSIBLE_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        batch.merge_cf(cf_handle, &store_key, new_terms.as_bytes());
+        self.merge(Some(cf_handle), &store_key, new_terms.as_slice(), batch);
     }
 
     pub fn delete_iid_to_terms(&self, batch: &mut WriteBatch, iid: StoreObjectIid) {
-        let store_key = KvStoreKey::iid_to_terms(&self.bucket, iid);
-
-        tracing::debug!("store delete iid-to-terms: {store_key}");
+        let store_key = keys::IidToTerms {
+            bucket: self.bucket,
+            iid,
+        };
 
         let cf_handle = (self.store.database)
             .cf_handle(INCOMPRESSIBLE_CF_NAME)
             .expect(CF_CREATED_ON_OPEN);
 
-        batch.delete_cf(cf_handle, store_key)
+        self.delete(Some(cf_handle), &store_key, batch)
     }
 
     pub fn delete_object(
@@ -810,17 +807,6 @@ mod tests {
             .unwrap();
         let action = store.to_repository_read_write("b:test:3".into());
 
-        assert!(
-            action
-                .get_meta_to_value::<StoreObjectIid>(StoreMetaKey::IIDIncr)
-                .is_ok()
-        );
-        assert!({
-            let mut batch = WriteBatch::default();
-            action.set_meta_to_value(&mut batch, StoreMetaKey::IIDIncr, 1);
-            action.write(batch).is_ok()
-        });
-
         assert_eq!(action.get_term_to_iids(&1.into()).err(), None);
         assert!({
             let mut batch = WriteBatch::default();
@@ -887,7 +873,7 @@ mod tests {
 
 impl fmt::Debug for KvStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use crate::util::fmt::AsPrettyRwLock;
+        use crate::util::fmt::{AsPrettyMutex, AsPrettyRwLock};
 
         // NOTE: Deconstructing to future-proof this function.
         let Self {
@@ -896,9 +882,8 @@ impl fmt::Debug for KvStore {
             last_flushed,
             lock,
             write_options_builder,
-            // NOTE: We don’t care about the configuration,
-            //   we can see it elsewhere if needed.
             iid_incr_per_bucket,
+            oid_sync,
             pool_stats,
         } = self;
 
@@ -909,7 +894,8 @@ impl fmt::Debug for KvStore {
             .field("lock", &AsPrettyRwLock(lock))
             .field("write_options_builder", write_options_builder)
             .field("iid_incr_per_bucket", &AsPrettyRwLock(iid_incr_per_bucket))
+            .field("oid_sync", &AsPrettyMutex(oid_sync))
             .field("pool_stats", &pool_stats)
-            .finish_non_exhaustive()
+            .finish()
     }
 }

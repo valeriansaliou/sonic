@@ -244,9 +244,6 @@ struct MultipartPushContext {
     // NOTE: We can’t use `StoreObjectOid` as it’s not owned.
     oid: String,
 
-    /// `NEW` in any multipart chunk is considered `NEW` on commit.
-    assume_new: bool,
-
     terms: HashMap<StoreTermHash, (Box<str>, u8)>,
 
     capacity: Option<usize>,

@@ -866,11 +866,6 @@ impl ChannelCommandIngest {
                     })
                 }
             }
-            #[cfg(feature = "experimental-api")]
-            _ => Err(ChannelCommandError::InvalidFormat(
-                "PUSH <collection> <bucket> <object> \"<text>\" [LANG(<locale>)]? [NEW]? [INCOMPLETE]? [CAPACITY(<len>)]?",
-            )),
-            #[cfg(not(feature = "experimental-api"))]
             _ => Err(ChannelCommandError::InvalidFormat(
                 "PUSH <collection> <bucket> <object> \"<text>\" [LANG(<locale>)]?",
             )),
@@ -1109,17 +1104,6 @@ impl ChannelCommandIngest {
                         // 'LANG(<locale>)' where <locale> ∈ ISO 639-3
                         if let Some(query_lang_parsed) = QueryGenericLang::from_value(meta_value) {
                             options.0 = Some(query_lang_parsed);
-                            Ok(())
-                        } else {
-                            Err(ChannelCommandBase::make_error_invalid_meta_value(
-                                meta_key, meta_value,
-                            ))
-                        }
-                    }
-                    #[cfg(feature = "experimental-api")]
-                    "NEW" => {
-                        if meta_value.is_empty() {
-                            options.1.assume_new = true;
                             Ok(())
                         } else {
                             Err(ChannelCommandBase::make_error_invalid_meta_value(

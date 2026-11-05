@@ -13,7 +13,6 @@ use zerocopy::little_endian;
 use crate::store::types::*;
 
 use super::encoding::*;
-use super::keys::StoreMetaKey;
 
 /// This is an empirical value, which represents the average
 /// amount of compression KV merge operations result to.
@@ -33,6 +32,7 @@ pub(super) fn kv_merge_operator(
 ) -> Option<Vec<u8>> {
     use super::keys::KvStoreKeyDiscriminator as D;
     use super::keys::KvStoreKeyParts;
+    use super::keys::meta::BucketMetaKeyDiscriminator as MetaD;
 
     let KvStoreKeyParts {
         bucket: _,
@@ -40,23 +40,33 @@ pub(super) fn kv_merge_operator(
         route,
     } = KvStoreKeyParts::try_from(key).ok()?;
 
-    let discriminator = D::try_from(discriminator)
-        .inspect_err(|error| tracing::error!("kv_merge_operator: Invalid discriminator: {error}"))
-        .ok()?;
+    let discriminator = match D::try_from(discriminator) {
+        Ok(d) => d,
+        Err(error) => {
+            tracing::error!(?key, ?error, "kv_merge_operator: Invalid discriminator");
+            return None;
+        }
+    };
 
     match discriminator {
-        D::MetaToValue => match StoreMetaKey::try_from_kv_key_part(route) {
-            Ok(StoreMetaKey::IIDIncr) => merge_int_max::<8, IidIncr>(existing_val, operands),
-            Ok(StoreMetaKey::ObjectCount) => merge_int_counter::<8, ObjectCount>(
+        D::MetaToValue => match MetaD::try_from_kv_key_part(route) {
+            Ok(MetaD::IidIncr) => merge_int_max::<IidIncr>(existing_val, operands),
+            Ok(MetaD::ObjectCount) => merge_int_counter::<8, ObjectCount>(
                 existing_val,
                 operands,
                 ObjectCount::saturating_add,
             ),
-            Err(error) => panic!("Unrecognized meta key: {error}"),
+            Err(error) => {
+                tracing::error!(?key, ?error, "kv_merge_operator: Unrecognized meta key");
+                None
+            }
         },
         D::TermToIids => merge_int_set_diffs::<TermToIidsEntry>(existing_val, operands.iter()),
         D::IidToTerms => unique_int_list::<4>(existing_val, operands),
-        _ => unreachable!(),
+        _ => {
+            tracing::error!(?key, "kv_merge_operator: Unexpected merge key");
+            None
+        }
     }
 }
 
@@ -209,16 +219,18 @@ fn test_merge_int_set_diffs() {
 ///
 /// It’s used for `IIDIncr`, where we can’t guarantee the order in which
 /// incremental values will effectively be written.
-fn merge_int_max<const WORD_LEN: usize, T>(
-    existing_val: Option<&[u8]>,
-    operands: &rocksdb::MergeOperands,
+fn merge_int_max<'a, T>(
+    existing_val: Option<&'a [u8]>,
+    operands: &'a rocksdb::MergeOperands,
 ) -> Option<Vec<u8>>
 where
-    T: ToKvValue<Repr = [u8; WORD_LEN]> + FromKvValue + TryFromKvValue + Default + PartialOrd,
-    <T as TryFromKvValue>::Err: std::fmt::Display,
+    T: zerocopy::FromBytes + zerocopy::Immutable + zerocopy::KnownLayout,
+    T: Default,
+    T: zerocopy::IntoBytes,
+    T: PartialOrd,
 {
     let mut res = match existing_val {
-        Some(bytes) => match T::try_from_kv_value(bytes) {
+        Some(bytes) => match T::read_from_bytes(bytes) {
             Ok(initial_value) => initial_value,
             Err(error) => panic!("merge_int_max: Invalid initial value: {error}"),
         },
@@ -227,26 +239,23 @@ where
     };
 
     for op in operands {
-        let (chunks, remainder) = op.as_chunks();
+        match T::read_from_bytes(op) {
+            Ok(new_val) => {
+                if new_val > res {
+                    res = new_val;
+                }
+            }
+            Err(error) => {
+                debug_assert!(false, "{error}");
 
-        const ERROR: &str = "merge_int_max received incorrect operand: Remainder not empty.";
-        debug_assert!(remainder.is_empty(), "{ERROR}");
+                tracing::error!("merge_int_max received an incorrect operand: {error}. Ignoring.");
 
-        if !remainder.is_empty() {
-            tracing::error!("{ERROR} Ignoring.");
-            continue;
-        }
-
-        for chunk in chunks {
-            let new_val = T::from_kv_value(*chunk);
-
-            if new_val > res {
-                res = new_val;
+                continue;
             }
         }
     }
 
-    Some(res.to_kv_value().to_vec())
+    Some(res.as_bytes().to_vec())
 }
 
 /// This implements a counter (as `i64`).
@@ -262,17 +271,18 @@ where
 /// way to know that they’re now encoded as `u64`. In addition, if one merge
 /// operation gets `(None, [-1, -1])` and another `(None, [1, 1, 1])`, the
 /// final counter value would be `3`; which is incorrect (expected: `1`).
-fn merge_int_counter<const WORD_LEN: usize, T>(
-    existing_val: Option<&[u8]>,
-    operands: &rocksdb::MergeOperands,
-    saturating_add: fn(T, T) -> T,
+fn merge_int_counter<'a, const WORD_LEN: usize, T>(
+    existing_val: Option<&'a [u8]>,
+    operands: &'a rocksdb::MergeOperands,
+    saturating_add: fn(T, &T) -> T,
 ) -> Option<Vec<u8>>
 where
-    T: ToKvValue<Repr = [u8; WORD_LEN]> + FromKvValue + TryFromKvValue + Default,
-    <T as TryFromKvValue>::Err: std::fmt::Display,
+    T: zerocopy::FromBytes + zerocopy::Immutable + zerocopy::KnownLayout,
+    T: Default,
+    T: zerocopy::IntoBytes,
 {
     let mut res = match existing_val {
-        Some(bytes) => match T::try_from_kv_value(bytes) {
+        Some(bytes) => match T::read_from_bytes(bytes) {
             Ok(initial_value) => initial_value,
             Err(error) => panic!("merge_int_counter: Invalid initial value: {error}"),
         },
@@ -281,24 +291,21 @@ where
     };
 
     for op in operands {
-        let (chunks, remainder) = op.as_chunks();
+        match T::ref_from_bytes(op) {
+            Ok(diff) => {
+                res = saturating_add(res, diff);
+            }
+            Err(error) => {
+                debug_assert!(false, "{error}");
 
-        const ERROR: &str = "merge_int_counter received incorrect operand: Remainder not empty.";
-        debug_assert!(remainder.is_empty(), "{ERROR}");
+                tracing::error!("merge_int_counter received incorrect operand: {error}. Ignoring.");
 
-        if !remainder.is_empty() {
-            tracing::error!("{ERROR}");
-            return None;
-        }
-
-        for chunk in chunks {
-            let diff = T::from_kv_value(*chunk);
-
-            res = saturating_add(res, diff);
+                continue;
+            }
         }
     }
 
-    Some(res.to_kv_value().to_vec())
+    Some(res.as_bytes().to_vec())
 }
 
 // MARK: Term-To-IIDs
@@ -362,14 +369,14 @@ impl TermToIidsEntry {
     #[inline]
     pub const fn new(iid: StoreObjectIid, tf: u8) -> Self {
         Self {
-            iid: little_endian::U64::new(iid.into_inner()),
+            iid: iid.into_inner(),
             tf,
         }
     }
 
     #[inline]
     pub const fn iid(&self) -> StoreObjectIid {
-        StoreObjectIid::new(self.iid.get())
+        StoreObjectIid::new(self.iid)
     }
 
     #[inline]
@@ -405,18 +412,18 @@ impl IidToTermsEntry {
     #[inline]
     pub const fn new(term_hash: StoreTermHash) -> Self {
         Self {
-            term_hash: little_endian::U32::new(term_hash.into_inner()),
+            term_hash: term_hash.into_inner(),
         }
     }
 
     #[inline]
     pub const fn into_term_hash(self) -> StoreTermHash {
         let Self { term_hash, .. } = self;
-        StoreTermHash::new(term_hash.get())
+        StoreTermHash::new(term_hash)
     }
 
     #[inline]
     pub const fn term_hash(&self) -> StoreTermHash {
-        StoreTermHash::new(self.term_hash.get())
+        StoreTermHash::new(self.term_hash)
     }
 }

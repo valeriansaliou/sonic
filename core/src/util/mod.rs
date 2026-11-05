@@ -14,9 +14,9 @@ pub(crate) mod hash;
 pub mod serde;
 
 macro_rules! impl_transparent_wrapper_utils {
-    (Deref for $wrapper:ident$(<$($l1:lifetime),+>)?($(&$l2:lifetime)?$wrapped:ident$(<$($l3:lifetime),+>)?)) => {
+    (Deref for $wrapper:ident$(<$($l1:lifetime),+>)?($(&$l2:lifetime)?$wrapped:path)) => {
         impl$(<$($l1),+>)? std::ops::Deref for $wrapper$(<$($l1),+>)? {
-            type Target = $wrapped$(<$($l3),+>)?;
+            type Target = $wrapped;
 
             #[inline(always)]
             fn deref(&self) -> &Self::Target {
@@ -25,10 +25,10 @@ macro_rules! impl_transparent_wrapper_utils {
         }
     };
 
-    (From for $wrapper:ident$(<$($l1:lifetime),+>)?($(&$l2:lifetime)?$wrapped:ident$(<$($l3:lifetime),+>)?)) => {
+    (From for $wrapper:ident$(<$($l1:lifetime),+>)?($(&$l2:lifetime)?$wrapped:path)) => {
         impl<$($($l1),+,)? T> From<T> for $wrapper$(<$($l1),+>)?
         where
-            $wrapped$(<$($l3),+>)?: From<T>,
+            $wrapped: From<T>,
         {
             #[inline]
             fn from(value: T) -> Self {
@@ -37,7 +37,7 @@ macro_rules! impl_transparent_wrapper_utils {
         }
     };
 
-    (Debug for $wrapper:ident$(<$($l1:lifetime),+>)?($(&$l2:lifetime)?$wrapped:ident$(<$($l3:lifetime),+>)?)) => {
+    (Debug for $wrapper:ident$(<$($l1:lifetime),+>)?($(&$l2:lifetime)?$wrapped:path)) => {
         impl$(<$($l1),+>)? std::fmt::Debug for $wrapper$(<$($l1),+>)? {
             #[inline(always)]
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -46,7 +46,7 @@ macro_rules! impl_transparent_wrapper_utils {
         }
     };
 
-    (Display for $wrapper:ident$(<$($l1:lifetime),+>)?($(&$l2:lifetime)?$wrapped:ident$(<$($l3:lifetime),+>)?)) => {
+    (Display for $wrapper:ident$(<$($l1:lifetime),+>)?($(&$l2:lifetime)?$wrapped:path)) => {
         impl$(<$($l1),+>)? std::fmt::Display for $wrapper$(<$($l1),+>)? {
             #[inline(always)]
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -55,9 +55,9 @@ macro_rules! impl_transparent_wrapper_utils {
         }
     };
 
-    (FromStr for $wrapper:ident$(<$($l1:lifetime),+>)?($(&$l2:lifetime)?$wrapped:ident$(<$($l3:lifetime),+>)?)) => {
+    (FromStr for $wrapper:ident$(<$($l1:lifetime),+>)?($(&$l2:lifetime)?$wrapped:path)) => {
         impl$(<$($l1),+>)? std::str::FromStr for $wrapper$(<$($l1),+>)? {
-            type Err = <$(&$l2)?$wrapped$(<$($l3),+>)? as std::str::FromStr>::Err;
+            type Err = <$(&$l2)?$wrapped as std::str::FromStr>::Err;
 
             #[inline(always)]
             fn from_str(s: &str) -> Result<Self, Self::Err> {

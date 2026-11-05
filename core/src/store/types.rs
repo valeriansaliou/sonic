@@ -5,27 +5,25 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use zerocopy::little_endian;
+
 pub(super) type Hash = u32;
 
 // MARK: IID
 
-#[derive(
-    zerocopy::FromBytes,
-    zerocopy::IntoBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout
-)]
+#[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout)]
+#[derive(zerocopy::IntoBytes)]
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd)]
 #[repr(transparent)]
-pub struct StoreObjectIid(u64);
+pub struct StoreObjectIid(little_endian::U64);
 
-impl_primitive_wrapper_utils!(StoreObjectIid(u64));
+impl_primitive_wrapper_utils!(StoreObjectIid(little_endian::U64));
 
 impl StoreObjectIid {
     // NOTE: We went for `into_inner` here instead of marking `.0` `pub(super)`
     //   so it’s easier to identify call sites and keep constuction via `From`.
     #[inline]
-    pub(super) const fn into_inner(self) -> u64 {
+    pub(super) const fn into_inner(self) -> little_endian::U64 {
         self.0
     }
 }
@@ -38,9 +36,18 @@ impl std::fmt::Display for StoreObjectIid {
     }
 }
 
+impl From<u64> for StoreObjectIid {
+    #[inline]
+    fn from(value: u64) -> Self {
+        Self(little_endian::U64::new(value))
+    }
+}
+
 // MARK: OID
 
+#[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout)]
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
 pub struct StoreObjectOid<'a>(StoreItemPart<'a>);
 
 crate::util::impl_transparent_wrapper_utils!(Deref for StoreObjectOid<'a>(StoreItemPart<'a>));
@@ -48,7 +55,10 @@ crate::util::impl_transparent_wrapper_utils!(From for StoreObjectOid<'a>(StoreIt
 crate::util::impl_transparent_wrapper_utils!(Debug for StoreObjectOid<'a>(StoreItemPart<'a>));
 
 impl<'a> StoreObjectOid<'a> {
-    #[allow(clippy::should_implement_trait)]
+    #[allow(
+        clippy::should_implement_trait,
+        reason = "FromStr doesn’t support lifetimes"
+    )]
     pub(crate) fn from_str(part: &'a str) -> Result<Self, ()> {
         match StoreItemPart::from_str(part) {
             Ok(part) => Ok(Self(part)),
@@ -101,17 +111,19 @@ impl std::str::FromStr for BucketOwned {
 
 /// Remember to use [`crate::util::hash::NoopU32HasherBuilder`], as
 /// `StoreTermHash` values are already hashed (by xxHash)!
+#[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout)]
+#[derive(zerocopy::IntoBytes)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct StoreTermHash(u32);
+pub struct StoreTermHash(little_endian::U32);
 
-impl_primitive_wrapper_utils!(StoreTermHash(u32));
+impl_primitive_wrapper_utils!(StoreTermHash(little_endian::U32));
 
 impl StoreTermHash {
     // NOTE: We went for `into_inner` here instead of marking `.0` `pub(super)`
     //   so it’s easier to identify call sites and keep constuction via `From`.
     #[inline]
-    pub(super) const fn into_inner(self) -> u32 {
+    pub(super) const fn into_inner(self) -> little_endian::U32 {
         self.0
     }
 }
@@ -125,7 +137,13 @@ impl From<&str> for StoreTermHash {
 
         hasher.write(term.as_bytes());
 
-        Self(hasher.finish() as u32)
+        Self((hasher.finish() as u32).into())
+    }
+}
+
+impl From<u32> for StoreTermHash {
+    fn from(hash: u32) -> Self {
+        Self(hash.into())
     }
 }
 
@@ -152,6 +170,7 @@ mod tests_store_term_hash {
 
 // MARK: Item part
 
+#[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct StoreItemPart<'a>(&'a str);
 
@@ -167,7 +186,10 @@ pub(super) const ITEM_PART_MAX_LEN_ERROR: &str =
     "Item part lengths should always be <= 128 (STORE_ITEM_PART_LEN_MAX).";
 
 impl<'a> StoreItemPart<'a> {
-    #[allow(clippy::should_implement_trait)]
+    #[allow(
+        clippy::should_implement_trait,
+        reason = "FromStr doesn’t support lifetimes"
+    )]
     fn from_str(part: &'a str) -> Result<Self, ()> {
         let len = part.len();
 
@@ -267,29 +289,36 @@ impl StoreItemBuilder {
 
 // MARK: IIDIncr counter
 
+#[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout)]
+#[derive(zerocopy::IntoBytes)]
 #[derive(Clone, Copy, Default, PartialEq, PartialOrd)]
 #[repr(transparent)]
-pub(super) struct IidIncr(pub(super) StoreObjectIid);
+pub struct IidIncr(pub(super) StoreObjectIid);
 
 impl IidIncr {
     #[inline]
     pub(super) const fn increment(&mut self) {
-        self.0.0 = self.0.0.saturating_add(1);
+        self.0.0 = little_endian::U64::new(self.0.0.get().saturating_add(1));
     }
 }
 
 crate::util::impl_transparent_wrapper_utils!(Debug for IidIncr(StoreObjectIid));
+crate::util::impl_transparent_wrapper_utils!(From for IidIncr(StoreObjectIid));
 
 // MARK: ObjectCount counter
 
+#[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout)]
+#[derive(zerocopy::IntoBytes)]
 #[derive(Default)]
 #[repr(transparent)]
-pub(super) struct ObjectCount(pub(super) i64);
+pub struct ObjectCount(pub(super) little_endian::I64);
 
 impl ObjectCount {
     #[inline]
-    pub(super) const fn saturating_add(self, rhs: Self) -> Self {
-        Self(self.0.saturating_add(rhs.0))
+    pub(super) const fn saturating_add(self, rhs: &Self) -> Self {
+        Self(little_endian::I64::new(
+            self.0.get().saturating_add(rhs.0.get()),
+        ))
     }
 }
 
@@ -423,7 +452,7 @@ impl std::fmt::Debug for CollectionHash {
 // MARK: - Helpers
 
 macro_rules! impl_primitive_wrapper_utils {
-    ($t:ident($wrapped:ident)) => {
+    ($t:ident($wrapped:path)) => {
         impl $t {
             pub const fn new(value: $wrapped) -> Self {
                 Self(value)
@@ -444,7 +473,6 @@ macro_rules! impl_primitive_wrapper_utils {
 
         crate::util::impl_transparent_wrapper_utils!(Deref for $t($wrapped));
         crate::util::impl_transparent_wrapper_utils!(Debug for $t($wrapped));
-        crate::util::impl_transparent_wrapper_utils!(FromStr for $t($wrapped));
     };
 }
 use impl_primitive_wrapper_utils;
