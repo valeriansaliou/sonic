@@ -38,11 +38,11 @@ impl std::fmt::Display for Offset {
     }
 }
 
-#[cfg(feature = "experimental-api")]
+#[cfg(all(feature = "experimental-api", feature = "deprecated"))]
 #[derive(Debug, Clone, Copy)]
 pub struct New;
 
-#[cfg(feature = "experimental-api")]
+#[cfg(all(feature = "experimental-api", feature = "deprecated"))]
 impl std::fmt::Display for New {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "NEW")

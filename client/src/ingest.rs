@@ -61,7 +61,7 @@ pub trait PushOption: std::fmt::Display + Sync {}
 
 impl<'a> PushOption for options::Lang<'a> {}
 
-#[cfg(feature = "experimental-api")]
+#[cfg(all(feature = "experimental-api", feature = "deprecated"))]
 impl PushOption for options::New {}
 
 #[cfg(feature = "experimental-api")]
