@@ -9,7 +9,8 @@
 //! A “typo factor” is chosen based on the token’s length. Those tests ensure
 //! typo correction works, and ensure no regression in the quality of the
 //! results.
-//! At the moment of this writing, the mapping function is the following:
+//! The mapping is configured by `search.typo_factor_word_lengths`. With the
+//! default value (`[4, 7, 10]`), it is the following:
 //!
 //! ```
 //! let mut typo_factor = match word.len() {
@@ -63,6 +64,69 @@ fn test_search_allows_typos() {
         // 10-letter word, distance = 4.
         ("sapcecarft", false),
     ] LANG("eng"));
+}
+
+/// The word length -> typo factor mapping can be configured.
+///
+/// See <https://github.com/valeriansaliou/sonic/issues/394>.
+#[test]
+fn test_config_typo_factor_word_lengths() {
+    init_logging();
+    let executor = make_test_executor(|app_conf| {
+        // 1 typo from 3 letters, 2 typos from 5 letters, never 3 typos.
+        app_conf.search.typo_factor_word_lengths = vec![3, 5];
+    });
+
+    exec!(executor -> PUSH "messages" "user:1" "chat:1" ASTRONOMY_WORDS LANG("eng"));
+    exec!(executor -> TRIGGER consolidate);
+
+    #[rustfmt::skip]
+    let examples: [(&str, &[&str]); 3] = [
+        // 3-letter word, distance = 1.
+        ("sum", &["sun"]),
+        // 6-letter word, distance = 2.
+        ("nzbala", &["nebula"]),
+        // 10-letter word, distance = 3.
+        ("sapcecrzft", &[]),
+    ];
+
+    for (needle, expected_suggestions) in examples {
+        let expected_response: &[&str] = if expected_suggestions.is_empty() {
+            &[]
+        } else {
+            &["chat:1"]
+        };
+
+        let response = exec!(executor -> QUERY "messages" "user:1" needle LANG("eng"));
+        assert_eq!(response, expected_response, "QUERY {needle:?}");
+
+        let suggestions = exec!(executor -> SUGGEST "messages" "user:1" needle LANG("eng"));
+        assert_eq!(suggestions, expected_suggestions, "SUGGEST {needle:?}");
+    }
+}
+
+/// Typo correction can be disabled by configuring no word length.
+///
+/// See <https://github.com/valeriansaliou/sonic/issues/394>.
+#[test]
+fn test_config_typo_correction_disabled() {
+    init_logging();
+    let executor = make_test_executor(|app_conf| {
+        app_conf.search.typo_factor_word_lengths = vec![];
+    });
+
+    exec!(executor -> PUSH "messages" "user:1" "chat:1" ASTRONOMY_WORDS LANG("eng"));
+    exec!(executor -> TRIGGER consolidate);
+
+    // NOTE: All of those match with the default configuration
+    //   (see `test_search_allows_typos`).
+    for needle in ["ssun", "nzbula", "plusars", "sapcecrzft"] {
+        let response = exec!(executor -> QUERY "messages" "user:1" needle LANG("eng"));
+        assert_eq!(response, [] as [&str; 0], "QUERY {needle:?}");
+
+        let suggestions = exec!(executor -> SUGGEST "messages" "user:1" needle LANG("eng"));
+        assert_eq!(suggestions, [] as [&str; 0], "SUGGEST {needle:?}");
+    }
 }
 
 /// Ensures the order of words in search queries is insignificant.

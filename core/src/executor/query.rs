@@ -15,6 +15,7 @@ use crate::lexer::preprocessor::{Preprocessor, PreprocessorOutput};
 pub use crate::lexer::snippet_matching::QuerySnippetsConfig;
 use crate::lexer::snippet_matching::{self, Snippet, get_best_snippets};
 use crate::scoring::*;
+use crate::store::fst::typo_factor;
 use crate::store::kv::KvRepositoryReadOnly;
 use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreObjectOid, StoreTermHash};
 use crate::util::u32_to_usize;
@@ -137,7 +138,13 @@ impl super::Executor {
                 continue 'tokens;
             }
 
-            let Some(suggestions) = fst_repo.suggest_words(term, alternates_try, None) else {
+            let max_typo_factor = typo_factor(
+                token.as_original().len(),
+                &self.app_conf.search.typo_factor_word_lengths,
+            );
+
+            let Some(suggestions) = fst_repo.suggest_words(term, alternates_try, max_typo_factor)
+            else {
                 tracing::trace!(?term, "Did not get any word suggestion for term");
                 continue 'tokens;
             };
