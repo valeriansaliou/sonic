@@ -55,7 +55,10 @@ crate::util::impl_transparent_wrapper_utils!(From for StoreObjectOid<'a>(StoreIt
 crate::util::impl_transparent_wrapper_utils!(Debug for StoreObjectOid<'a>(StoreItemPart<'a>));
 
 impl<'a> StoreObjectOid<'a> {
-    #[allow(clippy::should_implement_trait)]
+    #[allow(
+        clippy::should_implement_trait,
+        reason = "FromStr doesn’t support lifetimes"
+    )]
     pub(crate) fn from_str(part: &'a str) -> Result<Self, ()> {
         match StoreItemPart::from_str(part) {
             Ok(part) => Ok(Self(part)),
@@ -183,7 +186,10 @@ pub(super) const ITEM_PART_MAX_LEN_ERROR: &str =
     "Item part lengths should always be <= 128 (STORE_ITEM_PART_LEN_MAX).";
 
 impl<'a> StoreItemPart<'a> {
-    #[allow(clippy::should_implement_trait)]
+    #[allow(
+        clippy::should_implement_trait,
+        reason = "FromStr doesn’t support lifetimes"
+    )]
     fn from_str(part: &'a str) -> Result<Self, ()> {
         let len = part.len();
 
