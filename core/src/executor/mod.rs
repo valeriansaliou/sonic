@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard};
 
 use crate::store::kv::KvStoreId;
-use crate::store::{AsCollectionHash, StoreItemPart, StoreObjectIid, StoreTermHash};
+use crate::store::{AsCollectionHash, GenericIid, GenericOidOwned, StoreItemPart, StoreTermHash};
 use crate::util::hash::NoopU32HasherBuilder;
 
 #[macro_use]
@@ -19,6 +19,7 @@ mod types;
 mod count;
 mod flushb;
 mod flushc;
+mod flushf;
 mod flusho;
 mod list;
 mod push;
@@ -43,8 +44,7 @@ pub struct Executor {
     ///
     /// To fix it, we keep track of the last “assumed new” OID and its IID so
     /// we can reuse it on subsequent `PUSH … NEW` requests.
-    // NOTE: We can’t use `StoreObjectOid` as it’d not owned.
-    last_assumed_new_oid: RwLock<Option<(String, StoreObjectIid)>>,
+    last_assumed_new_oid: RwLock<Option<(GenericOidOwned, GenericIid)>>,
 
     multipart_push_context: Mutex<Option<MultipartPushContext>>,
 }
@@ -241,8 +241,7 @@ impl Executor {
 /// See [Issue #422 “Add a `PUSH` flag to signal partial input”](https://github.com/valeriansaliou/sonic/issues/422).
 #[derive(Debug)]
 struct MultipartPushContext {
-    // NOTE: We can’t use `StoreObjectOid` as it’s not owned.
-    oid: String,
+    oid: GenericOidOwned,
 
     terms: HashMap<StoreTermHash, (Box<str>, u8)>,
 

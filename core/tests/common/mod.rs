@@ -43,10 +43,31 @@ pub(crate) mod item_ref {
         };
     }
     pub(crate) use object_ref;
+
+    macro_rules! fragment_ref {
+        ($collection:expr, $bucket:expr, $object:expr, $fragment:expr) => {
+            sonic::store::StoreItemBuilder::from_depth_3_or_4(
+                $collection,
+                $bucket,
+                $object,
+                $fragment,
+            )
+            .unwrap()
+        };
+    }
+    pub(crate) use fragment_ref;
 }
 
 macro_rules! exec {
-    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $(LANG($lang:expr))? $(; $($standalone_meta:ident)+)?) => {{
+    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $fragment:tt $text:tt $(LANG($lang:expr))? $(; $($standalone_meta:ident)+)?) => {
+        exec!(internal_ push $executor -> PUSH $collection $bucket $oid {Some($fragment)} $text $(LANG($lang))? $(; $($standalone_meta)+)?)
+    };
+
+    ($executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $text:tt $(LANG($lang:expr))? $(; $($standalone_meta:ident)+)?) => {
+        exec!(internal_ push $executor -> PUSH $collection $bucket $oid None $text $(LANG($lang))? $(; $($standalone_meta)+)?)
+    };
+
+    (internal_ push $executor:ident -> PUSH $collection:tt $bucket:tt $oid:tt $fragment:tt $text:tt $(LANG($lang:expr))? $(; $($standalone_meta:ident)+)?) => {{
         let mut additional_meta = concat!($($(" ", stringify!($standalone_meta),)+)? " ");
 
         let is_incomplete = additional_meta.contains(" INCOMPLETE ");
@@ -56,10 +77,10 @@ macro_rules! exec {
 
         #[rustfmt::skip]
         $executor.log(format!(
-            "PUSH {:?} {:?} {:?} {:?}{}{additional_meta}",
-            $collection, $bucket, $oid, $text, exec!(internal_ lang_txt $($lang)?),
+            "PUSH {:?} {:?} {:?}{} {:?}{}{additional_meta}",
+            $collection, $bucket, $oid, exec!(internal_ fragment_txt $fragment), $text, exec!(internal_ lang_txt $($lang)?),
         ));
-        let (c, b, o) = crate::common::object_ref!($collection, $bucket, $oid);
+        let (c, b, o, f) = crate::common::fragment_ref!($collection, $bucket, $oid, $fragment);
         let preprocessor = sonic::lexer::preprocessor::Preprocessor::new(
             $executor.app_conf.tokenization,
             $executor.app_conf.normalization,
@@ -74,7 +95,7 @@ macro_rules! exec {
 
         $executor
             .push(
-                c, b, o,
+                c, b, o, f,
                 preprocessor.preprocess($text, exec!(internal_ lang $($lang)?)),
                 options,
             )
@@ -124,24 +145,30 @@ macro_rules! exec {
             true,
             true,
         );
+
+        let input = preprocessor.preprocess($term, exec!(internal_ lang $($lang)?));
+
+        let query_options = sonic::executor::QueryOptions {
+            limit: exec!(internal_ limit $($limit)?),
+            offset: 0,
+        };
+
         $executor
-            .query(
-                c, b,
-                preprocessor.preprocess($term, exec!(internal_ lang $($lang)?)),
-                sonic::executor::QueryOptions {
-                    limit: exec!(internal_ limit $($limit)?),
-                    offset: 0,
-                }
-            )
+            .query(c, b, input, query_options)
             .expect("QUERY should succeed")
             .collect::<Vec<_>>()
     }};
 
-    ($executor:ident -> WITH SNIPPETS($snip_wc:expr) QUERY $collection:tt $bucket:tt $term:tt $(LANG($lang:expr))? $(LIMIT($limit:expr))?) => {{
+    (internal_ set_snippets_ord SNIPPETS $cfg:ident) => {};
+    (internal_ set_snippets_ord SNIPPETS_REV $cfg:ident) => { $cfg.ordering = sonic::store::kv::Ordering::IngestionOrder; };
+
+    ($executor:ident -> WITH $snippets_keyword:ident$(($snip_wc:expr$(, $snip_ws:expr$(, $snip_wp:expr)?)?))? QUERY $collection:tt $bucket:tt $term:tt $(LANG($lang:expr))? $(LIMIT($limit:expr))?) => {{
+        let additional_meta = concat!(" WITH ", stringify!($snippets_keyword)$(, "(", $snip_wc, $(",", $snip_ws, $(",", $snip_wp,)?)? ")")?);
+
         #[rustfmt::skip]
         $executor.log(format!(
-            "QUERY {:?} {:?} {:?}{}{} WITH SNIPPETS({})",
-            $collection, $bucket, $term, exec!(internal_ lang_txt $($lang)?), exec!(internal_ limit_txt $($limit)?), $snip_wc
+            "QUERY {:?} {:?} {:?}{}{}{additional_meta}",
+            $collection, $bucket, $term, exec!(internal_ lang_txt $($lang)?), exec!(internal_ limit_txt $($limit)?)
         ));
         let (c, b) = crate::common::bucket_ref!($collection, $bucket);
         let preprocessor = sonic::lexer::preprocessor::Preprocessor::new(
@@ -160,10 +187,14 @@ macro_rules! exec {
             offset: 0,
         };
 
-        let snippets_config = sonic::executor::QuerySnippetsConfig {
-            window_count: $snip_wc,
+        #[allow(unused_mut)]
+        let mut snippets_config = sonic::executor::QuerySnippetsConfig {
+            $(window_count: $snip_wc,
+            $(window_size: $snip_ws,
+            $(max_window_padding: $snip_wp,)?)?)?
             ..Default::default()
         };
+        exec!(internal_ set_snippets_ord $snippets_keyword snippets_config);
 
         $executor
             .query_with_snippets(c, b, input, query_options, lang, &snippets_config)
@@ -224,6 +255,9 @@ macro_rules! exec {
         let (c, b, o) = crate::common::object_ref!($collection, $bucket, $oid);
         $executor.flusho(c, b, o).unwrap()
     }};
+
+    (internal_ fragment_txt None) => { "" };
+    (internal_ fragment_txt {Some($fragment:expr)}) => { format!(" {}", $fragment) };
 
     (internal_ lang) => { None };
     (internal_ lang $lang:expr) => { whatlang::Lang::from_code($lang) };

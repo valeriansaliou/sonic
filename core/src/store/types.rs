@@ -15,11 +15,11 @@ pub(super) type Hash = u32;
 #[derive(zerocopy::IntoBytes)]
 #[derive(Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd)]
 #[repr(transparent)]
-pub struct StoreObjectIid(little_endian::U64);
+pub struct GenericIid(little_endian::U64);
 
-impl_primitive_wrapper_utils!(StoreObjectIid(little_endian::U64));
+impl_primitive_wrapper_utils!(GenericIid(little_endian::U64));
 
-impl StoreObjectIid {
+impl GenericIid {
     // NOTE: We went for `into_inner` here instead of marking `.0` `pub(super)`
     //   so it’s easier to identify call sites and keep constuction via `From`.
     #[inline]
@@ -28,7 +28,7 @@ impl StoreObjectIid {
     }
 }
 
-impl std::fmt::Display for StoreObjectIid {
+impl std::fmt::Display for GenericIid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let Self(n) = self;
 
@@ -36,25 +36,32 @@ impl std::fmt::Display for StoreObjectIid {
     }
 }
 
-impl From<u64> for StoreObjectIid {
+impl From<u64> for GenericIid {
     #[inline]
     fn from(value: u64) -> Self {
         Self(little_endian::U64::new(value))
     }
 }
 
-// MARK: OID
+// MARK: Object OID
 
+// TODO: Rename “Object OID” to “Object EID”, and use the term “EID” (external ID)
+//   to contrast with “IID” (internal ID). I(@RemiBardon) won’t do it for now as
+//   I’m not sure Valerian would agree.
+
+/// Generic user-provided (external) identifier.
+///
+/// Contrasts with internal identifiers (IIDs).
 #[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct StoreObjectOid<'a>(StoreItemPart<'a>);
+pub struct GenericOid<'a>(StoreItemPart<'a>);
 
-crate::util::impl_transparent_wrapper_utils!(Deref for StoreObjectOid<'a>(StoreItemPart<'a>));
-crate::util::impl_transparent_wrapper_utils!(From for StoreObjectOid<'a>(StoreItemPart<'a>));
-crate::util::impl_transparent_wrapper_utils!(Debug for StoreObjectOid<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(Deref for GenericOid<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(From for GenericOid<'a>(StoreItemPart<'a>));
+crate::util::impl_transparent_wrapper_utils!(Debug for GenericOid<'a>(StoreItemPart<'a>));
 
-impl<'a> StoreObjectOid<'a> {
+impl<'a> GenericOid<'a> {
     #[allow(
         clippy::should_implement_trait,
         reason = "FromStr doesn’t support lifetimes"
@@ -66,6 +73,8 @@ impl<'a> StoreObjectOid<'a> {
         }
     }
 }
+
+pub type GenericOidOwned = String;
 
 // MARK: Bucket
 
@@ -235,6 +244,7 @@ pub enum StoreItemError {
     InvalidCollection,
     InvalidBucket,
     InvalidObject,
+    InvalidFragment,
 }
 
 impl StoreItemBuilder {
@@ -268,7 +278,7 @@ impl StoreItemBuilder {
         collection: &'a str,
         bucket: &'a str,
         object: &'a str,
-    ) -> Result<(StoreItemPart<'a>, Bucket<'a>, StoreObjectOid<'a>), StoreItemError> {
+    ) -> Result<(StoreItemPart<'a>, Bucket<'a>, GenericOid<'a>), StoreItemError> {
         // Validate & box collection + bucket + object
         match (
             StoreItemPart::from_str(collection),
@@ -278,12 +288,58 @@ impl StoreItemBuilder {
             (Ok(collection_item), Ok(bucket_item), Ok(object_item)) => Ok((
                 collection_item,
                 Bucket::from(bucket_item),
-                StoreObjectOid::from(object_item),
+                GenericOid::from(object_item),
             )),
             (Err(_), _, _) => Err(StoreItemError::InvalidCollection),
             (_, Err(_), _) => Err(StoreItemError::InvalidBucket),
             (_, _, Err(_)) => Err(StoreItemError::InvalidObject),
         }
+    }
+
+    pub fn from_depth_3_or_4<'a>(
+        collection: &'a str,
+        bucket: &'a str,
+        object: &'a str,
+        fragment: Option<&'a str>,
+    ) -> Result<
+        (
+            StoreItemPart<'a>,
+            Bucket<'a>,
+            GenericOid<'a>,
+            Option<GenericOid<'a>>,
+        ),
+        StoreItemError,
+    > {
+        let (collection, bucket, object) = Self::from_depth_3(collection, bucket, object)?;
+
+        let fragment = fragment
+            .map(GenericOid::from_str)
+            .transpose()
+            .map_err(|()| StoreItemError::InvalidFragment)?;
+
+        Ok((collection, bucket, object, fragment))
+    }
+
+    pub fn from_depth_4<'a>(
+        collection: &'a str,
+        bucket: &'a str,
+        object: &'a str,
+        fragment: &'a str,
+    ) -> Result<
+        (
+            StoreItemPart<'a>,
+            Bucket<'a>,
+            GenericOid<'a>,
+            GenericOid<'a>,
+        ),
+        StoreItemError,
+    > {
+        let (collection, bucket, object) = Self::from_depth_3(collection, bucket, object)?;
+
+        let fragment =
+            GenericOid::from_str(fragment).map_err(|()| StoreItemError::InvalidFragment)?;
+
+        Ok((collection, bucket, object, fragment))
     }
 }
 
@@ -293,7 +349,7 @@ impl StoreItemBuilder {
 #[derive(zerocopy::IntoBytes)]
 #[derive(Clone, Copy, Default, PartialEq, PartialOrd)]
 #[repr(transparent)]
-pub struct IidIncr(pub(super) StoreObjectIid);
+pub struct IidIncr(pub(super) GenericIid);
 
 impl IidIncr {
     #[inline]
@@ -303,7 +359,7 @@ impl IidIncr {
 }
 
 crate::util::impl_transparent_wrapper_utils!(Debug for IidIncr(StoreObjectIid));
-crate::util::impl_transparent_wrapper_utils!(From for IidIncr(StoreObjectIid));
+crate::util::impl_transparent_wrapper_utils!(From for IidIncr(GenericIid));
 
 // MARK: ObjectCount counter
 
@@ -323,6 +379,25 @@ impl ObjectCount {
 }
 
 crate::util::impl_transparent_wrapper_utils!(Debug for ObjectCount(i64));
+
+// MARK: FragmentCount counter
+
+#[derive(zerocopy::FromBytes, zerocopy::Immutable, zerocopy::KnownLayout)]
+#[derive(zerocopy::IntoBytes)]
+#[derive(Default)]
+#[repr(transparent)]
+pub struct FragmentCount(pub(super) little_endian::I64);
+
+impl FragmentCount {
+    #[inline]
+    pub(super) const fn saturating_add(self, rhs: &Self) -> Self {
+        Self(little_endian::I64::new(
+            self.0.get().saturating_add(rhs.0.get()),
+        ))
+    }
+}
+
+crate::util::impl_transparent_wrapper_utils!(Debug for FragmentCount(i64));
 
 // MARK: - Tests
 

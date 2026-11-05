@@ -20,6 +20,7 @@ use sonic_benchmarks::huggingface::load::iter_shard;
 use sonic_benchmarks::huggingface::wikipedia::WikipediaArticle;
 use sonic_benchmarks::prelude::*;
 use sonic_benchmarks::profiling::PROFILING_MODE;
+use sonic_client::search::QuerySnippetsConfig;
 
 use crate::common::{BENCH_DATA_PATH, SONIC_BENCH_PASSWORD, profiling_output};
 use crate::parallelism_common::*;
@@ -172,18 +173,8 @@ fn criterion_benchmark(c: &mut Criterion) {
 
                     // let query = &articles().skip(6723).next().unwrap().text[..32];
                     let query = "ARIA Award for Best Urban Album";
-                    let json = search
-                        .send_async(
-                            sonic_client::Command::new(
-                                format!("QUERY {COLLECTION} {bucket} {query:?} WITH SNIPPETS")
-                                    .into_boxed_str(),
-                                0,
-                                0,
-                            ),
-                            sonic_client::search::Discriminant::Pending,
-                            |id| sonic_client::search::Discriminant::EventQuery(Box::from(id)),
-                            |data| Ok(data.to_owned()),
-                        )
+                    let snippets = search
+                        .query_snippets(COLLECTION, &bucket, query, QuerySnippetsConfig::default())
                         .expect(&format!("Query failed: {query:?}"));
 
                     let elasped = start.elapsed();
@@ -195,14 +186,14 @@ fn criterion_benchmark(c: &mut Criterion) {
                         })
                         .is_ok_and(|prev| prev < 5)
                     {
-                        tracing::info!(?query, ?elasped, "Got snippets: {json}");
+                        tracing::info!(?query, ?elasped, "Got snippets: {snippets:?}");
 
                         for oid in [
                             "24432646", // Illy (rapper)
                             "4222633",  // David Bridie
                             "14477670", // Katalyst (DJ)
                         ] {
-                            if !json.contains(oid) {
+                            if !snippets.iter().any(|s| s.oid.as_ref() == oid) {
                                 tracing::warn!("Snippets don’t contain OID {oid:?}");
                             }
                         }

@@ -19,7 +19,7 @@ macro_rules! make_command {
         $crate::Command::from($command)
     }};
 
-    ($format:literal $(, $arg:ident)* $(; text: $text:ident $(+ $suffix:expr)?)? $(; options: $options:ident)?) => {{
+    ($format:literal $(, $arg:ident)* $(; text: $text:ident $(+ $suffix:expr)?)? $(; options: $options:ident $(+ $extra_options:ident)*)?) => {{
         use std::fmt::Write as _;
 
         $(let $arg: &str = $arg.as_ref();)*
@@ -39,7 +39,7 @@ macro_rules! make_command {
                 // NOTE: `*2` accounts for escaping, `+4` accounts for
                 //   surrounding quotes and spaces.
                 $(+ ($text.len() * 2) + 4)?
-                $(+ ($options.len() * 16))?
+                $(+ ($options.len() * 16) $(+ $extra_options.len())*)?
         );
 
         // SAFETY: `$arg`s are string slices, formatting cannot fail.
@@ -64,7 +64,9 @@ macro_rules! make_command {
         $(for option in $options {
             write!(&mut message, " {option}")
                 .expect("Command option’s `Display` implementation should never fail");
-        })?
+        }
+
+        $(message.push_str($extra_options);)*)?
 
         let suffix_len = message.len() - suffix_start;
 

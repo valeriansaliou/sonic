@@ -15,14 +15,15 @@ use crate::lexer::preprocessor::{Preprocessor, PreprocessorOutput};
 pub use crate::lexer::snippet_matching::QuerySnippetsConfig;
 use crate::lexer::snippet_matching::{self, Snippet, get_best_snippets};
 use crate::scoring::*;
-use crate::store::fst::typo_factor;
-use crate::store::kv::KvRepositoryReadOnly;
-use crate::store::{Bucket, StoreItemPart, StoreObjectIid, StoreObjectOid, StoreTermHash};
+use crate::store::fst::{FstRepository, typo_factor};
+use crate::store::kv::{KvRepositoryReadOnly, TermToIidsEntry};
+use crate::store::{Bucket, GenericIid, GenericOid, StoreItemPart, StoreTermHash};
 use crate::util::u32_to_usize;
 
 // TODO: Make this configurable?
 const MAX_QUERY_TOKENS: usize = 20;
 
+#[derive(Debug, Clone, Copy)]
 pub struct QueryOptions {
     pub limit: QuerySearchLimit,
     pub offset: QuerySearchOffset,
@@ -30,9 +31,9 @@ pub struct QueryOptions {
 
 #[derive(Debug)]
 pub struct QueryResult {
+    pub iid: GenericIid,
     pub oid: String,
     pub score: f32,
-    score_per_term: Vec<Option<IidTermScore>>,
 }
 
 #[derive(Debug)]
@@ -46,44 +47,19 @@ struct QueryCandidate<'a> {
 }
 
 impl super::Executor {
-    fn query_<'input>(
+    /// Given input tokens, returns an ordered list of words to consider
+    /// (with typo corrections, etc.).
+    ///
+    /// This could be seen as some kind of query planner, in a way.
+    fn get_query_candidates<'input>(
         &self,
-        collection: StoreItemPart,
-        bucket: Bucket,
         input: &'input PreprocessorOutput<'input>,
-        options: QueryOptions,
-    ) -> Result<(Vec<QueryResult>, Vec<QueryCandidate<'input>>), ()> {
-        // eprintln!("q: {}", input.original_text());
-        let QueryOptions { limit, offset } = options;
-
+        kv_repo: &KvRepositoryReadOnly<'_>,
+        fst_repo: &FstRepository<'_>,
+    ) -> Result<Vec<QueryCandidate<'input>>, ()> {
         let alternates_try = self.app_conf.search.query_alternates_try;
-        let mut retain_word_objects = self.app_conf.search.query_retain_word_objects;
-        retain_word_objects = retain_word_objects.max(u32_to_usize(offset) + usize::from(limit));
         let min_idf = (self.app_conf.search).query_minimum_term_idf_default;
         let min_doc_count = (self.app_conf.search).query_minimum_term_idf_minimum_object_count;
-
-        // ------------
-
-        // SAFETY: Acquire database access read lock, and reference it in context.
-        //   This prevents the database from being erased while using it in this block.
-        let _kv_read_guard = self.kv_pool.lock_read_access();
-        let _fst_read_guard = self.fst_pool.lock_read_access();
-
-        let Some(kv_store) = self.kv_pool.acquire(false, collection, None)? else {
-            tracing::debug!(
-                "collection store does not exist, consider {bucket:?} from {collection:?} empty"
-            );
-            return Ok((vec![], vec![]));
-        };
-        let fst_store = self.fst_pool.acquire(collection, bucket)?;
-
-        // SAFETY: Acquire bucket store read lock.
-        executor_kv_lock_read!(kv_store);
-
-        let kv_repo = kv_store.to_repository_read_only(bucket);
-        let fst_repo = fst_store.to_repository();
-
-        // ------------
 
         // PERF: Get document count once (used to compute idfs).
         let document_count = kv_repo
@@ -196,71 +172,26 @@ impl super::Executor {
         // PERF: Truncate to keep only the most meaningful terms.
         query_candidates.truncate(MAX_QUERY_TOKENS);
 
-        let mut scoring_matrix = ScoringMatrix::new(query_candidates.len());
+        Ok(query_candidates)
+    }
 
-        let mut accept_new_iids = true;
+    fn query_inner(
+        &self,
+        query_candidates: &[QueryCandidate<'_>],
+        options: &QueryOptions,
+        kv_repo: &KvRepositoryReadOnly<'_>,
+    ) -> Result<Vec<QueryResult>, ()> {
+        let &QueryOptions { limit, offset } = options;
 
-        // Populate the scoring matrix with IIDs.
-        for (
-            term_idx,
-            QueryCandidate {
-                term_hash,
-                idf,
-                weight,
-                is_required,
-                ..
-            },
-        ) in query_candidates.iter().enumerate()
-        {
-            for term_to_iids_entry in kv_repo
-                .get_term_to_iids(&term_hash)
-                .unwrap_or_else(|()| None)
-                .into_iter()
-                .flatten()
-                .take(retain_word_objects)
-            {
-                let iid = term_to_iids_entry.iid();
+        let mut retain_word_objects = self.app_conf.search.query_retain_word_objects;
+        retain_word_objects = retain_word_objects.max(u32_to_usize(offset) + usize::from(limit));
 
-                let tf = term_to_iids_entry.tf();
-                let bm25_score = weight * bm25_lite(tf, *idf);
+        let scoring_matrix =
+            ScoringMatrix::build(retain_word_objects, &query_candidates, |term_hash| {
+                kv_repo.get_term_to_iids(term_hash)
+            });
 
-                let score_entry = IidTermScore {
-                    score: bm25_score,
-                    idf: *idf,
-                    weight: *weight,
-                };
-
-                scoring_matrix.set_score(iid, score_entry, term_idx, accept_new_iids);
-            }
-
-            if *is_required {
-                // PERF: Don’t store new IIDs in the scoring matrix from now on;
-                //   it would be filtered out later when applying the AND logic.
-                accept_new_iids = false;
-            }
-        }
-
-        scoring_matrix.backfill(&kv_repo, &query_candidates);
-
-        let required_terms = query_candidates
-            .iter()
-            .take_while(|qc| qc.is_required)
-            .count();
-
-        let mut all_results = Vec::with_capacity(scoring_matrix.len());
-        all_results.extend(
-            (scoring_matrix.into_iter()).filter_map(|(iid, term_scores)| {
-                if term_scores[..required_terms].iter().any(Option::is_none) {
-                    return None;
-                };
-
-                // Flatten scores, taking into account missing matches (thanks to `None`).
-                let score =
-                    overall_score(term_scores.iter().map(|opt| opt.as_ref().map(|v| v.score)));
-
-                Some((iid, score, term_scores))
-            }),
-        );
+        let mut all_results = scoring_matrix.flatten(&query_candidates);
 
         // Sort results.
         all_results.sort_by(|a, b| a.1.total_cmp(&b.1).reverse());
@@ -273,13 +204,9 @@ impl super::Executor {
             //   there’s no guarantee results will contain `limit` results.
             //   This should however happen after `.skip(offset)` so it’s
             //   computed lazily.
-            .flat_map(|(iid, score, score_per_term)| {
+            .flat_map(|(iid, score)| {
                 if let Ok(Some(oid)) = kv_repo.get_iid_to_oid(iid) {
-                    Some(QueryResult {
-                        oid,
-                        score,
-                        score_per_term,
-                    })
+                    Some(QueryResult { iid, oid, score })
                 } else {
                     tracing::error!("failed getting search executor iid-to-oid");
                     None
@@ -291,7 +218,49 @@ impl super::Executor {
 
         tracing::info!("got search executor final results: {page_results:?}");
 
-        Ok((page_results, query_candidates))
+        Ok(page_results)
+    }
+
+    pub fn query_(
+        &self,
+        collection: StoreItemPart,
+        bucket: Bucket,
+        input: &PreprocessorOutput,
+        options: QueryOptions,
+    ) -> Result<Vec<QueryResult>, ()> {
+        // #[cfg(debug_assertions)]
+        // eprintln!("q: {}", input.original_text());
+        #[cfg(debug_assertions)]
+        if input.token_count() > MAX_QUERY_TOKENS {
+            tracing::debug!("Query is very long: {:?}", input.original_text());
+        }
+
+        // ------------
+
+        // SAFETY: Acquire database access read lock, and reference it in context.
+        //   This prevents the database from being erased while using it in this block.
+        let _kv_read_guard = self.kv_pool.lock_read_access();
+        let _fst_read_guard = self.fst_pool.lock_read_access();
+
+        let Some(kv_store) = self.kv_pool.acquire(false, collection, None)? else {
+            tracing::debug!(
+                "collection store does not exist, consider {bucket:?} from {collection:?} empty"
+            );
+            return Ok(vec![]);
+        };
+        let fst_store = self.fst_pool.acquire(collection, bucket)?;
+
+        // SAFETY: Acquire bucket store read lock.
+        executor_kv_lock_read!(kv_store);
+
+        let kv_repo = kv_store.to_repository_read_only(bucket);
+        let fst_repo = fst_store.to_repository();
+
+        // ------------
+
+        let query_candidates = self.get_query_candidates(&input, &kv_repo, &fst_repo)?;
+
+        self.query_inner(&query_candidates, &options, &kv_repo)
     }
 
     #[inline]
@@ -303,7 +272,7 @@ impl super::Executor {
         options: QueryOptions,
     ) -> Result<impl ExactSizeIterator<Item = String>, ()> {
         self.query_(collection, bucket, &input, options)
-            .map(|(results, _)| results.into_iter().map(|res| res.oid))
+            .map(|results| results.into_iter().map(|res| res.oid))
     }
 
     pub fn query_with_snippets(
@@ -315,7 +284,39 @@ impl super::Executor {
         lang: Option<whatlang::Lang>,
         snippets_config: &QuerySnippetsConfig,
     ) -> Result<Vec<MatchWithSnippets>, ()> {
-        let (query_results, query_candidates) = self.query_(collection, bucket, &input, options)?;
+        // #[cfg(debug_assertions)]
+        // eprintln!("q: {}", input.original_text());
+        #[cfg(debug_assertions)]
+        if input.token_count() > MAX_QUERY_TOKENS {
+            tracing::debug!("Query is very long: {:?}", input.original_text());
+        }
+
+        // ------------
+
+        // SAFETY: Acquire database access read lock, and reference it in context.
+        //   This prevents the database from being erased while using it in this block.
+        let _kv_read_guard = self.kv_pool.lock_read_access();
+        let _fst_read_guard = self.fst_pool.lock_read_access();
+
+        let Some(kv_store) = self.kv_pool.acquire(false, collection, None)? else {
+            tracing::debug!(
+                "collection store does not exist, consider {bucket:?} from {collection:?} empty"
+            );
+            return Ok(vec![]);
+        };
+        let fst_store = self.fst_pool.acquire(collection, bucket)?;
+
+        // SAFETY: Acquire bucket store read lock.
+        executor_kv_lock_read!(kv_store);
+
+        let kv_repo = kv_store.to_repository_read_only(bucket);
+        let fst_repo = fst_store.to_repository();
+
+        // ------------
+
+        let query_candidates = self.get_query_candidates(&input, &kv_repo, &fst_repo)?;
+
+        let query_results = self.query_inner(&query_candidates, &options, &kv_repo)?;
 
         let object_store_pool = self.object_store_pool.acquire(false, collection, None)?;
 
@@ -339,66 +340,143 @@ impl super::Executor {
             ..Preprocessor::from_app_conf(&self.app_conf)
         };
 
-        for QueryResult {
-            oid,
-            score_per_term,
+        let weights_per_term = (query_candidates.iter())
+            .map(|candidate| {
+                (
+                    Cow::clone(&candidate.term),
+                    snippet_matching::TermWeights {
+                        weight: candidate.weight,
+                        idf: candidate.idf,
+                    },
+                )
+            })
+            .collect();
+
+        'results: for QueryResult {
+            iid: object_iid,
+            oid: object_oid,
             ..
         } in query_results
         {
-            let oid_parsed = StoreObjectOid::from_str(&oid)?;
-
-            let original = object_repo.get_object_original(oid_parsed);
-
             // Push a new entry no matter if we find the orignal object or even
             // any snippet. All matching objects must be returned, snippets list
             // will just be empty.
-            let match_entry = res.push_mut(MatchWithSnippets::new(oid));
+            let match_entry = res.push_mut(MatchWithSnippets::new(String::clone(&object_oid)));
 
-            match original {
-                Ok(Some(bytes)) => {
-                    // TODO(perf): Avoid parsing to string here? Match on raw bytes?
-                    let Ok(doc) = String::from_utf8(bytes).inspect_err(|error| {
-                        tracing::warn!(
-                            ?collection,
-                            ?bucket,
-                            oid = match_entry.oid,
-                            "Invalid byte sequence found in object store: {error}"
+            let object_oid_parsed = match GenericOid::from_str(&object_oid) {
+                Ok(oid) => oid,
+                Err(()) => {
+                    tracing::error!(%object_oid, "Invalid object OID");
+                    continue 'results;
+                }
+            };
+
+            let fragment_count = kv_repo.get_fragment_count(object_iid).unwrap_or_else(|()| {
+                tracing::error!(
+                    %object_iid,
+                    "Error getting fragment count, considering no fragment exist."
+                );
+                0
+            });
+
+            // TODO: Return snippets in both the object and its fragments.
+            //   This requires storing the object as special fragment #0.
+            if fragment_count == 0 {
+                let original = object_repo.get_object_original(object_oid_parsed, None);
+
+                match original {
+                    Ok(Some(bytes)) => {
+                        let doc = String::from_utf8_lossy(bytes.as_ref());
+
+                        match_entry.snippets = get_best_snippets(
+                            &doc,
+                            None,
+                            lang,
+                            &preprocessor,
+                            *snippets_config,
+                            &weights_per_term,
+                        );
+                    }
+                    Ok(None) => continue 'results,
+                    Err(error) => {
+                        tracing::error!("Error getting original object: {error}");
+                        continue 'results;
+                    }
+                }
+            } else {
+                let retain_word_objects = (self.app_conf.search.query_retain_word_objects)
+                    .max(snippets_config.window_count);
+
+                let fragments_scoring_matrix =
+                    ScoringMatrix::build(retain_word_objects, &query_candidates, |term_hash| {
+                        kv_repo.get_term_to_fragment_iids(
+                            object_iid,
+                            term_hash,
+                            snippets_config.ordering,
                         )
-                    }) else {
-                        continue;
+                    });
+
+                let mut score_per_fragment = fragments_scoring_matrix.flatten(&query_candidates);
+
+                // Sort results.
+                score_per_fragment.sort_by(|a, b| a.1.total_cmp(&b.1).reverse());
+                let best_fragments = score_per_fragment;
+
+                'fragments: for (fragment_iid, _score) in best_fragments {
+                    let fragment_oid = match kv_repo
+                        .get_fragment_iid_to_oid(object_iid, fragment_iid)
+                    {
+                        Ok(Some(oid)) => oid,
+                        Ok(None) => {
+                            tracing::error!(%object_oid, %fragment_iid, "Fragment OID not found");
+                            continue 'fragments;
+                        }
+                        Err(()) => {
+                            tracing::error!(%object_oid, %fragment_iid, "Error finding fragment OID");
+                            continue 'fragments;
+                        }
+                    };
+                    let fragment_oid_parsed = match GenericOid::from_str(&fragment_oid) {
+                        Ok(oid) => oid,
+                        Err(()) => {
+                            tracing::error!(%object_oid, %fragment_oid, "Invalid fragment OID");
+                            continue 'fragments;
+                        }
                     };
 
-                    let score_per_term = score_per_term
-                        .into_iter()
-                        .enumerate()
-                        .flat_map(|(term_idx, opt)| {
-                            opt.map(|score| {
-                                let term =
-                                    Cow::clone(&query_candidates[term_idx].term).into_owned();
+                    let original = object_repo
+                        .get_object_original(object_oid_parsed, Some(fragment_oid_parsed));
 
-                                (
-                                    term,
-                                    snippet_matching::TermScore {
-                                        weight: score.weight,
-                                        idf: score.idf,
-                                    },
-                                )
-                            })
-                        })
-                        .collect();
+                    let doc = match &original {
+                        Ok(Some(bytes)) => String::from_utf8_lossy(bytes.as_ref()),
+                        Ok(None) => continue 'fragments,
+                        Err(error) => {
+                            tracing::error!("Error getting original object: {error}");
+                            continue 'fragments;
+                        }
+                    };
 
-                    match_entry.snippets = get_best_snippets(
+                    let mut snippets = get_best_snippets(
                         &doc,
+                        Some(fragment_oid),
                         lang,
                         &preprocessor,
-                        *snippets_config,
-                        score_per_term,
+                        QuerySnippetsConfig {
+                            // We want at most one snippet per fragment.
+                            window_count: 1,
+                            ..*snippets_config
+                        },
+                        &weights_per_term,
                     );
-                }
-                Ok(None) => continue,
-                Err(error) => {
-                    tracing::error!("Error getting original object: {error}");
-                    continue;
+
+                    debug_assert!(snippets.len() <= 1, "len={}", snippets.len());
+
+                    match_entry.snippets.append(&mut snippets);
+                    drop(snippets);
+
+                    if match_entry.snippets.len() >= snippets_config.window_count {
+                        break 'fragments;
+                    }
                 }
             }
         }
@@ -407,7 +485,7 @@ impl super::Executor {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[derive(serde::Serialize)]
 pub struct MatchWithSnippets {
     pub oid: String,
@@ -581,16 +659,9 @@ fn test_overall_score() {
 
 // MARK: - Scoring matrix
 
-#[derive(Debug)]
-struct IidTermScore {
-    score: f32,
-    idf: f32,
-    weight: f32,
-}
-
 /// Score per query term, per object.
 struct ScoringMatrix {
-    map: IndexMap<StoreObjectIid, Vec<Option<IidTermScore>>>,
+    map: IndexMap<GenericIid, Vec<Option<QueryMatchScore>>>,
     term_count: usize,
 }
 
@@ -602,10 +673,60 @@ impl ScoringMatrix {
         }
     }
 
+    fn build<'input, 'candidates, I>(
+        retain_word_objects: usize,
+        query_candidates: &'candidates [QueryCandidate<'_>],
+        get_term_to_iids: impl Fn(&'candidates StoreTermHash) -> Result<Option<I>, ()> + Copy,
+    ) -> Self
+    where
+        I: ExactSizeIterator<Item = TermToIidsEntry> + 'candidates,
+    {
+        let mut scoring_matrix = ScoringMatrix::new(query_candidates.len());
+
+        let mut accept_new_iids = true;
+
+        // Populate the scoring matrix with IIDs.
+        for (
+            term_idx,
+            QueryCandidate {
+                term_hash,
+                idf,
+                weight,
+                is_required,
+                ..
+            },
+        ) in query_candidates.iter().enumerate()
+        {
+            for term_to_iids_entry in get_term_to_iids(&term_hash)
+                .unwrap_or_else(|()| None)
+                .into_iter()
+                .flatten()
+                .take(retain_word_objects)
+            {
+                let iid = term_to_iids_entry.iid();
+
+                let tf = term_to_iids_entry.tf();
+                let bm25_score = weight * bm25_lite(tf, *idf);
+
+                scoring_matrix.set_score(iid, bm25_score, term_idx, accept_new_iids);
+            }
+
+            if *is_required {
+                // PERF: Don’t store new IIDs in the scoring matrix from now on;
+                //   it would be filtered out later when applying the AND logic.
+                accept_new_iids = false;
+            }
+        }
+
+        scoring_matrix.backfill(&query_candidates, get_term_to_iids);
+
+        scoring_matrix
+    }
+
     fn set_score(
         &mut self,
-        iid: StoreObjectIid,
-        score: IidTermScore,
+        iid: GenericIid,
+        score: QueryMatchScore,
         term_idx: usize,
         accept_new_iids: bool,
     ) -> bool {
@@ -643,8 +764,14 @@ impl ScoringMatrix {
         }
     }
 
-    fn backfill(&mut self, index: &KvRepositoryReadOnly, query_candidates: &[QueryCandidate]) {
-        let mut to_backfill = HashMap::<StoreObjectIid, usize>::with_capacity(self.map.len());
+    fn backfill<'candidates, I>(
+        &mut self,
+        query_candidates: &'candidates [QueryCandidate],
+        get_term_to_iids: impl Fn(&'candidates StoreTermHash) -> Result<Option<I>, ()> + Copy,
+    ) where
+        I: ExactSizeIterator<Item = TermToIidsEntry> + 'candidates,
+    {
+        let mut to_backfill = HashMap::<GenericIid, usize>::with_capacity(self.map.len());
 
         for term_idx in 0..query_candidates.len() {
             to_backfill.clear();
@@ -660,10 +787,9 @@ impl ScoringMatrix {
             }
 
             let token = &query_candidates[term_idx];
-            let term_hash = token.term_hash;
+            let term_hash = &token.term_hash;
 
-            let Some(term_to_iids_entries) =
-                index.get_term_to_iids(&term_hash).unwrap_or_else(|()| None)
+            let Some(term_to_iids_entries) = get_term_to_iids(term_hash).unwrap_or_else(|()| None)
             else {
                 continue;
             };
@@ -675,7 +801,7 @@ impl ScoringMatrix {
                 if let Some(&iid_idx) = to_backfill.get(&entry.iid()) {
                     let score: f32 = weight * bm25_lite(entry.tf(), idf);
 
-                    self.map[iid_idx][term_idx] = Some(IidTermScore { score, idf, weight });
+                    self.map[iid_idx][term_idx] = Some(score);
                 }
             }
         }
@@ -683,7 +809,7 @@ impl ScoringMatrix {
 }
 
 impl std::ops::Deref for ScoringMatrix {
-    type Target = IndexMap<StoreObjectIid, Vec<Option<IidTermScore>>>;
+    type Target = IndexMap<GenericIid, Vec<Option<QueryMatchScore>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.map
@@ -698,17 +824,39 @@ impl std::fmt::Debug for ScoringMatrix {
     }
 }
 
-impl IntoIterator for ScoringMatrix {
-    type Item = (StoreObjectIid, Vec<Option<IidTermScore>>);
-    type IntoIter = indexmap::map::IntoIter<StoreObjectIid, Vec<Option<IidTermScore>>>;
+impl ScoringMatrix {
+    /// Flatten scores, taking into account missing matches (thanks to `None`).
+    #[inline]
+    fn flatten(self, query_candidates: &[QueryCandidate<'_>]) -> Vec<(GenericIid, f32)> {
+        let required_terms = query_candidates
+            .iter()
+            .take_while(|qc| qc.is_required)
+            .count();
 
-    fn into_iter(self) -> Self::IntoIter {
-        self.map.into_iter()
-    }
-}
+        let capacity = if required_terms == 0 {
+            self.map.len()
+        } else {
+            // PERF: This should generally be cheap, and it avoids pre-allocating too much.
+            (self.map.values())
+                .filter(|term_scores| !term_scores[..required_terms].iter().any(Option::is_none))
+                .count()
+        };
 
-impl Clone for IidTermScore {
-    fn clone(&self) -> Self {
-        unreachable!("Only `Option::<IidTermScore>::None` should ever be cloned.")
+        let mut all_results = Vec::with_capacity(capacity);
+
+        all_results.extend(
+            (self.map.into_iter())
+                .filter(|(_iid, term_scores)| {
+                    required_terms == 0
+                        || !term_scores[..required_terms].iter().any(Option::is_none)
+                })
+                .map(|(iid, term_scores)| {
+                    let score = overall_score(term_scores.into_iter());
+
+                    (iid, score)
+                }),
+        );
+
+        all_results
     }
 }

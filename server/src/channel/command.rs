@@ -87,8 +87,8 @@ static BACKUP_OBJECT_PATH: &str = "object";
 
 pub static COMMANDS_MODE_SEARCH: &[&str] = &["QUERY", "SUGGEST", "LIST", "PING", "HELP", "QUIT"];
 pub static COMMANDS_MODE_INGEST: &[&str] = &[
-    "PUSH", "POP", "COUNT", "COUNTC", "COUNTB", "COUNTO", "FLUSHC", "FLUSHB", "FLUSHO", "PING",
-    "HELP", "QUIT",
+    "PUSH", "POP", "COUNT", "COUNTC", "COUNTB", "COUNTO", "FLUSHC", "FLUSHB", "FLUSHO", "FLUSHF",
+    "PING", "HELP", "QUIT",
 ];
 #[rustfmt::skip]
 pub static COMMANDS_MODE_CONTROL: &[&str] = &[
@@ -177,7 +177,7 @@ impl ChannelCommandBase {
         }
     }
 
-    pub fn parse_text_parts(parts: &mut SplitWhitespace) -> Option<String> {
+    pub fn parse_text_parts<'a>(parts: impl Iterator<Item = &'a str>) -> Option<String> {
         // Parse text parts and nest them together
         let mut text_raw = String::new();
 
@@ -265,7 +265,7 @@ impl ChannelCommandBase {
     }
 
     pub fn parse_next_meta_parts<'a>(
-        parts: &'a mut SplitWhitespace,
+        mut parts: impl Iterator<Item = &'a str>,
     ) -> Option<MetaPartsResult<'a>> {
         if let Some(part) = parts.next() {
             // Parse meta (with format: 'KEY(VALUE)'; no '(' or ')' is allowed in KEY and VALUE)
@@ -691,8 +691,8 @@ impl ChannelCommandSearch {
                         }
                     }
                     #[cfg(feature = "experimental-api")]
-                    "SNIPPETS" => {
-                        // 'SNIPPETS[(<window_count>[, <window_size>[, <max_window_padding>]?]?)]?'
+                    "SNIPPETS" | "SNIPPETS_REV" => {
+                        // 'SNIPPETS[_REV]?[(<window_count>[, <window_size>[, <max_window_padding>]?]?)]?'
                         let mut config = sonic::executor::QuerySnippetsConfig::default();
 
                         if !meta_value.is_empty() {
@@ -715,6 +715,10 @@ impl ChannelCommandSearch {
                             if let Some(arg) = args.next() {
                                 config.max_window_padding = arg.parse().or_else(error)?;
                             }
+                        }
+
+                        if matches!(meta_key, "SNIPPETS_REV") {
+                            config.ordering = sonic::store::kv::Ordering::IngestionOrder;
                         }
 
                         meta.snippets = Some(config);
@@ -803,73 +807,84 @@ impl ChannelCommandIngest {
         mut parts: SplitWhitespace,
         ctx: &ChannelMessageModeIngest,
     ) -> ChannelResult {
-        match (
-            parts.next(),
-            parts.next(),
-            parts.next(),
-            ChannelCommandBase::parse_text_parts(&mut parts),
-        ) {
-            (Some(collection), Some(bucket), Some(object), Some(text)) => {
-                tracing::debug!(
-                    "dispatching ingest push in collection: {}, bucket: {} and object: {}",
-                    collection,
-                    bucket,
-                    object
-                );
-                tracing::debug!("ingest push has text: {}", text);
+        let invalid_format = || {
+            ChannelCommandError::InvalidFormat(
+                r#"PUSH <collection> <bucket> <object>[ <fragment>]? "<text>" [LANG(<locale>)]?"#,
+            )
+        };
 
-                // Define push parameters
-                let mut push_params = (None, PushOptions::default());
+        let (Some(collection), Some(bucket), Some(object)) =
+            (parts.next(), parts.next(), parts.next())
+        else {
+            return Err(invalid_format());
+        };
 
-                // Parse meta parts (meta comes after text; extract meta parts second)
-                let mut last_meta_err = None;
+        let mut peekable_parts = parts.peekable();
 
-                while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut parts)
-                {
-                    if let Err(parse_err) = Self::handle_push_meta(meta_result, &mut push_params) {
-                        last_meta_err = Some(parse_err);
-                    }
-                }
+        let Some(next) = peekable_parts.peek() else {
+            return Err(invalid_format());
+        };
 
-                let (push_lang, push_options) = push_params;
+        let fragment = if next.starts_with(TEXT_PART_BOUNDARY) {
+            None
+        } else {
+            // Advance 1 part (we had only peeked).
+            peekable_parts.next()
+        };
 
-                if let Some(err) = last_meta_err {
-                    Err(err)
-                } else {
-                    tracing::debug!(
-                        "will push for text: {} with hinted locale: <{:?}>",
-                        text,
-                        push_lang
-                    );
+        let Some(text) = ChannelCommandBase::parse_text_parts(&mut peekable_parts) else {
+            return Err(invalid_format());
+        };
 
-                    let (collection, bucket, oid) = StoreItemBuilder::from_depth_3(
-                        collection, bucket, object,
-                    )
-                    .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
+        tracing::debug!(
+            "dispatching ingest push in collection: {}, bucket: {} and object: {}",
+            collection,
+            bucket,
+            object
+        );
+        tracing::debug!("ingest push has text: {}", text);
 
-                    // Commit 'push' query
-                    ChannelCommandBase::commit_ok_operation(move || {
-                        let should_cleanup =
-                            TokenLexerMode::from_query_lang(&push_lang).should_cleanup();
-                        let preprocessor = Preprocessor::new(
-                            *ctx.tokenization_config,
-                            *ctx.normalization_config,
-                            ctx.stopwords_config.clone(),
-                            should_cleanup,
-                            should_cleanup,
-                        );
-                        let text_lexed = preprocessor
-                            .preprocess(&text, push_lang.and_then(QueryGenericLang::into_lang_opt));
+        // Define push parameters
+        let mut push_params = (None, PushOptions::default());
 
-                        ctx.executor
-                            .push(collection, bucket, oid, text_lexed, push_options)
-                    })
-                }
+        // Parse meta parts (meta comes after text; extract meta parts second)
+        let mut last_meta_err = None;
+
+        while let Some(meta_result) = ChannelCommandBase::parse_next_meta_parts(&mut peekable_parts)
+        {
+            if let Err(parse_err) = Self::handle_push_meta(meta_result, &mut push_params) {
+                last_meta_err = Some(parse_err);
             }
-            _ => Err(ChannelCommandError::InvalidFormat(
-                "PUSH <collection> <bucket> <object> \"<text>\" [LANG(<locale>)]?",
-            )),
         }
+
+        let (push_lang, push_options) = push_params;
+
+        if let Some(err) = last_meta_err {
+            return Err(err);
+        }
+
+        tracing::trace!("will push for text: {text} with hinted locale: <{push_lang:?}>");
+
+        let (collection, bucket, oid, fragment) =
+            StoreItemBuilder::from_depth_3_or_4(collection, bucket, object, fragment)
+                .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
+
+        // Commit 'push' query
+        ChannelCommandBase::commit_ok_operation(move || {
+            let should_cleanup = TokenLexerMode::from_query_lang(&push_lang).should_cleanup();
+            let preprocessor = Preprocessor::new(
+                *ctx.tokenization_config,
+                *ctx.normalization_config,
+                ctx.stopwords_config.clone(),
+                should_cleanup,
+                should_cleanup,
+            );
+            let text_lexed =
+                preprocessor.preprocess(&text, push_lang.and_then(QueryGenericLang::into_lang_opt));
+
+            ctx.executor
+                .push(collection, bucket, oid, fragment, text_lexed, push_options)
+        })
     }
 
     pub fn dispatch_pop(_parts: SplitWhitespace, _ctx: &ChannelMessageModeIngest) -> ChannelResult {
@@ -1083,6 +1098,44 @@ impl ChannelCommandIngest {
             }
             _ => Err(ChannelCommandError::InvalidFormat(
                 "FLUSHO <collection> <bucket> <object>",
+            )),
+        }
+    }
+
+    pub fn dispatch_flushf(
+        mut parts: SplitWhitespace,
+        ctx: &ChannelMessageModeIngest,
+    ) -> ChannelResult {
+        match (
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+            parts.next(),
+        ) {
+            (Some(collection), Some(bucket), Some(object), Some(fragment), None) => {
+                tracing::debug!(
+                    collection,
+                    bucket,
+                    object,
+                    fragment,
+                    "dispatching ingest flush fragment"
+                );
+
+                let (collection, bucket, object_oid, fragment_oid) =
+                    StoreItemBuilder::from_depth_4(collection, bucket, object, fragment).map_err(
+                        |error| ChannelCommandError::InvalidArgument(format!("{error:?}")),
+                    )?;
+
+                // Make 'flushf' query
+                ChannelCommandBase::commit_result_operation(move || {
+                    ctx.executor
+                        .flushf(collection, bucket, object_oid, fragment_oid)
+                        .map(|count| Some(count.to_string()))
+                })
+            }
+            _ => Err(ChannelCommandError::InvalidFormat(
+                "FLUSHF <collection> <bucket> <object> <fragment>",
             )),
         }
     }

@@ -467,21 +467,17 @@ pub fn ingest_parallel_inner<T: Ingestable>(
     //
     //     let query = "exanple";
     //     let bucket = used_buckets.lock().unwrap().first().unwrap().clone();
-    //     let json = search
-    //         .send_async(
-    //             sonic_client::Command::new(
-    //                 format!("QUERY {collection} {bucket} {query:?} LIMIT(4) WITH SNIPPETS")
-    //                     .into_boxed_str(),
-    //                 0,
-    //                 0,
-    //             ),
-    //             sonic_client::search::Discriminant::Pending,
-    //             |id| sonic_client::search::Discriminant::EventQuery(Box::from(id)),
-    //             |data| Ok(data.to_owned()),
+    //     let snippets = search
+    //         .query_snippets_with_options(
+    //             collection,
+    //             bucket,
+    //             query,
+    //             sonic_client::search::QuerySnippetsConfig::default(),
+    //             &[&Limit(4)],
     //         )
     //         .unwrap();
     //
-    //     tracing::info!(elasped = ?start.elapsed(), "Got snippets: {json}");
+    //     tracing::info!(elasped = ?start.elapsed(), "Got snippets: {snippets:?}");
     // }
     //
     // drop(search);

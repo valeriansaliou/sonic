@@ -123,6 +123,151 @@ impl_fns!(
     }
 );
 
+#[cfg(all(feature = "experimental-api", feature = "snippets"))]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct QuerySnippetsConfig {
+    /// Maximum number of snippets per object.
+    pub window_count: Option<usize>,
+
+    /// Maximum number of tokens (~words) a snippet can contain.
+    ///
+    /// Examples:
+    ///
+    /// - `window_size = 2` -> `snippet = "foo bar"`
+    /// - `window_size = 3` -> `snippet = "foo bar baz"`
+    pub window_size: Option<usize>,
+
+    /// Maximum number of non-matching tokens used to pad snippets so they don’t
+    /// start and end with matching tokens.
+    ///
+    /// Examples (`text = "xxx xxx xxx foo xxx foo xxx xxx xxx"`, `query = "foo"`, `window_size = 7`):
+    ///
+    /// - `max_window_padding = 4` -> `snippet = "xxx xxx foo xxx foo xxx xxx"` (padding is balanced if even)
+    /// - `max_window_padding = 1` -> `snippet = "xxx foo xxx foo"` (leading is favored if padding is odd)
+    pub max_window_padding: Option<usize>,
+
+    /// Ordering of same-score snippets when associated to fragments.
+    ///
+    /// When an object has multiple fragments, Sonic uses BM25-like sorting to
+    /// choose the snippets. However, when fragments have the same score they
+    /// end up in their reverse ingestion order (default Sonic behavior).
+    ///
+    /// While it makes sense in most systems, where users expect the most recent
+    /// data to be returned first (e.g. for a chat-like dataset), it feels off
+    /// for a knowledge base / wiki / blog, etc. (where earlier sections are
+    /// expected to be returned first).
+    ///
+    /// When [`ordering`][Self::ordering] is set to `Some(QuerySnippetsOrdering::IngestionOrder)`,
+    /// same-score fragments are returned in the order they were ingested in.
+    #[cfg(feature = "experimental-api")]
+    pub ordering: Option<QuerySnippetsOrdering>,
+}
+
+#[cfg(all(feature = "experimental-api", feature = "snippets"))]
+#[derive(Debug, Clone, Copy)]
+pub enum QuerySnippetsOrdering {
+    ReverseIngestionOrder,
+    IngestionOrder,
+}
+
+#[cfg(all(feature = "experimental-api", feature = "snippets"))]
+impl std::fmt::Display for QuerySnippetsConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let QuerySnippetsConfig {
+            window_count,
+            window_size,
+            max_window_padding,
+            #[cfg(feature = "experimental-api")]
+            ordering,
+        } = self;
+
+        write!(f, " WITH SNIPPETS").unwrap();
+
+        if matches!(ordering, &Some(QuerySnippetsOrdering::IngestionOrder)) {
+            write!(f, "_REV").unwrap();
+        }
+
+        if let Some(window_count) = window_count {
+            write!(f, "({window_count}").unwrap();
+
+            if let Some(window_size) = window_size {
+                write!(f, ", {window_size}").unwrap();
+
+                if let Some(max_window_padding) = max_window_padding {
+                    write!(f, ", {max_window_padding}").unwrap();
+                }
+            }
+
+            write!(f, ")").unwrap();
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(all(feature = "experimental-api", feature = "snippets"))]
+#[derive(Debug, Clone, PartialEq)]
+#[derive(serde::Deserialize)]
+pub struct MatchWithSnippets {
+    pub oid: Box<str>,
+    pub snippets: Vec<Snippet>,
+}
+
+#[cfg(all(feature = "experimental-api", feature = "snippets"))]
+#[derive(Debug, Clone, PartialEq)]
+#[derive(serde::Deserialize)]
+pub struct Snippet {
+    #[serde(default)]
+    pub fragment: Option<Box<str>>,
+    pub text: Box<str>,
+    pub matches: Vec<MatchRange>,
+    pub score: f32,
+    pub range: MatchRange,
+}
+
+#[cfg(all(feature = "experimental-api", feature = "snippets"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(serde::Deserialize)]
+pub struct MatchRange {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl_fns!(
+    #[cfg(all(feature = "experimental-api", feature = "snippets"))]
+    #[inline]
+    pub fn query_snippets(
+        &self,
+        collection: impl AsRef<str>,
+        bucket: impl AsRef<str>,
+        text: impl AsRef<str>,
+        config: QuerySnippetsConfig,
+    ) -> std::io::Result<Vec<MatchWithSnippets>> {
+        self.query_snippets_with_options(collection, bucket, text, config, &[])
+    }
+);
+
+impl_fns!(
+    #[cfg(all(feature = "experimental-api", feature = "snippets"))]
+    pub fn query_snippets_with_options(
+        &self,
+        collection: impl AsRef<str>,
+        bucket: impl AsRef<str>,
+        text: impl AsRef<str>,
+        config: QuerySnippetsConfig,
+        options: &[&dyn QueryOption],
+    ) -> std::io::Result<Vec<MatchWithSnippets>> {
+        let config = &config.to_string();
+
+        self.inner.send_async(
+            make_command!("QUERY {} {}", collection, bucket; text: text; options: options + config),
+            Discriminant::Pending,
+            |id| Discriminant::EventQuery(Box::from(id)),
+            |data| serde_json::from_str(data).map_err(std::io::Error::from),
+        )
+    }
+);
+
 // MARK: SUGGEST
 
 pub trait SuggestOption: std::fmt::Display + Sync {}

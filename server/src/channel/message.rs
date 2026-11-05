@@ -201,6 +201,7 @@ impl<'this> ChannelMessageMode for ChannelMessageModeIngest<'this> {
             "FLUSHC" => ChannelCommandIngest::dispatch_flushc,
             "FLUSHB" => ChannelCommandIngest::dispatch_flushb,
             "FLUSHO" => ChannelCommandIngest::dispatch_flusho,
+            "FLUSHF" => ChannelCommandIngest::dispatch_flushf,
             "HELP" => ChannelCommandIngest::dispatch_help,
         })
     }
