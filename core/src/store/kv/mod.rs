@@ -969,8 +969,6 @@ impl fmt::Debug for KvStore {
             last_flushed,
             lock,
             write_options_builder,
-            // NOTE: We don’t care about the configuration,
-            //   we can see it elsewhere if needed.
             iid_incr_per_bucket,
             oid_sync,
             pool_stats,
@@ -985,6 +983,6 @@ impl fmt::Debug for KvStore {
             .field("iid_incr_per_bucket", &AsPrettyRwLock(iid_incr_per_bucket))
             .field("oid_sync", &AsPrettyMutex(oid_sync))
             .field("pool_stats", &pool_stats)
-            .finish_non_exhaustive()
+            .finish()
     }
 }
