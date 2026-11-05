@@ -17,6 +17,8 @@ use crate::config::RocksDbDatabaseConfig;
 use crate::store::Bucket;
 use crate::store::generic::GenericStore;
 
+pub(crate) use self::util::Direction;
+
 pub const DEFAULT_CF_NAME: &str = "default";
 pub(super) const CF_CREATED_ON_OPEN: &str = "Column families should be created on database open";
 

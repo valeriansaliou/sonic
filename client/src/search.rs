@@ -145,6 +145,29 @@ pub struct QuerySnippetsConfig {
     /// - `max_window_padding = 4` -> `snippet = "xxx xxx foo xxx foo xxx xxx"` (padding is balanced if even)
     /// - `max_window_padding = 1` -> `snippet = "xxx foo xxx foo"` (leading is favored if padding is odd)
     pub max_window_padding: Option<usize>,
+
+    /// Ordering of same-score snippets when associated to fragments.
+    ///
+    /// When an object has multiple fragments, Sonic uses BM25-like sorting to
+    /// choose the snippets. However, when fragments have the same score they
+    /// end up in their reverse ingestion order (default Sonic behavior).
+    ///
+    /// While it makes sense in most systems, where users expect the most recent
+    /// data to be returned first (e.g. for a chat-like dataset), it feels off
+    /// for a knowledge base / wiki / blog, etc. (where earlier sections are
+    /// expected to be returned first).
+    ///
+    /// When [`ordering`][Self::ordering] is set to `Some(QuerySnippetsOrdering::IngestionOrder)`,
+    /// same-score fragments are returned in the order they were ingested in.
+    #[cfg(feature = "experimental-api")]
+    pub ordering: Option<QuerySnippetsOrdering>,
+}
+
+#[cfg(all(feature = "experimental-api", feature = "snippets"))]
+#[derive(Debug, Clone, Copy)]
+pub enum QuerySnippetsOrdering {
+    ReverseIngestionOrder,
+    IngestionOrder,
 }
 
 #[cfg(all(feature = "experimental-api", feature = "snippets"))]
@@ -154,9 +177,15 @@ impl std::fmt::Display for QuerySnippetsConfig {
             window_count,
             window_size,
             max_window_padding,
+            #[cfg(feature = "experimental-api")]
+            ordering,
         } = self;
 
         write!(f, " WITH SNIPPETS").unwrap();
+
+        if matches!(ordering, &Some(QuerySnippetsOrdering::IngestionOrder)) {
+            write!(f, "_REV").unwrap();
+        }
 
         if let Some(window_count) = window_count {
             write!(f, "({window_count}").unwrap();

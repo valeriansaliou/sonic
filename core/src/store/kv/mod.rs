@@ -504,6 +504,7 @@ impl<'db> KvRepositoryRead<'db> {
         &'a self,
         object_iid: GenericIid,
         term_hash: &StoreTermHash,
+        ordering: Ordering,
     ) -> Result<Option<impl ExactSizeIterator<Item = TermToIidsEntry> + 'a>, ()> {
         let store_key = keys::TermToFragmentIids {
             bucket: self.bucket,
@@ -511,8 +512,16 @@ impl<'db> KvRepositoryRead<'db> {
             term_hash,
         };
 
-        self.get_pinned(None, &store_key)
-            .map(|opt| opt.map(|iter| iter.0))
+        self.get_pinned(None, &store_key).map(|opt| {
+            opt.map(|iter| {
+                let mut iter = iter.0;
+                iter.dir = match ordering {
+                    Ordering::ReverseIngestionOrder => super::rocksdb::Direction::Forward,
+                    Ordering::IngestionOrder => super::rocksdb::Direction::Reverse,
+                };
+                iter
+            })
+        })
     }
 
     #[inline]
@@ -548,6 +557,12 @@ impl<'db> KvRepositoryRead<'db> {
 
         self.get_pinned(None, &store_key)
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Ordering {
+    ReverseIngestionOrder,
+    IngestionOrder,
 }
 
 impl<'a> KvRepositoryReadWrite<'a> {

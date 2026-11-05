@@ -253,3 +253,40 @@ fn test_snippet_matching_fragments() {
     ]));
     assert_eq!(results.next(), None);
 }
+
+/// Tests that Sonic supports returning fragment IDs in their ingestion order.
+///
+/// While the default behavior makes sense for a chat-like system, it’s not
+/// exactly what users would expect in a knowledge base / wiki / blog, etc.,
+/// where earlier sections are expected to be returned first.
+///
+/// Note that this is only a tie-breaker when snippets have the same score.
+/// Better snippets are always returned first.
+#[test]
+fn test_snippet_matching_fragments_reverse() {
+    let collection = "test_snippet_matching_fragments_reverse";
+
+    init_logging();
+    let executor = make_test_executor(|_| {});
+
+    for (idx, paragraph) in WIKIPEDIA_GDPR_CONTROLLER_AND_PROCESSOR.iter().enumerate() {
+        let fid = &format!("paragraph:{idx}");
+        exec!(executor -> PUSH collection "default" "article:0" fid paragraph);
+    }
+
+    exec!(executor -> TRIGGER consolidate);
+
+    let response =
+        exec!(executor -> WITH SNIPPETS_REV(3, 3) QUERY collection "default" "GDPR" LIMIT(2));
+    let mut results = (response.into_iter()).map(|item| {
+        (item.snippets.into_iter())
+            .map(|snippet| (snippet.fragment, snippet.range, snippet.text))
+            .collect::<Vec<_>>()
+    });
+    #[rustfmt::skip]
+    assert_eq!(results.next(), Some(vec![
+        (Some("paragraph:0".to_owned()), MatchRange { start:  986, end: 1000 }, "the GDPR. Data".to_owned()),
+        (Some("paragraph:1".to_owned()), MatchRange { start:   42, end:   55 }, "the GDPR, the".to_owned()),
+    ]));
+    assert_eq!(results.next(), None);
+}

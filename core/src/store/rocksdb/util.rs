@@ -10,7 +10,7 @@ use zerocopy::{FromBytes, Immutable};
 
 #[allow(dead_code)]
 #[derive(Clone, Copy)]
-enum Direction {
+pub(crate) enum Direction {
     Forward,
     Reverse,
 }
@@ -26,7 +26,7 @@ pub(crate) struct RocksDbPinnableSliceIter<'db, T> {
     len: usize,   // total number of elements, validated in `new`
     front: usize, // next index from the front
     back: usize,  // one past the next index from the back
-    dir: Direction,
+    pub(crate) dir: Direction,
 }
 
 impl<'db, T> RocksDbPinnableSliceIter<'db, T>

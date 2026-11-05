@@ -159,8 +159,11 @@ macro_rules! exec {
             .collect::<Vec<_>>()
     }};
 
-    ($executor:ident -> WITH SNIPPETS$(($snip_wc:expr$(, $snip_ws:expr$(, $snip_wp:expr)?)?))? QUERY $collection:tt $bucket:tt $term:tt $(LANG($lang:expr))? $(LIMIT($limit:expr))?) => {{
-        let additional_meta = concat!(" WITH SNIPPETS"$(, "(", $snip_wc, $(",", $snip_ws, $(",", $snip_wp,)?)? ")")?);
+    (internal_ set_snippets_ord SNIPPETS $cfg:ident) => {};
+    (internal_ set_snippets_ord SNIPPETS_REV $cfg:ident) => { $cfg.ordering = sonic::store::kv::Ordering::IngestionOrder; };
+
+    ($executor:ident -> WITH $snippets_keyword:ident$(($snip_wc:expr$(, $snip_ws:expr$(, $snip_wp:expr)?)?))? QUERY $collection:tt $bucket:tt $term:tt $(LANG($lang:expr))? $(LIMIT($limit:expr))?) => {{
+        let additional_meta = concat!(" WITH ", stringify!($snippets_keyword)$(, "(", $snip_wc, $(",", $snip_ws, $(",", $snip_wp,)?)? ")")?);
 
         #[rustfmt::skip]
         $executor.log(format!(
@@ -184,12 +187,14 @@ macro_rules! exec {
             offset: 0,
         };
 
-        let snippets_config = sonic::executor::QuerySnippetsConfig {
+        #[allow(unused_mut)]
+        let mut snippets_config = sonic::executor::QuerySnippetsConfig {
             $(window_count: $snip_wc,
             $(window_size: $snip_ws,
             $(max_window_padding: $snip_wp,)?)?)?
             ..Default::default()
         };
+        exec!(internal_ set_snippets_ord $snippets_keyword snippets_config);
 
         $executor
             .query_with_snippets(c, b, input, query_options, lang, &snippets_config)

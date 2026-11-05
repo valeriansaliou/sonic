@@ -691,8 +691,8 @@ impl ChannelCommandSearch {
                         }
                     }
                     #[cfg(feature = "experimental-api")]
-                    "SNIPPETS" => {
-                        // 'SNIPPETS[(<window_count>[, <window_size>[, <max_window_padding>]?]?)]?'
+                    "SNIPPETS" | "SNIPPETS_REV" => {
+                        // 'SNIPPETS[_REV]?[(<window_count>[, <window_size>[, <max_window_padding>]?]?)]?'
                         let mut config = sonic::executor::QuerySnippetsConfig::default();
 
                         if !meta_value.is_empty() {
@@ -715,6 +715,10 @@ impl ChannelCommandSearch {
                             if let Some(arg) = args.next() {
                                 config.max_window_padding = arg.parse().or_else(error)?;
                             }
+                        }
+
+                        if matches!(meta_key, "SNIPPETS_REV") {
+                            config.ordering = sonic::store::kv::Ordering::IngestionOrder;
                         }
 
                         meta.snippets = Some(config);

@@ -61,6 +61,7 @@ pub struct QuerySnippetsConfig {
     pub window_count: usize,
     pub window_size: usize,
     pub max_window_padding: usize,
+    pub ordering: crate::store::kv::Ordering,
 }
 
 impl Default for QuerySnippetsConfig {
@@ -69,6 +70,7 @@ impl Default for QuerySnippetsConfig {
             window_count: 1,
             window_size: 42,
             max_window_padding: 41,
+            ordering: crate::store::kv::Ordering::ReverseIngestionOrder,
         }
     }
 }
@@ -91,6 +93,7 @@ pub fn get_best_snippets(
         window_count,
         window_size,
         max_window_padding,
+        ..
     } = config;
 
     let doc_preprocessed = preprocessor.preprocess(doc, lang);

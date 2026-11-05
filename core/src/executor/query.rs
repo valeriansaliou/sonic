@@ -409,7 +409,11 @@ impl super::Executor {
 
                 let fragments_scoring_matrix =
                     ScoringMatrix::build(retain_word_objects, &query_candidates, |term_hash| {
-                        kv_repo.get_term_to_fragment_iids(object_iid, term_hash)
+                        kv_repo.get_term_to_fragment_iids(
+                            object_iid,
+                            term_hash,
+                            snippets_config.ordering,
+                        )
                     });
 
                 let mut score_per_fragment = fragments_scoring_matrix.flatten(&query_candidates);
