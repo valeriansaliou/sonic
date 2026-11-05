@@ -65,7 +65,7 @@ pub fn defaults_toml() -> &'static str {
     # database.write_buffer_size = 16384 # Default handled via serde
     database.write_ahead_log = true
     database.enable_blob_files = true
-    database.min_blob_size = 0
+    database.min_blob_size = 4096 # 4KiB
     database.blob_file_size = 134_217_728 # 128MiB
     database.enable_blob_gc = true
     database.blob_compression_type = "zstd"
