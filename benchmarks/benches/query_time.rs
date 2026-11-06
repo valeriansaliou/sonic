@@ -173,6 +173,9 @@ fn criterion_benchmark(c: &mut Criterion) {
 
                     // let query = &articles().skip(6723).next().unwrap().text[..32];
                     let query = "ARIA Award for Best Urban Album";
+                    // let results = search
+                    //     .query(COLLECTION, &bucket, query)
+                    //     .expect(&format!("Query failed: {query:?}"));
                     let snippets = search
                         .query_snippets(COLLECTION, &bucket, query, QuerySnippetsConfig::default())
                         .expect(&format!("Query failed: {query:?}"));
@@ -186,6 +189,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                         })
                         .is_ok_and(|prev| prev < 5)
                     {
+                        // tracing::info!(?query, ?elasped, "Got results: {results:?}");
                         tracing::info!(?query, ?elasped, "Got snippets: {snippets:?}");
 
                         for oid in [
@@ -193,6 +197,9 @@ fn criterion_benchmark(c: &mut Criterion) {
                             "4222633",  // David Bridie
                             "14477670", // Katalyst (DJ)
                         ] {
+                            // if !results.iter().any(|s| s.as_ref() == oid) {
+                            //     tracing::warn!("Results don’t contain OID {oid:?}");
+                            // }
                             if !snippets.iter().any(|s| s.oid.as_ref() == oid) {
                                 tracing::warn!("Snippets don’t contain OID {oid:?}");
                             }
