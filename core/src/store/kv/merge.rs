@@ -109,6 +109,10 @@ fn unique_int_list<const WORD_LEN: usize>(
 
     let operands_total_len = operands.iter().fold(0, |acc, op| acc + op.len());
 
+    if existing_val.is_none() && operands_total_len == 0 {
+        return Some(vec![]);
+    }
+
     let mut res: Vec<u8> = Vec::with_capacity(current.len() + operands_total_len);
 
     // PERF: Assume values are already unique, to `memcpy` only once.
