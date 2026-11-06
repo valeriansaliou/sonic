@@ -13,7 +13,7 @@ use std::str;
 use std::sync::Arc;
 use std::time::Duration;
 
-use sonic::Executor;
+use sonic::{Context as _, Executor};
 
 use super::message::{
     ChannelMessageModeControl, ChannelMessageModeIngest, ChannelMessageModeSearch,
@@ -119,7 +119,7 @@ impl ChannelHandle {
                 write!(stream, "{LINE_FEED}").expect("write failed");
 
                 self.handle_stream(mode, stream)
-                    .unwrap_or_else(|error| tracing::error!("closing channel thread: {error}"));
+                    .unwrap_or_else(|error| sonic::log!(error.context("Closing channel thread")));
             }
             Err(err) => match write!(stream, "ENDED {}{}", err.to_str(), LINE_FEED) {
                 Ok(()) => {}
@@ -150,11 +150,7 @@ impl ChannelHandle {
         );
     }
 
-    fn handle_stream(
-        &self,
-        mode: ChannelMode,
-        mut stream: TcpStream,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn handle_stream(&self, mode: ChannelMode, mut stream: TcpStream) -> Result<(), sonic::Error> {
         // Initialize packet buffer
         let mut buffer: VecDeque<u8> = VecDeque::with_capacity(MAX_LINE_SIZE);
 
@@ -227,7 +223,7 @@ impl ChannelHandle {
                         // in the buffer. Most likely the client does not
                         // implement a proper back-pressure management system,
                         // thus we terminate it.
-                        break 'handler Err(Box::new(std::io::Error::new(
+                        break 'handler Err(sonic::Error::from(std::io::Error::new(
                             ErrorKind::InvalidData,
                             format!(
                                 "buffer overflow ({}/{} bytes)",
@@ -237,7 +233,7 @@ impl ChannelHandle {
                         )));
                     }
                 }
-                Err(err) => break 'handler Err(Box::new(err)),
+                Err(err) => break 'handler Err(sonic::Error::from(err)),
             }
         }
     }

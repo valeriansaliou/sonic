@@ -26,6 +26,8 @@ mod push;
 mod query;
 mod suggest;
 
+use crate::Context as _;
+
 pub use push::PushOptions;
 pub use query::{MatchWithSnippets, QueryOptions, QueryResult, QuerySnippetsConfig};
 pub use types::*;
@@ -185,7 +187,7 @@ impl Executor {
         &self,
         collection: StoreItemPart,
         new_conf: Arc<dyn DynamicConfig>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), crate::Error> {
         let kv_store_id = KvStoreId::from_part(collection);
 
         tracing::Span::current().record("kv_store_id", tracing::field::display(&kv_store_id));
@@ -206,7 +208,7 @@ impl Executor {
 
             self.kv_pool
                 .acquire(true, collection, Some(&mut kv_pool_write_guard))
-                .map_err(|()| std::io::Error::other("Error re-opening connection"))?;
+                .context("Error re-opening connection")?;
 
             drop(kv_pool_write_guard);
 
@@ -228,7 +230,7 @@ impl Executor {
 
             self.object_store_pool
                 .acquire(true, collection, Some(&mut object_store_pool_write_guard))
-                .map_err(|()| std::io::Error::other("Error re-opening connection"))?;
+                .context("Error re-opening connection")?;
 
             drop(object_store_pool_write_guard);
 

@@ -9,6 +9,7 @@ use std::fmt;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
+use crate::Leveled;
 use crate::store::generic::*;
 pub use crate::store::rocksdb::pool::{GenericKvStorePool, KvStoreId};
 use crate::store::rocksdb::{
@@ -52,7 +53,7 @@ impl GenericRocksDbStore for ObjectStore {
         store_id: &KvStoreId,
         config: &crate::config::KvStoreConfig,
         dyn_config: Option<&dyn crate::DynamicConfig>,
-    ) -> Result<rocksdb::DB, rocksdb::Error> {
+    ) -> Result<rocksdb::DB, crate::Error> {
         tracing::debug!("Opening Object store {store_id}");
 
         // Configure database options.
@@ -65,7 +66,7 @@ impl GenericRocksDbStore for ObjectStore {
         }
 
         // Open database connection.
-        rocksdb::DB::open(&db_options, config.store_path(store_id))
+        rocksdb::DB::open(&db_options, config.store_path(store_id)).as_error()
     }
 
     fn new(
@@ -150,7 +151,7 @@ impl ObjectStore {
 
 impl<'a> ObjectRepository<'a> {
     #[inline]
-    pub fn write(&self, batch: rocksdb::WriteBatch) -> Result<(), rocksdb::Error> {
+    pub fn write(&self, batch: rocksdb::WriteBatch) -> Result<(), crate::Error> {
         self.store.write(batch, Default::default())
     }
 

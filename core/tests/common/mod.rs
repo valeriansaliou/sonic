@@ -110,25 +110,25 @@ macro_rules! exec {
     ($executor:ident -> COUNT $collection:tt) => {{
         $executor.log(format!("COUNT {:?}", $collection));
         let c = collection_ref!($collection);
-        $executor.countc(c)
+        $executor.countc(c).unwrap()
     }};
 
     ($executor:ident -> COUNT $collection:tt $bucket:tt) => {{
         $executor.log(format!("COUNT {:?} {:?}", $collection, $bucket));
         let (c, b) = bucket_ref!($collection, $bucket);
-        $executor.legacy_countb(c, b)
+        $executor.legacy_countb(c, b).unwrap()
     }};
 
     ($executor:ident -> COUNTB $collection:tt $bucket:tt) => {{
         $executor.log(format!("COUNTB {:?} {:?}", $collection, $bucket));
         let (c, b) = bucket_ref!($collection, $bucket);
-        $executor.countb(c, b)
+        $executor.countb(c, b).unwrap()
     }};
 
     ($executor:ident -> COUNT $collection:tt $bucket:tt $oid:tt) => {{
         $executor.log(format!("COUNT {:?} {:?} {:?}", $collection, $bucket, $oid));
         let (c, b, o) = object_ref!($collection, $bucket, $oid);
-        $executor.counto(c, b, o)
+        $executor.counto(c, b, o).unwrap()
     }};
 
     ($executor:ident -> QUERY $collection:tt $bucket:tt $term:tt $(LANG($lang:expr))? $(LIMIT($limit:expr))?) => {{

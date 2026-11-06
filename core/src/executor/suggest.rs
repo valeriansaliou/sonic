@@ -21,31 +21,31 @@ impl super::Executor {
         bucket: Bucket,
         input: PreprocessorOutput,
         limit: QuerySearchLimit,
-    ) -> Result<Option<impl ExactSizeIterator<Item = String> + DoubleEndedIterator>, ()> {
+    ) -> Result<Option<impl ExactSizeIterator<Item = String> + DoubleEndedIterator>, crate::Error>
+    {
         // Important: acquire graph access read lock, and reference it in context. This \
         //   prevents the graph from being erased while using it in this block.
         let _fst_read_guard = self.fst_pool.lock_read_access();
 
-        if let Ok(fst_store) = self.fst_pool.acquire(collection, bucket) {
-            let fst_repo = fst_store.to_repository();
+        let fst_store = self.fst_pool.acquire(collection, bucket)?;
 
-            let mut tokens = input.tokens();
+        let fst_repo = fst_store.to_repository();
 
-            if let (Some(token), None) = (tokens.next(), tokens.next()) {
-                let len = token.as_original().len();
-                let term = token.into_normalized();
-                let max_typo_factor =
-                    typo_factor(len, &self.app_conf.search.typo_factor_word_lengths);
+        let mut tokens = input.tokens();
 
-                tracing::debug!("running suggest on word: {term:?}");
+        let (Some(token), None) = (tokens.next(), tokens.next()) else {
+            return Err(crate::warning!("SUGGEST accepts exactly one token").into());
+        };
 
-                return match fst_repo.suggest_words(term, limit as usize, max_typo_factor) {
-                    Some(words) => Ok(Some(words.map(|(k, _)| k))),
-                    None => Ok(None),
-                };
-            }
+        let len = token.as_original().len();
+        let term = token.into_normalized();
+        let max_typo_factor = typo_factor(len, &self.app_conf.search.typo_factor_word_lengths);
+
+        tracing::debug!(word = %term, "Running SUGGEST");
+
+        match fst_repo.suggest_words(term, limit as usize, max_typo_factor) {
+            Some(words) => Ok(Some(words.map(|(k, _)| k))),
+            None => Ok(None),
         }
-
-        Err(())
     }
 }

@@ -6,6 +6,7 @@
 
 use std::ops::Deref;
 
+use crate::Leveled as _;
 use crate::store::types::*;
 
 use super::keys::*;
@@ -36,19 +37,14 @@ impl<T: ToKvKeyPart + Copy> ToKvKeyPart for &T {
 }
 
 pub(super) trait TryFromKvValue<Value>: Sized + std::fmt::Debug {
-    type Err: std::error::Error;
-
-    fn try_from_kv_value(value: Value) -> Result<Self, Self::Err>;
+    fn try_from_kv_value(value: Value) -> Result<Self, crate::Error>;
 }
 
-impl<'db, T, E> TryFromKvValue<rocksdb::DBPinnableSlice<'db>> for T
+impl<'db, T> TryFromKvValue<rocksdb::DBPinnableSlice<'db>> for T
 where
-    T: for<'a> TryFromKvValue<&'a [u8], Err = E>,
-    E: std::error::Error,
+    T: for<'a> TryFromKvValue<&'a [u8]>,
 {
-    type Err = E;
-
-    fn try_from_kv_value(value: rocksdb::DBPinnableSlice<'db>) -> Result<Self, Self::Err> {
+    fn try_from_kv_value(value: rocksdb::DBPinnableSlice<'db>) -> Result<Self, crate::Error> {
         <Self as TryFromKvValue<&[u8]>>::try_from_kv_value(value.deref())
     }
 }
@@ -96,10 +92,10 @@ impl FromKvKeyPart for GenericIid {
 }
 
 impl<'a> TryFromKvValue<&'a [u8]> for GenericIid {
-    type Err = SizeError;
-
-    fn try_from_kv_value(bytes: &'a [u8]) -> Result<Self, Self::Err> {
-        zerocopy::FromBytes::read_from_bytes(bytes).map_err(Into::into)
+    fn try_from_kv_value(bytes: &'a [u8]) -> Result<Self, crate::Error> {
+        zerocopy::FromBytes::read_from_bytes(bytes)
+            .map_err(SizeError::from)
+            .as_error()
     }
 }
 
@@ -122,10 +118,8 @@ impl<'a> ToKvKeyPart for &'a GenericOid<'a> {
 }
 
 impl TryFromKvValue<&[u8]> for String {
-    type Err = std::str::Utf8Error;
-
-    fn try_from_kv_value(bytes: &[u8]) -> Result<Self, Self::Err> {
-        str::from_utf8(bytes).map(str::to_string)
+    fn try_from_kv_value(bytes: &[u8]) -> Result<Self, crate::Error> {
+        str::from_utf8(bytes).map(str::to_string).as_error()
     }
 }
 
@@ -213,53 +207,51 @@ impl<'a> ToKvKeyPart for &'a Bucket<'a> {
 // MARK: IIDIncr counter
 
 impl<'a> TryFromKvValue<&'a [u8]> for IidIncr {
-    type Err = SizeError;
-
-    fn try_from_kv_value(bytes: &'a [u8]) -> Result<Self, Self::Err> {
-        zerocopy::FromBytes::read_from_bytes(bytes).map_err(Into::into)
+    fn try_from_kv_value(bytes: &'a [u8]) -> Result<Self, crate::Error> {
+        zerocopy::FromBytes::read_from_bytes(bytes)
+            .map_err(SizeError::from)
+            .as_error()
     }
 }
 
 // MARK: ObjectCount counter
 
 impl<'a> TryFromKvValue<&'a [u8]> for ObjectCount {
-    type Err = SizeError;
-
-    fn try_from_kv_value(bytes: &'a [u8]) -> Result<Self, Self::Err> {
-        zerocopy::FromBytes::read_from_bytes(bytes).map_err(Into::into)
+    fn try_from_kv_value(bytes: &'a [u8]) -> Result<Self, crate::Error> {
+        zerocopy::FromBytes::read_from_bytes(bytes)
+            .map_err(SizeError::from)
+            .as_error()
     }
 }
 
 // MARK: FragmentCount counter
 
 impl<'a> TryFromKvValue<&'a [u8]> for FragmentCount {
-    type Err = SizeError;
-
-    fn try_from_kv_value(bytes: &'a [u8]) -> Result<Self, Self::Err> {
-        zerocopy::FromBytes::read_from_bytes(bytes).map_err(Into::into)
+    fn try_from_kv_value(bytes: &'a [u8]) -> Result<Self, crate::Error> {
+        zerocopy::FromBytes::read_from_bytes(bytes)
+            .map_err(SizeError::from)
+            .as_error()
     }
 }
 
 // Iterators
 
 impl<'db> TryFromKvValue<rocksdb::DBPinnableSlice<'db>> for IidToTermsIter<'db> {
-    type Err = crate::store::rocksdb::util::BadLength;
-
-    fn try_from_kv_value(slice: rocksdb::DBPinnableSlice<'db>) -> Result<Self, Self::Err> {
+    fn try_from_kv_value(slice: rocksdb::DBPinnableSlice<'db>) -> Result<Self, crate::Error> {
         crate::store::rocksdb::util::RocksDbPinnableSliceIter::<super::IidToTermsEntry>::forward(
             slice,
         )
         .map(Self)
+        .as_error()
     }
 }
 
 impl<'db> TryFromKvValue<rocksdb::DBPinnableSlice<'db>> for TermToIidsIter<'db> {
-    type Err = crate::store::rocksdb::util::BadLength;
-
-    fn try_from_kv_value(slice: rocksdb::DBPinnableSlice<'db>) -> Result<Self, Self::Err> {
+    fn try_from_kv_value(slice: rocksdb::DBPinnableSlice<'db>) -> Result<Self, crate::Error> {
         crate::store::rocksdb::util::RocksDbPinnableSliceIter::<super::TermToIidsEntry>::forward(
             slice,
         )
         .map(Self)
+        .as_error()
     }
 }

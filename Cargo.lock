@@ -2396,6 +2396,7 @@ dependencies = [
 name = "sonic-core"
 version = "0.4.2"
 dependencies = [
+ "anyhow",
  "caseless",
  "config",
  "fst",
@@ -2428,6 +2429,7 @@ dependencies = [
 name = "sonic-server"
 version = "1.10.2"
 dependencies = [
+ "anyhow",
  "clap",
  "config",
  "hashbrown 0.17.1",

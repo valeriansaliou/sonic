@@ -23,11 +23,10 @@
     clippy::needless_as_bytes, // Style preference. Better make those things explicit.
     clippy::needless_borrow, // Style preference.
     clippy::needless_borrows_for_generic_args, // Style preference.
-    clippy::result_unit_err, // TODO: Re-enable (deny) after improving errors.
-    clippy::unnecessary_lazy_evaluations, // TODO: Re-enable (deny) after improving errors.
 )]
 
 pub mod config;
+mod error;
 pub mod executor;
 pub mod lexer;
 mod scoring;
@@ -38,5 +37,7 @@ pub mod util;
 pub use rocksdb;
 
 pub use self::config::Config;
+pub(crate) use self::error::warning;
+pub use self::error::{Context, Error, Leveled, LeveledError};
 pub use self::executor::DynamicConfig;
 pub use self::executor::Executor;

@@ -320,27 +320,35 @@ impl ChannelCommandBase {
         ChannelCommandError::InvalidMetaValue((meta_key.to_owned(), meta_value.to_owned()))
     }
 
-    pub fn commit_ok_operation(operation: impl FnOnce() -> Result<(), ()>) -> ChannelResult {
+    pub fn commit_ok_operation(
+        operation: impl FnOnce() -> Result<(), sonic::Error>,
+    ) -> ChannelResult {
         match operation() {
             Ok(()) => Ok(vec![ChannelCommandResponse::Ok]),
-            Err(()) => Err(ChannelCommandError::QueryError),
+            Err(error) => {
+                sonic::log!(error);
+                Err(ChannelCommandError::QueryError)
+            }
         }
     }
 
     pub fn commit_result_operation(
-        operation: impl FnOnce() -> Result<Option<String>, ()>,
+        operation: impl FnOnce() -> Result<Option<String>, sonic::Error>,
     ) -> ChannelResult {
         match operation() {
             Ok(Some(result_inner)) => Ok(vec![ChannelCommandResponse::Result(result_inner)]),
             Ok(None) => Err(ChannelCommandError::InternalError),
-            Err(()) => Err(ChannelCommandError::QueryError),
+            Err(error) => {
+                sonic::log!(error);
+                Err(ChannelCommandError::QueryError)
+            }
         }
     }
 
     pub fn commit_pending_operation(
         query_type: &'static str,
         query_id: &str,
-        operation: impl FnOnce() -> Result<Option<String>, ()>,
+        operation: impl FnOnce() -> Result<Option<String>, sonic::Error>,
     ) -> ChannelResult {
         // Idea: this could be made asynchronous in the future, if there are some latency issues \
         //   on large Sonic deployments. The idea would be to have a number of worker threads for \
@@ -360,7 +368,10 @@ impl ChannelCommandBase {
                     results.unwrap_or_default(),
                 ),
             ]),
-            Err(()) => Err(ChannelCommandError::QueryError),
+            Err(error) => {
+                sonic::log!(error);
+                Err(ChannelCommandError::QueryError)
+            }
         }
     }
 
@@ -466,6 +477,8 @@ impl ChannelCommandSearch {
 
                         #[cfg(feature = "experimental-api")]
                         if let Some(snippets) = snippets {
+                            use sonic::Context as _;
+
                             return ctx
                                 .executor
                                 .query_with_snippets(
@@ -476,14 +489,10 @@ impl ChannelCommandSearch {
                                     lang,
                                     &snippets,
                                 )
-                                .and_then(|results| match serde_json::to_string(&results) {
-                                    Ok(string) => Ok(Some(string)),
-                                    Err(error) => {
-                                        tracing::error!(
-                                            "Failed serializing QUERY snippets: {error}"
-                                        );
-                                        Err(())
-                                    }
+                                .and_then(|results| {
+                                    serde_json::to_string(&results)
+                                        .map(Some)
+                                        .context("Failed serializing QUERY snippets")
                                 });
                         }
 
@@ -1248,6 +1257,8 @@ impl ChannelCommandControl {
                     }
                     #[cfg(feature = "experimental-api")]
                     "compact" => {
+                        use sonic::Context as _;
+
                         let collections = if let Some(data_part) = data_part {
                             let mut collections = Vec::new();
 
@@ -1287,9 +1298,9 @@ impl ChannelCommandControl {
                             Ok(vec![ChannelCommandResponse::Ok])
                         } else {
                             for (store_kind, store_id, error) in errors {
-                                tracing::error!(
-                                    "Error while compacting {store_kind} store {store_id}: {error}"
-                                );
+                                sonic::log!(error.context(format!(
+                                    "Error while compacting {store_kind} store {store_id}"
+                                )));
                             }
 
                             Err(ChannelCommandError::InternalError)
@@ -1701,6 +1712,7 @@ fn config_set(
     ctx: &ChannelMessageModeControl,
     collection: sonic::store::StoreItemPart,
 ) -> ChannelResult {
+    use sonic::Context as _;
     use std::sync::Arc;
 
     use sonic::store::CollectionHash;
@@ -1817,7 +1829,7 @@ fn config_set(
     match ctx.executor.set_dynamic_conf(collection, Arc::new(config)) {
         Ok(()) => Ok(vec![ChannelCommandResponse::Ok]),
         Err(error) => {
-            tracing::error!("Error setting dynamic config: {error}");
+            sonic::log!(error.context("Error setting dynamic config"));
             Err(ChannelCommandError::InternalError)
         }
     }
@@ -1829,6 +1841,7 @@ fn config_reset(
     ctx: &ChannelMessageModeControl,
     collection: sonic::store::StoreItemPart,
 ) -> ChannelResult {
+    use sonic::Context as _;
     use std::sync::Arc;
 
     let mut parts = parts.peekable();
@@ -1889,7 +1902,7 @@ fn config_reset(
     {
         Ok(()) => Ok(vec![ChannelCommandResponse::Ok]),
         Err(error) => {
-            tracing::error!("Error resetting dynamic config: {error:?}");
+            sonic::log!(error.context("Error resetting dynamic config"));
             Err(ChannelCommandError::InternalError)
         }
     }

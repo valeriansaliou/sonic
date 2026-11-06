@@ -13,6 +13,8 @@ use std::ops::Range;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
+use crate::Context as _;
+use crate::Leveled;
 use crate::config::RocksDbDatabaseConfig;
 use crate::store::Bucket;
 use crate::store::generic::GenericStore;
@@ -31,7 +33,7 @@ pub(super) trait GenericRocksDbStore: GenericStore + GenericRocksDbStorePub {
         store_id: &pool::KvStoreId,
         config: &crate::config::KvStoreConfig,
         dyn_config: Option<&dyn crate::DynamicConfig>,
-    ) -> Result<rocksdb::DB, rocksdb::Error>;
+    ) -> Result<rocksdb::DB, crate::Error>;
 
     fn new(
         db: rocksdb::DB,
@@ -55,11 +57,7 @@ pub(super) trait GenericRocksDbStore: GenericStore + GenericRocksDbStorePub {
 
     fn lock(&self) -> &RwLock<()>;
 
-    fn write(
-        &self,
-        batch: rocksdb::WriteBatch,
-        options: WriteOptions,
-    ) -> Result<(), rocksdb::Error> {
+    fn write(&self, batch: rocksdb::WriteBatch, options: WriteOptions) -> Result<(), crate::Error> {
         //         struct LogHandler;
         //
         //         static COUNTER: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
@@ -101,15 +99,15 @@ pub(super) trait GenericRocksDbStore: GenericStore + GenericRocksDbStorePub {
         let write_options = self.write_options_builder().build(options);
 
         // Commit this write
-        self.database().write_opt(batch, &write_options)
+        self.database().write_opt(batch, &write_options).as_error()
     }
 
     #[tracing::instrument(
         level = "debug",
         skip_all, fields(store = %Self::kind(), ?bucket),
     )]
-    fn batch_erase_bucket(&self, bucket: &Bucket) -> Result<u32, ()> {
-        tracing::debug!("{} store batch erase bucket: {bucket}", Self::kind());
+    fn batch_erase_bucket(&self, bucket: &Bucket) -> Result<u32, crate::Error> {
+        tracing::trace!("Batch erasing bucket");
 
         // Generate start and end prefix for batch delete (in other words,
         // the minimum key value possible, and the highest key value possible).
@@ -134,33 +132,28 @@ pub(super) trait GenericRocksDbStore: GenericStore + GenericRocksDbStorePub {
         }
 
         // Commit operation to database.
-        match self.write(batch, WriteOptions { is_ordered: false }) {
-            Ok(()) => {
-                self.on_batch_erase_bucket(bucket);
-                tracing::debug!("succeeded in store batch erase bucket: {bucket}");
-                Ok(1)
-            }
-            Err(error) => {
-                tracing::error!(
-                    "failed in store batch erase bucket: {bucket} with error: {error:?}"
-                );
-                Err(())
-            }
-        }
+        self.write(batch, WriteOptions { is_ordered: false })
+            .context("Bucket erasure failed")?;
+
+        self.on_batch_erase_bucket(bucket);
+
+        tracing::debug!("Bucket erasure succeeded");
+
+        Ok(1)
     }
 
     #[tracing::instrument(
         level = "debug",
         skip_all, fields(store = %Self::kind()),
     )]
-    fn flush(&self) -> Result<(), rocksdb::Error> {
+    fn flush(&self) -> Result<(), crate::Error> {
         // Generate flush options
         let mut flush_options = rocksdb::FlushOptions::default();
 
         flush_options.set_wait(true);
 
         // Perform flush (in blocking mode)
-        self.database().flush_opt(&flush_options)
+        self.database().flush_opt(&flush_options).as_error()
     }
 }
 

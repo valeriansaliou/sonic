@@ -60,7 +60,7 @@ fn test_object_deindexing() {
 
     setup(&executor);
 
-    let count = exec!(executor -> COUNT "messages" "user:1" "can").unwrap();
+    let count = exec!(executor -> COUNT "messages" "user:1" "can");
     tracing::debug!("Count: {count}");
     let response1 = exec!(executor -> FLUSHO "messages" "user:1" "can");
     exec!(executor -> TRIGGER consolidate);

@@ -12,7 +12,7 @@ impl super::Executor {
         level = "info",
         skip_all, fields(?collection),
     )]
-    pub fn flushc(&self, collection: StoreItemPart) -> Result<u32, ()> {
+    pub fn flushc(&self, collection: StoreItemPart) -> Result<u32, crate::Error> {
         // Important: do not acquire the store from there, as otherwise it will remain open \
         //   even if dropped in the inner function, as this caller would still own a reference to \
         //   it.
@@ -21,12 +21,9 @@ impl super::Executor {
         let _kv_write_guard = self.kv_pool.lock_write_access();
         let _fst_write_guard = self.fst_pool.lock_write_access();
 
-        match (
-            self.kv_pool.erase(collection, None),
-            self.fst_pool.erase(collection, None),
-        ) {
-            (Ok(erase_count), Ok(_)) => Ok(erase_count),
-            _ => Err(()),
-        }
+        let erase_count = self.kv_pool.erase(collection, None)?;
+        self.fst_pool.erase(collection, None)?;
+
+        Ok(erase_count)
     }
 }

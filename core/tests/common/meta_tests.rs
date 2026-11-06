@@ -54,7 +54,7 @@ macro_rules! test_ingest_then_query {
         // examples pass for the wrong reason).
         assert_eq!(
             exec!($executor -> COUNT "messages" "user:1" "chat:1"),
-            Ok($sentence.split_ascii_whitespace().count() as u32)
+            $sentence.split_ascii_whitespace().count() as u32
         );
     }
 }

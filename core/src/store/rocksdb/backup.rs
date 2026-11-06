@@ -5,15 +5,16 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::{fs, io};
 
 use rocksdb::backup::{
     BackupEngine as DBBackupEngine, BackupEngineOptions as DBBackupEngineOptions,
     RestoreOptions as DBRestoreOptions,
 };
 
+use crate::Context as _;
 use crate::store::kv::{GenericKvStorePool, KvStoreId};
 
 use super::GenericRocksDbStore;
@@ -24,7 +25,7 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         level = "debug",
         skip_all, fields(?path),
     )]
-    pub fn backup(&self, path: &Path) -> Result<(), io::Error> {
+    pub fn backup(&self, path: &Path) -> Result<(), crate::Error> {
         tracing::debug!(
             "backing up all {kind} stores to path: {path:?}",
             kind = Store::kind()
@@ -47,7 +48,7 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         level = "debug",
         skip_all, fields(?path),
     )]
-    pub fn restore(&self, path: &Path) -> Result<(), io::Error> {
+    pub fn restore(&self, path: &Path) -> Result<(), crate::Error> {
         tracing::debug!(
             "restoring all {kind} stores from path: {path:?}",
             kind = Store::kind()
@@ -62,8 +63,8 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         &self,
         read_path: &Path,
         write_path: &Path,
-        fn_item: &dyn Fn(&Self, &Path, &Path, &str) -> Result<(), io::Error>,
-    ) -> Result<(), io::Error> {
+        fn_item: &dyn Fn(&Self, &Path, &Path, &str) -> Result<(), crate::Error>,
+    ) -> Result<(), crate::Error> {
         // Iterate on KV collections.
         for entry in fs::read_dir(read_path)? {
             let Ok(collection) = entry else {
@@ -92,7 +93,7 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         backup_dir: &Path,
         _origin_path: &Path,
         collection_hash: &str,
-    ) -> Result<(), io::Error> {
+    ) -> Result<(), crate::Error> {
         let kind = Store::kind();
 
         // Acquire access lock (in blocking write mode), and reference it in context
@@ -116,12 +117,12 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
 
         // Initialize KV database backup engine
         let kv_backup_options = DBBackupEngineOptions::new(&kv_backup_path)
-            .map_err(|_| io::Error::other("backup engine options acquire failure"))?;
-        let kv_backup_environment = rocksdb::Env::new()
-            .map_err(|_| io::Error::other("backup engine environment acquire failure"))?;
+            .context("backup engine options acquire failure")?;
+        let kv_backup_environment =
+            rocksdb::Env::new().context("backup engine environment acquire failure")?;
 
         let mut kv_backup_engine = DBBackupEngine::open(&kv_backup_options, &kv_backup_environment)
-            .map_err(|_| io::Error::other("backup engine failure"))?;
+            .context("backup engine failure")?;
 
         // Proceed actual KV database backup
         // NOTE: RocksDB refuses to open a database which is already open in
@@ -137,14 +138,14 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
                 let dyn_conf_opt = dyn_confs.get(&store_id).map(Arc::as_ref);
 
                 let origin_kv = Store::open(&store_id, &self.kv_store_config, dyn_conf_opt)
-                    .map_err(|_| io::Error::other("database open failure"))?;
+                    .context("database open failure")?;
 
                 drop(dyn_confs);
 
                 kv_backup_engine.create_new_backup(&origin_kv)
             }
         }
-        .map_err(|_| io::Error::other("database backup failure"))?;
+        .context("database backup failure")?;
 
         tracing::debug!(?backup_dir, "{kind} store backed up");
 
@@ -160,7 +161,7 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         _destination_dir: &Path,
         backup_path: &Path,
         collection_hash: &str,
-    ) -> Result<(), io::Error> {
+    ) -> Result<(), crate::Error> {
         let kind = Store::kind();
 
         // Acquire access lock (in blocking write mode), and reference it in context
@@ -187,16 +188,16 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
 
         // Initialize KV database backup engine
         let kv_backup_options = DBBackupEngineOptions::new(&backup_path)
-            .map_err(|_| io::Error::other("backup engine options acquire failure"))?;
-        let kv_backup_environment = rocksdb::Env::new()
-            .map_err(|_| io::Error::other("backup engine environment acquire failure"))?;
+            .context("backup engine options acquire failure")?;
+        let kv_backup_environment =
+            rocksdb::Env::new().context("backup engine environment acquire failure")?;
 
         let mut kv_backup_engine = DBBackupEngine::open(&kv_backup_options, &kv_backup_environment)
-            .map_err(|_| io::Error::other("backup engine failure"))?;
+            .context("backup engine failure")?;
 
         kv_backup_engine
             .restore_from_latest_backup(&kv_path, &kv_path, &DBRestoreOptions::default())
-            .map_err(|_| io::Error::other("database restore failure"))?;
+            .context("database restore failure")?;
 
         tracing::debug!(?backup_path, ?kv_path, "{kind} store restored");
 

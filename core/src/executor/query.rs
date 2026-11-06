@@ -11,6 +11,7 @@ use hashbrown::HashMap;
 use indexmap::IndexMap;
 
 use super::types::{QueryMatchScore, QueryResultScore, QuerySearchLimit, QuerySearchOffset};
+use crate::Context as _;
 use crate::lexer::preprocessor::{Preprocessor, PreprocessorOutput};
 pub use crate::lexer::snippet_matching::QuerySnippetsConfig;
 use crate::lexer::snippet_matching::{self, Snippet, get_best_snippets};
@@ -60,15 +61,13 @@ impl super::Executor {
         input: &'input PreprocessorOutput<'input>,
         kv_repo: &KvRepositoryReadOnly<'_>,
         fst_repo: &FstRepository<'_>,
-    ) -> Result<Vec<QueryCandidate<'input>>, ()> {
+    ) -> Result<Vec<QueryCandidate<'input>>, crate::Error> {
         let alternates_try = self.app_conf.search.query_alternates_try;
         let min_idf = (self.app_conf.search).query_minimum_term_idf_default;
         let min_doc_count = (self.app_conf.search).query_minimum_term_idf_minimum_object_count;
 
         // PERF: Get document count once (used to compute idfs).
-        let document_count = kv_repo
-            .get_object_count()
-            .map_err(|()| tracing::warn!("Error getting object count"))?;
+        let document_count = (kv_repo.get_object_count()).context("Error getting object count")?;
 
         #[cfg(debug_assertions)]
         if input.token_count() > MAX_QUERY_TOKENS {
@@ -184,7 +183,7 @@ impl super::Executor {
         query_candidates: &[QueryCandidate<'_>],
         options: &QueryOptions,
         kv_repo: &KvRepositoryReadOnly<'_>,
-    ) -> Result<Vec<QueryResult>, ()> {
+    ) -> Result<Vec<QueryResult>, crate::Error> {
         let &QueryOptions { limit, offset } = options;
 
         let mut retain_word_objects = self.app_conf.search.query_retain_word_objects;
@@ -231,7 +230,7 @@ impl super::Executor {
         bucket: Bucket,
         input: &PreprocessorOutput,
         options: QueryOptions,
-    ) -> Result<Vec<QueryResult>, ()> {
+    ) -> Result<Vec<QueryResult>, crate::Error> {
         // #[cfg(debug_assertions)]
         // eprintln!("q: {}", input.original_text());
         #[cfg(debug_assertions)]
@@ -278,7 +277,7 @@ impl super::Executor {
         bucket: Bucket,
         input: PreprocessorOutput,
         options: QueryOptions,
-    ) -> Result<impl ExactSizeIterator<Item = String>, ()> {
+    ) -> Result<impl ExactSizeIterator<Item = String>, crate::Error> {
         self.query_(collection, bucket, &input, options)
             .map(|results| results.into_iter().map(|res| res.oid))
     }
@@ -295,7 +294,7 @@ impl super::Executor {
         options: QueryOptions,
         lang: Option<whatlang::Lang>,
         snippets_config: &QuerySnippetsConfig,
-    ) -> Result<Vec<MatchWithSnippets>, ()> {
+    ) -> Result<Vec<MatchWithSnippets>, crate::Error> {
         // #[cfg(debug_assertions)]
         // eprintln!("q: {}", input.original_text());
         #[cfg(debug_assertions)]
@@ -377,16 +376,16 @@ impl super::Executor {
 
             let object_oid_parsed = match GenericOid::from_str(&object_oid) {
                 Ok(oid) => oid,
-                Err(()) => {
-                    tracing::error!(%object_oid, "Invalid object OID");
+                Err(error) => {
+                    tracing::error!(%object_oid, "Invalid object OID: {error:#}");
                     continue 'results;
                 }
             };
 
-            let fragment_count = kv_repo.get_fragment_count(object_iid).unwrap_or_else(|()| {
+            let fragment_count = (kv_repo.get_fragment_count(object_iid)).unwrap_or_else(|error| {
                 tracing::error!(
                     %object_iid,
-                    "Error getting fragment count, considering no fragment exist."
+                    "Error getting fragment count: {error:#}. Considering no fragment exist."
                 );
                 0
             });
@@ -443,15 +442,15 @@ impl super::Executor {
                             tracing::error!(%object_oid, %fragment_iid, "Fragment OID not found");
                             continue 'fragments;
                         }
-                        Err(()) => {
-                            tracing::error!(%object_oid, %fragment_iid, "Error finding fragment OID");
+                        Err(error) => {
+                            tracing::error!(%object_oid, %fragment_iid, "Error finding fragment OID: {error:#}");
                             continue 'fragments;
                         }
                     };
                     let fragment_oid_parsed = match GenericOid::from_str(&fragment_oid) {
                         Ok(oid) => oid,
-                        Err(()) => {
-                            tracing::error!(%object_oid, %fragment_oid, "Invalid fragment OID");
+                        Err(error) => {
+                            tracing::error!(%object_oid, %fragment_oid, "Invalid fragment OID: {error:#}");
                             continue 'fragments;
                         }
                     };
@@ -688,7 +687,7 @@ impl ScoringMatrix {
     fn build<'input, 'candidates, I>(
         retain_word_objects: usize,
         query_candidates: &'candidates [QueryCandidate<'_>],
-        get_term_to_iids: impl Fn(&'candidates StoreTermHash) -> Result<Option<I>, ()> + Copy,
+        get_term_to_iids: impl Fn(&'candidates StoreTermHash) -> Result<Option<I>, crate::Error> + Copy,
     ) -> Self
     where
         I: ExactSizeIterator<Item = TermToIidsEntry> + 'candidates,
@@ -710,7 +709,10 @@ impl ScoringMatrix {
         ) in query_candidates.iter().enumerate()
         {
             for term_to_iids_entry in get_term_to_iids(&term_hash)
-                .unwrap_or_else(|()| None)
+                .unwrap_or_else(|error| {
+                    tracing::error!("Error getting Term-To-IIDs: {error:#}");
+                    None
+                })
                 .into_iter()
                 .flatten()
                 .take(retain_word_objects)
@@ -779,7 +781,7 @@ impl ScoringMatrix {
     fn backfill<'candidates, I>(
         &mut self,
         query_candidates: &'candidates [QueryCandidate],
-        get_term_to_iids: impl Fn(&'candidates StoreTermHash) -> Result<Option<I>, ()> + Copy,
+        get_term_to_iids: impl Fn(&'candidates StoreTermHash) -> Result<Option<I>, crate::Error> + Copy,
     ) where
         I: ExactSizeIterator<Item = TermToIidsEntry> + 'candidates,
     {
@@ -801,8 +803,10 @@ impl ScoringMatrix {
             let token = &query_candidates[term_idx];
             let term_hash = &token.term_hash;
 
-            let Some(term_to_iids_entries) = get_term_to_iids(term_hash).unwrap_or_else(|()| None)
-            else {
+            let Some(term_to_iids_entries) = get_term_to_iids(term_hash).unwrap_or_else(|error| {
+                tracing::error!("Error getting Term-To-IIDs: {error:#}");
+                None
+            }) else {
                 continue;
             };
 

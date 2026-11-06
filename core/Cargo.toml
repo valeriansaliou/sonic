@@ -29,6 +29,7 @@ fst-levenshtein = { version = "0.3", default-features = false }
 fst-regex = { version = "0.3", default-features = false }
 regex-syntax = { version = "0.8", default-features = false, features = ["std", "unicode"] }
 thiserror = { version = "2", default-features = false, features = ["std"] }
+anyhow = { version = "1", default-features = false, features = ["std"] }
 twox-hash = { version = "2", default-features = false, features = ["xxhash32"] }
 hashbrown = { version = "0.17", default-features = false, features = ["allocator-api2", "default-hasher", "inline-more"] }
 indexmap = { version = "2", default-features = false, features = ["std"] }

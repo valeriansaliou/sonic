@@ -7,6 +7,8 @@
 
 use zerocopy::little_endian;
 
+use crate::Context as _;
+
 pub(super) type Hash = u32;
 
 // MARK: IID
@@ -84,11 +86,8 @@ impl<'a> GenericOid<'a> {
         clippy::should_implement_trait,
         reason = "FromStr doesn’t support lifetimes"
     )]
-    pub(crate) fn from_str(part: &'a str) -> Result<Self, ()> {
-        match StoreItemPart::from_str(part) {
-            Ok(part) => Ok(Self(part)),
-            Err(()) => Err(()),
-        }
+    pub(crate) fn from_str(part: &'a str) -> Result<Self, crate::LeveledError> {
+        StoreItemPart::from_str(part).map(Self)
     }
 }
 
@@ -124,13 +123,12 @@ impl<'a> From<&'a BucketOwned> for Bucket<'a> {
 }
 
 impl std::str::FromStr for BucketOwned {
-    type Err = std::io::Error;
+    type Err = crate::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match StoreItemPart::from_str(s) {
-            Ok(part) => Ok(Self(part.0.to_owned())),
-            Err(()) => Err(std::io::Error::other("Invalid bucket")),
-        }
+        StoreItemPart::from_str(s)
+            .map(|part| Self(part.0.to_owned()))
+            .context("Invalid bucket")
     }
 }
 
@@ -208,6 +206,8 @@ crate::util::impl_transparent_wrapper_utils!(Display for StoreItemPart<'a>(&'a s
 const STORE_ITEM_PART_LEN_MIN: usize = 1;
 // NOTE: Because of how keys are constructed, this cannot go higher than `u8::MAX` (255).
 const STORE_ITEM_PART_LEN_MAX: usize = 128;
+const STORE_ITEM_PART_LEN_RANGE: std::ops::RangeInclusive<usize> =
+    STORE_ITEM_PART_LEN_MIN..=STORE_ITEM_PART_LEN_MAX;
 
 pub(super) const ITEM_PART_MAX_LEN_ERROR: &str =
     "Item part lengths should always be <= 128 (STORE_ITEM_PART_LEN_MAX).";
@@ -217,14 +217,20 @@ impl<'a> StoreItemPart<'a> {
         clippy::should_implement_trait,
         reason = "FromStr doesn’t support lifetimes"
     )]
-    fn from_str(part: &'a str) -> Result<Self, ()> {
+    fn from_str(part: &'a str) -> Result<Self, crate::LeveledError> {
         let len = part.len();
 
-        if (STORE_ITEM_PART_LEN_MIN..=STORE_ITEM_PART_LEN_MAX).contains(&len) && part.is_ascii() {
-            Ok(StoreItemPart(part))
-        } else {
-            Err(())
+        if !STORE_ITEM_PART_LEN_RANGE.contains(&len) {
+            return Err(crate::warning!(
+                "Invalid length (allowed: {STORE_ITEM_PART_LEN_RANGE:?})"
+            ));
         }
+
+        if !part.is_ascii() {
+            return Err(crate::warning!("Only ASCII is allowed"));
+        }
+
+        Ok(StoreItemPart(part))
     }
 
     pub fn to_compact(&self) -> Hash {
@@ -256,64 +262,55 @@ pub fn bucket(str: &'static str) -> StoreItemPart<'static> {
 
 pub enum StoreItemBuilder {}
 
-#[allow(clippy::enum_variant_names)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, thiserror::Error)]
 pub enum StoreItemError {
-    InvalidCollection,
-    InvalidBucket,
-    InvalidObject,
-    InvalidFragment,
+    #[error("Invalid collection ID")]
+    InvalidCollection(#[source] crate::LeveledError),
+    #[error("Invalid bucket ID")]
+    InvalidBucket(#[source] crate::LeveledError),
+    #[error("Invalid object ID")]
+    InvalidObject(#[source] crate::LeveledError),
+    #[error("Invalid fragment ID")]
+    InvalidFragment(#[source] crate::LeveledError),
 }
 
+use StoreItemError::*;
+
 impl StoreItemBuilder {
+    /// Validate & box collection.
     pub fn from_depth_1<'a>(collection: &'a str) -> Result<StoreItemPart<'a>, StoreItemError> {
-        // Validate & box collection
-        if let Ok(collection_item) = StoreItemPart::from_str(collection) {
-            Ok(collection_item)
-        } else {
-            Err(StoreItemError::InvalidCollection)
-        }
+        StoreItemPart::from_str(collection).map_err(InvalidCollection)
     }
 
+    /// Validate & box collection + bucket.
     pub fn from_depth_2<'a>(
         collection: &'a str,
         bucket: &'a str,
     ) -> Result<(StoreItemPart<'a>, Bucket<'a>), StoreItemError> {
-        // Validate & box collection + bucket
-        match (
-            StoreItemPart::from_str(collection),
-            StoreItemPart::from_str(bucket),
-        ) {
-            (Ok(collection_item), Ok(bucket_item)) => {
-                Ok((collection_item, Bucket::from(bucket_item)))
-            }
-            (Err(_), _) => Err(StoreItemError::InvalidCollection),
-            (_, Err(_)) => Err(StoreItemError::InvalidBucket),
-        }
+        let collection_item = StoreItemPart::from_str(collection).map_err(InvalidCollection)?;
+        let bucket_item = StoreItemPart::from_str(bucket).map_err(InvalidBucket)?;
+
+        Ok((collection_item, Bucket::from(bucket_item)))
     }
 
+    /// Validate & box collection + bucket + object.
     pub fn from_depth_3<'a>(
         collection: &'a str,
         bucket: &'a str,
         object: &'a str,
     ) -> Result<(StoreItemPart<'a>, Bucket<'a>, GenericOid<'a>), StoreItemError> {
-        // Validate & box collection + bucket + object
-        match (
-            StoreItemPart::from_str(collection),
-            StoreItemPart::from_str(bucket),
-            StoreItemPart::from_str(object),
-        ) {
-            (Ok(collection_item), Ok(bucket_item), Ok(object_item)) => Ok((
-                collection_item,
-                Bucket::from(bucket_item),
-                GenericOid::from(object_item),
-            )),
-            (Err(_), _, _) => Err(StoreItemError::InvalidCollection),
-            (_, Err(_), _) => Err(StoreItemError::InvalidBucket),
-            (_, _, Err(_)) => Err(StoreItemError::InvalidObject),
-        }
+        let collection_item = StoreItemPart::from_str(collection).map_err(InvalidCollection)?;
+        let bucket_item = StoreItemPart::from_str(bucket).map_err(InvalidBucket)?;
+        let object_item = StoreItemPart::from_str(object).map_err(InvalidObject)?;
+
+        Ok((
+            collection_item,
+            Bucket::from(bucket_item),
+            GenericOid::from(object_item),
+        ))
     }
 
+    /// Validate & box collection + bucket + object + optional fragment.
     pub fn from_depth_3_or_4<'a>(
         collection: &'a str,
         bucket: &'a str,
@@ -333,11 +330,12 @@ impl StoreItemBuilder {
         let fragment = fragment
             .map(GenericOid::from_str)
             .transpose()
-            .map_err(|()| StoreItemError::InvalidFragment)?;
+            .map_err(InvalidFragment)?;
 
         Ok((collection, bucket, object, fragment))
     }
 
+    /// Validate & box collection + bucket + object + fragment.
     pub fn from_depth_4<'a>(
         collection: &'a str,
         bucket: &'a str,
@@ -354,8 +352,7 @@ impl StoreItemBuilder {
     > {
         let (collection, bucket, object) = Self::from_depth_3(collection, bucket, object)?;
 
-        let fragment =
-            GenericOid::from_str(fragment).map_err(|()| StoreItemError::InvalidFragment)?;
+        let fragment = GenericOid::from_str(fragment).map_err(InvalidFragment)?;
 
         Ok((collection, bucket, object, fragment))
     }
@@ -426,35 +423,36 @@ mod tests_store_item_builder {
     #[test]
     fn it_builds_store_item_depth_1() {
         assert_eq!(
-            StoreItemBuilder::from_depth_1("c:test:1"),
+            StoreItemBuilder::from_depth_1("c:test:1").map_err(|e| format!("{e:#}")),
             Ok(StoreItemPart("c:test:1"))
         );
         assert_eq!(
-            StoreItemBuilder::from_depth_1(""),
-            Err(StoreItemError::InvalidCollection)
+            StoreItemBuilder::from_depth_1("").map_err(|e| format!("{e:#}")),
+            Err("Invalid collection ID".to_owned())
         );
     }
 
     #[test]
     fn it_builds_store_item_depth_2() {
         assert_eq!(
-            StoreItemBuilder::from_depth_2("c:test:2", "b:test:2"),
+            StoreItemBuilder::from_depth_2("c:test:2", "b:test:2").map_err(|e| format!("{e:#}")),
             Ok((StoreItemPart("c:test:2"), StoreItemPart("b:test:2").into()))
         );
         assert_eq!(
-            StoreItemBuilder::from_depth_2("", "b:test:2"),
-            Err(StoreItemError::InvalidCollection)
+            StoreItemBuilder::from_depth_2("", "b:test:2").map_err(|e| format!("{e:#}")),
+            Err("Invalid collection ID".to_owned())
         );
         assert_eq!(
-            StoreItemBuilder::from_depth_2("c:test:2", ""),
-            Err(StoreItemError::InvalidBucket)
+            StoreItemBuilder::from_depth_2("c:test:2", "").map_err(|e| format!("{e:#}")),
+            Err("Invalid bucket ID".to_owned())
         );
     }
 
     #[test]
     fn it_builds_store_item_depth_3() {
         assert_eq!(
-            StoreItemBuilder::from_depth_3("c:test:3", "b:test:3", "o:test:3"),
+            StoreItemBuilder::from_depth_3("c:test:3", "b:test:3", "o:test:3")
+                .map_err(|e| format!("{e:#}")),
             Ok((
                 StoreItemPart("c:test:3"),
                 StoreItemPart("b:test:3").into(),
@@ -462,16 +460,19 @@ mod tests_store_item_builder {
             ))
         );
         assert_eq!(
-            StoreItemBuilder::from_depth_3("", "b:test:3", "o:test:3"),
-            Err(StoreItemError::InvalidCollection)
+            StoreItemBuilder::from_depth_3("", "b:test:3", "o:test:3")
+                .map_err(|e| format!("{e:#}")),
+            Err("Invalid collection ID".to_owned())
         );
         assert_eq!(
-            StoreItemBuilder::from_depth_3("c:test:3", "", "o:test:3"),
-            Err(StoreItemError::InvalidBucket)
+            StoreItemBuilder::from_depth_3("c:test:3", "", "o:test:3")
+                .map_err(|e| format!("{e:#}")),
+            Err("Invalid bucket ID".to_owned())
         );
         assert_eq!(
-            StoreItemBuilder::from_depth_3("c:test:3", "b:test:3", ""),
-            Err(StoreItemError::InvalidObject)
+            StoreItemBuilder::from_depth_3("c:test:3", "b:test:3", "")
+                .map_err(|e| format!("{e:#}")),
+            Err("Invalid object ID".to_owned())
         );
     }
 }
@@ -493,7 +494,7 @@ impl CollectionHash {
     /// Filesystem path components are hex-encoded (via `format!("{:x}")`), we
     /// must convert it back into proper `u32` otherwise roundtrips will fail.
     #[inline]
-    pub fn try_from_hex(collection_hash: &str) -> Result<CollectionHash, std::io::Error> {
+    pub fn try_from_hex(collection_hash: &str) -> Result<CollectionHash, crate::Error> {
         let collection_hash = super::generic::u32_from_hex(collection_hash).map(u32::from_le)?;
 
         Ok(Self::from_hash(collection_hash))

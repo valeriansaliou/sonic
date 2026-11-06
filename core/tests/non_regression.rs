@@ -161,11 +161,11 @@ fn issue_392() {
         exec!(executor -> PUSH "docs" "default" id text LANG("none"));
     }
 
-    assert_eq!(exec!(executor -> COUNTB "docs" "default").unwrap(), 3);
+    assert_eq!(exec!(executor -> COUNTB "docs" "default"), 3);
 
     exec!(executor -> FLUSHO "docs" "default" "doc:1");
 
-    assert_eq!(exec!(executor -> COUNTB "docs" "default").unwrap(), 2);
+    assert_eq!(exec!(executor -> COUNTB "docs" "default"), 2);
 }
 
 /// See <https://github.com/valeriansaliou/sonic/issues/408>.
@@ -176,7 +176,7 @@ fn issue_408() {
 
     let executor = make_test_executor(|_| {});
 
-    assert_eq!(exec!(executor -> COUNTB "docs" "default").unwrap(), 0);
+    assert_eq!(exec!(executor -> COUNTB "docs" "default"), 0);
     println!("COUNT = 0");
 
     for n in 0..3 {
@@ -186,7 +186,7 @@ fn issue_408() {
     }
     exec!(executor -> TRIGGER consolidate);
 
-    assert_eq!(exec!(executor -> COUNTB "docs" "default").unwrap(), 3);
+    assert_eq!(exec!(executor -> COUNTB "docs" "default"), 3);
     println!("COUNT = 3");
 
     executor.kv_pool.close(
@@ -203,7 +203,7 @@ fn issue_408() {
         "response={response:?}"
     );
 
-    assert_eq!(exec!(executor -> COUNTB "docs" "default").unwrap(), 3);
+    assert_eq!(exec!(executor -> COUNTB "docs" "default"), 3);
     println!("COUNT = 3");
 
     for n in 3..6 {
@@ -213,7 +213,7 @@ fn issue_408() {
     }
     exec!(executor -> TRIGGER consolidate);
 
-    assert_eq!(exec!(executor -> COUNTB "docs" "default").unwrap(), 6);
+    assert_eq!(exec!(executor -> COUNTB "docs" "default"), 6);
     println!("COUNT = 6");
 
     let query = "foobar 5";

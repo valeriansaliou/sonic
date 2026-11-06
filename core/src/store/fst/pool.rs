@@ -9,10 +9,11 @@ use std::path::PathBuf;
 use std::str::FromStr as _;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::Instant;
-use std::{fmt, fs, io};
+use std::{fmt, fs};
 
 use hashbrown::{DefaultHashBuilder, HashMap};
 
+use crate::Context as _;
 use crate::store::fst::ConsolidateStats;
 use crate::store::{AsCollectionHash, Bucket, CollectionHash, Hash, StoreItemPart};
 use crate::store::{BucketOwned, generic::*};
@@ -88,7 +89,10 @@ impl GenericStorePool for FstStorePool {
         level = "debug",
         skip_all, fields(collection = ?collection_name, collection_path = tracing::field::Empty),
     )]
-    fn proceed_erase_collection(&self, collection_name: StoreItemPart) -> Result<u32, ()> {
+    fn proceed_erase_collection(
+        &self,
+        collection_name: StoreItemPart,
+    ) -> Result<u32, crate::Error> {
         let collection_hash = CollectionHash::from_part(collection_name);
         let collection_path = self.fst_store_config.collection_path(&collection_hash);
 
@@ -113,16 +117,14 @@ impl GenericStorePool for FstStorePool {
 
         if !buckets.is_empty() {
             tracing::trace!(
-                "Will force-close {nbuckets} fst buckets for collection {collection_name:?}",
+                "Will force-close {nbuckets} FST buckets for collection {collection_name:?}",
                 nbuckets = buckets.len()
             );
 
             let mut graph_pool_write = self.graph_pool.write().unwrap();
 
             for bucket in buckets {
-                tracing::debug!(
-                    "fst bucket graph force close for bucket: {collection_name}/{bucket}"
-                );
+                tracing::debug!("Force-closing FST bucket graph for bucket {bucket:?}…");
 
                 let bucket_target = FstStoreId::new(collection_hash, bucket);
 
@@ -132,29 +134,16 @@ impl GenericStorePool for FstStorePool {
 
         // Remove all on-disk FSTs.
         if collection_path.exists() {
-            tracing::trace!(
-                "fst collection store exists, erasing: {collection_name}/* at path: {collection_path:?}"
-            );
+            tracing::trace!("FST collection store exists, erasing it…");
 
             // Remove FST graph storage from filesystem.
-            match fs::remove_dir_all(&collection_path) {
-                Ok(()) => {
-                    tracing::info!(?collection_name, "Done with fst collection erasure");
+            fs::remove_dir_all(&collection_path).context("Failed erasing FST collection")?;
 
-                    Ok(1)
-                }
-                Err(error) => {
-                    tracing::error!(
-                        "Error erasing fst collection at path {collection_path:?}: {error:?}"
-                    );
+            tracing::info!(?collection_name, "FST collection erased successfully.");
 
-                    Err(())
-                }
-            }
+            Ok(1)
         } else {
-            tracing::debug!(
-                "fst collection store does not exist, consider already erased: {collection_name}/* at path: {collection_path:?}"
-            );
+            tracing::debug!("FST collection store does not exist, consider already erased.");
 
             Ok(0)
         }
@@ -168,7 +157,7 @@ impl GenericStorePool for FstStorePool {
         &self,
         collection_name: StoreItemPart,
         bucket_name: Bucket,
-    ) -> Result<u32, ()> {
+    ) -> Result<u32, crate::Error> {
         tracing::debug!(
             "Sub-erase on fst bucket {bucket_name:?} for collection {collection_name:?}"
         );
@@ -186,31 +175,16 @@ impl GenericStorePool for FstStorePool {
 
         // Remove on-disk FST.
         if bucket_path.exists() {
-            tracing::trace!(
-                "fst bucket graph exists, erasing: {collection_name}/{bucket_name} at path: {bucket_path:?}"
-            );
+            tracing::trace!("FST bucket graph exists, erasing it…");
 
             // Remove FST graph storage from filesystem.
-            match fs::remove_file(&bucket_path) {
-                Ok(()) => {
-                    tracing::info!(
-                        ?collection_name,
-                        ?bucket_name,
-                        "Done with fst bucket erasure"
-                    );
+            fs::remove_file(&bucket_path).context("Failed erasing FST bucket")?;
 
-                    Ok(1)
-                }
-                Err(error) => {
-                    tracing::error!("Error erasing fst bucket at path {bucket_path:?}: {error:?}");
+            tracing::info!("FST bucket graph erased successfully.");
 
-                    Err(())
-                }
-            }
+            Ok(1)
         } else {
-            tracing::debug!(
-                "fst bucket graph does not exist, consider already erased: {collection_name}/{bucket_name} at path: {bucket_path:?}"
-            );
+            tracing::debug!("FST bucket graph does not exist, consider already erased.");
 
             Ok(0)
         }
@@ -222,7 +196,11 @@ impl FstStorePool {
         level = "debug",
         skip_all, fields(store = %Self::kind(), store_id = tracing::field::Empty),
     )]
-    pub fn acquire(&self, collection: StoreItemPart, bucket: Bucket) -> Result<Arc<FstStore>, ()> {
+    pub fn acquire(
+        &self,
+        collection: StoreItemPart,
+        bucket: Bucket,
+    ) -> Result<Arc<FstStore>, crate::Error> {
         let store_id = FstStoreId::new(collection, bucket);
 
         tracing::Span::current().record("store_id", tracing::field::display(&store_id));
@@ -247,9 +225,9 @@ impl FstStorePool {
         }
     }
 
-    fn build(&self, store_id: &FstStoreId) -> Result<FstStore, ()> {
-        let graph = FstStore::open(store_id, &self.fst_store_config)
-            .map_err(|error| tracing::error!("Failed opening fst: {error:?}"))?;
+    fn build(&self, store_id: &FstStoreId) -> Result<FstStore, crate::Error> {
+        let graph =
+            FstStore::open(store_id, &self.fst_store_config).context("Failed opening FST")?;
 
         let now = Instant::now();
 
@@ -353,7 +331,10 @@ impl FstStorePool {
                     clippy::unnecessary_lazy_evaluations,
                     reason = "Ensures errors are handled"
                 )]
-                let should_close = store.consolidate(&mut stats).unwrap_or_else(|()| false);
+                let should_close = store.consolidate(&mut stats).unwrap_or_else(|error| {
+                    tracing::error!(%key, "Failed consolidating: {error:#}");
+                    false
+                });
 
                 tracing::debug!("fst key: {key:?} consolidate complete");
 
@@ -392,8 +373,13 @@ impl FstStorePool {
 }
 
 impl FstStorePool {
-    pub fn erase(&self, collection: StoreItemPart, bucket: Option<Bucket>) -> Result<u32, ()> {
+    pub fn erase(
+        &self,
+        collection: StoreItemPart,
+        bucket: Option<Bucket>,
+    ) -> Result<u32, crate::Error> {
         self.dispatch_erase(collection, bucket)
+            .context("FST erasure failed")
     }
 
     /// Counts buckets by reading the filesystem.
@@ -401,7 +387,10 @@ impl FstStorePool {
         level = "debug",
         skip_all, fields(?collection, collection_path = tracing::field::Empty),
     )]
-    pub fn count_collection_buckets(&self, collection: StoreItemPart) -> Result<usize, ()> {
+    pub fn count_collection_buckets(
+        &self,
+        collection: StoreItemPart,
+    ) -> Result<usize, crate::Error> {
         let path_mode = FstStorePathMode::Permanent;
 
         let collection_hash = CollectionHash::from_part(collection);
@@ -413,12 +402,8 @@ impl FstStorePool {
             return Ok(0);
         }
 
-        let entries = fs::read_dir(&collection_path).map_err(|error| {
-            tracing::error!(
-                ?collection_path,
-                "Failed reading collection directory for count: {error:?}"
-            )
-        })?;
+        let entries =
+            fs::read_dir(&collection_path).context("Failed reading collection directory")?;
 
         let mut count = 0;
 
@@ -463,7 +448,10 @@ impl FstStoreId {
     /// Filesystem path components are hex-encoded (via `format!("{:x}")`), we
     /// must convert it back into proper `u32` otherwise roundtrips will fail.
     #[inline]
-    pub fn try_from_hex(collection_hash: &str, bucket_name: &str) -> Result<FstStoreId, io::Error> {
+    pub fn try_from_hex(
+        collection_hash: &str,
+        bucket_name: &str,
+    ) -> Result<FstStoreId, crate::Error> {
         let collection_hash = CollectionHash::try_from_hex(collection_hash)?;
         let bucket_name = BucketOwned::from_str(bucket_name)?;
 

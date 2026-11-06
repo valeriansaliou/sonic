@@ -20,17 +20,17 @@ fn test_consolidation_required() {
     init_logging();
     let executor = make_test_executor(|_| {});
 
-    assert_eq!(exec!(executor -> COUNT "foo"), Ok(0));
+    assert_eq!(exec!(executor -> COUNT "foo"), 0);
 
     exec!(executor -> PUSH "foo" "bar" "baz" "Example");
 
-    assert_eq!(exec!(executor -> COUNT "foo"), Ok(0));
-    assert_eq!(exec!(executor -> COUNT "foo" "bar"), Ok(0));
+    assert_eq!(exec!(executor -> COUNT "foo"), 0);
+    assert_eq!(exec!(executor -> COUNT "foo" "bar"), 0);
 
     exec!(executor -> TRIGGER consolidate);
 
-    assert_eq!(exec!(executor -> COUNT "foo"), Ok(1));
-    assert_eq!(exec!(executor -> COUNT "foo" "bar"), Ok(1));
+    assert_eq!(exec!(executor -> COUNT "foo"), 1);
+    assert_eq!(exec!(executor -> COUNT "foo" "bar"), 1);
 }
 
 /// Ensures that pushing some text creates the associated collection and bucket.
@@ -39,12 +39,12 @@ fn test_push_creates_collection_and_bucket() {
     init_logging();
     let executor = make_test_executor(|_| {});
 
-    assert_eq!(exec!(executor -> COUNT "foo"), Ok(0));
+    assert_eq!(exec!(executor -> COUNT "foo"), 0);
 
     exec!(executor -> PUSH "foo" "bar" "baz" "Example");
 
     exec!(executor -> TRIGGER consolidate);
 
-    assert_eq!(exec!(executor -> COUNT "foo"), Ok(1));
-    assert_eq!(exec!(executor -> COUNT "foo" "bar"), Ok(1));
+    assert_eq!(exec!(executor -> COUNT "foo"), 1);
+    assert_eq!(exec!(executor -> COUNT "foo" "bar"), 1);
 }

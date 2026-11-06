@@ -8,7 +8,7 @@ macro_rules! executor_ensure_op {
     ($operation:expr) => {
         match $operation {
             Ok(_) => {}
-            Err(error) => tracing::error!("executor operation failed: {error:?}"),
+            Err(error) => crate::log!(error.context("Executor operation failed")),
         }
     };
 }

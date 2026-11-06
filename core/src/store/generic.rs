@@ -12,6 +12,7 @@ use std::fmt::Display;
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
 use std::time::Instant;
 
+use crate::Context as _;
 use crate::store::{Bucket, StoreItemPart};
 
 #[allow(
@@ -40,13 +41,17 @@ pub(super) trait GenericStorePool:
 
     fn access_lock(&self) -> &RwLock<()>;
 
-    fn proceed_erase_collection(&self, collection: StoreItemPart) -> Result<u32, ()>;
+    fn proceed_erase_collection(&self, collection: StoreItemPart) -> Result<u32, crate::Error>;
 
-    fn proceed_erase_bucket(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u32, ()>;
+    fn proceed_erase_bucket(
+        &self,
+        collection: StoreItemPart,
+        bucket: Bucket,
+    ) -> Result<u32, crate::Error>;
 }
 
 pub(super) trait StoreGenericPoolExt: GenericStorePool {
-    fn proceed_acquire_cache(store: &Arc<Self::Store>) -> Result<Arc<Self::Store>, ()>
+    fn proceed_acquire_cache(store: &Arc<Self::Store>) -> Result<Arc<Self::Store>, crate::Error>
     where
         Self::StoreId: Display,
     {
@@ -62,38 +67,29 @@ pub(super) trait StoreGenericPoolExt: GenericStorePool {
     fn proceed_acquire_open<'a>(
         &'a self,
         store_id: Self::StoreId,
-        build: impl FnOnce(&'a Self, &Self::StoreId) -> Result<Self::Store, ()>,
+        build: impl FnOnce(&'a Self, &Self::StoreId) -> Result<Self::Store, crate::Error>,
         write_guard: Option<
             &mut RwLockWriteGuard<'a, HashMap<Self::StoreId, Arc<Self::Store>, Self::HashBuilder>>,
         >,
-    ) -> Result<Arc<Self::Store>, ()>
+    ) -> Result<Arc<Self::Store>, crate::Error>
     where
         Self::StoreId: Display + Clone,
     {
-        let kind = Self::kind();
+        let store = build(self, &store_id).context("Failed opening store")?;
 
-        match build(self, &store_id) {
-            Ok(store) => {
-                // Acquire a thread-safe store pool reference in write mode
-                let store_pool_write = match write_guard {
-                    Some(x) => x,
-                    None => &mut self.write().unwrap(),
-                };
-                let store_box = Arc::new(store);
+        // Acquire a thread-safe store pool reference in write mode
+        let store_pool_write = match write_guard {
+            Some(x) => x,
+            None => &mut self.write().unwrap(),
+        };
+        let store_box = Arc::new(store);
 
-                tracing::debug!("opened and cached {kind} store {store_id}");
+        tracing::debug!("opened and cached store");
 
-                // TODO: Debug assert no previous value.
-                store_pool_write.insert(store_id, Arc::clone(&store_box));
+        // TODO: Debug assert no previous value.
+        store_pool_write.insert(store_id, Arc::clone(&store_box));
 
-                Ok(store_box)
-            }
-            Err(()) => {
-                tracing::error!("failed opening {kind} store {store_id}");
-
-                Err(())
-            }
-        }
+        Ok(store_box)
     }
 
     #[tracing::instrument(
@@ -155,7 +151,11 @@ pub(super) trait StoreGenericPoolExt: GenericStorePool {
         );
     }
 
-    fn dispatch_erase(&self, collection: StoreItemPart, bucket: Option<Bucket>) -> Result<u32, ()> {
+    fn dispatch_erase(
+        &self,
+        collection: StoreItemPart,
+        bucket: Option<Bucket>,
+    ) -> Result<u32, crate::Error> {
         let kind = Self::kind();
 
         tracing::info!("{kind} erase requested on collection: {collection}");

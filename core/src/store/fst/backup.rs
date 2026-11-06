@@ -11,6 +11,7 @@ use std::{fs, io};
 
 use fst::Streamer as _;
 
+use crate::Context as _;
 use crate::store::fst::FstStore;
 
 use super::{FstStoreId, FstStorePathMode, FstStorePool};
@@ -20,7 +21,7 @@ impl FstStorePool {
         level = "debug",
         skip_all, fields(?path),
     )]
-    pub fn backup(&self, path: &Path) -> Result<(), io::Error> {
+    pub fn backup(&self, path: &Path) -> Result<(), crate::Error> {
         tracing::debug!("backing up all fst stores to path: {path:?}");
 
         // Create backup directory (full path)
@@ -46,7 +47,7 @@ impl FstStorePool {
         level = "debug",
         skip_all, fields(?path),
     )]
-    pub fn restore(&self, path: &Path) -> Result<(), io::Error> {
+    pub fn restore(&self, path: &Path) -> Result<(), crate::Error> {
         tracing::debug!("restoring all fst stores from path: {path:?}");
 
         // Proceed dump action (restore)
@@ -66,8 +67,8 @@ impl FstStorePool {
         path_mode: FstStorePathMode,
         read_path: &Path,
         write_path: &Path,
-        fn_item: &dyn Fn(&Self, &Path, &Path, &str, &str) -> Result<(), io::Error>,
-    ) -> Result<(), io::Error> {
+        fn_item: &dyn Fn(&Self, &Path, &Path, &str, &str) -> Result<(), crate::Error>,
+    ) -> Result<(), crate::Error> {
         let fst_extension = path_mode.extension();
 
         // Iterate on FST collections.
@@ -158,7 +159,7 @@ impl FstStorePool {
         _origin_path: &Path,
         collection_hash: &str,
         bucket_name: &str,
-    ) -> Result<(), io::Error> {
+    ) -> Result<(), crate::Error> {
         use io::Write as _;
 
         // Acquire access lock (in blocking write mode), and reference it in context
@@ -185,8 +186,8 @@ impl FstStorePool {
         let backup_fst_file = File::create(&backup_path)?;
         let mut backup_fst_writer = io::BufWriter::new(backup_fst_file);
 
-        let origin_fst = FstStore::open(&store_id, &self.fst_store_config)
-            .map_err(|error| io::Error::other(format!("Graph open failure: {error:?}")))?;
+        let origin_fst =
+            FstStore::open(&store_id, &self.fst_store_config).context("Graph open failure")?;
 
         let mut origin_fst_stream = origin_fst.stream();
 
@@ -214,7 +215,7 @@ impl FstStorePool {
         backup_path: &Path,
         collection_name: &str,
         bucket_name: &str,
-    ) -> Result<(), io::Error> {
+    ) -> Result<(), crate::Error> {
         use io::BufRead as _;
 
         // Acquire access lock (in blocking write mode) to prevent store from
@@ -242,21 +243,16 @@ impl FstStorePool {
         let fst_writer = io::BufWriter::new(File::create(&fst_path)?);
         let fst_backup_reader = io::BufReader::new(File::open(&backup_path)?);
 
-        let mut fst_builder = fst::SetBuilder::new(fst_writer).map_err(|error| {
-            io::Error::other(format!("Graph restore builder failure: {error:?}"))
-        })?;
+        let mut fst_builder =
+            fst::SetBuilder::new(fst_writer).context("Graph restore builder failure")?;
 
         for word in fst_backup_reader.lines() {
             let word = word?;
 
-            fst_builder.insert(word).map_err(|error| {
-                io::Error::other(format!("Graph restore word insert failure: {error:?}"))
-            })?;
+            (fst_builder.insert(word)).context("Graph restore word insert failure")?;
         }
 
-        fst_builder.finish().map_err(|error| {
-            io::Error::other(format!("Graph restore finish failure: {error:?}"))
-        })?;
+        (fst_builder.finish()).context("Graph restore finish failure")?;
 
         tracing::debug!(?backup_path, ?fst_path, "FST store restored");
 

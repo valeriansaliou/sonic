@@ -13,17 +13,18 @@ pub mod errors {
     pub use super::encoding::{BadLength, SizeError};
 }
 
+use std::fmt;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
-use std::{fmt, io};
 
 use hashbrown::HashMap;
 use lru::LruCache;
 use rocksdb::{DB, WriteBatch};
 use zerocopy::IntoBytes;
 
+use crate::Context as _;
 use crate::store::generic::*;
 use crate::store::kv::merge::TF_TOMBSTONE;
 pub use crate::store::rocksdb::pool::{GenericKvStorePool, KvStoreId};
@@ -132,12 +133,12 @@ impl<'a> KvRepositoryReadWrite<'a> {
         &self,
         batch: WriteBatch,
         options: crate::store::rocksdb::WriteOptions,
-    ) -> Result<(), rocksdb::Error> {
+    ) -> Result<(), crate::Error> {
         self.store.write(batch, options)
     }
 
     #[inline]
-    pub fn write(&self, batch: WriteBatch) -> Result<(), rocksdb::Error> {
+    pub fn write(&self, batch: WriteBatch) -> Result<(), crate::Error> {
         self.write_opt(batch, Default::default())
     }
 }
@@ -165,7 +166,7 @@ impl GenericRocksDbStore for KvStore {
         store_id: &KvStoreId,
         config: &crate::config::KvStoreConfig,
         dyn_config: Option<&dyn crate::DynamicConfig>,
-    ) -> Result<DB, rocksdb::Error> {
+    ) -> Result<DB, crate::Error> {
         tracing::debug!("Opening KV store…");
 
         let base_options = rocksdb::Options::from(&config.database);
@@ -228,7 +229,10 @@ impl GenericRocksDbStore for KvStore {
         }
 
         // Open database connection.
-        DB::open_cf_descriptors(&db_options, config.store_path(&store_id), cf_descriptors)
+        let db =
+            DB::open_cf_descriptors(&db_options, config.store_path(&store_id), cf_descriptors)?;
+
+        Ok(db)
     }
 
     fn new(
@@ -317,7 +321,7 @@ impl<'db> KvRepositoryRead<'db> {
         &'a self,
         cf: Option<ColumnFamilyRef<'_>>,
         key: &K,
-    ) -> Result<Option<K::Value<'db>>, ()>
+    ) -> Result<Option<K::Value<'db>>, crate::Error>
     where
         K::Value<'db>: TryFromKvValue<rocksdb::DBPinnableSlice<'a>>,
     {
@@ -325,34 +329,23 @@ impl<'db> KvRepositoryRead<'db> {
             self.store.database.get_pinned_cf(cf, key.to_bytes())
         } else {
             self.store.database.get_pinned(key.to_bytes())
-        };
+        }
+        .context("Error getting value")?;
 
         match value_res {
-            Ok(Some(value)) => {
-                tracing::debug!(%key, "Got encoded value: {:?}", value.deref());
+            Some(value) => {
+                tracing::trace!(encoded_value = ?value.deref(), "Got encoded value");
 
-                match K::Value::try_from_kv_value(value) {
-                    Ok(value_decoded) => {
-                        tracing::debug!(%key, "Got decoded value: {value_decoded:?}");
+                let value_decoded = K::Value::try_from_kv_value(value).context("Invalid value")?;
 
-                        Ok(Some(value_decoded))
-                    }
-                    Err(error) => {
-                        tracing::error!(%key, "Invalid value: {error}");
+                tracing::trace!(?value_decoded, "Got decoded value");
 
-                        Err(())
-                    }
-                }
+                Ok(Some(value_decoded))
             }
-            Ok(None) => {
-                tracing::debug!(%key, "Found no value");
+            None => {
+                tracing::debug!("Found no value");
 
                 Ok(None)
-            }
-            Err(error) => {
-                tracing::error!(%key, "Error getting value: {error}");
-
-                Err(())
             }
         }
     }
@@ -361,7 +354,7 @@ impl<'db> KvRepositoryRead<'db> {
 impl<'db> KvRepositoryRead<'db> {
     /// Note that because of the underlying use of `i64`, the max value is
     /// `i64::MAX` (hence `u64::MAX / 2`).
-    pub fn get_object_count(&self) -> Result<u64, ()> {
+    pub fn get_object_count(&self) -> Result<u64, crate::Error> {
         let store_key = keys::BucketMetaToValue {
             bucket: self.bucket,
             meta: keys::bucket_meta::ObjectCount,
@@ -395,7 +388,7 @@ impl<'db> KvRepositoryRead<'db> {
     pub fn get_term_to_iids<'a>(
         &'a self,
         term_hash: &StoreTermHash,
-    ) -> Result<Option<impl ExactSizeIterator<Item = TermToIidsEntry> + 'a>, ()> {
+    ) -> Result<Option<impl ExactSizeIterator<Item = TermToIidsEntry> + 'a>, crate::Error> {
         let store_key = keys::TermToIids {
             bucket: self.bucket,
             term_hash,
@@ -433,7 +426,7 @@ impl<'db> KvRepositoryRead<'db> {
     }
 
     #[inline]
-    pub fn get_oid_to_iid(&self, oid: GenericOid) -> Result<Option<GenericIid>, ()> {
+    pub fn get_oid_to_iid(&self, oid: GenericOid) -> Result<Option<GenericIid>, crate::Error> {
         let store_key = keys::OidToIid {
             bucket: self.bucket,
             oid,
@@ -447,7 +440,7 @@ impl<'db> KvRepositoryRead<'db> {
     }
 
     #[inline]
-    pub fn get_iid_to_oid(&self, iid: GenericIid) -> Result<Option<GenericOidOwned>, ()> {
+    pub fn get_iid_to_oid(&self, iid: GenericIid) -> Result<Option<GenericOidOwned>, crate::Error> {
         let store_key = keys::IidToOid {
             bucket: self.bucket,
             iid,
@@ -460,7 +453,7 @@ impl<'db> KvRepositoryRead<'db> {
     pub fn get_iid_to_terms<'a>(
         &'a self,
         iid: GenericIid,
-    ) -> Result<Option<impl ExactSizeIterator<Item = IidToTermsEntry> + 'a>, ()> {
+    ) -> Result<Option<impl ExactSizeIterator<Item = IidToTermsEntry> + 'a>, crate::Error> {
         let store_key = keys::IidToTerms {
             bucket: self.bucket,
             iid,
@@ -476,7 +469,7 @@ impl<'db> KvRepositoryRead<'db> {
 
     /// Note that because of the underlying use of `i64`, the max value is
     /// `i64::MAX` (hence `u64::MAX / 2`).
-    pub fn get_fragment_count(&self, object_iid: GenericIid) -> Result<u64, ()> {
+    pub fn get_fragment_count(&self, object_iid: GenericIid) -> Result<u64, crate::Error> {
         let store_key = keys::ObjectMetaToValue {
             bucket: self.bucket,
             object_iid,
@@ -513,7 +506,7 @@ impl<'db> KvRepositoryRead<'db> {
         object_iid: GenericIid,
         term_hash: &StoreTermHash,
         ordering: Ordering,
-    ) -> Result<Option<impl ExactSizeIterator<Item = TermToIidsEntry> + 'a>, ()> {
+    ) -> Result<Option<impl ExactSizeIterator<Item = TermToIidsEntry> + 'a>, crate::Error> {
         let store_key = keys::TermToFragmentIids {
             bucket: self.bucket,
             object_iid,
@@ -537,7 +530,7 @@ impl<'db> KvRepositoryRead<'db> {
         &self,
         object_oid: GenericOid,
         fragment_oid: GenericOid,
-    ) -> Result<Option<GenericIid>, ()> {
+    ) -> Result<Option<GenericIid>, crate::Error> {
         let store_key = keys::FragmentOidToIid {
             bucket: self.bucket,
             object_oid,
@@ -556,7 +549,7 @@ impl<'db> KvRepositoryRead<'db> {
         &self,
         object_iid: GenericIid,
         fragment_iid: GenericIid,
-    ) -> Result<Option<String>, ()> {
+    ) -> Result<Option<String>, crate::Error> {
         let store_key = keys::FragmentIidToOid {
             bucket: self.bucket,
             object_iid,
@@ -644,10 +637,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
         self.merge(None, &store_key, &ObjectCount(diff.into()), batch);
     }
 
-    fn get_new_iid(
-        &self,
-        batch: &mut WriteBatch,
-    ) -> Result<GenericIid, Box<dyn std::error::Error>> {
+    fn get_new_iid(&self, batch: &mut WriteBatch) -> Result<GenericIid, crate::Error> {
         let store_key = keys::BucketMetaToValue {
             bucket: self.bucket,
             meta: keys::bucket_meta::IidIncr,
@@ -670,10 +660,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
             }
             hashbrown::hash_map::Entry::Vacant(entry) => {
                 // Read from database (`cache_guard` ensures no race condition).
-                let iid_incr = match self
-                    .get_pinned(Some(cf_handle), &store_key)
-                    .map_err(|()| io::Error::other("Error getting IidIncr"))?
-                {
+                let iid_incr = match self.get_pinned(Some(cf_handle), &store_key)? {
                     Some(mut iid_incr) => {
                         iid_incr.increment();
                         iid_incr
@@ -701,10 +688,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
         Ok(iid_incr.0)
     }
 
-    fn assign_new_iid(
-        &self,
-        oid: GenericOid<'_>,
-    ) -> Result<GenericIid, Box<dyn std::error::Error>> {
+    fn assign_new_iid(&self, oid: GenericOid<'_>) -> Result<GenericIid, crate::Error> {
         tracing::trace!("Must initialize push executor oid-to-iid and iid-to-oid");
 
         let mut batch = WriteBatch::new();
@@ -728,12 +712,10 @@ impl<'db> KvRepositoryReadWrite<'db> {
     pub fn get_or_assign_iid(
         &self,
         oid: GenericOid<'_>,
-    ) -> Result<(GenericIid, bool), Box<dyn std::error::Error>> {
+    ) -> Result<(GenericIid, bool), crate::Error> {
         let _oid_sync_guard = self.0.store.oid_sync.lock().unwrap();
 
-        match (self.get_oid_to_iid(oid))
-            .map_err(|()| io::Error::other("Error getting OID-To-IID"))?
-        {
+        match self.get_oid_to_iid(oid)? {
             Some(iid) => Ok((iid, false)),
             None => self.assign_new_iid(oid).map(|iid| (iid, true)),
         }
@@ -884,7 +866,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
         &self,
         batch: &mut WriteBatch,
         object_iid: GenericIid,
-    ) -> Result<GenericIid, Box<dyn std::error::Error>> {
+    ) -> Result<GenericIid, crate::Error> {
         // Increment fragment count
         self.update_fragment_count(batch, object_iid, 1);
 
@@ -909,10 +891,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
             }
             None => {
                 // Read from database (`cache_guard` ensures no race condition).
-                let iid_incr = match self
-                    .get_pinned(Some(cf_handle), &store_key)
-                    .map_err(|()| io::Error::other("Error getting object IidIncr"))?
-                {
+                let iid_incr = match self.get_pinned(Some(cf_handle), &store_key)? {
                     Some(mut iid_incr) => {
                         iid_incr.increment();
                         iid_incr
@@ -945,7 +924,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
         object_oid: GenericOid<'_>,
         object_iid: GenericIid,
         fragment_oid: GenericOid<'_>,
-    ) -> Result<GenericIid, Box<dyn std::error::Error>> {
+    ) -> Result<GenericIid, crate::Error> {
         let mut batch = WriteBatch::new();
 
         // Bump last stored increment
@@ -969,10 +948,8 @@ impl<'db> KvRepositoryReadWrite<'db> {
         object_oid: GenericOid<'_>,
         object_iid: GenericIid,
         fragment_oid: GenericOid<'_>,
-    ) -> Result<(GenericIid, bool), Box<dyn std::error::Error>> {
-        match (self.get_fragment_oid_to_iid(object_oid, fragment_oid))
-            .map_err(|()| io::Error::other("Error getting OID-To-IID"))?
-        {
+    ) -> Result<(GenericIid, bool), crate::Error> {
+        match self.get_fragment_oid_to_iid(object_oid, fragment_oid)? {
             Some(iid) => Ok((iid, false)),
             None => self
                 .assign_new_fragment_iid(object_oid, object_iid, fragment_oid)
@@ -1182,7 +1159,10 @@ mod tests {
             .unwrap();
         let action = store.to_repository_read_write("b:test:3".into());
 
-        assert_eq!(action.get_term_to_iids(&1.into()).err(), None);
+        assert_eq!(
+            (action.get_term_to_iids(&1.into()).err()).map(|e| e.to_string()),
+            None
+        );
         assert!({
             let mut batch = WriteBatch::default();
             action.update_term_to_iid(&mut batch, &1.into(), 2.into(), Some(3));
