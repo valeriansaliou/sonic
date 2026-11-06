@@ -148,6 +148,14 @@ impl super::Executor {
             }
         };
 
+        // Sometimes, a system might try to parse data that ends up containing
+        // no valid token (e.g. an empty string, just punctuation or whatever).
+        // To avoid writing empty values in RocksDB, let’s just abort early and
+        // not lock anything at all.
+        if terms_sorted.is_empty() {
+            return Ok(());
+        }
+
         // Important: acquire database access read lock, and reference it in context. This \
         //   prevents the database from being erased while using it in this block.
         let _kv_read_guard = self.kv_pool.lock_read_access();
