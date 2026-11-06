@@ -109,7 +109,7 @@ fn unique_int_list<const WORD_LEN: usize>(
 
     let operands_total_len = operands.iter().fold(0, |acc, op| acc + op.len());
 
-    if existing_val.is_none() && operands_total_len == 0 {
+    if current.is_empty() && operands_total_len == 0 {
         return Some(vec![]);
     }
 
