@@ -8,6 +8,10 @@
 use crate::store::{Bucket, StoreItemPart};
 
 impl super::Executor {
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection, ?bucket),
+    )]
     pub fn flushb(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u32, ()> {
         // Important: acquire database access read lock, and reference it in context. This \
         //   prevents the database from being erased while using it in this block.

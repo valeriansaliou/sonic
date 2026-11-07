@@ -416,6 +416,10 @@ pub mod preprocessor {
             )
         }
 
+        #[tracing::instrument(
+            level = "debug",
+            skip_all, fields(input_len = text.len(), ?lang),
+        )]
         pub fn preprocess<'t>(&self, text: &'t str, lang: Option<Lang>) -> PreprocessorOutput<'t> {
             let lang = match lang {
                 // If user provided a language, use it.
@@ -1314,6 +1318,10 @@ mod lang_detection {
     const TEXT_LANG_DETECT_PROCEED_OVER_CHARS: usize = 20;
     const TEXT_LANG_DETECT_NGRAM_UNDER_CHARS: usize = 60;
 
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(input_len = text.len()),
+    )]
     pub(super) fn detect_lang(text: &str) -> Option<Lang> {
         tracing::debug!("detecting locale from lexer text: {}", text);
 

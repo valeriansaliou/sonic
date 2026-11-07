@@ -8,6 +8,10 @@
 use crate::store::StoreItemPart;
 
 impl super::Executor {
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection),
+    )]
     pub fn flushc(&self, collection: StoreItemPart) -> Result<u32, ()> {
         // Important: do not acquire the store from there, as otherwise it will remain open \
         //   even if dropped in the inner function, as this caller would still own a reference to \

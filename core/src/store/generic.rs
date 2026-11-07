@@ -46,16 +46,11 @@ pub(super) trait GenericStorePool:
 }
 
 pub(super) trait StoreGenericPoolExt: GenericStorePool {
-    fn proceed_acquire_cache(
-        store_id: Self::StoreId,
-        store: &Arc<Self::Store>,
-    ) -> Result<Arc<Self::Store>, ()>
+    fn proceed_acquire_cache(store: &Arc<Self::Store>) -> Result<Arc<Self::Store>, ()>
     where
         Self::StoreId: Display,
     {
-        let kind = Self::kind();
-
-        tracing::debug!("{kind} store {store_id} acquired from pool");
+        tracing::debug!("Store acquired from pool");
 
         // Bump store last used date (avoids early janitor eviction)
         *store.ref_last_used().write().unwrap() = Instant::now();
@@ -101,13 +96,15 @@ pub(super) trait StoreGenericPoolExt: GenericStorePool {
         }
     }
 
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store = %Self::kind()),
+    )]
     fn proceed_janitor(&self, filter: impl Fn(&Self::StoreId) -> bool)
     where
         Self::StoreId: Display + Clone,
     {
-        let kind = Self::kind();
-
-        tracing::debug!("scanning for {kind} store pool items to janitor");
+        tracing::debug!("Scanning for stores to janitor…");
 
         // Acquire access lock (in blocking write mode), and reference it in context
         // Notice: this prevents store to be acquired from any context
@@ -121,16 +118,18 @@ pub(super) trait StoreGenericPoolExt: GenericStorePool {
             let last_used_elapsed = store.ref_last_used().read().unwrap().elapsed();
 
             if last_used_elapsed.as_secs() >= self.consider_inactive_after_secs() {
-                tracing::debug!(
-                    "found expired {kind} store pool item: {store_id}; elapsed time: {last_used_elapsed:.1?}",
+                tracing::trace!(
+                    %store_id,
+                    "Found expired store; elapsed time: {last_used_elapsed:.1?}",
                 );
 
                 // Notice: the bucket value needs to be cloned, as we cannot reference as value \
                 //   that will outlive referenced value once we remove it from its owner set.
                 removal_register.push(store_id.clone());
             } else {
-                tracing::debug!(
-                    "found non-expired {kind} store pool item: {store_id}; elapsed time: {last_used_elapsed:.1?}",
+                tracing::trace!(
+                    %store_id,
+                    "Found non-expired store; elapsed time: {last_used_elapsed:.1?}",
                 );
             }
         }
@@ -149,8 +148,8 @@ pub(super) trait StoreGenericPoolExt: GenericStorePool {
             RwLockWriteGuard::downgrade(store_pool_write)
         };
 
-        tracing::info!(
-            "done scanning for {kind} store pool items to janitor, expired {} items, now has {} items",
+        tracing::debug!(
+            "Done scanning for stores to janitor, expired {} items, now has {} items",
             removal_register.len(),
             store_pool_read.len(),
         );

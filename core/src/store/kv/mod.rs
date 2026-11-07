@@ -157,12 +157,16 @@ impl GenericRocksDbStorePub for KvStore {
 }
 
 impl GenericRocksDbStore for KvStore {
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(%store_id),
+    )]
     fn open(
         store_id: &KvStoreId,
         config: &crate::config::KvStoreConfig,
         dyn_config: Option<&dyn crate::DynamicConfig>,
     ) -> Result<DB, rocksdb::Error> {
-        tracing::debug!("Opening KV store {store_id}");
+        tracing::debug!("Opening KV store…");
 
         let base_options = rocksdb::Options::from(&config.database);
 
@@ -305,6 +309,10 @@ impl KvStore {
 }
 
 impl<'db> KvRepositoryRead<'db> {
+    #[tracing::instrument(
+        level = "trace",
+        skip_all, fields(%key),
+    )]
     fn get_pinned<'a, K: TypedKvStoreKey>(
         &'a self,
         cf: Option<ColumnFamilyRef<'_>>,

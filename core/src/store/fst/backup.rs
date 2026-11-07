@@ -16,6 +16,10 @@ use crate::store::fst::FstStore;
 use super::{FstStoreId, FstStorePathMode, FstStorePool};
 
 impl FstStorePool {
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(?path),
+    )]
     pub fn backup(&self, path: &Path) -> Result<(), io::Error> {
         tracing::debug!("backing up all fst stores to path: {path:?}");
 
@@ -30,31 +34,35 @@ impl FstStorePool {
 
         // Proceed dump action (backup)
         self.dump_action(
-            "backup",
+            |collection_hash| tracing::debug_span!("beckup_collection", ?collection_hash),
             FstStorePathMode::Permanent,
             &self.fst_store_config.path,
             path,
-            &Self::backup_item,
+            &Self::backup_bucket,
         )
     }
 
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(?path),
+    )]
     pub fn restore(&self, path: &Path) -> Result<(), io::Error> {
         tracing::debug!("restoring all fst stores from path: {path:?}");
 
         // Proceed dump action (restore)
         self.dump_action(
-            "restore",
+            |collection_hash| tracing::debug_span!("restore_collection", ?collection_hash),
             FstStorePathMode::Backup,
             path,
             &self.fst_store_config.path,
-            &Self::restore_item,
+            &Self::restore_bucket,
         )
     }
 
     #[allow(clippy::type_complexity)]
     fn dump_action(
         &self,
-        action: &str,
+        per_collection_span: impl Fn(&str) -> tracing::Span,
         path_mode: FstStorePathMode,
         read_path: &Path,
         write_path: &Path,
@@ -71,7 +79,8 @@ impl FstStorePool {
             if !file_type.is_dir() {
                 tracing::trace!(
                     ?file_type,
-                    "Found non-directory entry in {read_path:?}, ignoring"
+                    file_path = ?collection_entry.path(),
+                    "Found non-directory entry, ignoring."
                 );
                 continue 'collections;
             }
@@ -80,12 +89,14 @@ impl FstStorePool {
             let Some(collection_hash) = file_name.to_str() else {
                 tracing::warn!(
                     file_name_bytes = ?file_name.as_encoded_bytes(),
-                    "Found invalid entry in {read_path:?}, ignoring"
+                    file_path = ?collection_entry.path(),
+                    "Found invalid directory entry, ignoring."
                 );
                 continue 'collections;
             };
 
-            tracing::debug!("fst collection ongoing {action}: {collection_hash}");
+            let span = per_collection_span(collection_hash);
+            let _span = span.enter();
 
             // Create write folder for collection.
             fs::create_dir_all(write_path.join(&collection_hash))?;
@@ -100,7 +111,8 @@ impl FstStorePool {
                 if !file_type.is_file() {
                     tracing::trace!(
                         ?file_type,
-                        "Found non-file entry in {buckets_path:?}, ignoring"
+                        file_path = ?bucket_entry.path(),
+                        "Found non-file entry, ignoring."
                     );
                     continue 'buckets;
                 }
@@ -109,12 +121,13 @@ impl FstStorePool {
                 let Some(bucket_file_name) = file_name.to_str() else {
                     tracing::warn!(
                         file_name_bytes = ?file_name.as_encoded_bytes(),
-                        "Found invalid entry in {buckets_path:?}, ignoring"
+                        file_path = ?bucket_entry.path(),
+                        "Found invalid directory entry, ignoring."
                     );
                     continue 'buckets;
                 };
 
-                let Some(bucket_hash) = bucket_file_name.strip_suffix(fst_extension) else {
+                let Some(bucket_name) = bucket_file_name.strip_suffix(fst_extension) else {
                     tracing::trace!(
                         file_name_bytes = ?file_name.as_encoded_bytes(),
                         "Ignoring {bucket_file_name:?}: wrong extension (expected: {fst_extension:?})"
@@ -122,14 +135,12 @@ impl FstStorePool {
                     continue 'buckets;
                 };
 
-                tracing::debug!("fst bucket ongoing {action}: {collection_hash}/{bucket_hash}");
-
                 fn_item(
                     self,
                     write_path,
                     &bucket_entry.path(),
                     collection_hash,
-                    bucket_hash,
+                    bucket_name,
                 )?;
             }
         }
@@ -137,12 +148,16 @@ impl FstStorePool {
         Ok(())
     }
 
-    fn backup_item(
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(?bucket_name),
+    )]
+    fn backup_bucket(
         &self,
-        backup_path: &Path,
+        backup_dir: &Path,
         _origin_path: &Path,
         collection_hash: &str,
-        bucket_hash: &str,
+        bucket_name: &str,
     ) -> Result<(), io::Error> {
         use io::Write as _;
 
@@ -151,23 +166,23 @@ impl FstStorePool {
         let _access = self.graph_access_lock.write().unwrap();
 
         // Generate path to FST backup.
-        let fst_backup_path = {
+        let backup_path = {
             let ext = FstStorePathMode::Backup.extension();
             assert!(ext.starts_with("."));
-            backup_path
+            backup_dir
                 .join(collection_hash)
-                .join(format!("{bucket_hash}{ext}"))
+                .join(format!("{bucket_name}{ext}"))
         };
 
-        let store_id = FstStoreId::try_from_hex(collection_hash, bucket_hash)?;
+        let store_id = FstStoreId::try_from_hex(collection_hash, bucket_name)?;
 
-        tracing::debug!("fst store {store_id} backing up to path: {fst_backup_path:?}");
+        tracing::trace!(?backup_path, "Backing up FST store…");
 
         // Erase any previously-existing FST backup.
-        fs::remove_file(&fst_backup_path).ok();
+        fs::remove_file(&backup_path).ok();
 
         // Stream actual FST data to FST backup.
-        let backup_fst_file = File::create(&fst_backup_path)?;
+        let backup_fst_file = File::create(&backup_path)?;
         let mut backup_fst_writer = io::BufWriter::new(backup_fst_file);
 
         let origin_fst = FstStore::open(&store_id, &self.fst_store_config)
@@ -175,26 +190,28 @@ impl FstStorePool {
 
         let mut origin_fst_stream = origin_fst.stream();
 
-        let mut count_words = 0;
+        let mut word_count = 0;
         while let Some(word) = origin_fst_stream.next() {
-            count_words += 1;
+            word_count += 1;
 
             // Write word, and append a new line.
             backup_fst_writer.write_all(word)?;
             backup_fst_writer.write_all(b"\n")?;
         }
 
-        tracing::info!(
-            "fst store {store_id} backed up to path: {fst_backup_path:?} ({count_words} words)"
-        );
+        tracing::debug!(?backup_path, word_count, "FST store backed up");
 
         Ok(())
     }
 
-    fn restore_item(
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(?bucket_name),
+    )]
+    fn restore_bucket(
         &self,
-        _backup_path: &Path,
-        origin_path: &Path,
+        _destination_dir: &Path,
+        backup_path: &Path,
         collection_name: &str,
         bucket_name: &str,
     ) -> Result<(), io::Error> {
@@ -206,7 +223,7 @@ impl FstStorePool {
 
         let store_id = FstStoreId::try_from_hex(collection_name, bucket_name)?;
 
-        tracing::debug!("fst store {store_id} restoring from path: {origin_path:?}");
+        tracing::trace!(?backup_path, "Restoring FST store…");
 
         // Force a FST store close.
         self.close(&store_id);
@@ -223,7 +240,7 @@ impl FstStorePool {
 
         // Stream backup words to restored FST.
         let fst_writer = io::BufWriter::new(File::create(&fst_path)?);
-        let fst_backup_reader = io::BufReader::new(File::open(&origin_path)?);
+        let fst_backup_reader = io::BufReader::new(File::open(&backup_path)?);
 
         let mut fst_builder = fst::SetBuilder::new(fst_writer).map_err(|error| {
             io::Error::other(format!("Graph restore builder failure: {error:?}"))
@@ -241,9 +258,7 @@ impl FstStorePool {
             io::Error::other(format!("Graph restore finish failure: {error:?}"))
         })?;
 
-        tracing::info!(
-            "fst store {store_id} restored to path: {fst_path:?} from backup: {origin_path:?}"
-        );
+        tracing::debug!(?backup_path, ?fst_path, "FST store restored");
 
         Ok(())
     }

@@ -11,6 +11,10 @@ use crate::store::fst::typo_factor;
 use crate::store::{Bucket, StoreItemPart};
 
 impl super::Executor {
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection, ?bucket, input_len = input.original_text().len()),
+    )]
     pub fn suggest(
         &self,
         collection: StoreItemPart,

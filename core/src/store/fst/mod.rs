@@ -111,6 +111,10 @@ impl FstStore {
         self.graph.into_stream()
     }
 
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store_id = %self.target, ?word),
+    )]
     fn lookup_begins(&self, word: &str) -> Result<fst::set::Stream<'_, fst_regex::Regex>, ()> {
         // NOTE: This regex maps over an unicode range, for speed reasons at scale.
         //   We found out that the 'match any' syntax ('.+') was super-slow. Using the restrictive
@@ -139,6 +143,10 @@ impl FstStore {
         Ok(self.graph.search(regex).into_stream())
     }
 
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store_id = %self.target, ?word, %typo_factor),
+    )]
     fn lookup_typos(
         &self,
         word: &str,
@@ -176,6 +184,10 @@ pub(super) struct ConsolidateStats {
 }
 
 impl FstStore {
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store_id = %self.target),
+    )]
     pub(super) fn consolidate(&self, stats: &mut ConsolidateStats) -> Result<bool, ()> {
         use std::collections::{HashSet, VecDeque};
         use std::fs::{self, File};
@@ -468,7 +480,11 @@ impl<'a> FstRepository<'a> {
         true
     }
 
-    pub fn push_words<'t>(&self, terms: impl Iterator<Item = &'t str>) {
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store_id = %self.store.target, word_count = terms.len()),
+    )]
+    pub fn push_words<'t>(&self, terms: impl ExactSizeIterator<Item = &'t str>) {
         let mut pending = self.store.pending.lock().unwrap();
 
         for term in terms {
@@ -478,6 +494,10 @@ impl<'a> FstRepository<'a> {
         }
     }
 
+    #[tracing::instrument(
+        level = "trace",
+        skip_all, fields(store_id = %self.store.target, ?word),
+    )]
     pub fn pop_word(&self, word: &str) -> bool {
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(word) {
@@ -522,6 +542,10 @@ impl<'a> FstRepository<'a> {
         true
     }
 
+    #[tracing::instrument(
+        level = "trace",
+        skip_all, fields(store_id = %self.store.target, word = ?from_word, %limit, %max_typo_factor),
+    )]
     pub fn suggest_words(
         &self,
         from_word: &str,

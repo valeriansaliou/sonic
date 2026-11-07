@@ -104,6 +104,10 @@ pub(super) trait GenericRocksDbStore: GenericStore + GenericRocksDbStorePub {
         self.database().write_opt(batch, &write_options)
     }
 
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store = %Self::kind(), ?bucket),
+    )]
     fn batch_erase_bucket(&self, bucket: &Bucket) -> Result<u32, ()> {
         tracing::debug!("{} store batch erase bucket: {bucket}", Self::kind());
 
@@ -145,6 +149,10 @@ pub(super) trait GenericRocksDbStore: GenericStore + GenericRocksDbStorePub {
         }
     }
 
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store = %Self::kind()),
+    )]
     fn flush(&self) -> Result<(), rocksdb::Error> {
         // Generate flush options
         let mut flush_options = rocksdb::FlushOptions::default();

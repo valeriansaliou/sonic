@@ -51,6 +51,10 @@ impl super::Executor {
     /// (with typo corrections, etc.).
     ///
     /// This could be seen as some kind of query planner, in a way.
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(input_len = input.original_text().len()),
+    )]
     fn get_query_candidates<'input>(
         &self,
         input: &'input PreprocessorOutput<'input>,
@@ -263,6 +267,10 @@ impl super::Executor {
         self.query_inner(&query_candidates, &options, &kv_repo)
     }
 
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection, ?bucket, input_len = input.original_text().len()),
+    )]
     #[inline]
     pub fn query(
         &self,
@@ -275,6 +283,10 @@ impl super::Executor {
             .map(|results| results.into_iter().map(|res| res.oid))
     }
 
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection, ?bucket, input_len = input.original_text().len()),
+    )]
     pub fn query_with_snippets(
         &self,
         collection: StoreItemPart,

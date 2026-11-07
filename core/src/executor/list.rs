@@ -9,6 +9,10 @@ use super::types::{QuerySearchLimit, QuerySearchOffset};
 use crate::store::{Bucket, StoreItemPart};
 
 impl super::Executor {
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection, ?bucket),
+    )]
     pub fn list(
         &self,
         collection: StoreItemPart,

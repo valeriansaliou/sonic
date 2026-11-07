@@ -9,6 +9,10 @@ use crate::store::{Bucket, GenericOid, StoreItemPart};
 
 impl super::Executor {
     /// Count terms in object (from KV store).
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection, ?bucket, object = ?oid),
+    )]
     pub fn counto(
         &self,
         collection: StoreItemPart,
@@ -52,6 +56,10 @@ impl super::Executor {
     }
 
     /// Count objects in bucket (from KV store).
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection, ?bucket),
+    )]
     pub fn countb(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u64, ()> {
         let kv_store = self.kv_pool.acquire(false, collection, None)?;
 
@@ -72,6 +80,10 @@ impl super::Executor {
     }
 
     /// Count buckets in collection (from FST filesystem).
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection),
+    )]
     pub fn countc(&self, collection: StoreItemPart) -> Result<u32, ()> {
         self.fst_pool
             .count_collection_buckets(collection)
@@ -83,6 +95,10 @@ impl super::Executor {
 
 impl super::Executor {
     /// Count terms in (collection, bucket) from FST.
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection, ?bucket),
+    )]
     pub fn legacy_countb(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u32, ()> {
         // Important: acquire graph access read lock, and reference it in context. This \
         //   prevents the graph from being erased while using it in this block.

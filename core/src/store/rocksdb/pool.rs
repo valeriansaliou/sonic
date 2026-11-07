@@ -74,9 +74,15 @@ impl<Store: GenericRocksDbStore> GenericStorePool for GenericKvStorePool<Store> 
         &self.store_access_lock
     }
 
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store = %Self::kind(), ?collection, collection_path = tracing::field::Empty),
+    )]
     fn proceed_erase_collection(&self, collection: StoreItemPart) -> Result<u32, ()> {
         let store_id = KvStoreId::from_part(collection);
         let collection_path = self.kv_store_config.store_path(&store_id);
+
+        tracing::Span::current().record("collection_path", tracing::field::debug(&collection_path));
 
         // Force a KV store close
         self.close(store_id, None);
@@ -118,6 +124,10 @@ impl<Store: GenericRocksDbStore> GenericStorePool for GenericKvStorePool<Store> 
         }
     }
 
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store = %Self::kind(), ?collection, ?bucket),
+    )]
     fn proceed_erase_bucket(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u32, ()> {
         let kv_store = self.acquire(false, collection, None).map_err(|()| {
             tracing::error!(
@@ -162,6 +172,10 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
     // TODO(refactor): Replace `create_if_missing` and `override_options` by a
     //   struct. I(@RemiBardon) had suggested adding `bypass_cache: bool` before,
     //   but I don’t remember why.
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store = %Self::kind(), store_id = tracing::field::Empty),
+    )]
     pub fn acquire<'a>(
         &'a self,
         create_if_missing: bool,
@@ -169,6 +183,8 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<KvStoreId, Arc<Store>>>>,
     ) -> Result<Option<Arc<Store>>, ()> {
         let store_id = KvStoreId::from_part(collection);
+
+        tracing::Span::current().record("store_id", tracing::field::display(&store_id));
 
         // Freeze acquire lock, and reference it in context
         // Notice: this prevents two databases on the same collection to be opened at the same time.
@@ -178,14 +194,14 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         match write_guard {
             Some(ref store_pool_write) => {
                 if let Some(store_kv) = store_pool_write.get(&store_id) {
-                    return Self::proceed_acquire_cache(store_id, store_kv).map(Some);
+                    return Self::proceed_acquire_cache(store_kv).map(Some);
                 }
             }
             None => {
                 let store_pool_read = self.pool.read().unwrap();
 
                 if let Some(store_kv) = store_pool_read.get(&store_id) {
-                    return Self::proceed_acquire_cache(store_id, store_kv).map(Some);
+                    return Self::proceed_acquire_cache(store_kv).map(Some);
                 }
             }
         };
@@ -206,6 +222,10 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
             .map(Some)
     }
 
+    #[tracing::instrument(
+        level = "trace",
+        skip_all, fields(store = %Self::kind(), %store_id),
+    )]
     fn build(&self, store_id: &KvStoreId) -> Result<Store, ()> {
         let dyn_confs = self.dynamic_configs.read().unwrap();
         let dyn_conf_opt = dyn_confs.get(store_id).map(Arc::as_ref);
@@ -254,6 +274,10 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         self.proceed_janitor(filter)
     }
 
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(store = %Self::kind()),
+    )]
     pub fn flush(&self, force: bool, filter: impl Fn(&KvStoreId) -> bool) {
         tracing::debug!(
             "Scanning for {} store pool items to flush to disk",
@@ -337,6 +361,10 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         );
     }
 
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(store = %Self::kind()),
+    )]
     pub fn compact(
         &self,
         collections_opt: Option<&[StoreItemPart]>,

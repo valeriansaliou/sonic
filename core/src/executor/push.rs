@@ -23,6 +23,10 @@ pub struct PushOptions {
 }
 
 impl super::Executor {
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection, ?bucket, object = ?object_oid, fragment = ?fragment_oid, input_len = input.original_text().len()),
+    )]
     pub fn push(
         &self,
         collection: StoreItemPart,
@@ -37,7 +41,7 @@ impl super::Executor {
         let (original_text, mut terms_sorted, terms): (
             &str,
             IndexMap<StoreTermHash, u8>,
-            Box<dyn Iterator<Item = &str>>,
+            Box<dyn ExactSizeIterator<Item = &str>>,
         ) = match *multipart_context {
             // Received first chunk: initiate multipart context.
             None if options.is_incomplete => {

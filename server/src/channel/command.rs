@@ -387,6 +387,8 @@ impl ChannelCommandSearch {
                 // Generate command identifier
                 let event_id = ChannelCommandBase::generate_event_id();
 
+                tracing::Span::current().record("event_id", tracing::field::display(&event_id));
+
                 tracing::debug!(
                     "dispatching search query #{} on collection: {} and bucket: {}",
                     event_id,
@@ -517,6 +519,8 @@ impl ChannelCommandSearch {
                 // Generate command identifier
                 let event_id = ChannelCommandBase::generate_event_id();
 
+                tracing::Span::current().record("event_id", tracing::field::display(&event_id));
+
                 tracing::debug!(
                     "dispatching search suggest #{} on collection: {} and bucket: {}",
                     event_id,
@@ -591,6 +595,8 @@ impl ChannelCommandSearch {
             (Some(collection), Some(bucket)) => {
                 // Generate command identifier
                 let event_id = ChannelCommandBase::generate_event_id();
+
+                tracing::Span::current().record("event_id", tracing::field::display(&event_id));
 
                 tracing::debug!(
                     "dispatching search list #{} on collection: {} and bucket: {}",

@@ -84,9 +84,15 @@ impl GenericStorePool for FstStorePool {
         &self.graph_access_lock
     }
 
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(collection = ?collection_name, collection_path = tracing::field::Empty),
+    )]
     fn proceed_erase_collection(&self, collection_name: StoreItemPart) -> Result<u32, ()> {
         let collection_hash = CollectionHash::from_part(collection_name);
         let collection_path = self.fst_store_config.collection_path(&collection_hash);
+
+        tracing::Span::current().record("collection_path", tracing::field::debug(&collection_path));
 
         // Force a FST graph close (on all contained buckets)
         // NOTE: we first need to scan for opened buckets in-memory, as not all FSTs may be
@@ -154,6 +160,10 @@ impl GenericStorePool for FstStorePool {
         }
     }
 
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(collection = ?collection_name, bucket = ?bucket_name, bucket_path = tracing::field::Empty),
+    )]
     fn proceed_erase_bucket(
         &self,
         collection_name: StoreItemPart,
@@ -168,6 +178,8 @@ impl GenericStorePool for FstStorePool {
         let bucket_path = self
             .fst_store_config
             .store_path(&store_id, FstStorePathMode::Permanent);
+
+        tracing::Span::current().record("bucket_path", tracing::field::debug(&bucket_path));
 
         // Force a FST graph close.
         self.close(&store_id);
@@ -206,8 +218,14 @@ impl GenericStorePool for FstStorePool {
 }
 
 impl FstStorePool {
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store = %Self::kind(), store_id = tracing::field::Empty),
+    )]
     pub fn acquire(&self, collection: StoreItemPart, bucket: Bucket) -> Result<Arc<FstStore>, ()> {
         let store_id = FstStoreId::new(collection, bucket);
+
+        tracing::Span::current().record("store_id", tracing::field::display(&store_id));
 
         // Freeze acquire lock, and reference it in context
         // Notice: this prevents two graphs on the same collection to be opened at the same time.
@@ -217,7 +235,7 @@ impl FstStorePool {
         let graph_pool_read = self.graph_pool.read().unwrap();
 
         if let Some(store_fst) = graph_pool_read.get(&store_id) {
-            Self::proceed_acquire_cache(store_id, store_fst)
+            Self::proceed_acquire_cache(store_fst)
         } else {
             tracing::debug!("fst store {store_id} not in pool, opening it");
 
@@ -257,6 +275,10 @@ impl FstStorePool {
         self.proceed_janitor(filter)
     }
 
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(store = %Self::kind()),
+    )]
     pub fn consolidate(&self, force: bool, filter: impl Fn(&FstStoreId) -> bool) {
         use std::sync::atomic;
 
@@ -375,11 +397,17 @@ impl FstStorePool {
     }
 
     /// Counts buckets by reading the filesystem.
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(?collection, collection_path = tracing::field::Empty),
+    )]
     pub fn count_collection_buckets(&self, collection: StoreItemPart) -> Result<usize, ()> {
         let path_mode = FstStorePathMode::Permanent;
 
         let collection_hash = CollectionHash::from_part(collection);
         let collection_path = self.fst_store_config.collection_path(&collection_hash);
+
+        tracing::Span::current().record("collection_path", tracing::field::debug(&collection_path));
 
         if !collection_path.exists() {
             return Ok(0);

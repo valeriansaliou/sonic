@@ -44,6 +44,10 @@ impl GenericRocksDbStorePub for ObjectStore {
 }
 
 impl GenericRocksDbStore for ObjectStore {
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(%store_id),
+    )]
     fn open(
         store_id: &KvStoreId,
         config: &crate::config::KvStoreConfig,

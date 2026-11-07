@@ -10,6 +10,10 @@ use rocksdb::WriteBatch;
 use crate::store::{Bucket, GenericOid, StoreItemPart};
 
 impl super::Executor {
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection, ?bucket, object = ?oid),
+    )]
     pub fn flusho(
         &self,
         collection: StoreItemPart,

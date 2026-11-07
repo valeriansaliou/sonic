@@ -104,7 +104,6 @@ impl ChannelHandle {
                 write!(
                     stream,
                     "STARTED {mode} protocol({PROTOCOL_REVISION}) buffer({BUFFER_SIZE})",
-                    mode = mode.to_str()
                 )
                 .expect("write failed");
 
@@ -303,6 +302,10 @@ impl ChannelHandle {
         }
     }
 
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(%mode, verb = tracing::field::Empty, event_id = tracing::field::Empty),
+    )]
     fn on_message(
         &self,
         mode: &ChannelMode,
