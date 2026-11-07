@@ -273,7 +273,7 @@ pub(super) struct KvStoreKey(Vec<u8>);
 impl KvStoreKey {
     #[inline]
     const fn new(value: Vec<u8>) -> Self {
-        debug_assert!(value.len() > 6);
+        debug_assert!(value.len() > 3);
         Self(value)
     }
 
