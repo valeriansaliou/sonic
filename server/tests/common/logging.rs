@@ -42,7 +42,8 @@ pub fn init_logging(filter: Option<&str>, options: LoggingOptions) {
             .with_level(options.with_level)
             .with_thread_ids(options.with_thread_ids)
             .with_ansi(true)
-            .without_time()
+            // .without_time()
+            .with_timer(tracing_subscriber::fmt::time::Uptime::default())
             .with_writer(tracing_subscriber::fmt::TestWriter::new)
             .init();
     });
