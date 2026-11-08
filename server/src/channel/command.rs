@@ -882,11 +882,18 @@ impl ChannelCommandIngest {
                 should_cleanup,
                 should_cleanup,
             );
-            let text_lexed =
-                preprocessor.preprocess(&text, push_lang.and_then(QueryGenericLang::into_lang_opt));
+            let lang = push_lang.and_then(QueryGenericLang::into_lang_opt);
 
-            ctx.executor
-                .push(collection, bucket, oid, fragment, text_lexed, push_options)
+            ctx.executor.push(
+                collection,
+                bucket,
+                oid,
+                fragment,
+                text,
+                preprocessor,
+                lang,
+                push_options,
+            )
         })
     }
 

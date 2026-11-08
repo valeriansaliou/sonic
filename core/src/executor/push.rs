@@ -5,13 +5,12 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
-use std::collections::HashMap;
-
 use indexmap::IndexMap;
 use rocksdb::WriteBatch;
+use whatlang::Lang;
 
 use crate::executor::MultipartPushContext;
-use crate::lexer::preprocessor::PreprocessorOutput;
+use crate::lexer::preprocessor::Preprocessor;
 use crate::store::kv::encoding::ToKvKeyPart;
 use crate::store::rocksdb::WriteOptions;
 use crate::store::{Bucket, GenericOid, StoreItemPart, StoreTermHash};
@@ -24,9 +23,10 @@ pub struct PushOptions {
 }
 
 impl super::Executor {
+    #[allow(clippy::too_many_arguments, reason = "We’ll refactor this someday")]
     #[tracing::instrument(
         level = "info",
-        skip_all, fields(?collection, ?bucket, object = ?object_oid, fragment = ?fragment_oid, input_len = input.original_text().len()),
+        skip_all, fields(?collection, ?bucket, object = ?object_oid, fragment = ?fragment_oid, input_len = tracing::field::Empty),
     )]
     pub fn push(
         &self,
@@ -34,44 +34,32 @@ impl super::Executor {
         bucket: Bucket,
         object_oid: GenericOid,
         fragment_oid: Option<GenericOid>,
-        input: PreprocessorOutput,
+        text: impl Into<String>,
+        preprocessor: Preprocessor,
+        lang: Option<Lang>,
         options: PushOptions,
     ) -> Result<(), crate::Error> {
+        let text = text.into();
+
+        tracing::Span::current().record("input_len", text.len());
+
         let mut multipart_context = self.multipart_push_context.lock().unwrap();
 
-        let (original_text, mut terms_sorted, terms): (
-            &str,
-            IndexMap<StoreTermHash, u8>,
-            Box<dyn ExactSizeIterator<Item = &str>>,
-        ) = match *multipart_context {
+        match *multipart_context {
             // Received first chunk: initiate multipart context.
             None if options.is_incomplete => {
-                let mut original_text: String =
-                    String::with_capacity(options.capacity.unwrap_or(input.original_text().len()));
-                original_text.push_str(input.original_text());
-
-                let expected_term_count = if let Some(total_len) = options.capacity {
-                    // NOTE: This is an approximation, supposing all chunks
-                    //   will have about as many tokens as the first one.
-                    (total_len / input.original_text().len()) * input.tokens().len()
-                } else {
-                    input.tokens().len()
+                let original_text: String = match options.capacity {
+                    Some(capacity) => {
+                        let mut original_text = String::with_capacity(capacity);
+                        original_text.push_str(text.as_str());
+                        original_text
+                    }
+                    None => text,
                 };
-                let mut terms: HashMap<StoreTermHash, (Box<str>, u8)> =
-                    HashMap::with_capacity(expected_term_count);
-
-                for token in input.tokens() {
-                    terms
-                        .entry(token.hash())
-                        .and_modify(|(_s, tf)| *tf = tf.saturating_add(1))
-                        .or_insert((Box::from(token.into_normalized()), 1));
-                }
 
                 *multipart_context = Some(MultipartPushContext {
                     object: object_oid.to_string(),
                     fragment: fragment_oid.map(|oid| oid.to_string()),
-                    terms,
-                    capacity: options.capacity,
                     original_text,
                 });
 
@@ -79,62 +67,17 @@ impl super::Executor {
             }
 
             // Normal `PUSH`.
-            None => {
-                let mut terms = Vec::with_capacity(input.tokens().len());
-
-                let mut terms_sorted: IndexMap<StoreTermHash, u8> =
-                    IndexMap::with_capacity(input.tokens().len());
-
-                for token in input.tokens() {
-                    match terms_sorted.entry(token.hash()) {
-                        indexmap::map::Entry::Occupied(mut entry) => {
-                            let tf = entry.get_mut();
-                            *tf = tf.saturating_add(1);
-                        }
-                        indexmap::map::Entry::Vacant(entry) => {
-                            terms.push(token.into_normalized());
-                            entry.insert_entry(1);
-                        }
-                    }
-                }
-
-                // Proceed with the rest of the code.
-                (
-                    input.original_text(),
-                    terms_sorted,
-                    Box::new(terms.into_iter()),
-                )
-            }
+            None => { /* Proceed with the rest of the code */ }
 
             // Received multipart chunk: update multipart context.
             Some(ref mut ctx) if ctx.has_matching_ids(object_oid, fragment_oid) => {
-                if ctx.capacity.is_none() {
-                    ctx.terms.reserve(input.tokens().len());
-                    ctx.terms.reserve(input.tokens().len());
-                }
-
-                ctx.original_text.push_str(input.original_text());
-
-                for token in input.tokens() {
-                    ctx.terms
-                        .entry(token.hash())
-                        .and_modify(|(_s, tf)| *tf = tf.saturating_add(1))
-                        .or_insert((Box::from(token.into_normalized()), 1));
-                }
+                ctx.original_text.push_str(text.as_str());
 
                 if options.is_incomplete {
                     return Ok(());
                 } else {
                     // Received last multipart chunk.
-                    let terms_sorted: IndexMap<StoreTermHash, u8> =
-                        ctx.terms.iter().map(|(t, (_s, tf))| (*t, *tf)).collect();
-
                     // Proceed with the rest of the code.
-                    (
-                        ctx.original_text.as_str(),
-                        terms_sorted,
-                        Box::new(ctx.terms.values().map(|(s, _)| s.as_ref())),
-                    )
                 }
             }
 
@@ -162,12 +105,32 @@ impl super::Executor {
                 .attach(fields!(
                     ?object_oid,
                     ?fragment_oid,
-                    input_len = input.original_text().len(),
+                    input_len = text.len(),
                     ctx_len,
                 ))
                 .into());
             }
         };
+
+        let input = preprocessor.preprocess(text.as_str(), lang);
+
+        let mut terms = Vec::with_capacity(input.tokens().len());
+
+        let mut terms_sorted: IndexMap<StoreTermHash, u8> =
+            IndexMap::with_capacity(input.tokens().len());
+
+        for token in input.tokens() {
+            match terms_sorted.entry(token.hash()) {
+                indexmap::map::Entry::Occupied(mut entry) => {
+                    let tf = entry.get_mut();
+                    *tf = tf.saturating_add(1);
+                }
+                indexmap::map::Entry::Vacant(entry) => {
+                    terms.push(token.into_normalized());
+                    entry.insert_entry(1);
+                }
+            }
+        }
 
         // Sometimes, a system might try to parse data that ends up containing
         // no valid token (e.g. an empty string, just punctuation or whatever).
@@ -251,19 +214,9 @@ impl super::Executor {
 
             // Store original text
             if is_new {
-                object_repo.put_object_original(
-                    object_oid,
-                    fragment_oid,
-                    original_text,
-                    &mut batch,
-                );
+                object_repo.put_object_original(object_oid, fragment_oid, &text, &mut batch);
             } else {
-                object_repo.push_object_original(
-                    object_oid,
-                    fragment_oid,
-                    original_text,
-                    &mut batch,
-                );
+                object_repo.push_object_original(object_oid, fragment_oid, &text, &mut batch);
             }
 
             object_repo.write(batch)?;
@@ -272,7 +225,7 @@ impl super::Executor {
         // Update FST store
         {
             // Push to FST graph
-            fst_repo.push_words(terms);
+            fst_repo.push_words(terms.into_iter());
         }
 
         // Clear multipart context.

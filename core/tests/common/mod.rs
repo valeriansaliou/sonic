@@ -96,7 +96,9 @@ macro_rules! exec {
         $executor
             .push(
                 c, b, o, f,
-                preprocessor.preprocess($text, exec!(internal_ lang $($lang)?)),
+                $text,
+                preprocessor,
+                exec!(internal_ lang $($lang)?),
                 options,
             )
             .unwrap()

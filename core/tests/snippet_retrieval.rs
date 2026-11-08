@@ -36,7 +36,7 @@ fn test_snippet_matching_basic() {
     init_logging();
     let executor = make_test_executor(|_| {});
 
-    for (idx, paragraph) in GDPR_SHORT_PARAGRAPHS.iter().enumerate() {
+    for (idx, &paragraph) in GDPR_SHORT_PARAGRAPHS.iter().enumerate() {
         let oid = &format!("article:{idx}");
         exec!(executor -> PUSH collection "default" oid paragraph);
     }
@@ -92,7 +92,7 @@ fn test_snippet_matching_max_snippet_count() {
     init_logging();
     let executor = make_test_executor(|_| {});
 
-    for (idx, paragraph) in WIKIPEDIA_GDPR_CONTROLLER_AND_PROCESSOR.iter().enumerate() {
+    for (idx, &paragraph) in WIKIPEDIA_GDPR_CONTROLLER_AND_PROCESSOR.iter().enumerate() {
         let oid = &format!("article:{idx}");
         exec!(executor -> PUSH collection "default" oid paragraph);
     }
@@ -141,7 +141,7 @@ fn test_snippet_matching_max_window_size() {
     init_logging();
     let executor = make_test_executor(|_| {});
 
-    for (idx, paragraph) in WIKIPEDIA_GDPR_CONTROLLER_AND_PROCESSOR.iter().enumerate() {
+    for (idx, &paragraph) in WIKIPEDIA_GDPR_CONTROLLER_AND_PROCESSOR.iter().enumerate() {
         let oid = &format!("article:{idx}");
         exec!(executor -> PUSH collection "default" oid paragraph);
     }
@@ -188,7 +188,7 @@ fn test_snippet_matching_max_window_padding() {
     init_logging();
     let executor = make_test_executor(|_| {});
 
-    for (idx, paragraph) in WIKIPEDIA_GDPR_CONTROLLER_AND_PROCESSOR.iter().enumerate() {
+    for (idx, &paragraph) in WIKIPEDIA_GDPR_CONTROLLER_AND_PROCESSOR.iter().enumerate() {
         let oid = &format!("article:{idx}");
         exec!(executor -> PUSH collection "default" oid paragraph);
     }
@@ -232,7 +232,7 @@ fn test_snippet_matching_fragments() {
     init_logging();
     let executor = make_test_executor(|_| {});
 
-    for (idx, paragraph) in WIKIPEDIA_GDPR_CONTROLLER_AND_PROCESSOR.iter().enumerate() {
+    for (idx, &paragraph) in WIKIPEDIA_GDPR_CONTROLLER_AND_PROCESSOR.iter().enumerate() {
         let fid = &format!("paragraph:{idx}");
         exec!(executor -> PUSH collection "default" "article:0" fid paragraph);
     }
@@ -269,7 +269,7 @@ fn test_snippet_matching_fragments_reverse() {
     init_logging();
     let executor = make_test_executor(|_| {});
 
-    for (idx, paragraph) in WIKIPEDIA_GDPR_CONTROLLER_AND_PROCESSOR.iter().enumerate() {
+    for (idx, &paragraph) in WIKIPEDIA_GDPR_CONTROLLER_AND_PROCESSOR.iter().enumerate() {
         let fid = &format!("paragraph:{idx}");
         exec!(executor -> PUSH collection "default" "article:0" fid paragraph);
     }

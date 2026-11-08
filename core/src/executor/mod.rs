@@ -9,9 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard};
 
 use crate::store::kv::KvStoreId;
-use crate::store::{
-    AsCollectionHash, GenericIid, GenericOid, GenericOidOwned, StoreItemPart, StoreTermHash,
-};
+use crate::store::{AsCollectionHash, GenericIid, GenericOid, GenericOidOwned, StoreItemPart};
 use crate::util::hash::NoopU32HasherBuilder;
 
 #[macro_use]
@@ -254,10 +252,6 @@ struct MultipartPushContext {
     object: GenericOidOwned,
 
     fragment: Option<GenericOidOwned>,
-
-    terms: HashMap<StoreTermHash, (Box<str>, u8)>,
-
-    capacity: Option<usize>,
 
     original_text: String,
 }
