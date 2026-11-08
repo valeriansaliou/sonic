@@ -18,9 +18,9 @@ use fst::{IntoStreamer as _, Streamer as _};
 use hashbrown::HashMap;
 use regex_syntax::escape as regex_escape;
 
-use crate::Context as _;
 use crate::config::FstStoreConfig;
 use crate::lexer::ranges::LexerRegexRange;
+use crate::{AttachResult as _, Context as _, fields};
 
 use super::generic::*;
 
@@ -355,36 +355,24 @@ impl FstStore {
         }
 
         // Finish building new FST.
-        let should_close = match tmp_fst_builder.finish() {
-            Ok(()) => {
-                // Replace old FST with new FST (this nukes the old FST).
-                // NOTE: There is no need to re-open the new FST, as it will be
-                //   automatically opened on its next access.
-                let bucket_final_path =
-                    (self.config).store_path(&self.target, FstStorePathMode::Permanent);
+        (tmp_fst_builder.finish())
+            .attach(fields!(?bucket_tmp_path))
+            .context("Error finishing building temporary FST")?;
 
-                // Proceed temporary FST to final FST path rename?
-                match fs::rename(&bucket_tmp_path, &bucket_final_path) {
-                    Ok(()) => {
-                        tracing::debug!(?bucket_final_path, "Done consolidating FST")
-                    }
-                    Err(error) => {
-                        tracing::error!(?bucket_final_path, "Error consolidating FST: {error:#}")
-                    }
-                }
+        // Replace old FST with new FST (this nukes the old FST).
+        // NOTE: There is no need to re-open the new FST, as it will be
+        //   automatically opened on its next access.
+        let bucket_final_path = (self.config).store_path(&self.target, FstStorePathMode::Permanent);
 
-                // Should close open store reference to old FST.
-                true
-            }
-            Err(error) => {
-                tracing::error!(
-                    ?bucket_tmp_path,
-                    "Error finishing building temporary FST: {error:?}"
-                );
+        // Proceed temporary FST to final FST path rename?
+        fs::rename(&bucket_tmp_path, &bucket_final_path)
+            .attach(fields!(?bucket_final_path))
+            .context("Error consolidating FST")?;
 
-                false
-            }
-        };
+        tracing::debug!(?bucket_final_path, "Done consolidating FST");
+
+        // Should close open store reference to old FST.
+        let should_close = true;
 
         drop(to_pop);
 
@@ -395,8 +383,6 @@ impl FstStore {
         pending.clear();
 
         (self.should_consolidate).store(false, atomic::Ordering::Release);
-
-        tracing::debug!(?should_close, "FST consolidation finished.");
 
         Ok(should_close)
     }
