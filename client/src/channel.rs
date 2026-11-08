@@ -291,7 +291,7 @@ impl<Mode: ChannelMode + 'static> SonicChannel<Mode> {
         // NOTE: `+1` to account for backtracks (to split on spaces)
         //   and commands overhead variations.
         let mut splits: Vec<Command> =
-            Vec::with_capacity((rest_content.len() / intermediate_chunk_size) + 1);
+            Vec::with_capacity((rest_content.len().div_ceil(intermediate_chunk_size)) + 1);
 
         while rest_content.len() > intermediate_chunk_size {
             let (head, tail) = split_on_whitespace(rest_content, intermediate_chunk_size);
@@ -449,7 +449,7 @@ impl Command {
         let chunk_size = buffer_size - command_overhead;
 
         // NOTE: `+1` to account for backtracks (to split on spaces).
-        let mut splits: Vec<Self> = Vec::with_capacity((content.len() / chunk_size) + 1);
+        let mut splits: Vec<Self> = Vec::with_capacity(content.len().div_ceil(chunk_size) + 1);
 
         log_debug!(
             "Splitting command (content length: {content_len}, chunk size: {chunk_size}).",
