@@ -23,11 +23,12 @@ pub fn start_sonic() -> (SpawnGuard, SocketAddr) {
     let addr = SocketAddr::from((Ipv6Addr::LOCALHOST, 1550 + counter));
 
     let sonic_bin_path = concat!(env!("CARGO_TARGET_TMPDIR"), "/../debug/sonic");
-    let sonic_data_path = std::path::Path::new(concat!(env!("CARGO_TARGET_TMPDIR"), "/data"));
+    let sonic_data_path = std::path::Path::new(concat!(env!("CARGO_TARGET_TMPDIR"), "/data"))
+        .join(counter.to_string());
     // let sonic_config_path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/config.cfg");
 
     if sonic_data_path.exists() {
-        std::fs::remove_dir_all(sonic_data_path).unwrap();
+        std::fs::remove_dir_all(&sonic_data_path).unwrap();
     }
 
     let sonic = Command::new(sonic_bin_path)
