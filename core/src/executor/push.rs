@@ -224,7 +224,7 @@ impl super::Executor {
                 kv_repo.update_iid_to_terms(&mut batch, object_iid, terms_sorted.into_keys());
             }
 
-            executor_ensure_op!(kv_repo.write_opt(batch, WriteOptions { is_ordered: true }));
+            kv_repo.write_opt(batch, WriteOptions { is_ordered: true })?;
 
             fragment_is_new.unwrap_or(object_is_new)
         };
@@ -250,7 +250,7 @@ impl super::Executor {
                 );
             }
 
-            executor_ensure_op!(object_repo.write(batch));
+            object_repo.write(batch)?;
         }
 
         // Update FST store
