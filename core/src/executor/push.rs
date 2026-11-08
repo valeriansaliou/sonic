@@ -68,7 +68,8 @@ impl super::Executor {
                 }
 
                 *multipart_context = Some(MultipartPushContext {
-                    oid: object_oid.to_string(),
+                    object: object_oid.to_string(),
+                    fragment: fragment_oid.map(|oid| oid.to_string()),
                     terms,
                     capacity: options.capacity,
                     original_text,
@@ -106,7 +107,7 @@ impl super::Executor {
             }
 
             // Received multipart chunk: update multipart context.
-            Some(ref mut ctx) if ctx.oid.as_str() == object_oid.as_str() => {
+            Some(ref mut ctx) if ctx.has_matching_ids(object_oid, fragment_oid) => {
                 if ctx.capacity.is_none() {
                     ctx.terms.reserve(input.tokens().len());
                     ctx.terms.reserve(input.tokens().len());

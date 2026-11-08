@@ -81,6 +81,15 @@ crate::util::impl_transparent_wrapper_utils!(Deref for GenericOid<'a>(StoreItemP
 crate::util::impl_transparent_wrapper_utils!(From for GenericOid<'a>(StoreItemPart<'a>));
 crate::util::impl_transparent_wrapper_utils!(Debug for GenericOid<'a>(StoreItemPart<'a>));
 
+impl<'a, T> PartialEq<T> for GenericOid<'a>
+where
+    str: PartialEq<T>,
+{
+    fn eq(&self, other: &T) -> bool {
+        self.0.0.eq(other)
+    }
+}
+
 impl<'a> GenericOid<'a> {
     #[allow(
         clippy::should_implement_trait,

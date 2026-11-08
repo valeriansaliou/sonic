@@ -9,7 +9,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock, RwLockReadGuard};
 
 use crate::store::kv::KvStoreId;
-use crate::store::{AsCollectionHash, GenericIid, GenericOidOwned, StoreItemPart, StoreTermHash};
+use crate::store::{
+    AsCollectionHash, GenericIid, GenericOid, GenericOidOwned, StoreItemPart, StoreTermHash,
+};
 use crate::util::hash::NoopU32HasherBuilder;
 
 #[macro_use]
@@ -249,11 +251,24 @@ impl Executor {
 /// See [Issue #422 “Add a `PUSH` flag to signal partial input”](https://github.com/valeriansaliou/sonic/issues/422).
 #[derive(Debug)]
 struct MultipartPushContext {
-    oid: GenericOidOwned,
+    object: GenericOidOwned,
+
+    fragment: Option<GenericOidOwned>,
 
     terms: HashMap<StoreTermHash, (Box<str>, u8)>,
 
     capacity: Option<usize>,
 
     original_text: String,
+}
+
+impl MultipartPushContext {
+    fn has_matching_ids(&self, object_oid: GenericOid, fragment_oid: Option<GenericOid>) -> bool {
+        object_oid == self.object
+            && match (fragment_oid, &self.fragment) {
+                (Some(a), Some(b)) => a == *b,
+                (None, None) => true,
+                _ => false,
+            }
+    }
 }
