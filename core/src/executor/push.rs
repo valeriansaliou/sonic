@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 use rocksdb::WriteBatch;
 
+use crate::Context as _;
 use crate::executor::MultipartPushContext;
 use crate::lexer::preprocessor::PreprocessorOutput;
 use crate::store::kv::encoding::ToKvKeyPart;
@@ -23,6 +24,10 @@ pub struct PushOptions {
 }
 
 impl super::Executor {
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection, ?bucket, object = ?object_oid, fragment = ?fragment_oid, input_len = input.original_text().len()),
+    )]
     pub fn push(
         &self,
         collection: StoreItemPart,
@@ -31,13 +36,13 @@ impl super::Executor {
         fragment_oid: Option<GenericOid>,
         input: PreprocessorOutput,
         options: PushOptions,
-    ) -> Result<(), ()> {
+    ) -> Result<(), crate::Error> {
         let mut multipart_context = self.multipart_push_context.lock().unwrap();
 
         let (original_text, mut terms_sorted, terms): (
             &str,
             IndexMap<StoreTermHash, u8>,
-            Box<dyn Iterator<Item = &str>>,
+            Box<dyn ExactSizeIterator<Item = &str>>,
         ) = match *multipart_context {
             // Received first chunk: initiate multipart context.
             None if options.is_incomplete => {
@@ -162,24 +167,11 @@ impl super::Executor {
         let _fst_read_guard = self.fst_pool.lock_read_access();
         let _object_read_guard = self.object_store_pool.lock_read_access();
 
-        let kv_store = self.kv_pool.acquire(true, collection, None)?;
+        let kv_store = (self.kv_pool.acquire(true, collection, None))?
+            .context("KV store does not exist, but it should have been created")?;
         let fst_store = self.fst_pool.acquire(collection, bucket)?;
-        let object_store = (self.object_store_pool).acquire(true, collection, None)?;
-
-        debug_assert!(kv_store.is_some());
-        let Some(kv_store) = kv_store else {
-            tracing::error!(
-                "KV store {collection:?} does not exist, but it should have been created"
-            );
-            return Err(());
-        };
-        debug_assert!(object_store.is_some());
-        let Some(object_store) = object_store else {
-            tracing::error!(
-                "Object store {collection:?} does not exist, but it should have been created"
-            );
-            return Err(());
-        };
+        let object_store = (self.object_store_pool.acquire(true, collection, None))?
+            .context("Object store does not exist, but it should have been created")?;
 
         let kv_repo = kv_store.to_repository_read_write(bucket);
         let fst_repo = fst_store.to_repository();
@@ -187,14 +179,14 @@ impl super::Executor {
 
         // Update KV store
         let is_new = {
-            let (object_iid, object_is_new) = (kv_repo.get_or_assign_iid(object_oid))
-                .map_err(|error| tracing::error!("Error getting IID: {error}"))?;
+            let (object_iid, object_is_new) =
+                (kv_repo.get_or_assign_iid(object_oid)).context("Error getting IID")?;
 
             let (fragment_iid, fragment_is_new) = match fragment_oid {
                 Some(fragment_oid) => {
                     (kv_repo.get_fragment_iid(object_oid, object_iid, fragment_oid))
                         .map(|(a, b)| (Some(a), Some(b)))
-                        .map_err(|error| tracing::error!("Error getting IID: {error}"))?
+                        .context("Error getting IID")?
                 }
                 None => (None, None),
             };
@@ -232,7 +224,7 @@ impl super::Executor {
                 kv_repo.update_iid_to_terms(&mut batch, object_iid, terms_sorted.into_keys());
             }
 
-            executor_ensure_op!(kv_repo.write_opt(batch, WriteOptions { is_ordered: true }));
+            kv_repo.write_opt(batch, WriteOptions { is_ordered: true })?;
 
             fragment_is_new.unwrap_or(object_is_new)
         };
@@ -258,7 +250,7 @@ impl super::Executor {
                 );
             }
 
-            executor_ensure_op!(object_repo.write(batch));
+            object_repo.write(batch)?;
         }
 
         // Update FST store

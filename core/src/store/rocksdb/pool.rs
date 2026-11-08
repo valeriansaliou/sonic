@@ -12,6 +12,7 @@ use std::{fmt, fs};
 
 use hashbrown::{DefaultHashBuilder, HashMap};
 
+use crate::Context as _;
 use crate::DynamicConfig;
 use crate::store::generic::*;
 use crate::store::rocksdb::{
@@ -74,86 +75,64 @@ impl<Store: GenericRocksDbStore> GenericStorePool for GenericKvStorePool<Store> 
         &self.store_access_lock
     }
 
-    fn proceed_erase_collection(&self, collection: StoreItemPart) -> Result<u32, ()> {
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store = %Self::kind(), ?collection, collection_path = tracing::field::Empty),
+    )]
+    fn proceed_erase_collection(&self, collection: StoreItemPart) -> Result<u32, crate::Error> {
         let store_id = KvStoreId::from_part(collection);
         let collection_path = self.kv_store_config.store_path(&store_id);
+
+        tracing::Span::current().record("collection_path", tracing::field::debug(&collection_path));
 
         // Force a KV store close
         self.close(store_id, None);
 
         if !collection_path.exists() {
-            tracing::debug!(
-                "{} store does not exist, consider already erased: {collection}/* at path: {collection_path:?}",
-                Self::kind()
-            );
-
+            tracing::debug!("Store does not exist, consider collection already erased");
             return Ok(0);
         }
 
-        tracing::trace!(
-            "{} store exists, erasing: {collection}/* at path: {collection_path:?}",
-            Self::kind()
-        );
+        tracing::trace!("Store exists, erasing collection");
 
-        // Remove KV store storage from filesystem
-        match fs::remove_dir_all(&collection_path) {
-            Ok(()) => {
-                tracing::debug!(
-                    "{} store erased successfully: {collection}/* at path: {collection_path:?}",
-                    Self::kind()
-                );
+        // Remove KV store storage from filesystem.
+        fs::remove_dir_all(&collection_path).context("Failed erasing store")?;
 
-                Ok(1)
-            }
-            Err(error) => {
-                tracing::error!(
-                    ?collection,
-                    ?collection_path,
-                    "Failed erasing {} store: {error:?}",
-                    Self::kind()
-                );
+        tracing::debug!("Store erased successfully");
 
-                Err(())
-            }
-        }
+        Ok(1)
     }
 
-    fn proceed_erase_bucket(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u32, ()> {
-        let kv_store = self.acquire(false, collection, None).map_err(|()| {
-            tracing::error!(
-                ?collection,
-                ?bucket,
-                "Failed opening {} store for bucket erasure",
-                Self::kind()
-            )
-        })?;
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store = %Self::kind(), ?collection, ?bucket),
+    )]
+    fn proceed_erase_bucket(
+        &self,
+        collection: StoreItemPart,
+        bucket: Bucket,
+    ) -> Result<u32, crate::Error> {
+        let kv_store = (self.acquire(false, collection, None))
+            .context("Failed opening store for bucket erasure")?;
 
         let Some(kv_store) = kv_store else {
-            tracing::debug!(
-                "{} store does not exist, consider {bucket} from {collection} already erased",
-                Self::kind()
-            );
+            tracing::debug!("Store does not exist, consider bucket already erased");
             return Ok(0);
         };
 
         // Important: acquire bucket store write lock
         let _write_guard = kv_store.lock().write().unwrap();
 
-        // Store exists, proceed erasure.
-        tracing::trace!(
-            "{} store exists, erasing {bucket} from {collection}",
-            Self::kind()
-        );
+        tracing::trace!("Store exists, erasing bucket");
 
         // Notice: we cannot use the provided KV bucket erasure helper there, as \
         //   erasing a bucket requires a database lock, which would incur a dead-lock, \
         //   thus we need to perform the erasure from there.
-        kv_store.batch_erase_bucket(&bucket).inspect(|_n| {
-            tracing::debug!(
-                "{} bucket {bucket} from {collection} erased successfully",
-                Self::kind()
-            )
-        })
+        let n = kv_store.batch_erase_bucket(&bucket)?;
+
+        tracing::debug!("Bucket erased successfully");
+
+        Ok(n)
     }
 }
 
@@ -162,13 +141,19 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
     // TODO(refactor): Replace `create_if_missing` and `override_options` by a
     //   struct. I(@RemiBardon) had suggested adding `bypass_cache: bool` before,
     //   but I don’t remember why.
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store = %Self::kind(), store_id = tracing::field::Empty),
+    )]
     pub fn acquire<'a>(
         &'a self,
         create_if_missing: bool,
         collection: StoreItemPart,
         write_guard: Option<&mut RwLockWriteGuard<'a, HashMap<KvStoreId, Arc<Store>>>>,
-    ) -> Result<Option<Arc<Store>>, ()> {
+    ) -> Result<Option<Arc<Store>>, crate::Error> {
         let store_id = KvStoreId::from_part(collection);
+
+        tracing::Span::current().record("store_id", tracing::field::display(&store_id));
 
         // Freeze acquire lock, and reference it in context
         // Notice: this prevents two databases on the same collection to be opened at the same time.
@@ -178,19 +163,19 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         match write_guard {
             Some(ref store_pool_write) => {
                 if let Some(store_kv) = store_pool_write.get(&store_id) {
-                    return Self::proceed_acquire_cache(store_id, store_kv).map(Some);
+                    return Self::proceed_acquire_cache(store_kv).map(Some);
                 }
             }
             None => {
                 let store_pool_read = self.pool.read().unwrap();
 
                 if let Some(store_kv) = store_pool_read.get(&store_id) {
-                    return Self::proceed_acquire_cache(store_id, store_kv).map(Some);
+                    return Self::proceed_acquire_cache(store_kv).map(Some);
                 }
             }
         };
 
-        tracing::debug!("{} store {store_id} not in pool, opening it", Self::kind());
+        tracing::trace!("Store not in pool, opening it…");
 
         // Check if can open database?
         let can_open_db = create_if_missing || self.kv_store_config.store_path(&store_id).exists();
@@ -206,31 +191,29 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
             .map(Some)
     }
 
-    fn build(&self, store_id: &KvStoreId) -> Result<Store, ()> {
+    #[tracing::instrument(
+        level = "trace",
+        skip_all, fields(store = %Self::kind(), %store_id),
+    )]
+    fn build(&self, store_id: &KvStoreId) -> Result<Store, crate::Error> {
         let dyn_confs = self.dynamic_configs.read().unwrap();
         let dyn_conf_opt = dyn_confs.get(store_id).map(Arc::as_ref);
 
-        match Store::open(store_id, &self.kv_store_config, dyn_conf_opt) {
-            Ok(db) => {
-                let mut write_options_builder =
-                    RocksDbWriteOptionsBuilder::new(&self.kv_store_config.database);
+        let db = Store::open(store_id, &self.kv_store_config, dyn_conf_opt)
+            .context("Failed opening store")?;
 
-                if let Some(dyn_conf) = dyn_conf_opt {
-                    dyn_conf.update_write_options_builder(&mut write_options_builder);
-                }
+        let mut write_options_builder =
+            RocksDbWriteOptionsBuilder::new(&self.kv_store_config.database);
 
-                Ok(Store::new(
-                    db,
-                    write_options_builder,
-                    Arc::clone(&self.stats),
-                ))
-            }
-            Err(error) => {
-                tracing::error!("Failed opening {} store {store_id}: {error}", Self::kind());
-
-                Err(())
-            }
+        if let Some(dyn_conf) = dyn_conf_opt {
+            dyn_conf.update_write_options_builder(&mut write_options_builder);
         }
+
+        Ok(Store::new(
+            db,
+            write_options_builder,
+            Arc::clone(&self.stats),
+        ))
     }
 
     pub fn close<'a>(
@@ -254,11 +237,14 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         self.proceed_janitor(filter)
     }
 
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(store = %Self::kind()),
+    )]
     pub fn flush(&self, force: bool, filter: impl Fn(&KvStoreId) -> bool) {
-        tracing::debug!(
-            "Scanning for {} store pool items to flush to disk",
-            Self::kind()
-        );
+        let kind = Self::kind();
+
+        tracing::trace!("Scanning for {kind} stores to flush to disk");
 
         // Acquire flush lock, and reference it in context
         // Notice: this prevents two flush operations to be executed at the same time.
@@ -277,15 +263,13 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
                     .is_some_and(|n| not_flushed_for.as_secs() >= n)
             {
                 tracing::debug!(
-                    "{} store {store_id} not flushed for {not_flushed_for:.0?}, may flush",
-                    Self::kind()
+                    "{kind} store {store_id} not flushed for {not_flushed_for:.1?}, may flush"
                 );
 
                 keys_flush.push(*store_id);
             } else {
                 tracing::trace!(
-                    "{} store {store_id} not flushed for {not_flushed_for:.0?}, no flush",
-                    Self::kind()
+                    "{kind} store {store_id} not flushed for {not_flushed_for:.1?}, no flush"
                 );
             }
         }
@@ -295,10 +279,7 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
 
         // Exit trap: Nothing to flush yet? Abort there.
         if keys_flush.is_empty() {
-            tracing::info!(
-                "No {} store pool items need to be flushed at the moment",
-                Self::kind()
-            );
+            tracing::trace!("No {kind} store needs to be flushed at the moment");
 
             return;
         }
@@ -310,14 +291,14 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
             let pool_guard = self.pool.read().unwrap();
 
             if let Some(store) = pool_guard.get(store_id) {
-                tracing::debug!("{} store {store_id} flush started", Self::kind());
+                tracing::trace!("Store {store_id} flush started");
 
                 if let Err(error) = store.flush() {
-                    tracing::error!("{} store {store_id} flush failed: {error:?}", Self::kind());
+                    crate::log!(error.context(format!("Store {store_id} flush failed")));
                 } else {
                     count_flushed += 1;
 
-                    tracing::debug!("{} store {store_id} flush complete", Self::kind());
+                    tracing::debug!("Store {store_id} flush complete");
                 }
 
                 // Bump 'last flushed' time
@@ -331,16 +312,17 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
             std::thread::yield_now();
         }
 
-        tracing::info!(
-            "Done scanning for {} store pool items to flush to disk (flushed: {count_flushed})",
-            Self::kind()
-        );
+        tracing::info!("Flushed {count_flushed} store(s) to disk");
     }
 
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(store = %Self::kind()),
+    )]
     pub fn compact(
         &self,
         collections_opt: Option<&[StoreItemPart]>,
-    ) -> Result<(), Vec<(KvStoreId, rocksdb::Error)>> {
+    ) -> Result<(), Vec<(KvStoreId, crate::Error)>> {
         match collections_opt {
             Some(collections) => tracing::debug!("Compacting {collections:?}…"),
             None => tracing::debug!("Compacting all collections…"),
@@ -381,7 +363,7 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
             let wait_opts = rocksdb::WaitForCompactOptions::default();
 
             if let Err(error) = store.database().wait_for_compact(&wait_opts) {
-                errors.push((*store_id, error));
+                errors.push((*store_id, error.into()));
             }
 
             // Give a bit of time to other threads before continuing
@@ -399,8 +381,13 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         }
     }
 
-    pub fn erase(&self, collection: StoreItemPart, bucket: Option<Bucket>) -> Result<u32, ()> {
+    pub fn erase(
+        &self,
+        collection: StoreItemPart,
+        bucket: Option<Bucket>,
+    ) -> Result<u32, crate::Error> {
         self.dispatch_erase(collection, bucket)
+            .context("KV erasure failed")
     }
 }
 

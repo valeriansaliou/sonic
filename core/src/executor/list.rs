@@ -9,25 +9,27 @@ use super::types::{QuerySearchLimit, QuerySearchOffset};
 use crate::store::{Bucket, StoreItemPart};
 
 impl super::Executor {
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection, ?bucket),
+    )]
     pub fn list(
         &self,
         collection: StoreItemPart,
         bucket: Bucket,
         limit: QuerySearchLimit,
         offset: QuerySearchOffset,
-    ) -> Result<Vec<String>, ()> {
+    ) -> Result<Vec<String>, crate::Error> {
         // Important: acquire graph access read lock, and reference it in context. This \
         //   prevents the graph from being erased while using it in this block.
         let _fst_read_guard = self.fst_pool.lock_read_access();
 
-        if let Ok(fst_store) = self.fst_pool.acquire(collection, bucket) {
-            tracing::debug!("running list");
+        let fst_store = self.fst_pool.acquire(collection, bucket)?;
 
-            let fst_repo = fst_store.to_repository();
+        tracing::debug!("Running LIST");
 
-            return fst_repo.list_words(limit as usize, offset as usize);
-        }
+        let fst_repo = fst_store.to_repository();
 
-        Err(())
+        fst_repo.list_words(limit as usize, offset as usize)
     }
 }

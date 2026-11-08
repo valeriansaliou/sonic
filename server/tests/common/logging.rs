@@ -8,15 +8,22 @@ use std::sync::{LazyLock, Once};
 
 use tracing_subscriber::EnvFilter;
 
-pub static LOG_LEVEL: LazyLock<Option<tracing::Level>> = LazyLock::new(
-    move || match std::env::var("LOG_LEVEL").map(|s| s.to_ascii_uppercase()) {
+fn to_tracing_level(var: Result<String, std::env::VarError>) -> Option<tracing::Level> {
+    match var.map(|s| s.to_ascii_uppercase()) {
         Ok(level) if level == "TRACE" => Some(tracing::Level::TRACE),
         Ok(level) if level == "DEBUG" => Some(tracing::Level::DEBUG),
         Ok(level) if level == "INFO" => Some(tracing::Level::INFO),
         Ok(level) if level == "WARN" => Some(tracing::Level::WARN),
         _ => None,
-    },
-);
+    }
+}
+
+pub static LOG_LEVEL: LazyLock<Option<tracing::Level>> =
+    LazyLock::new(move || to_tracing_level(std::env::var("LOG_LEVEL")));
+
+pub static SERVER_LOG_LEVEL: LazyLock<Option<tracing::Level>> =
+    LazyLock::new(move || to_tracing_level(std::env::var("SONIC_SERVER__LOG_LEVEL")));
+
 static INIT_LOGGING: Once = Once::new();
 
 pub fn init_logging(filter: Option<&str>, options: LoggingOptions) {
@@ -42,7 +49,8 @@ pub fn init_logging(filter: Option<&str>, options: LoggingOptions) {
             .with_level(options.with_level)
             .with_thread_ids(options.with_thread_ids)
             .with_ansi(true)
-            .without_time()
+            // .without_time()
+            .with_timer(tracing_subscriber::fmt::time::Uptime::default())
             .with_writer(tracing_subscriber::fmt::TestWriter::new)
             .init();
     });

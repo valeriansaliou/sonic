@@ -30,7 +30,7 @@ use sonic_benchmarks::prelude::*;
 use sonic_benchmarks::util::client_helpers::trigger_compact;
 use sonic_benchmarks::util::client_helpers::trigger_flush;
 use sonic_benchmarks::util::logging::HumanBytes;
-use sonic_benchmarks::util::logging::LOG_LEVEL;
+use sonic_benchmarks::util::logging::SERVER_LOG_LEVEL;
 use sonic_benchmarks::util::random::{SplitMix64, build_dictionary};
 
 use crate::common::{BENCH_DATA_PATH, SONIC_BENCH_PASSWORD, profiling_output};
@@ -568,7 +568,7 @@ pub fn run_bench<const N: usize>(
                 update_command(command)
                     .env(
                         "SONIC_SERVER__LOG_LEVEL",
-                        LOG_LEVEL.unwrap_or(tracing::Level::WARN).to_string(),
+                        SERVER_LOG_LEVEL.unwrap_or(tracing::Level::WARN).to_string(),
                     )
                     // Disable background tasks (we’ll run them manually).
                     .env("SONIC_STORE__FST__GRAPH__CONSOLIDATE_AFTER", "3600")

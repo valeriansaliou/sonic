@@ -9,6 +9,7 @@ use std::fmt;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
+use crate::Leveled;
 use crate::store::generic::*;
 pub use crate::store::rocksdb::pool::{GenericKvStorePool, KvStoreId};
 use crate::store::rocksdb::{
@@ -44,12 +45,16 @@ impl GenericRocksDbStorePub for ObjectStore {
 }
 
 impl GenericRocksDbStore for ObjectStore {
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(%store_id),
+    )]
     fn open(
         store_id: &KvStoreId,
         config: &crate::config::KvStoreConfig,
         dyn_config: Option<&dyn crate::DynamicConfig>,
-    ) -> Result<rocksdb::DB, rocksdb::Error> {
-        tracing::debug!("Opening Object store {store_id}");
+    ) -> Result<rocksdb::DB, crate::Error> {
+        tracing::debug!("Opening Object store…");
 
         // Configure database options.
         let mut db_options = rocksdb::Options::from(&config.database);
@@ -61,7 +66,7 @@ impl GenericRocksDbStore for ObjectStore {
         }
 
         // Open database connection.
-        rocksdb::DB::open(&db_options, config.store_path(store_id))
+        rocksdb::DB::open(&db_options, config.store_path(store_id)).as_error()
     }
 
     fn new(
@@ -146,7 +151,7 @@ impl ObjectStore {
 
 impl<'a> ObjectRepository<'a> {
     #[inline]
-    pub fn write(&self, batch: rocksdb::WriteBatch) -> Result<(), rocksdb::Error> {
+    pub fn write(&self, batch: rocksdb::WriteBatch) -> Result<(), crate::Error> {
         self.store.write(batch, Default::default())
     }
 

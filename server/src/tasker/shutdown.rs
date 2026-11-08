@@ -57,7 +57,7 @@ mod platform {
     // Notice: the following module is inspired from `graceful`, which can be found at: \
     //   https://github.com/0x1997/graceful
 
-    use nix::sys::signal::{SIGINT, SIGQUIT, SIGTERM, SigSet};
+    use nix::sys::signal::{SIGINT, SIGQUIT, SIGTERM, SigSet, Signal};
 
     pub struct ShutdownSignal(SigSet);
 
@@ -77,10 +77,10 @@ mod platform {
             mask.thread_block()
         }
 
-        pub fn at_exit<F: FnOnce(usize)>(&self, handler: F) {
+        pub fn at_exit<F: FnOnce(Signal)>(&self, handler: F) {
             let signal = self.0.wait().unwrap();
 
-            handler(signal as usize);
+            handler(signal);
         }
     }
 }

@@ -11,6 +11,7 @@ use hashbrown::HashMap;
 use indexmap::IndexMap;
 
 use super::types::{QueryMatchScore, QueryResultScore, QuerySearchLimit, QuerySearchOffset};
+use crate::Context as _;
 use crate::lexer::preprocessor::{Preprocessor, PreprocessorOutput};
 pub use crate::lexer::snippet_matching::QuerySnippetsConfig;
 use crate::lexer::snippet_matching::{self, Snippet, get_best_snippets};
@@ -51,24 +52,26 @@ impl super::Executor {
     /// (with typo corrections, etc.).
     ///
     /// This could be seen as some kind of query planner, in a way.
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(input_len = input.original_text().len()),
+    )]
     fn get_query_candidates<'input>(
         &self,
         input: &'input PreprocessorOutput<'input>,
         kv_repo: &KvRepositoryReadOnly<'_>,
         fst_repo: &FstRepository<'_>,
-    ) -> Result<Vec<QueryCandidate<'input>>, ()> {
+    ) -> Result<Vec<QueryCandidate<'input>>, crate::Error> {
         let alternates_try = self.app_conf.search.query_alternates_try;
         let min_idf = (self.app_conf.search).query_minimum_term_idf_default;
         let min_doc_count = (self.app_conf.search).query_minimum_term_idf_minimum_object_count;
 
         // PERF: Get document count once (used to compute idfs).
-        let document_count = kv_repo
-            .get_object_count()
-            .map_err(|()| tracing::warn!("Error getting object count"))?;
+        let document_count = (kv_repo.get_object_count()).context("Error getting object count")?;
 
         #[cfg(debug_assertions)]
         if input.token_count() > MAX_QUERY_TOKENS {
-            tracing::debug!("Query is very long: {:?}", input.original_text());
+            tracing::debug!(input = ?input.original_text(), "Query is very long");
         }
 
         let mut query_candidates =
@@ -180,7 +183,7 @@ impl super::Executor {
         query_candidates: &[QueryCandidate<'_>],
         options: &QueryOptions,
         kv_repo: &KvRepositoryReadOnly<'_>,
-    ) -> Result<Vec<QueryResult>, ()> {
+    ) -> Result<Vec<QueryResult>, crate::Error> {
         let &QueryOptions { limit, offset } = options;
 
         let mut retain_word_objects = self.app_conf.search.query_retain_word_objects;
@@ -216,7 +219,7 @@ impl super::Executor {
             .take(usize::from(limit))
             .collect();
 
-        tracing::info!("got search executor final results: {page_results:?}");
+        tracing::trace!("Got query results: {page_results:?}");
 
         Ok(page_results)
     }
@@ -227,7 +230,7 @@ impl super::Executor {
         bucket: Bucket,
         input: &PreprocessorOutput,
         options: QueryOptions,
-    ) -> Result<Vec<QueryResult>, ()> {
+    ) -> Result<Vec<QueryResult>, crate::Error> {
         // #[cfg(debug_assertions)]
         // eprintln!("q: {}", input.original_text());
         #[cfg(debug_assertions)]
@@ -243,9 +246,7 @@ impl super::Executor {
         let _fst_read_guard = self.fst_pool.lock_read_access();
 
         let Some(kv_store) = self.kv_pool.acquire(false, collection, None)? else {
-            tracing::debug!(
-                "collection store does not exist, consider {bucket:?} from {collection:?} empty"
-            );
+            tracing::debug!("ollection store does not exist, consider bucket empty.");
             return Ok(vec![]);
         };
         let fst_store = self.fst_pool.acquire(collection, bucket)?;
@@ -263,6 +264,10 @@ impl super::Executor {
         self.query_inner(&query_candidates, &options, &kv_repo)
     }
 
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection, ?bucket, input_len = input.original_text().len()),
+    )]
     #[inline]
     pub fn query(
         &self,
@@ -270,11 +275,15 @@ impl super::Executor {
         bucket: Bucket,
         input: PreprocessorOutput,
         options: QueryOptions,
-    ) -> Result<impl ExactSizeIterator<Item = String>, ()> {
+    ) -> Result<impl ExactSizeIterator<Item = String>, crate::Error> {
         self.query_(collection, bucket, &input, options)
             .map(|results| results.into_iter().map(|res| res.oid))
     }
 
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection, ?bucket, input_len = input.original_text().len()),
+    )]
     pub fn query_with_snippets(
         &self,
         collection: StoreItemPart,
@@ -283,7 +292,7 @@ impl super::Executor {
         options: QueryOptions,
         lang: Option<whatlang::Lang>,
         snippets_config: &QuerySnippetsConfig,
-    ) -> Result<Vec<MatchWithSnippets>, ()> {
+    ) -> Result<Vec<MatchWithSnippets>, crate::Error> {
         // #[cfg(debug_assertions)]
         // eprintln!("q: {}", input.original_text());
         #[cfg(debug_assertions)]
@@ -299,9 +308,7 @@ impl super::Executor {
         let _fst_read_guard = self.fst_pool.lock_read_access();
 
         let Some(kv_store) = self.kv_pool.acquire(false, collection, None)? else {
-            tracing::debug!(
-                "collection store does not exist, consider {bucket:?} from {collection:?} empty"
-            );
+            tracing::debug!("Collection store does not exist, consider bucket empty.");
             return Ok(vec![]);
         };
         let fst_store = self.fst_pool.acquire(collection, bucket)?;
@@ -321,9 +328,7 @@ impl super::Executor {
         let object_store_pool = self.object_store_pool.acquire(false, collection, None)?;
 
         let Some(object_store_pool) = object_store_pool else {
-            tracing::debug!(
-                "Object store does not exist, consider {bucket:?} from {collection:?} empty"
-            );
+            tracing::debug!("Object store does not exist, consider bucket empty.");
             let res = (query_results.into_iter())
                 .map(|res| MatchWithSnippets::new(res.oid))
                 .collect::<Vec<_>>();
@@ -365,16 +370,16 @@ impl super::Executor {
 
             let object_oid_parsed = match GenericOid::from_str(&object_oid) {
                 Ok(oid) => oid,
-                Err(()) => {
-                    tracing::error!(%object_oid, "Invalid object OID");
+                Err(error) => {
+                    tracing::error!(%object_oid, "Invalid object OID: {error:#}");
                     continue 'results;
                 }
             };
 
-            let fragment_count = kv_repo.get_fragment_count(object_iid).unwrap_or_else(|()| {
+            let fragment_count = (kv_repo.get_fragment_count(object_iid)).unwrap_or_else(|error| {
                 tracing::error!(
                     %object_iid,
-                    "Error getting fragment count, considering no fragment exist."
+                    "Error getting fragment count: {error:#}. Considering no fragment exist."
                 );
                 0
             });
@@ -399,7 +404,7 @@ impl super::Executor {
                     }
                     Ok(None) => continue 'results,
                     Err(error) => {
-                        tracing::error!("Error getting original object: {error}");
+                        tracing::error!("Error getting original object: {error:#}");
                         continue 'results;
                     }
                 }
@@ -431,15 +436,15 @@ impl super::Executor {
                             tracing::error!(%object_oid, %fragment_iid, "Fragment OID not found");
                             continue 'fragments;
                         }
-                        Err(()) => {
-                            tracing::error!(%object_oid, %fragment_iid, "Error finding fragment OID");
+                        Err(error) => {
+                            tracing::error!(%object_oid, %fragment_iid, "Error finding fragment OID: {error:#}");
                             continue 'fragments;
                         }
                     };
                     let fragment_oid_parsed = match GenericOid::from_str(&fragment_oid) {
                         Ok(oid) => oid,
-                        Err(()) => {
-                            tracing::error!(%object_oid, %fragment_oid, "Invalid fragment OID");
+                        Err(error) => {
+                            tracing::error!(%object_oid, %fragment_oid, "Invalid fragment OID: {error:#}");
                             continue 'fragments;
                         }
                     };
@@ -451,7 +456,7 @@ impl super::Executor {
                         Ok(Some(bytes)) => String::from_utf8_lossy(bytes.as_ref()),
                         Ok(None) => continue 'fragments,
                         Err(error) => {
-                            tracing::error!("Error getting original object: {error}");
+                            tracing::error!("Error getting original object: {error:#}");
                             continue 'fragments;
                         }
                     };
@@ -543,24 +548,24 @@ fn overall_score(
     let count = scores.len() as f32;
     let scores = scores.map(|opt| opt.unwrap_or(0f32));
 
-    #[cfg(debug_assertions)]
-    let scores = {
-        use std::sync::atomic::{AtomicU8, Ordering};
-
-        let scores = scores.collect::<Vec<_>>();
-
-        // if !scores.iter().any(|v| *v == 0.) {
-        static COUNTER: AtomicU8 = AtomicU8::new(0);
-        if COUNTER
-            .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
-            .is_ok_and(|prev| prev < 200)
-        {
-            tracing::debug!("scores = {scores:?}");
-        }
-        // }
-
-        scores.into_iter()
-    };
+    //     #[cfg(debug_assertions)]
+    //     let scores = {
+    //         use std::sync::atomic::{AtomicU8, Ordering};
+    //
+    //         let scores = scores.collect::<Vec<_>>();
+    //
+    //         // if !scores.iter().any(|v| *v == 0.) {
+    //         static COUNTER: AtomicU8 = AtomicU8::new(0);
+    //         if COUNTER
+    //             .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+    //             .is_ok_and(|prev| prev < 200)
+    //         {
+    //             tracing::debug!("scores = {scores:?}");
+    //         }
+    //         // }
+    //
+    //         scores.into_iter()
+    //     };
 
     let total = scores.sum::<f32>();
 
@@ -676,7 +681,7 @@ impl ScoringMatrix {
     fn build<'input, 'candidates, I>(
         retain_word_objects: usize,
         query_candidates: &'candidates [QueryCandidate<'_>],
-        get_term_to_iids: impl Fn(&'candidates StoreTermHash) -> Result<Option<I>, ()> + Copy,
+        get_term_to_iids: impl Fn(&'candidates StoreTermHash) -> Result<Option<I>, crate::Error> + Copy,
     ) -> Self
     where
         I: ExactSizeIterator<Item = TermToIidsEntry> + 'candidates,
@@ -698,7 +703,10 @@ impl ScoringMatrix {
         ) in query_candidates.iter().enumerate()
         {
             for term_to_iids_entry in get_term_to_iids(&term_hash)
-                .unwrap_or_else(|()| None)
+                .unwrap_or_else(|error| {
+                    tracing::error!("Error getting Term-To-IIDs: {error:#}");
+                    None
+                })
                 .into_iter()
                 .flatten()
                 .take(retain_word_objects)
@@ -767,7 +775,7 @@ impl ScoringMatrix {
     fn backfill<'candidates, I>(
         &mut self,
         query_candidates: &'candidates [QueryCandidate],
-        get_term_to_iids: impl Fn(&'candidates StoreTermHash) -> Result<Option<I>, ()> + Copy,
+        get_term_to_iids: impl Fn(&'candidates StoreTermHash) -> Result<Option<I>, crate::Error> + Copy,
     ) where
         I: ExactSizeIterator<Item = TermToIidsEntry> + 'candidates,
     {
@@ -789,8 +797,10 @@ impl ScoringMatrix {
             let token = &query_candidates[term_idx];
             let term_hash = &token.term_hash;
 
-            let Some(term_to_iids_entries) = get_term_to_iids(term_hash).unwrap_or_else(|()| None)
-            else {
+            let Some(term_to_iids_entries) = get_term_to_iids(term_hash).unwrap_or_else(|error| {
+                tracing::error!("Error getting Term-To-IIDs: {error:#}");
+                None
+            }) else {
                 continue;
             };
 

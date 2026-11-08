@@ -7,28 +7,27 @@
 
 use rocksdb::WriteBatch;
 
+use crate::Context as _;
 use crate::store::{Bucket, GenericOid, StoreItemPart};
 
 impl super::Executor {
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection, ?bucket, object = ?object_oid, fragment = ?fragment_oid),
+    )]
     pub fn flushf(
         &self,
         collection: StoreItemPart<'_>,
         bucket: Bucket<'_>,
         object_oid: GenericOid<'_>,
         fragment_oid: GenericOid<'_>,
-    ) -> Result<u32, ()> {
+    ) -> Result<u32, crate::Error> {
         // Important: acquire database access read lock, and reference it in context. This \
         //   prevents the database from being erased while using it in this block.
         let _kv_read_guard = self.kv_pool.lock_read_access();
 
-        let Ok(kv_store) = self.kv_pool.acquire(false, collection, None) else {
-            return Err(());
-        };
-
-        let Some(kv_store) = kv_store else {
-            tracing::debug!(
-                "collection store does not exist, consider {bucket:?} from {collection:?} empty"
-            );
+        let Some(kv_store) = self.kv_pool.acquire(false, collection, None)? else {
+            tracing::debug!("Collection store does not exist, consider bucket empty.");
             return Ok(0);
         };
 
@@ -48,7 +47,7 @@ impl super::Executor {
 
         // Resolve terms associated to IID
         let object_terms = (kv_repo.get_iid_to_terms(object_iid))
-            .map_err(|()| tracing::error!("failed getting flusho executor iid-to-terms"))?
+            .context("Failed getting IID-To-Terms")?
             .into_iter()
             .flatten()
             .map(|entry| entry.term_hash());
@@ -65,9 +64,7 @@ impl super::Executor {
             object_terms,
         );
 
-        kv_repo.write(batch).map_err(|error| {
-            tracing::error!("failed executing batch-flush-bucket in flusho executor: {error}")
-        })?;
+        kv_repo.write(batch)?;
 
         Ok(batch_count)
     }

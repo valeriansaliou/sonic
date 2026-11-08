@@ -20,6 +20,7 @@ use regex_syntax::escape as regex_escape;
 
 use crate::config::FstStoreConfig;
 use crate::lexer::ranges::LexerRegexRange;
+use crate::{AttachResult as _, Context as _, fields};
 
 use super::generic::*;
 
@@ -85,12 +86,15 @@ impl Default for FstRepositoryConfig {
 const WORD_LIMIT_LENGTH: usize = 40;
 
 impl FstStore {
-    pub(super) fn open(id: &FstStoreId, config: &FstStoreConfig) -> Result<fst::Set, fst::Error> {
-        tracing::debug!("Opening fst graph for {id}");
+    pub(super) fn open(
+        store_id: &FstStoreId,
+        config: &FstStoreConfig,
+    ) -> Result<fst::Set, crate::Error> {
+        tracing::trace!(%store_id, "Opening FST graph…");
 
-        let collection_bucket_path = config.store_path(id, FstStorePathMode::Permanent);
+        let collection_bucket_path = config.store_path(store_id, FstStorePathMode::Permanent);
 
-        if collection_bucket_path.exists() {
+        let set = if collection_bucket_path.exists() {
             // Open graph at path for collection
             // SAFETY: This is unsafe, as loaded memory is a memory-mapped file, that cannot be
             //   guaranteed not to be muted while we own a read handle to it. Though, we use
@@ -100,7 +104,9 @@ impl FstStore {
             // FST does not exist on disk; generate an empty FST for now
             // (until a consolidation task occurs and populates the on-disk FST).
             fst::Set::from_iter(std::iter::empty::<&str>())
-        }
+        }?;
+
+        Ok(set)
     }
 
     fn cardinality(&self) -> usize {
@@ -111,7 +117,14 @@ impl FstStore {
         self.graph.into_stream()
     }
 
-    fn lookup_begins(&self, word: &str) -> Result<fst::set::Stream<'_, fst_regex::Regex>, ()> {
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store_id = %self.target, ?word),
+    )]
+    fn lookup_begins(
+        &self,
+        word: &str,
+    ) -> Result<fst::set::Stream<'_, fst_regex::Regex>, crate::Error> {
         // NOTE: This regex maps over an unicode range, for speed reasons at scale.
         //   We found out that the 'match any' syntax ('.+') was super-slow. Using the restrictive
         //   syntax below divided the cost of e.g. a search query by 2. The regex below has been
@@ -125,30 +138,31 @@ impl FstStore {
             .unwrap_or_default()
             .write_to(&mut regex_str)
             // Regex write failed? (this should not happen)
-            .map_err(|error| tracing::error!(
-                "Could not lookup word in fst via 'begins': {word:?} because regex write failed: {error:?}"
-            ))?;
+            .context("Could not lookup word in FST via 'begins': Regex write failed")?;
 
         regex_str.push_str("+)");
 
-        // Proceed word lookup.
-        tracing::debug!("Looking-up word in fst via 'begins': {word:?} with regex: {regex_str:?}");
+        tracing::trace!(?regex_str, "Looking-up word in FST via 'begins'");
 
-        let regex = fst_regex::Regex::new(&regex_str).map_err(|_error| ())?;
+        let regex = fst_regex::Regex::new(&regex_str)
+            .context("Could not lookup word in FST via 'begins': Invalid regex")?;
 
         Ok(self.graph.search(regex).into_stream())
     }
 
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store_id = %self.target, ?word, %typo_factor),
+    )]
     fn lookup_typos(
         &self,
         word: &str,
         typo_factor: u32,
-    ) -> Result<fst::set::Stream<'_, fst_levenshtein::Levenshtein>, ()> {
-        tracing::debug!(
-            "Looking-up word in fst via 'typos': {word:?} with typo factor: {typo_factor:?}"
-        );
+    ) -> Result<fst::set::Stream<'_, fst_levenshtein::Levenshtein>, crate::Error> {
+        tracing::trace!("Looking-up word in FST via 'typos'");
 
-        let fuzzy = fst_levenshtein::Levenshtein::new(word, typo_factor).map_err(|_error| ())?;
+        let fuzzy = fst_levenshtein::Levenshtein::new(word, typo_factor)
+            .context("Could not lookup word in FST via 'typos'")?;
 
         Ok(self.graph.search(fuzzy).into_stream())
     }
@@ -161,9 +175,9 @@ impl FstStore {
         *self.last_consolidated.write().unwrap() = Instant::now();
 
         if already_scheduled {
-            tracing::trace!("Graph consolidation re-scheduled for {}", self.target);
+            tracing::trace!(store_id = %self.target, "Graph consolidation re-scheduled");
         } else {
-            tracing::debug!("Graph consolidation scheduled for {}", self.target);
+            tracing::debug!(store_id = %self.target, "Graph consolidation scheduled");
         }
     }
 }
@@ -176,10 +190,16 @@ pub(super) struct ConsolidateStats {
 }
 
 impl FstStore {
-    pub(super) fn consolidate(&self, stats: &mut ConsolidateStats) -> Result<bool, ()> {
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store_id = %self.target),
+    )]
+    pub(super) fn consolidate(&self, stats: &mut ConsolidateStats) -> Result<bool, crate::Error> {
         use std::collections::{HashSet, VecDeque};
         use std::fs::{self, File};
         use std::io;
+
+        tracing::debug!("Consolidating FST…");
 
         // Acquire write reference to pending actions.
         let mut pending = self.pending.lock().unwrap();
@@ -193,35 +213,31 @@ impl FstStore {
         }
 
         // Read old FST (or default to empty FST).
-        let old_fst = FstStore::open(&self.target, &self.config)
-            .map_err(|error| tracing::error!("Error opening old fst: {error:?}"))?;
+        let old_fst =
+            FstStore::open(&self.target, &self.config).context("Error opening old FST")?;
 
         // Initialize the new FST (temporary).
         let bucket_tmp_path = (self.config).store_path(&self.target, FstStorePathMode::Temporary);
 
-        let bucket_tmp_path_parent = bucket_tmp_path.parent().unwrap();
+        let bucket_tmp_dir = bucket_tmp_path.parent().unwrap();
 
-        fs::create_dir_all(&bucket_tmp_path_parent).map_err(|error| tracing::error!(
-            "Error initializing temporary fst directory at path {bucket_tmp_path_parent:?}: {error:?}"
-        ))?;
+        fs::create_dir_all(&bucket_tmp_dir).with_context(|| {
+            format!("Error initializing temporary FST directory at path {bucket_tmp_dir:?}")
+        })?;
 
         // Erase any previously-existing temporary FST (e.g. process stopped while
         // writing the temporary FST); there is no guarantee this succeeds.
         fs::remove_file(&bucket_tmp_path).ok();
 
-        let tmp_fst_file = File::create(&bucket_tmp_path).map_err(|error| {
-            tracing::error!(
-                "Error initializing temporary fst at path {bucket_tmp_path:?}: {error:?}"
-            )
+        let tmp_fst_file = File::create(&bucket_tmp_path).with_context(|| {
+            format!("Error initializing temporary FST at path {bucket_tmp_path:?}")
         })?;
 
         let tmp_fst_writer = io::BufWriter::new(tmp_fst_file);
 
         // Create a builder that can be used to insert new key-value pairs.
-        let mut tmp_fst_builder = fst::SetBuilder::new(tmp_fst_writer).map_err(|error| {
-            tracing::error!(
-                "Error starting building temporary fst at path {bucket_tmp_path:?}: {error:?}"
-            )
+        let mut tmp_fst_builder = fst::SetBuilder::new(tmp_fst_writer).with_context(|| {
+            format!("Error starting building temporary FST at path {bucket_tmp_path:?}")
         })?;
 
         // Convert push keys to an ordered vector.
@@ -267,7 +283,7 @@ impl FstStore {
                     &self.config.graph,
                 ) {
                     // FST cannot accept more items (limits reached).
-                    tracing::warn!("Limit reached on new from old in fst");
+                    tracing::warn!("Limit reached on new from old in FST");
 
                     // Important: stop the main loop (limit reached).
                     break 'old;
@@ -278,7 +294,7 @@ impl FstStore {
                     Ok(()) => stats.count_pushed += 1,
                     // Could not insert word in FST.
                     Err(error) => {
-                        tracing::error!("Failed inserting new from old in fst: {error:?}")
+                        tracing::error!("Failed inserting new from old in FST: {error:#}")
                     }
                 }
 
@@ -297,7 +313,7 @@ impl FstStore {
                     &self.config.graph,
                 ) {
                     // FST cannot accept more items (limits reached).
-                    tracing::warn!("Limit reached on old word in fst");
+                    tracing::warn!("Limit reached on old word in FST");
 
                     // Important: stop the main loop (limit reached).
                     break 'old;
@@ -307,7 +323,7 @@ impl FstStore {
                     // Word moved to FST.
                     Ok(()) => stats.count_moved += 1,
                     // Could not move word to FST.
-                    Err(error) => tracing::error!("Failed inserting old word in fst: {error:?}"),
+                    Err(error) => tracing::error!("Failed inserting old word in FST: {error:#}"),
                 }
             }
         }
@@ -322,7 +338,7 @@ impl FstStore {
                 &self.config.graph,
             ) {
                 // FST cannot accept more items (limits reached).
-                tracing::warn!("Limit reached on new word from complete in fst");
+                tracing::warn!("Limit reached on new word from complete in FST");
 
                 // Important: stop the main loop (limit reached).
                 break;
@@ -333,41 +349,30 @@ impl FstStore {
                 Ok(()) => stats.count_pushed += 1,
                 // Could not insert word in FST.
                 Err(error) => {
-                    tracing::error!("Failed inserting new word from complete in fst: {error:?}")
+                    tracing::error!("Failed inserting new word from complete in FST: {error:#}")
                 }
             }
         }
 
         // Finish building new FST.
-        let should_close = match tmp_fst_builder.finish() {
-            Ok(()) => {
-                // Replace old FST with new FST (this nukes the old FST).
-                // NOTE: There is no need to re-open the new FST, as it will be
-                //   automatically opened on its next access.
-                let bucket_final_path =
-                    (self.config).store_path(&self.target, FstStorePathMode::Permanent);
+        (tmp_fst_builder.finish())
+            .attach(fields!(?bucket_tmp_path))
+            .context("Error finishing building temporary FST")?;
 
-                // Proceed temporary FST to final FST path rename?
-                match fs::rename(&bucket_tmp_path, &bucket_final_path) {
-                    Ok(()) => {
-                        tracing::debug!("Done consolidating fst at path {bucket_final_path:?}")
-                    }
-                    Err(error) => tracing::error!(
-                        "Error consolidating fst at path {bucket_final_path:?}: {error:?}"
-                    ),
-                }
+        // Replace old FST with new FST (this nukes the old FST).
+        // NOTE: There is no need to re-open the new FST, as it will be
+        //   automatically opened on its next access.
+        let bucket_final_path = (self.config).store_path(&self.target, FstStorePathMode::Permanent);
 
-                // Should close open store reference to old FST.
-                true
-            }
-            Err(error) => {
-                tracing::error!(
-                    "Error finishing building temporary fst at path {bucket_tmp_path:?}: {error:?}"
-                );
+        // Proceed temporary FST to final FST path rename?
+        fs::rename(&bucket_tmp_path, &bucket_final_path)
+            .attach(fields!(?bucket_final_path))
+            .context("Error consolidating FST")?;
 
-                false
-            }
-        };
+        tracing::debug!(?bucket_final_path, "Done consolidating FST");
+
+        // Should close open store reference to old FST.
+        let should_close = true;
 
         drop(to_pop);
 
@@ -468,16 +473,26 @@ impl<'a> FstRepository<'a> {
         true
     }
 
-    pub fn push_words<'t>(&self, terms: impl Iterator<Item = &'t str>) {
+    #[tracing::instrument(
+        level = "debug",
+        skip_all, fields(store_id = %self.store.target, word_count = terms.len()),
+    )]
+    pub fn push_words<'t>(&self, terms: impl ExactSizeIterator<Item = &'t str>) {
         let mut pending = self.store.pending.lock().unwrap();
 
         for term in terms {
             if self.push_word(term, &mut pending) {
-                tracing::trace!("push term committed to graph: {term}");
+                tracing::trace!(?term, "Push term committed to graph");
+            } else {
+                tracing::trace!(?term, "Push term not committed to graph");
             }
         }
     }
 
+    #[tracing::instrument(
+        level = "trace",
+        skip_all, fields(store_id = %self.store.target, ?word),
+    )]
     pub fn pop_word(&self, word: &str) -> bool {
         // Word over limit? (abort, the FST does not perform well over large words)
         if Self::word_over_limit(word) {
@@ -522,6 +537,10 @@ impl<'a> FstRepository<'a> {
         true
     }
 
+    #[tracing::instrument(
+        level = "trace",
+        skip_all, fields(store_id = %self.store.target, word = ?from_word, %limit, %max_typo_factor),
+    )]
     pub fn suggest_words(
         &self,
         from_word: &str,
@@ -610,7 +629,7 @@ impl<'a> FstRepository<'a> {
             return None;
         };
 
-        tracing::debug!(?word, "looking up for word in 'begins' fst stream");
+        tracing::debug!(?word, "Looking up for word in 'begins' FST stream");
 
         Some(FstStreamIterator(stream).map(move |suggestion| {
             let distance: usize = word.len().abs_diff(suggestion.len());
@@ -635,7 +654,7 @@ impl<'a> FstRepository<'a> {
         tracing::debug!(
             ?word,
             typo_factor,
-            "looking up for word in 'typos' fst stream"
+            "Looking up for word in 'typos' FST stream"
         );
 
         // NOTE: Returning the same score for every word works only
@@ -655,20 +674,13 @@ impl<'a> FstRepository<'a> {
         }))
     }
 
-    pub fn list_words(&self, limit: usize, offset: usize) -> Result<Vec<String>, ()> {
+    pub fn list_words(&self, limit: usize, offset: usize) -> Result<Vec<String>, crate::Error> {
         let stream = self.store.as_stream();
 
         // Enumerate words from FST stream.
-        match stream
-            .into_strs()
+        (stream.into_strs())
             .map(|words| words.into_iter().skip(offset).take(limit).collect())
-        {
-            Err(err) => {
-                tracing::debug!("conversion of stream failed: {err:?}");
-                Err(())
-            }
-            Ok(words) => Ok(words),
-        }
+            .context("Stream conversion failed")
     }
 
     pub fn count_words(&self) -> usize {
@@ -677,7 +689,7 @@ impl<'a> FstRepository<'a> {
 
     fn word_over_limit(word: &str) -> bool {
         if word.len() > WORD_LIMIT_LENGTH {
-            tracing::debug!("got over-limit fst word: {word:?}");
+            tracing::debug!(?word, "Got over-limit FST word");
 
             true
         } else {

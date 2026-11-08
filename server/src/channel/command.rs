@@ -177,7 +177,9 @@ impl ChannelCommandBase {
         }
     }
 
-    pub fn parse_text_parts<'a>(parts: impl Iterator<Item = &'a str>) -> Option<String> {
+    /// Parses a `"`-delimited text part (e.g. `"example"`), advancing the
+    /// iterator until the end of it.
+    pub fn parse_text_part<'a>(parts: impl Iterator<Item = &'a str>) -> Option<String> {
         // Parse text parts and nest them together
         let mut text_raw = String::new();
 
@@ -225,24 +227,22 @@ impl ChannelCommandBase {
             || text_bytes[0] as char != TEXT_PART_BOUNDARY
             || text_bytes[text_bytes_len - 1] as char != TEXT_PART_BOUNDARY
         {
-            tracing::info!("could not properly parse text parts: {:?}", text_raw);
+            tracing::warn!("Invalid text part: {text_raw:?}");
 
             None
         } else {
-            tracing::debug!(
-                "parsed text parts (still needs post-processing): {:?}",
-                text_raw
-            );
+            // tracing::tracing!(
+            //     "parsed text parts (still needs post-processing): {text_raw:?}"
+            // );
 
             // Return inner text (without boundary characters)
             match str::from_utf8(&text_bytes[1..text_bytes_len - 1]) {
                 Ok(text_inner) => {
                     let text_inner_string = unescape(text_inner.trim());
 
-                    tracing::debug!(
-                        "parsed text parts (post-processed): {:?}",
-                        text_inner_string
-                    );
+                    // tracing::tracing!(
+                    //     "parsed text parts (post-processed): {text_inner_string:?}"
+                    // );
 
                     // Text must not be empty
                     if !text_inner_string.is_empty() {
@@ -252,8 +252,8 @@ impl ChannelCommandBase {
                     }
                 }
                 Err(err) => {
-                    tracing::info!(
-                        "could not type-cast post-processed text parts: {:?} because: {}",
+                    tracing::warn!(
+                        "Could not type-cast post-processed text parts: {:?} because: {}",
                         text_raw,
                         err
                     );
@@ -286,12 +286,12 @@ impl ChannelCommandBase {
                             && !value.contains(META_PART_GROUP_OPEN)
                             && !value.contains(META_PART_GROUP_CLOSE)
                         {
-                            tracing::debug!("parsed meta part as: {key:?} = {value:?}");
+                            tracing::trace!("Parsed meta part as: {key:?} = {value:?}");
 
                             Some(Ok((key, value)))
                         } else {
-                            tracing::info!(
-                                "parsed meta part, but it contains reserved characters: {key:?} = {value:?}"
+                            tracing::warn!(
+                                "Parsed meta part, but it contains reserved characters: {key:?} = {value:?}"
                             );
 
                             Some(Err((key, value)))
@@ -299,12 +299,12 @@ impl ChannelCommandBase {
                     }
                 } else {
                     let (key, value) = (part, "");
-                    tracing::debug!("parsed meta part as: {key:?} = {value:?}");
+                    tracing::trace!("Parsed meta part as: {key:?} = {value:?}");
                     return Some(Ok((key, value)));
                 }
             }
 
-            tracing::info!("could not parse meta part: {}", part);
+            tracing::warn!("Could not parse meta part: {part:?}");
 
             Some(Err(("?", part)))
         } else {
@@ -320,27 +320,35 @@ impl ChannelCommandBase {
         ChannelCommandError::InvalidMetaValue((meta_key.to_owned(), meta_value.to_owned()))
     }
 
-    pub fn commit_ok_operation(operation: impl FnOnce() -> Result<(), ()>) -> ChannelResult {
+    pub fn commit_ok_operation(
+        operation: impl FnOnce() -> Result<(), sonic::Error>,
+    ) -> ChannelResult {
         match operation() {
             Ok(()) => Ok(vec![ChannelCommandResponse::Ok]),
-            Err(()) => Err(ChannelCommandError::QueryError),
+            Err(error) => {
+                sonic::log!(error);
+                Err(ChannelCommandError::QueryError)
+            }
         }
     }
 
     pub fn commit_result_operation(
-        operation: impl FnOnce() -> Result<Option<String>, ()>,
+        operation: impl FnOnce() -> Result<Option<String>, sonic::Error>,
     ) -> ChannelResult {
         match operation() {
             Ok(Some(result_inner)) => Ok(vec![ChannelCommandResponse::Result(result_inner)]),
             Ok(None) => Err(ChannelCommandError::InternalError),
-            Err(()) => Err(ChannelCommandError::QueryError),
+            Err(error) => {
+                sonic::log!(error);
+                Err(ChannelCommandError::QueryError)
+            }
         }
     }
 
     pub fn commit_pending_operation(
         query_type: &'static str,
         query_id: &str,
-        operation: impl FnOnce() -> Result<Option<String>, ()>,
+        operation: impl FnOnce() -> Result<Option<String>, sonic::Error>,
     ) -> ChannelResult {
         // Idea: this could be made asynchronous in the future, if there are some latency issues \
         //   on large Sonic deployments. The idea would be to have a number of worker threads for \
@@ -360,7 +368,10 @@ impl ChannelCommandBase {
                     results.unwrap_or_default(),
                 ),
             ]),
-            Err(()) => Err(ChannelCommandError::QueryError),
+            Err(error) => {
+                sonic::log!(error);
+                Err(ChannelCommandError::QueryError)
+            }
         }
     }
 
@@ -381,17 +392,16 @@ impl ChannelCommandSearch {
         match (
             parts.next(),
             parts.next(),
-            ChannelCommandBase::parse_text_parts(&mut parts),
+            ChannelCommandBase::parse_text_part(&mut parts),
         ) {
             (Some(collection), Some(bucket), Some(text)) => {
                 // Generate command identifier
                 let event_id = ChannelCommandBase::generate_event_id();
 
-                tracing::debug!(
-                    "dispatching search query #{} on collection: {} and bucket: {}",
-                    event_id,
-                    collection,
-                    bucket
+                tracing::Span::current().record("event_id", tracing::field::display(&event_id));
+
+                tracing::trace!(
+                    "Dispatching search query #{event_id} on collection: {collection:?} and bucket: {bucket:?}"
                 );
 
                 // Define query parameters
@@ -437,8 +447,8 @@ impl ChannelCommandSearch {
                         "LIMIT out of minimum/maximum bounds",
                     ))
                 } else {
-                    tracing::debug!(
-                        "will search for #{event_id} with text: {text:?}, limit: {limit}, offset: {offset}, locale: <{lang:?}>"
+                    tracing::trace!(
+                        "Will search for #{event_id} with text: {text:?}, limit: {limit}, offset: {offset}, locale: <{lang:?}>"
                     );
 
                     let (collection, bucket) = StoreItemBuilder::from_depth_2(collection, bucket)
@@ -464,6 +474,8 @@ impl ChannelCommandSearch {
 
                         #[cfg(feature = "experimental-api")]
                         if let Some(snippets) = snippets {
+                            use sonic::Context as _;
+
                             return ctx
                                 .executor
                                 .query_with_snippets(
@@ -474,14 +486,10 @@ impl ChannelCommandSearch {
                                     lang,
                                     &snippets,
                                 )
-                                .and_then(|results| match serde_json::to_string(&results) {
-                                    Ok(string) => Ok(Some(string)),
-                                    Err(error) => {
-                                        tracing::error!(
-                                            "Failed serializing QUERY snippets: {error}"
-                                        );
-                                        Err(())
-                                    }
+                                .and_then(|results| {
+                                    serde_json::to_string(&results)
+                                        .map(Some)
+                                        .context("Failed serializing QUERY snippets")
                                 });
                         }
 
@@ -511,17 +519,16 @@ impl ChannelCommandSearch {
         match (
             parts.next(),
             parts.next(),
-            ChannelCommandBase::parse_text_parts(&mut parts),
+            ChannelCommandBase::parse_text_part(&mut parts),
         ) {
             (Some(collection), Some(bucket), Some(text)) => {
                 // Generate command identifier
                 let event_id = ChannelCommandBase::generate_event_id();
 
-                tracing::debug!(
-                    "dispatching search suggest #{} on collection: {} and bucket: {}",
-                    event_id,
-                    collection,
-                    bucket
+                tracing::Span::current().record("event_id", tracing::field::display(&event_id));
+
+                tracing::trace!(
+                    "Dispatching search suggest #{event_id} on collection: {collection:?} and bucket: {bucket:?}"
                 );
 
                 // Define suggest parameters
@@ -548,11 +555,8 @@ impl ChannelCommandSearch {
                         "LIMIT out of minimum/maximum bounds",
                     ))
                 } else {
-                    tracing::debug!(
-                        "will suggest for #{} with text: {}, limit: {}",
-                        event_id,
-                        text,
-                        suggest_limit
+                    tracing::trace!(
+                        "Will suggest for #{event_id} with text: {text:?}, limit: {suggest_limit}"
                     );
 
                     let (collection, bucket) = StoreItemBuilder::from_depth_2(collection, bucket)
@@ -592,11 +596,10 @@ impl ChannelCommandSearch {
                 // Generate command identifier
                 let event_id = ChannelCommandBase::generate_event_id();
 
-                tracing::debug!(
-                    "dispatching search list #{} on collection: {} and bucket: {}",
-                    event_id,
-                    collection,
-                    bucket
+                tracing::Span::current().record("event_id", tracing::field::display(&event_id));
+
+                tracing::trace!(
+                    "Dispatching search list #{event_id} on collection: {collection:?} and bucket: {bucket:?}"
                 );
 
                 // Define list parameters
@@ -654,7 +657,7 @@ impl ChannelCommandSearch {
     ) -> Result<(), ChannelCommandError> {
         match meta_result {
             Ok((meta_key, meta_value)) => {
-                tracing::debug!("handle query meta: {} = {}", meta_key, meta_value);
+                tracing::trace!("Handle query meta: {meta_key:?} = {meta_value:?}");
 
                 match meta_key {
                     "LIMIT" => {
@@ -699,7 +702,7 @@ impl ChannelCommandSearch {
                             let mut args = meta_value.splitn(3, ",");
 
                             let error = |error| {
-                                tracing::error!("Command argument parsing error: {error}");
+                                tracing::warn!("Command argument parsing error: {error}");
                                 Err(ChannelCommandBase::make_error_invalid_meta_value(
                                     meta_key, meta_value,
                                 ))
@@ -740,7 +743,7 @@ impl ChannelCommandSearch {
     ) -> Result<Option<QuerySearchLimit>, ChannelCommandError> {
         match meta_result {
             Ok((meta_key, meta_value)) => {
-                tracing::debug!("handle suggest meta: {} = {}", meta_key, meta_value);
+                tracing::trace!("handle suggest meta: {meta_key:?} = {meta_value:?}");
 
                 match meta_key {
                     "LIMIT" => {
@@ -767,7 +770,7 @@ impl ChannelCommandSearch {
     fn handle_list_meta(meta_result: MetaPartsResult) -> Result<ListMetaData, ChannelCommandError> {
         match meta_result {
             Ok((meta_key, meta_value)) => {
-                tracing::debug!("handle list meta: {} = {}", meta_key, meta_value);
+                tracing::trace!("handle list meta: {meta_key:?} = {meta_value:?}");
 
                 match meta_key {
                     "LIMIT" => {
@@ -832,17 +835,17 @@ impl ChannelCommandIngest {
             peekable_parts.next()
         };
 
-        let Some(text) = ChannelCommandBase::parse_text_parts(&mut peekable_parts) else {
+        let Some(text) = ChannelCommandBase::parse_text_part(&mut peekable_parts) else {
             return Err(invalid_format());
         };
 
-        tracing::debug!(
-            "dispatching ingest push in collection: {}, bucket: {} and object: {}",
-            collection,
-            bucket,
-            object
-        );
-        tracing::debug!("ingest push has text: {}", text);
+        // tracing::trace!(
+        //     "dispatching ingest push in collection: {}, bucket: {} and object: {}",
+        //     collection,
+        //     bucket,
+        //     object
+        // );
+        // tracing::trace!("ingest push has text: {}", text);
 
         // Define push parameters
         let mut push_params = (None, PushOptions::default());
@@ -863,7 +866,7 @@ impl ChannelCommandIngest {
             return Err(err);
         }
 
-        tracing::trace!("will push for text: {text} with hinted locale: <{push_lang:?}>");
+        tracing::trace!("Will push for text: {text:?} with hinted locale: <{push_lang:?}>");
 
         let (collection, bucket, oid, fragment) =
             StoreItemBuilder::from_depth_3_or_4(collection, bucket, object, fragment)
@@ -897,11 +900,11 @@ impl ChannelCommandIngest {
     ) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next(), parts.next()) {
             (Some(collection), Some(bucket), Some(object), None) => {
-                tracing::debug!(
+                tracing::trace!(
                     collection,
                     bucket,
                     object,
-                    "dispatching ingest count in object"
+                    "Dispatching ingest count in object"
                 );
 
                 let (collection, bucket, oid) = StoreItemBuilder::from_depth_3(
@@ -917,7 +920,7 @@ impl ChannelCommandIngest {
                 })
             }
             (Some(collection), Some(bucket), None, None) => {
-                tracing::debug!(collection, bucket, "dispatching ingest count in bucket");
+                tracing::trace!(collection, bucket, "Dispatching ingest count in bucket");
 
                 let (collection, bucket) = StoreItemBuilder::from_depth_2(collection, bucket)
                     .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
@@ -930,7 +933,7 @@ impl ChannelCommandIngest {
                 })
             }
             (Some(collection), None, None, None) => {
-                tracing::debug!(collection, "dispatching ingest count in collection");
+                tracing::trace!(collection, "Dispatching ingest count in collection");
 
                 let collection = StoreItemBuilder::from_depth_1(collection)
                     .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
@@ -954,7 +957,7 @@ impl ChannelCommandIngest {
     ) -> ChannelResult {
         match (parts.next(), parts.next()) {
             (Some(collection), None) => {
-                tracing::debug!(collection, "dispatching ingest count in collection");
+                tracing::trace!(collection, "Dispatching ingest count in collection");
 
                 let collection = StoreItemBuilder::from_depth_1(collection)
                     .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
@@ -976,7 +979,7 @@ impl ChannelCommandIngest {
     ) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next()) {
             (Some(collection), Some(bucket), None) => {
-                tracing::debug!(collection, bucket, "dispatching ingest count in bucket");
+                tracing::trace!(collection, bucket, "Dispatching ingest count in bucket");
 
                 let (collection, bucket) = StoreItemBuilder::from_depth_2(collection, bucket)
                     .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
@@ -1000,11 +1003,11 @@ impl ChannelCommandIngest {
     ) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next(), parts.next()) {
             (Some(collection), Some(bucket), Some(object), None) => {
-                tracing::debug!(
+                tracing::trace!(
                     collection,
                     bucket,
                     object,
-                    "dispatching ingest count in object"
+                    "Dispatching ingest count in object"
                 );
 
                 let (collection, bucket, oid) = StoreItemBuilder::from_depth_3(
@@ -1031,7 +1034,7 @@ impl ChannelCommandIngest {
     ) -> ChannelResult {
         match (parts.next(), parts.next()) {
             (Some(collection), None) => {
-                tracing::debug!(collection, "dispatching ingest flush collection");
+                tracing::trace!(collection, "Dispatching ingest flush collection");
 
                 let collection = StoreItemBuilder::from_depth_1(collection)
                     .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
@@ -1053,7 +1056,7 @@ impl ChannelCommandIngest {
     ) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next()) {
             (Some(collection), Some(bucket), None) => {
-                tracing::debug!(collection, bucket, "dispatching ingest flush bucket");
+                tracing::trace!(collection, bucket, "Dispatching ingest flush bucket");
 
                 let (collection, bucket) = StoreItemBuilder::from_depth_2(collection, bucket)
                     .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
@@ -1077,11 +1080,11 @@ impl ChannelCommandIngest {
     ) -> ChannelResult {
         match (parts.next(), parts.next(), parts.next(), parts.next()) {
             (Some(collection), Some(bucket), Some(object), None) => {
-                tracing::debug!(
+                tracing::trace!(
                     collection,
                     bucket,
                     object,
-                    "dispatching ingest flush object"
+                    "Dispatching ingest flush object"
                 );
 
                 let (collection, bucket, oid) = StoreItemBuilder::from_depth_3(
@@ -1114,12 +1117,12 @@ impl ChannelCommandIngest {
             parts.next(),
         ) {
             (Some(collection), Some(bucket), Some(object), Some(fragment), None) => {
-                tracing::debug!(
+                tracing::trace!(
                     collection,
                     bucket,
                     object,
                     fragment,
-                    "dispatching ingest flush fragment"
+                    "Dispatching ingest flush fragment"
                 );
 
                 let (collection, bucket, object_oid, fragment_oid) =
@@ -1150,7 +1153,7 @@ impl ChannelCommandIngest {
     ) -> Result<(), ChannelCommandError> {
         match meta_result {
             Ok((meta_key, meta_value)) => {
-                tracing::debug!("handle push meta: {} = {}", meta_key, meta_value);
+                tracing::trace!("handle push meta: {meta_key:?} = {meta_value:?}");
 
                 match meta_key {
                     "LANG" => {
@@ -1242,6 +1245,8 @@ impl ChannelCommandControl {
                     }
                     #[cfg(feature = "experimental-api")]
                     "compact" => {
+                        use sonic::Context as _;
+
                         let collections = if let Some(data_part) = data_part {
                             let mut collections = Vec::new();
 
@@ -1281,9 +1286,9 @@ impl ChannelCommandControl {
                             Ok(vec![ChannelCommandResponse::Ok])
                         } else {
                             for (store_kind, store_id, error) in errors {
-                                tracing::error!(
-                                    "Error while compacting {store_kind} store {store_id}: {error}"
-                                );
+                                sonic::log!(error.context(format!(
+                                    "Error while compacting {store_kind} store {store_id}"
+                                )));
                             }
 
                             Err(ChannelCommandError::InternalError)
@@ -1393,7 +1398,7 @@ impl ChannelCommandControl {
         let collection = StoreItemBuilder::from_depth_1(collection)
             .map_err(|error| ChannelCommandError::InvalidArgument(format!("{error:?}")))?;
 
-        tracing::debug!(?collection, "dispatching config command");
+        tracing::trace!(?collection, "dispatching config command");
 
         match parts.next() {
             Some("SET") => config_set(parts, ctx, collection),
@@ -1695,6 +1700,7 @@ fn config_set(
     ctx: &ChannelMessageModeControl,
     collection: sonic::store::StoreItemPart,
 ) -> ChannelResult {
+    use sonic::Context as _;
     use std::sync::Arc;
 
     use sonic::store::CollectionHash;
@@ -1721,7 +1727,7 @@ fn config_set(
             "preset.bulk_load" => {
                 let options =
                     serde_json::from_str::<BulkLoadPresetOptions>(value).map_err(|error| {
-                        tracing::warn!("{error}");
+                        tracing::warn!("Invalid options: {error}");
                         invalid_meta_value()
                     })?;
 
@@ -1773,7 +1779,7 @@ fn config_set(
                 _ => return Err(invalid_meta_value()),
             },
             key => {
-                tracing::warn!("Unknown dynamic configuration key: {key:?}");
+                tracing::warn!("Unknown dynamic config key: {key:?}");
                 return Err(ChannelCommandError::NotFound);
             }
         }
@@ -1811,7 +1817,7 @@ fn config_set(
     match ctx.executor.set_dynamic_conf(collection, Arc::new(config)) {
         Ok(()) => Ok(vec![ChannelCommandResponse::Ok]),
         Err(error) => {
-            tracing::error!("Error setting dynamic config: {error}");
+            sonic::log!(error.context("Error setting dynamic config"));
             Err(ChannelCommandError::InternalError)
         }
     }
@@ -1823,6 +1829,7 @@ fn config_reset(
     ctx: &ChannelMessageModeControl,
     collection: sonic::store::StoreItemPart,
 ) -> ChannelResult {
+    use sonic::Context as _;
     use std::sync::Arc;
 
     let mut parts = parts.peekable();
@@ -1842,7 +1849,7 @@ fn config_reset(
                     $(stringify!($($path).+) => new_conf.$($path).+ = None,)+
                     $($val => $block,)*
                     key => {
-                        tracing::warn!("Unknown dynamic configuration key: {key:?}");
+                        tracing::warn!("Unknown dynamic config key: {key:?}");
                         return Err(ChannelCommandError::NotFound);
                     }
                 }
@@ -1883,7 +1890,7 @@ fn config_reset(
     {
         Ok(()) => Ok(vec![ChannelCommandResponse::Ok]),
         Err(error) => {
-            tracing::error!("Error resetting dynamic config: {error:?}");
+            sonic::log!(error.context("Error resetting dynamic config"));
             Err(ChannelCommandError::InternalError)
         }
     }

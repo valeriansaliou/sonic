@@ -26,6 +26,8 @@ mod push;
 mod query;
 mod suggest;
 
+use crate::Context as _;
+
 pub use push::PushOptions;
 pub use query::{MatchWithSnippets, QueryOptions, QueryResult, QuerySnippetsConfig};
 pub use types::*;
@@ -177,17 +179,23 @@ pub trait DynamicConfig: std::fmt::Debug + std::any::Any + Send + Sync {
 }
 
 impl Executor {
+    #[tracing::instrument(
+        level = "info",
+        skip_all, fields(?collection, kv_store_id = tracing::field::Empty),
+    )]
     pub fn set_dynamic_conf(
         &self,
         collection: StoreItemPart,
         new_conf: Arc<dyn DynamicConfig>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<(), crate::Error> {
         let kv_store_id = KvStoreId::from_part(collection);
+
+        tracing::Span::current().record("kv_store_id", tracing::field::display(&kv_store_id));
 
         // TODO: Refactor both blocks into one.
         {
             tracing::debug!(
-                "Re-opening KV store connection for {kv_store_id:?} with new dynamic configuration overrides…"
+                "Re-opening KV store connection with new dynamic configuration overrides…"
             );
 
             let mut kv_pool_write_guard = self.kv_pool.write().unwrap();
@@ -200,16 +208,16 @@ impl Executor {
 
             self.kv_pool
                 .acquire(true, collection, Some(&mut kv_pool_write_guard))
-                .map_err(|()| std::io::Error::other("Error re-opening connection"))?;
+                .context("Error re-opening connection")?;
 
             drop(kv_pool_write_guard);
 
-            tracing::info!("KV store connection for {collection:?} successfully re-opened");
+            tracing::info!("KV store connection successfully re-opened");
         }
 
         {
             tracing::debug!(
-                "Re-opening Object store connection for {kv_store_id:?} with new dynamic configuration overrides…"
+                "Re-opening Object store connection with new dynamic configuration overrides…"
             );
 
             let mut object_store_pool_write_guard = self.object_store_pool.write().unwrap();
@@ -222,11 +230,11 @@ impl Executor {
 
             self.object_store_pool
                 .acquire(true, collection, Some(&mut object_store_pool_write_guard))
-                .map_err(|()| std::io::Error::other("Error re-opening connection"))?;
+                .context("Error re-opening connection")?;
 
             drop(object_store_pool_write_guard);
 
-            tracing::info!("Object store connection for {collection:?} successfully re-opened");
+            tracing::info!("Object store connection successfully re-opened");
         }
 
         self.dynamic_conf_store.insert(collection, new_conf);

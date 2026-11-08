@@ -15,6 +15,7 @@
           // "autoreload": false,
         },
         "check": {
+          "command": "clippy",
           "workspace": false,
           "allTargets": false
         },

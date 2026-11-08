@@ -25,6 +25,10 @@ pub const AVERAGE_MERGE_RATIO: u8 = 4;
 
 pub(crate) const TF_TOMBSTONE: u8 = 0;
 
+#[tracing::instrument(
+    level = "trace",
+    skip_all, fields(?key),
+)]
 pub(super) fn kv_merge_operator(
     key: &[u8],
     existing_val: Option<&[u8]>,
