@@ -12,7 +12,7 @@ use std::sync::{Arc, LazyLock, atomic};
 use sonic_client::SonicMultiplexer;
 
 use crate::globals::SONIC_BIN_PATH;
-use crate::util::logging::LOG_LEVEL;
+use crate::util::logging::SERVER_LOG_LEVEL;
 
 #[cfg(feature = "analysis")]
 pub mod analysis;
@@ -108,7 +108,7 @@ impl RunContext {
         //   incorrect value but it’s not a big deal.
         let sonic = update_command(Command::new(SONIC_BIN_PATH.as_path()).env(
             "SONIC_SERVER__LOG_LEVEL",
-            LOG_LEVEL.map_or("WARN".to_owned(), |level| level.to_string()),
+            SERVER_LOG_LEVEL.unwrap_or(tracing::Level::WARN).to_string(),
         ))
         .env("SONIC_CHANNEL__INET", self.addr.to_string())
         .env("SONIC_STORE__KV__PATH", data_path.join("kv"))
