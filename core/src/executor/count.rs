@@ -53,7 +53,7 @@ impl super::Executor {
     )]
     pub fn countb(&self, collection: StoreItemPart, bucket: Bucket) -> Result<u64, crate::Error> {
         let Some(kv_store) = self.kv_pool.acquire(false, collection, None)? else {
-            tracing::debug!("collection store does not exist, consider bucket empty.");
+            tracing::debug!("Collection store does not exist, consider bucket empty.");
             return Ok(0);
         };
 

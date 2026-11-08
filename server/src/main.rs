@@ -112,7 +112,7 @@ fn main() {
 
     let shutdown_signal = ShutdownSignal::new();
 
-    tracing::info!("starting up");
+    tracing::info!("Starting up…");
 
     // Ensure all states are bound
     ensure_states();
@@ -141,10 +141,8 @@ fn main() {
         dynamic_config,
     ));
 
-    tracing::info!("started");
-
     shutdown_signal.at_exit(move |signal| {
-        tracing::info!("stopping gracefully (got signal: {})", signal);
+        tracing::info!("Stopping gracefully (got signal: {signal})");
 
         // Teardown Sonic Channel
         ChannelListen::teardown();
@@ -159,7 +157,7 @@ fn main() {
         //   shutdown; otherwise we would lose all non-consolidated FST changes)
         fst_pool.consolidate(true, |_| true);
 
-        tracing::info!("stopped");
+        tracing::info!("Stopped");
     });
 }
 
@@ -174,7 +172,7 @@ where
     F: Send + 'static,
     T: Send + 'static,
 {
-    tracing::debug!("spawn managed thread: {name}");
+    tracing::debug!("Spawning managed thread: {name}");
 
     let worker = thread::Builder::new()
         .name(thread_name.to_string())
@@ -188,7 +186,7 @@ where
     };
 
     if has_error {
-        tracing::error!("managed thread crashed ({name}), setting it up again");
+        tracing::error!("Managed thread crashed ({name}), setting it up again");
 
         // Prevents thread start loop floods
         thread::sleep(Duration::from_secs(1));

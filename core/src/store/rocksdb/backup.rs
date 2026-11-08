@@ -15,6 +15,7 @@ use rocksdb::backup::{
 };
 
 use crate::Context as _;
+use crate::store::generic::GenericStorePool;
 use crate::store::kv::{GenericKvStorePool, KvStoreId};
 
 use super::GenericRocksDbStore;
@@ -26,10 +27,7 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         skip_all, fields(?path),
     )]
     pub fn backup(&self, path: &Path) -> Result<(), crate::Error> {
-        tracing::debug!(
-            "backing up all {kind} stores to path: {path:?}",
-            kind = Store::kind()
-        );
+        tracing::debug!("Backing up all {kind} stores…", kind = Self::kind());
 
         // Create backup directory (full path)
         fs::create_dir_all(path)?;
@@ -49,10 +47,7 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         skip_all, fields(?path),
     )]
     pub fn restore(&self, path: &Path) -> Result<(), crate::Error> {
-        tracing::debug!(
-            "restoring all {kind} stores from path: {path:?}",
-            kind = Store::kind()
-        );
+        tracing::debug!("Restoring all {kind} stores…", kind = Store::kind());
 
         // Proceed dump action (restore)
         self.dump_action(path, &self.kv_store_config.path, &Self::restore_collection)

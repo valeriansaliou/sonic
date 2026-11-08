@@ -54,7 +54,7 @@ pub trait ChannelMessageMode {
     fn on(&self, mut stream: &TcpStream, message_slice: &[u8]) -> ChannelMessageResult {
         let message = str::from_utf8(message_slice).unwrap_or("");
 
-        tracing::trace!("got channel message: {}", message);
+        tracing::trace!("Got channel message: {message}");
 
         let command_start = Instant::now();
 
@@ -101,14 +101,14 @@ pub trait ChannelMessageMode {
                         .expect("write failed");
 
                     tracing::trace!(
-                        "wrote response with values: {} ({})",
+                        "Wrote response with values: {} ({})",
                         response_args.0,
                         values_string
                     );
                 } else {
                     write!(stream, "{}{}", response_args.0, LINE_FEED).expect("write failed");
 
-                    tracing::trace!("wrote response with no values: {}", response_args.0);
+                    tracing::trace!("Wrote response with no values: {}", response_args.0);
                 }
             }
         }
@@ -120,12 +120,12 @@ pub trait ChannelMessageMode {
 
         if command_took.as_millis() >= COMMAND_ELAPSED_MILLIS_SLOW_WARN {
             tracing::warn!(
-                "took a lot of time: {}ms to process channel message",
+                "Took a lot of time: {}ms to process channel message",
                 command_took.as_millis(),
             );
         } else {
             tracing::trace!(
-                "took {}ms/{}us/{}ns to process channel message",
+                "Took {}ms/{}us/{}ns to process channel message",
                 command_took.as_millis(),
                 command_took.as_micros(),
                 command_took.as_nanos(),
@@ -172,7 +172,7 @@ impl ChannelMessage {
         let mut parts = message.split_whitespace();
         let command = parts.next().unwrap_or("").to_uppercase();
 
-        tracing::debug!("will dispatch search command: {}", command);
+        tracing::trace!("Will dispatch search command: {command}");
 
         (command, parts)
     }

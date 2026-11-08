@@ -54,7 +54,7 @@ impl GenericRocksDbStore for ObjectStore {
         config: &crate::config::KvStoreConfig,
         dyn_config: Option<&dyn crate::DynamicConfig>,
     ) -> Result<rocksdb::DB, crate::Error> {
-        tracing::debug!("Opening Object store {store_id}");
+        tracing::debug!("Opening Object store…");
 
         // Configure database options.
         let mut db_options = rocksdb::Options::from(&config.database);

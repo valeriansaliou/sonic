@@ -86,10 +86,13 @@ impl Default for FstRepositoryConfig {
 const WORD_LIMIT_LENGTH: usize = 40;
 
 impl FstStore {
-    pub(super) fn open(id: &FstStoreId, config: &FstStoreConfig) -> Result<fst::Set, crate::Error> {
-        tracing::debug!("Opening fst graph for {id}");
+    pub(super) fn open(
+        store_id: &FstStoreId,
+        config: &FstStoreConfig,
+    ) -> Result<fst::Set, crate::Error> {
+        tracing::trace!(%store_id, "Opening FST graph…");
 
-        let collection_bucket_path = config.store_path(id, FstStorePathMode::Permanent);
+        let collection_bucket_path = config.store_path(store_id, FstStorePathMode::Permanent);
 
         let set = if collection_bucket_path.exists() {
             // Open graph at path for collection
@@ -172,9 +175,9 @@ impl FstStore {
         *self.last_consolidated.write().unwrap() = Instant::now();
 
         if already_scheduled {
-            tracing::trace!("Graph consolidation re-scheduled for {}", self.target);
+            tracing::trace!(store_id = %self.target, "Graph consolidation re-scheduled");
         } else {
-            tracing::debug!("Graph consolidation scheduled for {}", self.target);
+            tracing::debug!(store_id = %self.target, "Graph consolidation scheduled");
         }
     }
 }
@@ -195,6 +198,8 @@ impl FstStore {
         use std::collections::{HashSet, VecDeque};
         use std::fs::{self, File};
         use std::io;
+
+        tracing::debug!("Consolidating FST…");
 
         // Acquire write reference to pending actions.
         let mut pending = self.pending.lock().unwrap();
@@ -289,7 +294,7 @@ impl FstStore {
                     Ok(()) => stats.count_pushed += 1,
                     // Could not insert word in FST.
                     Err(error) => {
-                        tracing::error!("Failed inserting new from old in FST: {error:?}")
+                        tracing::error!("Failed inserting new from old in FST: {error:#}")
                     }
                 }
 
@@ -318,7 +323,7 @@ impl FstStore {
                     // Word moved to FST.
                     Ok(()) => stats.count_moved += 1,
                     // Could not move word to FST.
-                    Err(error) => tracing::error!("Failed inserting old word in FST: {error:?}"),
+                    Err(error) => tracing::error!("Failed inserting old word in FST: {error:#}"),
                 }
             }
         }
@@ -344,7 +349,7 @@ impl FstStore {
                 Ok(()) => stats.count_pushed += 1,
                 // Could not insert word in FST.
                 Err(error) => {
-                    tracing::error!("Failed inserting new word from complete in FST: {error:?}")
+                    tracing::error!("Failed inserting new word from complete in FST: {error:#}")
                 }
             }
         }
@@ -361,11 +366,11 @@ impl FstStore {
                 // Proceed temporary FST to final FST path rename?
                 match fs::rename(&bucket_tmp_path, &bucket_final_path) {
                     Ok(()) => {
-                        tracing::debug!("Done consolidating fst at path {bucket_final_path:?}")
+                        tracing::debug!(?bucket_final_path, "Done consolidating FST")
                     }
-                    Err(error) => tracing::error!(
-                        "Error consolidating fst at path {bucket_final_path:?}: {error:?}"
-                    ),
+                    Err(error) => {
+                        tracing::error!(?bucket_final_path, "Error consolidating FST: {error:#}")
+                    }
                 }
 
                 // Should close open store reference to old FST.
@@ -373,7 +378,8 @@ impl FstStore {
             }
             Err(error) => {
                 tracing::error!(
-                    "Error finishing building temporary fst at path {bucket_tmp_path:?}: {error:?}"
+                    ?bucket_tmp_path,
+                    "Error finishing building temporary FST: {error:?}"
                 );
 
                 false
@@ -389,6 +395,8 @@ impl FstStore {
         pending.clear();
 
         (self.should_consolidate).store(false, atomic::Ordering::Release);
+
+        tracing::debug!(?should_close, "FST consolidation finished.");
 
         Ok(should_close)
     }
@@ -488,7 +496,9 @@ impl<'a> FstRepository<'a> {
 
         for term in terms {
             if self.push_word(term, &mut pending) {
-                tracing::trace!("push term committed to graph: {term}");
+                tracing::trace!(?term, "Push term committed to graph");
+            } else {
+                tracing::trace!(?term, "Push term not committed to graph");
             }
         }
     }
@@ -633,7 +643,7 @@ impl<'a> FstRepository<'a> {
             return None;
         };
 
-        tracing::debug!(?word, "looking up for word in 'begins' fst stream");
+        tracing::debug!(?word, "Looking up for word in 'begins' FST stream");
 
         Some(FstStreamIterator(stream).map(move |suggestion| {
             let distance: usize = word.len().abs_diff(suggestion.len());
@@ -658,7 +668,7 @@ impl<'a> FstRepository<'a> {
         tracing::debug!(
             ?word,
             typo_factor,
-            "looking up for word in 'typos' fst stream"
+            "Looking up for word in 'typos' FST stream"
         );
 
         // NOTE: Returning the same score for every word works only
@@ -693,7 +703,7 @@ impl<'a> FstRepository<'a> {
 
     fn word_over_limit(word: &str) -> bool {
         if word.len() > WORD_LIMIT_LENGTH {
-            tracing::debug!("got over-limit fst word: {word:?}");
+            tracing::debug!(?word, "Got over-limit FST word");
 
             true
         } else {

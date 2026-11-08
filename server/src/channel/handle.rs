@@ -253,7 +253,7 @@ impl ChannelHandle {
 
                     if parts.next().unwrap_or("").to_uppercase().as_str() == "START" {
                         if let Some(res_mode) = parts.next() {
-                            tracing::debug!("got mode response: {}", res_mode);
+                            tracing::trace!("Got mode response: {res_mode}");
 
                             // Extract mode
                             if let Ok(mode) = ChannelMode::from_str(res_mode) {
@@ -263,12 +263,12 @@ impl ChannelHandle {
                                     if let Some(provided_auth) = parts.next() {
                                         // Compare provided password with configured password
                                         if provided_auth != auth_password {
-                                            tracing::info!("password provided, but does not match");
+                                            tracing::warn!("Password provided, but does not match");
 
                                             return Err(ChannelHandleError::AuthenticationFailed);
                                         }
                                     } else {
-                                        tracing::info!("no password provided, but one required");
+                                        tracing::warn!("No password provided, but one required");
 
                                         // No password was provided, but we require one
                                         return Err(ChannelHandleError::AuthenticationRequired);

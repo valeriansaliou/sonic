@@ -425,7 +425,7 @@ pub mod preprocessor {
                 // If user provided a language, use it.
                 Some(hinted_lang) => {
                     // Use hinted language (current lexer mode asks for a cleanup).
-                    tracing::debug!(?text, "using hinted lang: {hinted_lang:?}");
+                    tracing::debug!("Using hinted lang: {hinted_lang:?}");
 
                     lang
                 }
@@ -435,13 +435,13 @@ pub mod preprocessor {
                 #[cfg(feature = "stemming")]
                 None if self.normalization_config.stemming_enabled => {
                     let lang = detect_lang(text);
-                    tracing::debug!(?text, "detected lang: {lang:?}");
+                    tracing::debug!("Detected lang: {lang:?}");
                     lang
                 }
 
                 // Otherwise, don’t detect the language.
                 None => {
-                    tracing::debug!("not detecting lang");
+                    tracing::debug!("Not detecting lang (not necessary)");
 
                     None
                 }
@@ -740,7 +740,9 @@ pub mod lexing {
                             .map(|token| (token.byte_start, token.text)),
                     ),
                     Err(err) => {
-                        tracing::warn!("unable to tokenize japanese, falling back: {}", err);
+                        tracing::warn!(
+                            "Unable to tokenize japanese: {err:#}. Falling back to Unicode."
+                        );
 
                         Box::from(text.unicode_word_indices())
                     }
@@ -1323,7 +1325,7 @@ mod lang_detection {
         skip_all, fields(input_len = text.len()),
     )]
     pub(super) fn detect_lang(text: &str) -> Option<Lang> {
-        tracing::debug!("detecting locale from lexer text: {}", text);
+        tracing::debug!("Detecting locale from lexer text…");
 
         // Detect only if text is long-enough to allow the text locale detection system to \
         //   function properly
@@ -1334,21 +1336,21 @@ mod lang_detection {
         // Truncate text if necessary, as to avoid the ngram or stopwords detector to be \
         //   ran on more words than those that are enough to reliably detect a locale.
         let safe_text = if text.len() > TEXT_LANG_TRUNCATE_OVER_CHARS {
-            tracing::debug!(
-                "lexer text needs to be truncated, as it is too long ({}/{}): {}",
-                text.len(),
-                TEXT_LANG_TRUNCATE_OVER_CHARS,
-                text
+            tracing::trace!(
+                "Lexer text needs to be truncated, as it is too long ({len}/{TEXT_LANG_TRUNCATE_OVER_CHARS})",
+                len = text.len(),
             );
 
             // Perform an UTF-8 aware truncation
             let end_index = text.floor_char_boundary(TEXT_LANG_TRUNCATE_OVER_CHARS);
-            &text[..end_index]
+            let safe_text = &text[..end_index];
+
+            tracing::trace!(?safe_text, "Will detect locale for lexer safe text");
+
+            safe_text
         } else {
             text
         };
-
-        tracing::debug!("will detect locale for lexer safe text: {}", safe_text);
 
         // Attempt to detect the locale from text using an hybrid method that maximizes both \
         //   accuracy and performance.
@@ -1361,62 +1363,54 @@ mod lang_detection {
         //   produce the most reliable result while minimizing CPU cycles.
         if safe_text.len() < TEXT_LANG_DETECT_NGRAM_UNDER_CHARS {
             tracing::debug!(
-                "lexer text is shorter than {} characters, using the slow method",
-                TEXT_LANG_DETECT_NGRAM_UNDER_CHARS
+                "Lexer text is shorter than {TEXT_LANG_DETECT_NGRAM_UNDER_CHARS} characters, using the slow method"
             );
 
             detect_lang_slow(safe_text)
         } else {
             tracing::debug!(
-                "lexer text is equal or longer than {} characters, using the fast method",
-                TEXT_LANG_DETECT_NGRAM_UNDER_CHARS
+                "Lexer text is equal or longer than {TEXT_LANG_DETECT_NGRAM_UNDER_CHARS} characters, using the fast method"
             );
 
             detect_lang_fast(safe_text)
         }
     }
 
-    fn detect_lang_slow(safe_text: &str) -> Option<Lang> {
+    fn detect_lang_slow(text: &str) -> Option<Lang> {
         let ngram_start = Instant::now();
 
-        match whatlang::detect(safe_text) {
+        match whatlang::detect(text) {
             Some(info) => {
                 let ngram_took = ngram_start.elapsed();
 
                 let locale = info.lang();
 
-                tracing::info!(
-                    "[slow lexer] locale detected from text: {} ({} from {} at {}/1; {}s + {}ms)",
-                    safe_text,
-                    locale,
-                    info.script(),
-                    info.confidence(),
-                    ngram_took.as_secs(),
-                    ngram_took.subsec_millis()
+                tracing::debug!(
+                    ?text,
+                    "[slow lexer] Locale detected from text ({locale} from {script} at {confidence}/1; {ngram_took:?})",
+                    script = info.script(),
+                    confidence = info.confidence(),
                 );
 
                 if info.is_reliable() {
                     Some(locale)
                 } else {
-                    tracing::debug!("[slow lexer] detected locale is unreliable");
+                    tracing::debug!("[slow lexer] Detected locale is unreliable");
                     None
                 }
             }
             None => {
-                tracing::info!(
-                    "[slow lexer] no locale could be detected from text: {}",
-                    safe_text
-                );
+                tracing::debug!(?text, "[slow lexer] No locale could be detected from text");
 
                 None
             }
         }
     }
 
-    fn detect_lang_fast(safe_text: &str) -> Option<Lang> {
+    fn detect_lang_fast(text: &str) -> Option<Lang> {
         let stopwords_start = Instant::now();
 
-        match whatlang::detect_script(safe_text) {
+        match whatlang::detect_script(text) {
             Some(script) => {
                 // Locale found?
                 if let Some((&locale, other_langs)) = script.langs().split_first()
@@ -1424,29 +1418,23 @@ mod lang_detection {
                 {
                     let stopwords_took = stopwords_start.elapsed();
 
-                    tracing::info!(
-                        "[fast lexer] locale detected from text: {} ({}; {}s + {}ms)",
-                        safe_text,
-                        locale,
-                        stopwords_took.as_secs(),
-                        stopwords_took.subsec_millis()
+                    tracing::debug!(
+                        ?text,
+                        "[fast lexer] Locale detected from text ({locale}; {stopwords_took:?})",
                     );
 
                     Some(locale)
                 } else {
                     tracing::debug!(
-                        "[fast lexer] trying to detect locale from fallback ngram instead"
+                        "[fast lexer] Trying to detect locale from fallback ngram instead"
                     );
 
                     // No locale found, fallback on slow ngram.
-                    whatlang::detect_lang(safe_text)
+                    whatlang::detect_lang(text)
                 }
             }
             None => {
-                tracing::info!(
-                    "[fast lexer] no script could be detected from text: {}",
-                    safe_text
-                );
+                tracing::info!(?text, "[fast lexer] No script could be detected from text");
 
                 None
             }

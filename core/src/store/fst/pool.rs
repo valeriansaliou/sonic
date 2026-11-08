@@ -117,18 +117,18 @@ impl GenericStorePool for FstStorePool {
 
         if !buckets.is_empty() {
             tracing::trace!(
-                "Will force-close {nbuckets} FST buckets for collection {collection_name:?}",
+                "Will force-close {nbuckets} FST buckets",
                 nbuckets = buckets.len()
             );
 
             let mut graph_pool_write = self.graph_pool.write().unwrap();
 
             for bucket in buckets {
-                tracing::debug!("Force-closing FST bucket graph for bucket {bucket:?}…");
+                tracing::debug!(?bucket, "Force-closing FST graph…");
 
-                let bucket_target = FstStoreId::new(collection_hash, bucket);
+                let store_id = FstStoreId::new(collection_hash, bucket);
 
-                graph_pool_write.remove(&bucket_target);
+                graph_pool_write.remove(&store_id);
             }
         }
 
@@ -158,9 +158,7 @@ impl GenericStorePool for FstStorePool {
         collection_name: StoreItemPart,
         bucket_name: Bucket,
     ) -> Result<u32, crate::Error> {
-        tracing::debug!(
-            "Sub-erase on fst bucket {bucket_name:?} for collection {collection_name:?}"
-        );
+        tracing::debug!("Erasing FST bucket graph…");
 
         let store_id = FstStoreId::new(collection_name, bucket_name);
 
@@ -180,7 +178,7 @@ impl GenericStorePool for FstStorePool {
             // Remove FST graph storage from filesystem.
             fs::remove_file(&bucket_path).context("Failed erasing FST bucket")?;
 
-            tracing::info!("FST bucket graph erased successfully.");
+            tracing::info!(%store_id, "FST bucket graph erased successfully.");
 
             Ok(1)
         } else {
@@ -215,7 +213,7 @@ impl FstStorePool {
         if let Some(store_fst) = graph_pool_read.get(&store_id) {
             Self::proceed_acquire_cache(store_fst)
         } else {
-            tracing::debug!("fst store {store_id} not in pool, opening it");
+            tracing::debug!("FST store not in pool, opening it…");
 
             // Important: we need to drop the read reference first, to avoid dead-locking \
             //   when acquiring the RWLock in write mode in this block.
@@ -243,10 +241,10 @@ impl FstStorePool {
         })
     }
 
-    pub(super) fn close(&self, id: &FstStoreId) {
-        tracing::debug!("Closing fst graph {id}");
+    pub(super) fn close(&self, store_id: &FstStoreId) {
+        tracing::debug!(%store_id, "Closing FST store");
 
-        self.graph_pool.write().unwrap().remove(id);
+        self.graph_pool.write().unwrap().remove(store_id);
     }
 
     pub fn janitor(&self, filter: impl Fn(&FstStoreId) -> bool) {
@@ -260,7 +258,7 @@ impl FstStorePool {
     pub fn consolidate(&self, force: bool, filter: impl Fn(&FstStoreId) -> bool) {
         use std::sync::atomic;
 
-        tracing::debug!("scanning for fst store pool items to consolidate");
+        tracing::debug!("Scanning for FST stores to consolidate");
 
         // Notice: we do not consolidate all items at each tick, we try to even out multiple \
         //   consolidation tasks over time. This lowers the overall HZ of the tasker system for \
@@ -294,14 +292,14 @@ impl FstStorePool {
                     || not_consolidated_for.as_secs()
                         >= self.fst_store_config.graph.consolidate_after
                 {
-                    tracing::debug!(
-                        "fst store {store_id} not consolidated for {not_consolidated_for:.1?}, may consolidate"
+                    tracing::trace!(
+                        "FST store {store_id} not consolidated for {not_consolidated_for:.1?}, may consolidate"
                     );
 
                     keys_consolidate.push(store_id.clone());
                 } else {
-                    tracing::debug!(
-                        "fst store: {store_id} not consolidated for {not_consolidated_for:.1?}, no consolidate"
+                    tracing::trace!(
+                        "FST store {store_id} not consolidated for {not_consolidated_for:.1?}, no consolidate"
                     );
                 }
             }
@@ -309,8 +307,7 @@ impl FstStorePool {
 
         // Exit trap: Nothing to consolidate yet? Abort there.
         if keys_consolidate.is_empty() {
-            tracing::info!("no fst store pool items need to consolidate at the moment");
-
+            tracing::debug!("No FST store needs to be consolidated at the moment");
             return;
         }
 
@@ -325,8 +322,6 @@ impl FstStorePool {
             let access_guard = self.graph_access_lock.write().unwrap();
 
             let do_close = if let Some(store) = self.graph_pool.read().unwrap().get(key) {
-                tracing::debug!("fst key: {key:?} consolidate started");
-
                 #[allow(
                     clippy::unnecessary_lazy_evaluations,
                     reason = "Ensures errors are handled"
@@ -335,8 +330,6 @@ impl FstStorePool {
                     tracing::error!(%key, "Failed consolidating: {error:#}");
                     false
                 });
-
-                tracing::debug!("fst key: {key:?} consolidate complete");
 
                 // Should close this FST?
                 should_close
@@ -365,10 +358,7 @@ impl FstStorePool {
             std::thread::yield_now();
         }
 
-        tracing::info!(
-            ?stats,
-            "Done scanning for fst store pool items to consolidate"
-        );
+        tracing::info!(?stats, "Consolidated {} store(s)", keys_consolidate.len());
     }
 }
 

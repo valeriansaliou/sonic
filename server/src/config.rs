@@ -135,22 +135,22 @@ pub fn read_config(custom_path: Option<&str>) -> Config {
         }
 
         let path = std::path::absolute(custom_path).unwrap();
-        tracing::debug!("reading config file: {path:?}");
+        tracing::debug!("Reading config file: {path:?}");
 
         Config::parse(config::File::from(path).format(config::FileFormat::Toml))
     } else {
         for path in DEFAULT_CONFIG_FILE_PATHS {
             let path = std::path::absolute(path).unwrap();
-            tracing::debug!("looking for config file at {path:?}");
+            tracing::debug!("Looking for config file at {path:?}");
 
             if path.exists() {
-                tracing::debug!("reading config file: {path:?}");
+                tracing::debug!("Reading config file: {path:?}");
 
                 return Config::parse(config::File::from(path).format(config::FileFormat::Toml));
             }
         }
 
-        tracing::debug!("no config file found in known locations, using defaults only");
+        tracing::warn!("No config file found in known locations, using defaults only");
 
         Config::parse(config::File::from_str("", config::FileFormat::Toml))
     }

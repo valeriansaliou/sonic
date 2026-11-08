@@ -71,7 +71,7 @@ impl super::Executor {
 
         #[cfg(debug_assertions)]
         if input.token_count() > MAX_QUERY_TOKENS {
-            tracing::debug!("Query is very long: {:?}", input.original_text());
+            tracing::debug!(input = ?input.original_text(), "Query is very long");
         }
 
         let mut query_candidates =
@@ -219,7 +219,7 @@ impl super::Executor {
             .take(usize::from(limit))
             .collect();
 
-        tracing::info!("got search executor final results: {page_results:?}");
+        tracing::trace!("Got query results: {page_results:?}");
 
         Ok(page_results)
     }
@@ -246,9 +246,7 @@ impl super::Executor {
         let _fst_read_guard = self.fst_pool.lock_read_access();
 
         let Some(kv_store) = self.kv_pool.acquire(false, collection, None)? else {
-            tracing::debug!(
-                "collection store does not exist, consider {bucket:?} from {collection:?} empty"
-            );
+            tracing::debug!("ollection store does not exist, consider bucket empty.");
             return Ok(vec![]);
         };
         let fst_store = self.fst_pool.acquire(collection, bucket)?;
@@ -310,9 +308,7 @@ impl super::Executor {
         let _fst_read_guard = self.fst_pool.lock_read_access();
 
         let Some(kv_store) = self.kv_pool.acquire(false, collection, None)? else {
-            tracing::debug!(
-                "collection store does not exist, consider {bucket:?} from {collection:?} empty"
-            );
+            tracing::debug!("Collection store does not exist, consider bucket empty.");
             return Ok(vec![]);
         };
         let fst_store = self.fst_pool.acquire(collection, bucket)?;
@@ -332,9 +328,7 @@ impl super::Executor {
         let object_store_pool = self.object_store_pool.acquire(false, collection, None)?;
 
         let Some(object_store_pool) = object_store_pool else {
-            tracing::debug!(
-                "Object store does not exist, consider {bucket:?} from {collection:?} empty"
-            );
+            tracing::debug!("Object store does not exist, consider bucket empty.");
             let res = (query_results.into_iter())
                 .map(|res| MatchWithSnippets::new(res.oid))
                 .collect::<Vec<_>>();
@@ -410,7 +404,7 @@ impl super::Executor {
                     }
                     Ok(None) => continue 'results,
                     Err(error) => {
-                        tracing::error!("Error getting original object: {error}");
+                        tracing::error!("Error getting original object: {error:#}");
                         continue 'results;
                     }
                 }
@@ -462,7 +456,7 @@ impl super::Executor {
                         Ok(Some(bytes)) => String::from_utf8_lossy(bytes.as_ref()),
                         Ok(None) => continue 'fragments,
                         Err(error) => {
-                            tracing::error!("Error getting original object: {error}");
+                            tracing::error!("Error getting original object: {error:#}");
                             continue 'fragments;
                         }
                     };
@@ -554,24 +548,24 @@ fn overall_score(
     let count = scores.len() as f32;
     let scores = scores.map(|opt| opt.unwrap_or(0f32));
 
-    #[cfg(debug_assertions)]
-    let scores = {
-        use std::sync::atomic::{AtomicU8, Ordering};
-
-        let scores = scores.collect::<Vec<_>>();
-
-        // if !scores.iter().any(|v| *v == 0.) {
-        static COUNTER: AtomicU8 = AtomicU8::new(0);
-        if COUNTER
-            .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
-            .is_ok_and(|prev| prev < 200)
-        {
-            tracing::debug!("scores = {scores:?}");
-        }
-        // }
-
-        scores.into_iter()
-    };
+    //     #[cfg(debug_assertions)]
+    //     let scores = {
+    //         use std::sync::atomic::{AtomicU8, Ordering};
+    //
+    //         let scores = scores.collect::<Vec<_>>();
+    //
+    //         // if !scores.iter().any(|v| *v == 0.) {
+    //         static COUNTER: AtomicU8 = AtomicU8::new(0);
+    //         if COUNTER
+    //             .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+    //             .is_ok_and(|prev| prev < 200)
+    //         {
+    //             tracing::debug!("scores = {scores:?}");
+    //         }
+    //         // }
+    //
+    //         scores.into_iter()
+    //     };
 
     let total = scores.sum::<f32>();
 

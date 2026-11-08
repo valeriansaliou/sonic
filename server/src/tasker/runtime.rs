@@ -45,24 +45,21 @@ impl TaskerBuilder {
 
 impl Tasker {
     pub fn run(&self) {
-        tracing::info!("tasker is now active");
+        tracing::debug!("Tasker is now active");
 
         loop {
             // Hold for next aggregate run
             thread::sleep(TASKER_TICK_INTERVAL);
 
-            tracing::debug!("running a tasker tick...");
+            tracing::debug!("Running a tasker tick…");
 
             let tick_start = Instant::now();
 
             self.tick();
 
-            let tick_took = tick_start.elapsed();
-
-            tracing::info!(
-                "ran tasker tick (took {}s + {}ms)",
-                tick_took.as_secs(),
-                tick_took.subsec_millis()
+            tracing::debug!(
+                "Ran tasker tick (took {elapsed:?})",
+                elapsed = tick_start.elapsed()
             );
         }
     }
@@ -89,7 +86,7 @@ impl Tasker {
             self.kv_pool.janitor(|store_id| {
                 let skip = disabled.contains(store_id.as_collection_hash());
                 if skip {
-                    tracing::info!(
+                    tracing::debug!(
                         "Not running janitor task for KV store {store_id:?}: {TASK_DISABLED}"
                     );
                 }
@@ -98,7 +95,7 @@ impl Tasker {
             self.fst_pool.janitor(|store_id| {
                 let skip = disabled.contains(store_id.as_collection_hash());
                 if skip {
-                    tracing::info!(
+                    tracing::debug!(
                         "Not running janitor task for FST store {store_id:?}: {TASK_DISABLED}"
                     );
                 }
@@ -107,7 +104,7 @@ impl Tasker {
             self.object_store_pool.janitor(|store_id| {
                 let skip = disabled.contains(store_id.as_collection_hash());
                 if skip {
-                    tracing::info!(
+                    tracing::debug!(
                         "Not running janitor task for Object store {store_id:?}: {TASK_DISABLED}"
                     );
                 }
@@ -120,7 +117,9 @@ impl Tasker {
             let is_enabled = (dynamic_conf_store_read_guard.get(store_id))
                 .is_none_or(|conf| conf.is_kv_flush_task_enabled());
             if !is_enabled {
-                tracing::info!("Not running flush task for KV store {store_id:?}: {TASK_DISABLED}");
+                tracing::debug!(
+                    "Not running flush task for KV store {store_id:?}: {TASK_DISABLED}"
+                );
             }
             is_enabled
         });
@@ -128,7 +127,7 @@ impl Tasker {
             let is_enabled = (dynamic_conf_store_read_guard.get(store_id))
                 .is_none_or(|conf| conf.is_fst_consolidate_task_enabled());
             if !is_enabled {
-                tracing::info!(
+                tracing::debug!(
                     "Not running consolidate task for FST store {store_id:?}: {TASK_DISABLED}"
                 );
             }
@@ -138,7 +137,7 @@ impl Tasker {
             let is_enabled = (dynamic_conf_store_read_guard.get(store_id))
                 .is_none_or(|conf| conf.is_kv_flush_task_enabled());
             if !is_enabled {
-                tracing::info!(
+                tracing::debug!(
                     "Not running flush task for Object store {store_id:?}: {TASK_DISABLED}"
                 );
             }

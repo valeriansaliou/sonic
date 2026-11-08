@@ -175,7 +175,7 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
             }
         };
 
-        tracing::debug!("Store not in pool, opening it…");
+        tracing::trace!("Store not in pool, opening it…");
 
         // Check if can open database?
         let can_open_db = create_if_missing || self.kv_store_config.store_path(&store_id).exists();
@@ -242,10 +242,9 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
         skip_all, fields(store = %Self::kind()),
     )]
     pub fn flush(&self, force: bool, filter: impl Fn(&KvStoreId) -> bool) {
-        tracing::debug!(
-            "Scanning for {} store pool items to flush to disk",
-            Self::kind()
-        );
+        let kind = Self::kind();
+
+        tracing::trace!("Scanning for {kind} stores to flush to disk");
 
         // Acquire flush lock, and reference it in context
         // Notice: this prevents two flush operations to be executed at the same time.
@@ -264,15 +263,13 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
                     .is_some_and(|n| not_flushed_for.as_secs() >= n)
             {
                 tracing::debug!(
-                    "{} store {store_id} not flushed for {not_flushed_for:.0?}, may flush",
-                    Self::kind()
+                    "{kind} store {store_id} not flushed for {not_flushed_for:.1?}, may flush"
                 );
 
                 keys_flush.push(*store_id);
             } else {
                 tracing::trace!(
-                    "{} store {store_id} not flushed for {not_flushed_for:.0?}, no flush",
-                    Self::kind()
+                    "{kind} store {store_id} not flushed for {not_flushed_for:.1?}, no flush"
                 );
             }
         }
@@ -282,10 +279,7 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
 
         // Exit trap: Nothing to flush yet? Abort there.
         if keys_flush.is_empty() {
-            tracing::info!(
-                "No {} store pool items need to be flushed at the moment",
-                Self::kind()
-            );
+            tracing::trace!("No {kind} store needs to be flushed at the moment");
 
             return;
         }
@@ -297,14 +291,14 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
             let pool_guard = self.pool.read().unwrap();
 
             if let Some(store) = pool_guard.get(store_id) {
-                tracing::debug!("{} store {store_id} flush started", Self::kind());
+                tracing::trace!("Store {store_id} flush started");
 
                 if let Err(error) = store.flush() {
-                    tracing::error!("{} store {store_id} flush failed: {error:?}", Self::kind());
+                    crate::log!(error.context(format!("Store {store_id} flush failed")));
                 } else {
                     count_flushed += 1;
 
-                    tracing::debug!("{} store {store_id} flush complete", Self::kind());
+                    tracing::debug!("Store {store_id} flush complete");
                 }
 
                 // Bump 'last flushed' time
@@ -318,10 +312,7 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
             std::thread::yield_now();
         }
 
-        tracing::info!(
-            "Done scanning for {} store pool items to flush to disk (flushed: {count_flushed})",
-            Self::kind()
-        );
+        tracing::info!("Flushed {count_flushed} store(s) to disk");
     }
 
     #[tracing::instrument(
@@ -331,7 +322,7 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
     pub fn compact(
         &self,
         collections_opt: Option<&[StoreItemPart]>,
-    ) -> Result<(), Vec<(KvStoreId, rocksdb::Error)>> {
+    ) -> Result<(), Vec<(KvStoreId, crate::Error)>> {
         match collections_opt {
             Some(collections) => tracing::debug!("Compacting {collections:?}…"),
             None => tracing::debug!("Compacting all collections…"),
@@ -372,7 +363,7 @@ impl<Store: GenericRocksDbStore> GenericKvStorePool<Store> {
             let wait_opts = rocksdb::WaitForCompactOptions::default();
 
             if let Err(error) = store.database().wait_for_compact(&wait_opts) {
-                errors.push((*store_id, error));
+                errors.push((*store_id, error.into()));
             }
 
             // Give a bit of time to other threads before continuing

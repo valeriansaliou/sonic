@@ -24,6 +24,7 @@ impl LoggerConfig {
             .with(filter)
             .with(
                 tracing_subscriber::fmt::layer()
+                    .compact()
                     // .map_fmt_fields(tracing_subscriber::field::MakeExt::debug_alt)
                     .with_level(true)
                     .with_target(false)

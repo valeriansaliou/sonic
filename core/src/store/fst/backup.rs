@@ -22,7 +22,7 @@ impl FstStorePool {
         skip_all, fields(?path),
     )]
     pub fn backup(&self, path: &Path) -> Result<(), crate::Error> {
-        tracing::debug!("backing up all fst stores to path: {path:?}");
+        tracing::debug!("Backing up all FST stores…");
 
         // Create backup directory (full path)
         fs::create_dir_all(path)?;
@@ -48,7 +48,7 @@ impl FstStorePool {
         skip_all, fields(?path),
     )]
     pub fn restore(&self, path: &Path) -> Result<(), crate::Error> {
-        tracing::debug!("restoring all fst stores from path: {path:?}");
+        tracing::debug!("Restoring all fst stores…");
 
         // Proceed dump action (restore)
         self.dump_action(

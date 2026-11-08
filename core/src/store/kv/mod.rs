@@ -409,7 +409,7 @@ impl<'db> KvRepositoryRead<'db> {
                 usize_to_u64(value.len()) / usize_to_u64(size_of::<TermToIidsEntry>())
             }
             Ok(None) => {
-                tracing::debug!(%store_key, ?term_hash, "term-to-iids not found");
+                tracing::debug!(%store_key, ?term_hash, "Term-To-IIDs not found");
 
                 0
             }
@@ -417,7 +417,7 @@ impl<'db> KvRepositoryRead<'db> {
                 tracing::error!(
                     %store_key,
                     ?term_hash,
-                    "error getting term-to-iids: {error}"
+                    "Error getting Term-To-IIDs: {error:#}"
                 );
 
                 0
@@ -579,11 +579,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
     {
         let value = value.as_bytes();
 
-        if tracing::enabled!(tracing::Level::TRACE) {
-            tracing::trace!(store_key = %key, ?value, "Updating value");
-        } else {
-            tracing::debug!(store_key = %key, "Updating value");
-        }
+        tracing::trace!(store_key = %key, ?value, "Updating value");
 
         if let Some(cf) = cf {
             batch.merge_cf(cf, key.to_bytes(), value)
@@ -599,11 +595,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
     {
         let value = value.as_bytes();
 
-        if tracing::enabled!(tracing::Level::TRACE) {
-            tracing::trace!(store_key = %key, ?value, "Setting value");
-        } else {
-            tracing::debug!(store_key = %key, "Setting value");
-        }
+        tracing::trace!(store_key = %key, ?value, "Setting value");
 
         if let Some(cf) = cf {
             batch.put_cf(cf, key.to_bytes(), value)
@@ -616,7 +608,7 @@ impl<'a> KvRepositoryReadWrite<'a> {
     where
         K: TypedKvStoreKey,
     {
-        tracing::debug!(store_key = %key, "Deleting value");
+        tracing::trace!(store_key = %key, "Deleting value");
 
         if let Some(cf) = cf {
             batch.delete_cf(cf, key.to_bytes())
@@ -689,7 +681,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
     }
 
     fn assign_new_iid(&self, oid: GenericOid<'_>) -> Result<GenericIid, crate::Error> {
-        tracing::trace!("Must initialize push executor oid-to-iid and iid-to-oid");
+        tracing::trace!("Assigning new IID to {oid:?}");
 
         let mut batch = WriteBatch::new();
 
@@ -1068,7 +1060,7 @@ impl<'db> KvRepositoryReadWrite<'db> {
     ) -> u32 {
         let mut count: u32 = 0;
 
-        tracing::debug!("store batch flush bucket: {iid:?}");
+        tracing::debug!("Deleting object {oid:?} ({iid})…");
 
         // Delete OID <> IID association
         self.delete_oid_to_iid(batch, oid);
@@ -1099,7 +1091,9 @@ impl<'db> KvRepositoryReadWrite<'db> {
     ) -> u32 {
         let mut deleted_terms_count: u32 = 0;
 
-        tracing::debug!("store batch flush fragment: {object_iid}:{fragment_iid}");
+        tracing::debug!(
+            "Deleting fragment {object_oid:?}:{fragment_oid:?} ({object_iid:?}:{fragment_iid})…"
+        );
 
         // Delete OID <> IID association
         self.delete_fragment_oid_to_iid(batch, object_oid, fragment_oid);

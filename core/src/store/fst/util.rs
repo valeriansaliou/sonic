@@ -14,9 +14,7 @@ pub(super) fn check_over_limits(
     if let Some(max_size) = fst_graph_config.max_size.map(|n| n * 1024)
         && bytes_count >= max_size
     {
-        tracing::info!(
-            "fst has exceeded maximum allowed bytes: {bytes_count} over limit: {max_size}"
-        );
+        tracing::debug!("FST has exceeded maximum allowed bytes: {bytes_count}>={max_size}");
 
         return true;
     }
@@ -25,9 +23,7 @@ pub(super) fn check_over_limits(
     if let Some(max_words) = fst_graph_config.max_words
         && words_count >= max_words
     {
-        tracing::info!(
-            "fst has exceeded maximum allowed words: {words_count} over limit: {max_words}"
-        );
+        tracing::debug!("FST has exceeded maximum allowed words: {words_count}>={max_words}");
 
         return true;
     }

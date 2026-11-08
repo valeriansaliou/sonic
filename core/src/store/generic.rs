@@ -84,7 +84,7 @@ pub(super) trait StoreGenericPoolExt: GenericStorePool {
         };
         let store_box = Arc::new(store);
 
-        tracing::debug!("opened and cached store");
+        tracing::debug!("Opened and cached store");
 
         // TODO: Debug assert no previous value.
         store_pool_write.insert(store_id, Arc::clone(&store_box));
@@ -156,10 +156,6 @@ pub(super) trait StoreGenericPoolExt: GenericStorePool {
         collection: StoreItemPart,
         bucket: Option<Bucket>,
     ) -> Result<u32, crate::Error> {
-        let kind = Self::kind();
-
-        tracing::info!("{kind} erase requested on collection: {collection}");
-
         if let Some(bucket) = bucket {
             self.proceed_erase_bucket(collection, bucket)
         } else {
