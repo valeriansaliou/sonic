@@ -10,12 +10,12 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 use rocksdb::WriteBatch;
 
-use crate::Context as _;
 use crate::executor::MultipartPushContext;
 use crate::lexer::preprocessor::PreprocessorOutput;
 use crate::store::kv::encoding::ToKvKeyPart;
 use crate::store::rocksdb::WriteOptions;
 use crate::store::{Bucket, GenericOid, StoreItemPart, StoreTermHash};
+use crate::{Attachable as _, Context as _, fields};
 
 #[derive(Debug, Default)]
 pub struct PushOptions {
@@ -146,18 +146,26 @@ impl super::Executor {
                     (object, None) => format!("object {object:?}"),
                     (object, Some(fragment)) => format!("fragment {object:?}:{fragment:?}"),
                 };
-                let actual = match (object_oid, fragment_oid) {
-                    (object, None) => format!("object {object:?}"),
-                    (object, Some(fragment)) => format!("fragment {object:?}:{fragment:?}"),
-                };
+                let ctx_len = ctx.original_text.len();
 
                 // Clear multipart context.
                 *multipart_context = None;
 
-                panic!(
-                    "Last multipart chunk never received for {expected} (got {actual}). \
+                #[derive(Debug, thiserror::Error)]
+                #[error("{0}")]
+                struct WrongMultipartChunkReceived(String);
+
+                return Err(WrongMultipartChunkReceived(format!(
+                    "Last multipart chunk never received for {expected}. \
                     This should not happen, something’s wrong in your code."
-                );
+                ))
+                .attach(fields!(
+                    ?object_oid,
+                    ?fragment_oid,
+                    input_len = input.original_text().len(),
+                    ctx_len,
+                ))
+                .into());
             }
         };
 
