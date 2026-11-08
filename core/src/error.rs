@@ -4,6 +4,8 @@
 // Copyright: 2026, Rémi Bardon <remi@remibardon.name>
 // License: Mozilla Public License v2.0 (MPL v2.0)
 
+use crate::util::impl_transparent_wrapper_utils;
+
 pub use SonicError as Error;
 
 pub struct SonicError(LeveledError);
@@ -14,10 +16,29 @@ impl_transparent_wrapper_utils!(Deref for Error(LeveledError));
 
 impl<E> From<E> for Error
 where
-    E: Into<anyhow::Error>,
+    E: Attachable,
+    TracedError<E>: Into<anyhow::Error>,
 {
     #[inline]
+    #[track_caller]
     fn from(inner: E) -> Self {
+        Self(LeveledError {
+            level: tracing::Level::ERROR,
+            error: inner
+                // NOTE: The leading space is there so terminals detect paths
+                //   better for easier navigation during debugging.
+                .attach(crate::fields!(callsite = %format!(" {callsite}", callsite = std::panic::Location::caller())))
+                .into(),
+        })
+    }
+}
+
+impl<E> From<TracedError<E>> for Error
+where
+    TracedError<E>: Into<anyhow::Error>,
+{
+    #[inline]
+    fn from(inner: TracedError<E>) -> Self {
         Self(LeveledError {
             level: tracing::Level::ERROR,
             error: inner.into(),
@@ -110,6 +131,17 @@ impl<T, E: Into<Error>> Context for Result<T, E> {
     }
 }
 
+/// A String wrapper that implements [`std::error::Error`] so we can convert
+/// [`TracedError<StringError>`] to [`anyhow::Error`].
+///
+/// This is useful for the [`Option<T>`] implementation of [`Context`].
+struct StringError(String);
+
+impl_transparent_wrapper_utils!(Debug for StringError(String));
+impl_transparent_wrapper_utils!(Display for StringError(String));
+
+impl std::error::Error for StringError {}
+
 impl<T> Context for Option<T> {
     type Res = Result<T, Error>;
 
@@ -118,7 +150,9 @@ impl<T> Context for Option<T> {
     where
         C: std::fmt::Display + Send + Sync + 'static,
     {
-        self.ok_or(LeveledError::from(anyhow::Error::msg(context.to_string())).into())
+        self.ok_or(Error::from(
+            StringError(context.to_string()).attach_current_span(),
+        ))
     }
 
     #[inline]
@@ -127,7 +161,7 @@ impl<T> Context for Option<T> {
         C: std::fmt::Display + Send + Sync + 'static,
         F: FnOnce() -> C,
     {
-        self.ok_or_else(|| LeveledError::from(anyhow::Error::msg(f().to_string())).into())
+        self.ok_or_else(|| Error::from(StringError(f().to_string()).attach_current_span()))
     }
 }
 
@@ -212,6 +246,67 @@ impl<T, E: Into<anyhow::Error>> Leveled for Result<T, E> {
             .into()
         })
     }
+}
+
+// NOTE: This type is necessary to avoid some conflicting implementations errors,
+//   and said implementations are necessary to avoid .
+#[repr(transparent)]
+pub struct TracedError<E>(tracing_error::TracedError<E>);
+
+impl<E: Into<tracing_error::TracedError<E>>> From<E> for TracedError<E> {
+    #[inline]
+    fn from(error: E) -> Self {
+        Self(error.into())
+    }
+}
+
+impl<E> From<TracedError<E>> for anyhow::Error
+where
+    tracing_error::TracedError<E>: Into<anyhow::Error>,
+{
+    #[inline]
+    fn from(value: TracedError<E>) -> Self {
+        value.0.into()
+    }
+}
+
+pub trait Attachable: Sized {
+    fn attach(self, span: tracing::Span) -> TracedError<Self>;
+
+    fn attach_current_span(self) -> TracedError<Self>;
+}
+
+impl<E> Attachable for E
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    #[inline]
+    fn attach(self, span: tracing::Span) -> TracedError<E> {
+        span.in_scope(|| TracedError(tracing_error::TracedError::from(self)))
+    }
+
+    #[inline]
+    fn attach_current_span(self) -> TracedError<E> {
+        TracedError(tracing_error::TracedError::from(self))
+    }
+}
+
+pub trait AttachResult<T, E> {
+    fn attach(self, span: tracing::Span) -> Result<T, TracedError<E>>;
+}
+
+impl<T, E: Attachable> AttachResult<T, E> for Result<T, E> {
+    #[inline]
+    fn attach(self, span: tracing::Span) -> Result<T, TracedError<E>> {
+        self.map_err(|e| e.attach(span))
+    }
+}
+
+#[macro_export]
+macro_rules! fields {
+    ($($tt:tt)+) => {
+        tracing::span!(tracing::Level::ERROR, "_context", $($tt)+)
+    };
 }
 
 // macro_rules! error {

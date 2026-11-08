@@ -20,6 +20,13 @@ impl LoggerConfig {
     pub fn init(level: LevelFilter) {
         let (filter, handle) = reload::Layer::new(level);
 
+        // NOTE: We need a custom formatter because the default one adds ANSI
+        //   codes which are escaped by the logger.
+        let fields = tracing_subscriber::fmt::format::debug_fn(|w, field, value| {
+            write!(w, "{}={:?}", field.name(), value)
+        })
+        .delimited(", ");
+
         tracing_subscriber::registry()
             .with(filter)
             .with(
@@ -31,6 +38,7 @@ impl LoggerConfig {
                     // .with_thread_ids(true)
                     .with_span_events(FmtSpan::NONE),
             )
+            .with(sonic::tracing_error::ErrorLayer::new(fields))
             .init();
 
         LOG_LEVEL_RELOAD_HANDLE.set(handle).expect(

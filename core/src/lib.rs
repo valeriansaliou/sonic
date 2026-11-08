@@ -35,9 +35,12 @@ pub mod util;
 
 // Re-export `rocksdb` as it’s part of the public API.
 pub use rocksdb;
+pub use tracing_error;
 
 pub use self::config::Config;
 pub(crate) use self::error::warning;
-pub use self::error::{Context, Error, Leveled, LeveledError};
+pub use self::error::{
+    AttachResult, Attachable, Context, Error, Leveled, LeveledError, TracedError,
+};
 pub use self::executor::DynamicConfig;
 pub use self::executor::Executor;
