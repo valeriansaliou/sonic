@@ -33,7 +33,7 @@ pub fn start_sonic() -> (SpawnGuard, SocketAddr) {
     let sonic = Command::new(sonic_bin_path)
         // .args(["-c", sonic_config_path])
         .env("SONIC_CHANNEL__INET", addr.to_string())
-        .env("SONIC_SERVER__LOG_LEVEL", "WARN")
+        .env("SONIC_SERVER__LOG_LEVEL", "INFO")
         .env("SONIC_STORE__KV__PATH", sonic_data_path.join("kv"))
         .env("SONIC_STORE__FST__PATH", sonic_data_path.join("fst"))
         .env("SONIC_STORE__OBJECT__PATH", sonic_data_path.join("object"))
