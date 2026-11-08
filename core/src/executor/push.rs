@@ -142,13 +142,20 @@ impl super::Executor {
             // NOTE: Because we store a single piece of context, we should
             //   not commit intermediate data.
             Some(ref ctx) => {
-                let prev_oid = ctx.oid.clone();
+                let expected = match (&ctx.object, &ctx.fragment) {
+                    (object, None) => format!("object {object:?}"),
+                    (object, Some(fragment)) => format!("fragment {object:?}:{fragment:?}"),
+                };
+                let actual = match (object_oid, fragment_oid) {
+                    (object, None) => format!("object {object:?}"),
+                    (object, Some(fragment)) => format!("fragment {object:?}:{fragment:?}"),
+                };
 
                 // Clear multipart context.
                 *multipart_context = None;
 
                 panic!(
-                    "Last multipart chunk never received for OID {prev_oid:?}. \
+                    "Last multipart chunk never received for {expected} (got {actual}). \
                     This should not happen, something’s wrong in your code."
                 );
             }
