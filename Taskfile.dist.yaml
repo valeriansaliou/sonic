@@ -26,7 +26,9 @@ tasks:
       You can use `task test:foo,bar` to run tests foo and bar.
     aliases: [test:*]
     cmds:
-      - cargo test --locked --workspace --exclude sonic-benchmarks --no-fail-fast{{ if .MATCH }} --test {{ .MATCH | first | splitList "," | join " --test " }}{{ end }}{{ if .ARGS }} {{ .ARGS }}{{ end }}
+      - cmd: cargo build --locked --bin sonic
+        if: '{{ .CLI_ARGS_LIST | has "-p" }}'
+      - cargo test --locked{{ if not (.CLI_ARGS_LIST | has "-p") }} --workspace --exclude sonic-benchmarks{{ end }} --no-fail-fast{{ if .MATCH }} --test {{ .MATCH | first | splitList "," | join " --test " }}{{ end }}{{ if .ARGS }} {{ .ARGS }}{{ end }}
       - task: util:update-tested-at-version
     vars:
       ARGS: '{{ without .CLI_ARGS_LIST "--trace" "--debug" "--info" "--warn" | join " " }}'
