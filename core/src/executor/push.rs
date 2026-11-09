@@ -141,6 +141,12 @@ impl super::Executor {
         // To avoid writing empty values in RocksDB, let’s just abort early and
         // not lock anything at all.
         if terms_sorted.is_empty() {
+            // Clear multipart context.
+            // NOTE: This is very important, otherwise a multipart push of an
+            //   object/fragment containing only ignored Unicode chars / stopwords
+            //   would cause the next request to fail (it has been observed)!
+            *multipart_context = None;
+
             return Ok(());
         }
 
