@@ -77,6 +77,13 @@ impl super::Executor {
                     return Ok(());
                 } else {
                     // Received last multipart chunk.
+
+                    // Clear multipart context.
+                    // NOTE: Doing it now is very important, otherwise a multipart push of
+                    //   an object/fragment containing only ignored Unicode chars or stopwords
+                    //   would cause the next request to fail (it has been observed)!
+                    *multipart_context = None;
+
                     // Proceed with the rest of the code.
                 }
             }
@@ -141,12 +148,6 @@ impl super::Executor {
         // To avoid writing empty values in RocksDB, let’s just abort early and
         // not lock anything at all.
         if terms_sorted.is_empty() {
-            // Clear multipart context.
-            // NOTE: This is very important, otherwise a multipart push of an
-            //   object/fragment containing only ignored Unicode chars / stopwords
-            //   would cause the next request to fail (it has been observed)!
-            *multipart_context = None;
-
             return Ok(());
         }
 
@@ -237,9 +238,6 @@ impl super::Executor {
             // Push to FST graph
             fst_repo.push_words(terms.into_iter());
         }
-
-        // Clear multipart context.
-        *multipart_context = None;
 
         Ok(())
     }
