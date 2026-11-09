@@ -45,7 +45,7 @@ impl super::Executor {
 
         let mut multipart_context = self.multipart_push_context.lock().unwrap();
 
-        match *multipart_context {
+        let text = match *multipart_context {
             // Received first chunk: initiate multipart context.
             None if options.is_incomplete => {
                 let original_text: String = match options.capacity {
@@ -67,7 +67,10 @@ impl super::Executor {
             }
 
             // Normal `PUSH`.
-            None => { /* Proceed with the rest of the code */ }
+            None => {
+                // Proceed with the rest of the code
+                text
+            }
 
             // Received multipart chunk: update multipart context.
             Some(ref mut ctx) if ctx.has_matching_ids(object_oid, fragment_oid) => {
@@ -78,6 +81,8 @@ impl super::Executor {
                 } else {
                     // Received last multipart chunk.
 
+                    let text = std::mem::take(&mut ctx.original_text);
+
                     // Clear multipart context.
                     // NOTE: Doing it now is very important, otherwise a multipart push of
                     //   an object/fragment containing only ignored Unicode chars or stopwords
@@ -85,6 +90,7 @@ impl super::Executor {
                     *multipart_context = None;
 
                     // Proceed with the rest of the code.
+                    text
                 }
             }
 
