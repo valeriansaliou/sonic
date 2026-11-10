@@ -22,14 +22,12 @@ where
     #[inline]
     #[track_caller]
     fn from(inner: E) -> Self {
-        Self(LeveledError {
-            level: tracing::Level::ERROR,
-            error: inner
-                // NOTE: The leading space is there so terminals detect paths
-                //   better for easier navigation during debugging.
-                .attach(crate::fields!(callsite = %format!(" {callsite}", callsite = std::panic::Location::caller())))
-                .into(),
-        })
+        Self(LeveledError::error(inner
+            // NOTE: The leading space is there so terminals detect paths
+            //   better for easier navigation during debugging.
+            .attach(crate::fields!(callsite = %format!(" {callsite}", callsite = std::panic::Location::caller())))
+            .into()
+        ))
     }
 }
 
@@ -178,6 +176,22 @@ impl<E> LeveledError<E> {
     }
 
     #[inline]
+    pub const fn warn(inner: E) -> Self {
+        LeveledError {
+            level: tracing::Level::WARN,
+            error: inner,
+        }
+    }
+
+    #[inline]
+    pub const fn error(inner: E) -> Self {
+        LeveledError {
+            level: tracing::Level::ERROR,
+            error: inner,
+        }
+    }
+
+    #[inline]
     pub const fn level(&self) -> tracing::Level {
         self.level
     }
@@ -197,13 +211,10 @@ impl std::fmt::Display for LeveledError {
     }
 }
 
-impl<E> From<E> for LeveledError<E> {
+impl From<Error> for LeveledError {
     #[inline]
-    fn from(inner: E) -> Self {
-        LeveledError {
-            level: tracing::Level::ERROR,
-            error: inner,
-        }
+    fn from(inner: Error) -> Self {
+        inner.0
     }
 }
 
@@ -222,29 +233,51 @@ pub trait Leveled {
     fn as_error(self) -> Self::Res;
 }
 
-impl<T, E: Into<anyhow::Error>> Leveled for Result<T, E> {
+impl<E> LeveledError<E> {
+    #[inline]
+    pub fn as_warn(mut self) -> Self {
+        self.level = tracing::Level::WARN;
+        self
+    }
+
+    #[inline]
+    pub fn as_error(mut self) -> Self {
+        self.level = tracing::Level::ERROR;
+        self
+    }
+}
+
+impl Leveled for Error {
+    type Res = Self;
+
+    #[inline]
+    fn as_warn(mut self) -> Self::Res {
+        self.0 = self.0.as_warn();
+        self
+    }
+
+    #[inline]
+    fn as_error(mut self) -> Self::Res {
+        self.0 = self.0.as_error();
+        self
+    }
+}
+
+impl<T, E> Leveled for Result<T, E>
+where
+    E: Attachable,
+    TracedError<E>: Into<anyhow::Error>,
+{
     type Res = Result<T, Error>;
 
     #[inline]
     fn as_warn(self) -> Self::Res {
-        self.map_err(|error| {
-            LeveledError {
-                level: tracing::Level::WARN,
-                error: error.into(),
-            }
-            .into()
-        })
+        self.map_err(|error| Error::from(error).as_warn())
     }
 
     #[inline]
     fn as_error(self) -> Self::Res {
-        self.map_err(|error| {
-            LeveledError {
-                level: tracing::Level::ERROR,
-                error: error.into(),
-            }
-            .into()
-        })
+        self.map_err(|error| Error::from(error).as_error())
     }
 }
 
