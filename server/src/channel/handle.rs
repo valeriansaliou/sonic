@@ -13,7 +13,7 @@ use std::str;
 use std::sync::Arc;
 use std::time::Duration;
 
-use sonic::{Context as _, Executor};
+use sonic::{Context as _, Executor, Leveled as _};
 
 use super::message::{
     ChannelMessageModeControl, ChannelMessageModeIngest, ChannelMessageModeSearch,
@@ -223,14 +223,18 @@ impl ChannelHandle {
                         // in the buffer. Most likely the client does not
                         // implement a proper back-pressure management system,
                         // thus we terminate it.
-                        break 'handler Err(sonic::Error::from(std::io::Error::new(
-                            ErrorKind::InvalidData,
-                            format!(
-                                "buffer overflow ({}/{} bytes)",
-                                buffer.len() + read.len(),
-                                MAX_LINE_SIZE,
-                            ),
-                        )));
+
+                        #[derive(Debug, thiserror::Error)]
+                        #[error(
+                            "Buffer overflow: Separator {BUFFER_LINE_SEPARATOR:?} not found after {1} bytes (read {0})"
+                        )]
+                        struct BufferOverflow(usize, usize);
+
+                        break 'handler Err(BufferOverflow(
+                            buffer.len() + read.len(),
+                            buffer.len(),
+                        ))
+                        .as_warn();
                     }
                 }
                 Err(err) => break 'handler Err(sonic::Error::from(err)),
