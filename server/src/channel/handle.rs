@@ -154,10 +154,14 @@ impl ChannelHandle {
         // TODO(perf): Rework to use index lookup instead of byte-per-byte processing.
         let mut ring_buffer: VecDeque<u8> = VecDeque::with_capacity(BUFFER_SIZE);
 
+        // TODO(perf): Differenciate chunk size (this buffer) from max line
+        //   buffer (ring buffer above) and bench if performance is better with
+        //   a small chunk buffer but a large ring buffer. IMO(@RemiBardon) it
+        //   could be.
+        let mut read = [0; BUFFER_SIZE];
+
         // Wait for incoming messages
         'handler: loop {
-            let mut read = [0; BUFFER_SIZE];
-
             match stream.read(&mut read) {
                 Ok(n) => {
                     // Should close?
