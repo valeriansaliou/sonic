@@ -152,7 +152,7 @@ impl ChannelHandle {
     fn handle_stream(&self, mode: ChannelMode, mut stream: TcpStream) -> Result<(), sonic::Error> {
         // Initialize packet buffer
         // TODO(perf): Rework to use index lookup instead of byte-per-byte processing.
-        let mut buffer: VecDeque<u8> = VecDeque::with_capacity(BUFFER_SIZE);
+        let mut ring_buffer: VecDeque<u8> = VecDeque::with_capacity(BUFFER_SIZE);
 
         // Wait for incoming messages
         'handler: loop {
@@ -167,18 +167,18 @@ impl ChannelHandle {
 
                     let read = &read[..n];
 
-                    let (mut chunk, mut read) =
-                        read.split_at(read.len().min(BUFFER_SIZE - buffer.len()));
+                    let (mut chunk, mut read_remaining) =
+                        read.split_at(read.len().min(BUFFER_SIZE - ring_buffer.len()));
 
                     // Add chunk to buffer
-                    buffer.extend(chunk);
-                    assert!(buffer.len() <= BUFFER_SIZE);
+                    ring_buffer.extend(chunk);
+                    assert!(ring_buffer.len() <= BUFFER_SIZE);
 
                     // Handle full lines from buffer (keep the last incomplete line in buffer)
                     {
                         let mut processed_line = Vec::with_capacity(MAX_LINE_SIZE);
 
-                        while let Some(byte) = buffer.pop_front() {
+                        while let Some(byte) = ring_buffer.pop_front() {
                             // Commit line and start a new one?
                             if byte == BUFFER_LINE_SEPARATOR as u8 {
                                 if self.on_message(&mode, &stream, &processed_line)
@@ -192,12 +192,13 @@ impl ChannelHandle {
                                 //   processed.
                                 processed_line.clear();
 
-                                (chunk, read) =
-                                    read.split_at(read.len().min(BUFFER_SIZE - buffer.len()));
+                                (chunk, read_remaining) = read_remaining.split_at(
+                                    read_remaining.len().min(BUFFER_SIZE - ring_buffer.len()),
+                                );
 
                                 // Add chunk to buffer
-                                buffer.extend(chunk);
-                                assert!(buffer.len() <= BUFFER_SIZE);
+                                ring_buffer.extend(chunk);
+                                assert!(ring_buffer.len() <= BUFFER_SIZE);
                             } else {
                                 // Append current byte to processed line
                                 processed_line.push(byte);
@@ -206,8 +207,8 @@ impl ChannelHandle {
 
                         // Incomplete line remaining? Put it back in buffer.
                         if !processed_line.is_empty() {
-                            buffer.extend(processed_line);
-                            assert!(buffer.len() <= BUFFER_SIZE);
+                            ring_buffer.extend(processed_line);
+                            assert!(ring_buffer.len() <= BUFFER_SIZE);
                         }
                     }
 
@@ -216,8 +217,8 @@ impl ChannelHandle {
                     //   we also ensure there is enough space for the line
                     //   separator. If there isn’t, next loop cycle will abort
                     //   because the line is too long anyway.
-                    if (buffer.len() + read.len()) <= MAX_LINE_SIZE {
-                        buffer.extend(read);
+                    if (ring_buffer.len() + read_remaining.len()) <= MAX_LINE_SIZE {
+                        ring_buffer.extend(read_remaining);
                     } else {
                         // Do not continue, as there is too much pending data
                         // in the buffer. Most likely the client does not
@@ -231,8 +232,8 @@ impl ChannelHandle {
                         struct BufferOverflow(usize, usize);
 
                         break 'handler Err(BufferOverflow(
-                            buffer.len() + read.len(),
-                            buffer.len(),
+                            ring_buffer.len() + read_remaining.len(),
+                            ring_buffer.len(),
                         ))
                         .as_warn();
                     }
