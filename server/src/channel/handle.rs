@@ -40,12 +40,11 @@ enum ChannelHandleError {
     Unknown,
 }
 
-const LINE_END_GAP: usize = 1;
 const BUFFER_SIZE: usize = 20000;
-const MAX_LINE_SIZE: usize = BUFFER_SIZE + LINE_END_GAP + 1;
+const MAX_LINE_SIZE: usize = BUFFER_SIZE - BUFFER_LINE_SEPARATOR.len_utf8();
 const TCP_TIMEOUT_NON_ESTABLISHED: u64 = 10;
 const PROTOCOL_REVISION: u8 = 1;
-const BUFFER_LINE_SEPARATOR: u8 = b'\n';
+const BUFFER_LINE_SEPARATOR: char = '\n';
 
 const CONNECTED_BANNER: &str = concat!(
     "CONNECTED <",
@@ -152,11 +151,12 @@ impl ChannelHandle {
 
     fn handle_stream(&self, mode: ChannelMode, mut stream: TcpStream) -> Result<(), sonic::Error> {
         // Initialize packet buffer
-        let mut buffer: VecDeque<u8> = VecDeque::with_capacity(MAX_LINE_SIZE);
+        // TODO(perf): Rework to use index lookup instead of byte-per-byte processing.
+        let mut buffer: VecDeque<u8> = VecDeque::with_capacity(BUFFER_SIZE);
 
         // Wait for incoming messages
         'handler: loop {
-            let mut read = [0; MAX_LINE_SIZE];
+            let mut read = [0; BUFFER_SIZE];
 
             match stream.read(&mut read) {
                 Ok(n) => {
@@ -165,12 +165,14 @@ impl ChannelHandle {
                         break 'handler Ok(());
                     }
 
+                    let read = &read[..n];
+
                     let (mut chunk, mut read) =
-                        read[..n].split_at(n.min(MAX_LINE_SIZE - buffer.len()));
+                        read.split_at(read.len().min(BUFFER_SIZE - buffer.len()));
 
                     // Add chunk to buffer
                     buffer.extend(chunk);
-                    assert!(buffer.len() <= MAX_LINE_SIZE);
+                    assert!(buffer.len() <= BUFFER_SIZE);
 
                     // Handle full lines from buffer (keep the last incomplete line in buffer)
                     {
@@ -178,7 +180,7 @@ impl ChannelHandle {
 
                         while let Some(byte) = buffer.pop_front() {
                             // Commit line and start a new one?
-                            if byte == BUFFER_LINE_SEPARATOR {
+                            if byte == BUFFER_LINE_SEPARATOR as u8 {
                                 if self.on_message(&mode, &stream, &processed_line)
                                     == ChannelMessageResult::Close
                                 {
@@ -191,11 +193,11 @@ impl ChannelHandle {
                                 processed_line.clear();
 
                                 (chunk, read) =
-                                    read.split_at(read.len().min(MAX_LINE_SIZE - buffer.len()));
+                                    read.split_at(read.len().min(BUFFER_SIZE - buffer.len()));
 
                                 // Add chunk to buffer
                                 buffer.extend(chunk);
-                                assert!(buffer.len() <= MAX_LINE_SIZE);
+                                assert!(buffer.len() <= BUFFER_SIZE);
                             } else {
                                 // Append current byte to processed line
                                 processed_line.push(byte);
@@ -205,7 +207,7 @@ impl ChannelHandle {
                         // Incomplete line remaining? Put it back in buffer.
                         if !processed_line.is_empty() {
                             buffer.extend(processed_line);
-                            assert!(buffer.len() <= MAX_LINE_SIZE);
+                            assert!(buffer.len() <= BUFFER_SIZE);
                         }
                     }
 
@@ -214,9 +216,7 @@ impl ChannelHandle {
                     //   we also ensure there is enough space for the line
                     //   separator. If there isn’t, next loop cycle will abort
                     //   because the line is too long anyway.
-                    let separator_len = char::from(BUFFER_LINE_SEPARATOR).len_utf8();
-
-                    if (buffer.len() + read.len()) < (MAX_LINE_SIZE - separator_len) {
+                    if (buffer.len() + read.len()) <= MAX_LINE_SIZE {
                         buffer.extend(read);
                     } else {
                         // Do not continue, as there is too much pending data

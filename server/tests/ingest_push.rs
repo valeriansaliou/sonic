@@ -32,39 +32,119 @@ fn push_overflow() {
 
     let ctx = start_empty(|command| command);
 
-    let buffer_size = {
-        let multiplexer = SonicMultiplexer::new().unwrap();
+    let make_stream = || {
+        let buffer_size = {
+            let multiplexer = SonicMultiplexer::new().unwrap();
 
-        let sonic =
-            SonicChannelIngestBlocking::connect(ctx.addr, "SecretPassword", &multiplexer).unwrap();
+            let sonic =
+                SonicChannelIngestBlocking::connect(ctx.addr, "SecretPassword", &multiplexer)
+                    .unwrap();
 
-        sonic.channel_info().buffer_size
+            sonic.channel_info().buffer_size
+        };
+
+        let mut stream = TcpStream::connect(ctx.addr).unwrap();
+
+        {
+            let line = BufReader::new(&stream).lines().next().unwrap().unwrap();
+            assert!(line.starts_with("CONNECTED "), "{line}");
+        }
+
+        stream.write_all(b"START ingest SecretPassword").unwrap();
+
+        {
+            let line = BufReader::new(&stream).lines().next().unwrap().unwrap();
+            assert!(line.starts_with("STARTED ingest "), "{line}");
+        }
+
+        (stream, buffer_size)
     };
 
-    let mut stream = TcpStream::connect(ctx.addr).unwrap();
+    let make_command = |len| {
+        let mut buf = String::with_capacity(len);
+        buf.push_str("PUSH collection bucket object \"");
+        buf.extend(std::iter::repeat_n(
+            'a',
+            len.saturating_sub(buf.len()).saturating_sub(2),
+        ));
+        buf.push_str("\"\n");
 
+        assert_eq!(buf.len(), len);
+        buf
+    };
+
+    // Sonic succeeds if command exactly as long as the buffer.
     {
-        let line = BufReader::new(&stream).lines().next().unwrap().unwrap();
-        assert!(line.starts_with("CONNECTED "), "{line}");
+        let (mut stream, buffer_size) = make_stream();
+
+        let command = make_command(buffer_size);
+
+        stream.write_all(command.as_bytes()).unwrap();
+
+        let res_opt = BufReader::new(&stream).lines().next();
+        let line = res_opt
+            .expect("Sonic should write")
+            .expect("Sonic should not error");
+        assert_eq!(line, "OK");
     }
 
-    stream.write_all(b"START ingest SecretPassword").unwrap();
-
+    // Sonic succeeds if command exactly as long as the buffer, even when
+    // written in multiple chunks.
     {
-        let line = BufReader::new(&stream).lines().next().unwrap().unwrap();
-        assert!(line.starts_with("STARTED ingest "), "{line}");
+        let (mut stream, buffer_size) = make_stream();
+
+        let command = make_command(buffer_size);
+        let bytes = command.as_bytes();
+
+        stream.write_all(&bytes[..(buffer_size - 1)]).unwrap();
+        stream.write_all(&bytes[(buffer_size - 1)..]).unwrap();
+
+        let res_opt = BufReader::new(&stream).lines().next();
+        let line = res_opt
+            .expect("Sonic should write")
+            .expect("Sonic should not error");
+        assert_eq!(line, "OK");
     }
 
-    let buf_len = buffer_size + 1;
-    let mut buf = String::with_capacity(buf_len);
-    buf.push_str("PUSH collection bucket object ");
-    buf.extend(std::iter::repeat_n('a', buf_len.saturating_sub(buf.len())));
-    assert_eq!(buf.len(), buf_len);
-    stream.write_all(buf.as_bytes()).unwrap();
-
+    // Sonic aborts if command longer than the buffer.
     {
-        let line_opt = BufReader::new(&stream).lines().next();
-        assert!(line_opt.is_none(), "{:?}", line_opt.unwrap());
+        let (mut stream, buffer_size) = make_stream();
+
+        let command = make_command(buffer_size + 1);
+
+        stream.write_all(command.as_bytes()).unwrap();
+
+        let res_opt = BufReader::new(&stream).lines().next();
+        match res_opt {
+            Some(res) => assert_eq!(
+                res.as_ref().map_err(std::io::Error::kind),
+                Err(std::io::ErrorKind::ConnectionReset),
+                "{res:?}"
+            ),
+            None => { /* Also possible */ }
+        }
+    }
+
+    // Sonic aborts if command longer than the buffer, even when written in
+    // multiple chunks.
+    {
+        let (mut stream, buffer_size) = make_stream();
+
+        let command = make_command(buffer_size + 1);
+        let bytes = command.as_bytes();
+
+        stream.write_all(&bytes[..(buffer_size - 1)]).unwrap();
+        stream.write_all(&bytes[(buffer_size - 1)..]).unwrap();
+
+        let res_opt = BufReader::new(&stream).lines().next();
+        match res_opt {
+            Some(res) => assert_eq!(
+                res.as_ref().map_err(std::io::Error::kind),
+                Err(std::io::ErrorKind::ConnectionReset),
+                "{res:?}"
+            ),
+            None => { /* Also possible */ }
+        }
     }
 }
 
