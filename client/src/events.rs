@@ -98,10 +98,16 @@ impl std::str::FromStr for ServerInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChannelInfo {
     pub protocol_version: u8,
-    pub buffer_size: usize,
+    buffer_size: usize,
 
     /// Experimental features enabled.
     pub caps: HashSet<Box<str>>,
+}
+
+impl ChannelInfo {
+    pub fn max_line_size(&self) -> usize {
+        self.buffer_size - crate::transport::LINE_SEPARATOR.len()
+    }
 }
 
 impl std::str::FromStr for ChannelInfo {

@@ -121,12 +121,12 @@ impl<Mode: ChannelMode + 'static> SonicChannel<Mode> {
         discriminant: Mode::Discriminant,
         parse: impl Fn(&str) -> std::io::Result<T> + Send + 'static,
     ) -> std::io::Result<oneshot::Receiver<std::io::Result<T>>> {
-        if command.len() > self.channel_info.buffer_size {
+        if command.len() > self.channel_info.max_line_size() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 format!(
-                    "Command too long. Max buffer size: {}",
-                    self.channel_info.buffer_size
+                    "Command too long. Max line size: {}",
+                    self.channel_info.max_line_size()
                 ),
             ));
         }
@@ -179,12 +179,12 @@ impl<Mode: ChannelMode + 'static> SonicChannel<Mode> {
         make_discriminant2: impl FnOnce(&str) -> Mode::Discriminant + Send + Sync + 'static,
         parse: impl Fn(&str) -> std::io::Result<T> + Send + 'static,
     ) -> std::io::Result<oneshot::Receiver<std::io::Result<T>>> {
-        if command.len() > self.channel_info.buffer_size {
+        if command.len() > self.channel_info.max_line_size() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 format!(
-                    "Command too long. Max buffer size: {}",
-                    self.channel_info.buffer_size
+                    "Command too long. Max line size: {}",
+                    self.channel_info.max_line_size()
                 ),
             ));
         }
@@ -250,7 +250,7 @@ impl<Mode: ChannelMode + 'static> SonicChannel<Mode> {
         discriminant: Mode::Discriminant,
         reduce: impl Fn(T, &str) -> std::io::Result<T> + Clone + Send + Sync + 'static,
     ) -> std::io::Result<oneshot::Receiver<std::io::Result<T>>> {
-        let buffer_size = self.channel_info.buffer_size;
+        let buffer_size = self.channel_info.max_line_size();
 
         if command.len() <= buffer_size {
             return self.send(command, discriminant, move |data| {
@@ -273,7 +273,7 @@ impl<Mode: ChannelMode + 'static> SonicChannel<Mode> {
         discriminant: Mode::Discriminant,
         reduce: impl Fn(T, &str) -> std::io::Result<T> + Clone + Send + Sync + 'static,
     ) -> std::io::Result<oneshot::Receiver<std::io::Result<T>>> {
-        let buffer_size = self.channel_info.buffer_size;
+        let buffer_size = self.channel_info.max_line_size();
 
         // PERF: Short-circuit if the whole fits on one line.
         if command.len() <= buffer_size {

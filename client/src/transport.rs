@@ -6,6 +6,8 @@
 
 use mio::net::TcpStream;
 
+pub(crate) const LINE_SEPARATOR: &str = "\n";
+
 use crate::{TCP_READ_BUFFER_CAPACITY, TCP_WRITE_BUFFER_CAPACITY, logging::*};
 
 pub trait Transport: AsMut<TcpStream> + Sized + Send {
@@ -121,7 +123,7 @@ impl Transport for SonicStream {
         use bytes::BufMut as _;
 
         let res = write(&mut self.write_buf);
-        self.write_buf.put_slice(b"\r\n");
+        self.write_buf.put_slice(LINE_SEPARATOR.as_bytes());
 
         res
     }
@@ -131,8 +133,8 @@ impl Transport for SonicStream {
 
         self.write_buf.put_slice(line.as_ref());
         log_trace!("Wrote {} bytes line", line.as_ref().len());
-        self.write_buf.put_slice(b"\r\n");
-        log_trace!("Wrote \\r\\n");
+        self.write_buf.put_slice(LINE_SEPARATOR.as_bytes());
+        log_trace!("Wrote {LINE_SEPARATOR:?}");
     }
 
     #[inline]
